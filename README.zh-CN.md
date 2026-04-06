@@ -52,7 +52,14 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 
 ## 安装
 
-### 下载安装（推荐）
+### Homebrew 安装（推荐）
+
+```bash
+brew tap efan404/codeisland
+brew install --cask codeisland
+```
+
+### 下载安装
 
 1. 前往 [Releases](https://github.com/wxtsky/CodeIsland/releases) 页面
 2. 下载 `CodeIsland.app.zip`

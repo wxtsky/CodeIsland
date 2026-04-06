@@ -52,7 +52,14 @@ It connects to **8 AI coding tools** via Unix socket IPC, displaying session sta
 
 ## Installation
 
-### Download (Recommended)
+### Homebrew (Recommended)
+
+```bash
+brew tap efan404/codeisland
+brew install --cask codeisland
+```
+
+### Download
 
 1. Go to [Releases](https://github.com/wxtsky/CodeIsland/releases)
 2. Download `CodeIsland.app.zip`
