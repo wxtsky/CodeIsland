@@ -183,6 +183,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.hideInFullscreen) private var hideInFullscreen = SettingsDefaults.hideInFullscreen
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
+    @AppStorage(SettingsKey.silentWorkMode) private var silentWorkMode = SettingsDefaults.silentWorkMode
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
@@ -207,6 +208,12 @@ private struct BehaviorPage: View {
                     desc: l10n["smart_suppress_desc"],
                     isOn: $smartSuppress,
                     animation: .smartSuppress
+                )
+                BehaviorToggleRow(
+                    title: l10n["silent_work_mode"],
+                    desc: l10n["silent_work_mode_desc"],
+                    isOn: $silentWorkMode,
+                    animation: .silentWorkMode
                 )
                 BehaviorToggleRow(
                     title: l10n["collapse_on_mouse_leave"],
@@ -844,7 +851,7 @@ private struct AboutPage: View {
 // MARK: - Behavior Animation Previews
 
 private enum BehaviorAnim {
-    case hideFullscreen, hideNoSession, smartSuppress, collapseMouseLeave
+    case hideFullscreen, hideNoSession, smartSuppress, silentWorkMode, collapseMouseLeave
 }
 
 private struct BehaviorToggleRow: View {
@@ -893,6 +900,7 @@ private struct NotchMiniAnim: View {
         case .hideFullscreen:   drawFullscreen(c, sz: sz, t: t)
         case .hideNoSession:    drawNoSession(c, sz: sz, t: t)
         case .smartSuppress:    drawSuppress(c, sz: sz, t: t)
+        case .silentWorkMode:   drawSilentWork(c, sz: sz, t: t)
         case .collapseMouseLeave: drawMouseLeave(c, sz: sz, t: t)
         }
     }
@@ -1009,7 +1017,38 @@ private struct NotchMiniAnim: View {
         }
     }
 
-    // 4) Mouse leave: cursor enters → expand → cursor leaves → collapse
+    // 4) Silent work mode: stays calm while working, only alerts pop later
+    private func drawSilentWork(_ c: GraphicsContext, sz: CGSize, t: Double) {
+        let cycle = t.truncatingRemainder(dividingBy: 3.6) / 3.6
+        let alertPhase = cycle > 0.62 ? (cycle - 0.62) / 0.38 : 0
+        let pop = alertPhase > 0 ? sin(min(1, alertPhase) * .pi) : 0
+
+        drawPill(
+            c,
+            sz: sz,
+            w: lerp(28, 44, pop * 0.85),
+            h: lerp(10, 18, pop * 0.85),
+            op: 1.0,
+            flashColor: pop > 0.01 ? orange.opacity(pop * 0.18) : nil
+        )
+
+        let centerX = sz.width / 2
+        c.fill(
+            Path(ellipseIn: CGRect(x: centerX - 5, y: sz.height * 0.56, width: 10, height: 3)),
+            with: .color(Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.5))
+        )
+
+        if pop > 0.01 {
+            c.draw(
+                Text("!")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9)),
+                at: CGPoint(x: centerX, y: 12)
+            )
+        }
+    }
+
+    // 5) Mouse leave: cursor enters → expand → cursor leaves → collapse
     private func drawMouseLeave(_ c: GraphicsContext, sz: CGSize, t: Double) {
         let cycle = t.truncatingRemainder(dividingBy: 3.5) / 3.5
         // Expand amount: 0→1→0
