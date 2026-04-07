@@ -14,34 +14,50 @@ extension EnvironmentValues {
     }
 }
 
+func effectiveMascotStatus(_ status: AgentStatus, silentWorkMode: Bool) -> AgentStatus {
+    guard silentWorkMode else { return status }
+
+    switch status {
+    case .running, .processing:
+        return .idle
+    default:
+        return status
+    }
+}
+
 /// Routes a CLI source identifier to the correct pixel mascot view.
 struct MascotView: View {
     let source: String
     let status: AgentStatus
     var size: CGFloat = 27
     @AppStorage(SettingsKey.mascotSpeed) private var speedPct = SettingsDefaults.mascotSpeed
+    @AppStorage(SettingsKey.silentWorkMode) private var silentWorkMode = SettingsDefaults.silentWorkMode
+
+    private var displayStatus: AgentStatus {
+        effectiveMascotStatus(status, silentWorkMode: silentWorkMode)
+    }
 
     var body: some View {
         Group {
             switch source {
             case "codex":
-                DexView(status: status, size: size)
+                DexView(status: displayStatus, size: size)
             case "gemini":
-                GeminiView(status: status, size: size)
+                GeminiView(status: displayStatus, size: size)
             case "cursor":
-                CursorView(status: status, size: size)
+                CursorView(status: displayStatus, size: size)
             case "copilot":
-                CopilotView(status: status, size: size)
+                CopilotView(status: displayStatus, size: size)
             case "qoder":
-                QoderView(status: status, size: size)
+                QoderView(status: displayStatus, size: size)
             case "droid":
-                DroidView(status: status, size: size)
+                DroidView(status: displayStatus, size: size)
             case "codebuddy":
-                BuddyView(status: status, size: size)
+                BuddyView(status: displayStatus, size: size)
             case "opencode":
-                OpenCodeView(status: status, size: size)
+                OpenCodeView(status: displayStatus, size: size)
             default:
-                ClawdView(status: status, size: size)
+                ClawdView(status: displayStatus, size: size)
             }
         }
         .environment(\.mascotSpeed, Double(speedPct) / 100.0)
