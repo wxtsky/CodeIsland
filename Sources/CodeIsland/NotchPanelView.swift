@@ -262,6 +262,7 @@ private struct CompactLeftWing: View {
     let hasNotch: Bool
     let showToolStatus: Bool
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
+    @AppStorage(SettingsKey.silentWorkMode) private var silentWorkMode = SettingsDefaults.silentWorkMode
 
     private var displaySession: SessionSnapshot? {
         let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -303,7 +304,11 @@ private struct CompactLeftWing: View {
                     .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
             } else {
-                MascotView(source: displaySource, status: displayStatus, size: mascotSize)
+                MascotView(
+                    source: displaySource,
+                    status: effectiveMascotStatus(displayStatus, silentWorkMode: silentWorkMode),
+                    size: mascotSize
+                )
                     .id(displaySource)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.3), value: displaySource)
@@ -1344,6 +1349,7 @@ private struct SessionCard: View {
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
+    @AppStorage(SettingsKey.silentWorkMode) private var silentWorkMode = SettingsDefaults.silentWorkMode
     private var fontSize: CGFloat { CGFloat(contentFontSize) }
     private var aiLineLimit: Int? { aiMessageLines > 0 ? aiMessageLines : nil }
     private var statusNameColor: Color {
@@ -1361,7 +1367,11 @@ private struct SessionCard: View {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
             VStack(spacing: 3) {
-                MascotView(source: session.source, status: session.status, size: 32)
+                MascotView(
+                    source: session.source,
+                    status: effectiveMascotStatus(session.status, silentWorkMode: silentWorkMode),
+                    size: 32
+                )
                 if showAgentDetails && !session.subagents.isEmpty {
                     let sorted = session.subagents.values.sorted { $0.startTime < $1.startTime }
                     // Grid: 4 per row, 8px icons

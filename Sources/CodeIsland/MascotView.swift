@@ -31,33 +31,28 @@ struct MascotView: View {
     let status: AgentStatus
     var size: CGFloat = 27
     @AppStorage(SettingsKey.mascotSpeed) private var speedPct = SettingsDefaults.mascotSpeed
-    @AppStorage(SettingsKey.silentWorkMode) private var silentWorkMode = SettingsDefaults.silentWorkMode
-
-    private var displayStatus: AgentStatus {
-        effectiveMascotStatus(status, silentWorkMode: silentWorkMode)
-    }
 
     var body: some View {
         Group {
             switch source {
             case "codex":
-                DexView(status: displayStatus, size: size)
+                DexView(status: status, size: size)
             case "gemini":
-                GeminiView(status: displayStatus, size: size)
+                GeminiView(status: status, size: size)
             case "cursor":
-                CursorView(status: displayStatus, size: size)
+                CursorView(status: status, size: size)
             case "copilot":
-                CopilotView(status: displayStatus, size: size)
+                CopilotView(status: status, size: size)
             case "qoder":
-                QoderView(status: displayStatus, size: size)
+                QoderView(status: status, size: size)
             case "droid":
-                DroidView(status: displayStatus, size: size)
+                DroidView(status: status, size: size)
             case "codebuddy":
-                BuddyView(status: displayStatus, size: size)
+                BuddyView(status: status, size: size)
             case "opencode":
-                OpenCodeView(status: displayStatus, size: size)
+                OpenCodeView(status: status, size: size)
             default:
-                ClawdView(status: displayStatus, size: size)
+                ClawdView(status: status, size: size)
             }
         }
         .environment(\.mascotSpeed, Double(speedPct) / 100.0)
