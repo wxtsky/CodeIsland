@@ -30,6 +30,7 @@ It connects to **9 AI coding tools** via Unix socket IPC, displaying session sta
 - **Live status tracking** — See active sessions, tool calls, and AI responses in real time
 - **Permission management** — Approve/deny tool permissions directly from the panel
 - **Question answering** — Respond to agent questions without leaving your current app
+- **Keyboard shortcuts** — Toggle the panel with `⌘⇧I` by default, with configurable shortcuts for approvals and jumping back to the active terminal
 - **Pixel-art mascots** — Each AI tool has its own animated character
 - **One-click jump** — Click a session to jump to its terminal tab or IDE window
 - **Smart suppress** — Tab-level terminal detection: only suppresses notifications when you're looking at the specific session tab, not just the terminal app
@@ -103,13 +104,14 @@ For **OpenCode**, a JS plugin connects directly to the socket — no bridge bina
 
 ## Settings
 
-CodeIsland provides a 7-tab settings panel:
+CodeIsland provides an 8-tab settings panel:
 
 - **General** — Language, launch at login, display selection
 - **Behavior** — Auto-hide, smart suppress, session cleanup
 - **Appearance** — Panel height, font size, AI reply lines
 - **Mascots** — Preview all pixel-art characters and their animations
 - **Sound** — 8-bit sound effects for session events
+- **Shortcuts** — Remap the default `⌘⇧I` panel toggle and set optional approval / jump-to-terminal shortcuts
 - **Hooks** — View CLI installation status, reinstall or uninstall hooks
 - **About** — Version info and links
 
