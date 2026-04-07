@@ -24,6 +24,7 @@ enum SettingsKey {
     static let hideInFullscreen = "hideInFullscreen"
     static let hideWhenNoSession = "hideWhenNoSession"
     static let smartSuppress = "smartSuppress"
+    static let silentWorkMode = "silentWorkMode"
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
     static let sessionTimeout = "sessionTimeout"
 
@@ -70,6 +71,7 @@ struct SettingsDefaults {
     static let hideInFullscreen = true
     static let hideWhenNoSession = false
     static let smartSuppress = true
+    static let silentWorkMode = false
     static let collapseOnMouseLeave = true
     static let sessionTimeout = 30
 
@@ -111,6 +113,7 @@ class SettingsManager {
             SettingsKey.hideInFullscreen: SettingsDefaults.hideInFullscreen,
             SettingsKey.hideWhenNoSession: SettingsDefaults.hideWhenNoSession,
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
+            SettingsKey.silentWorkMode: SettingsDefaults.silentWorkMode,
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
             SettingsKey.sessionTimeout: SettingsDefaults.sessionTimeout,
             SettingsKey.maxPanelHeight: SettingsDefaults.maxPanelHeight,
