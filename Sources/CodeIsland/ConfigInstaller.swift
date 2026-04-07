@@ -45,7 +45,6 @@ struct ConfigInstaller {
                 ("PostToolUse", 5, true),
                 ("PostToolUseFailure", 5, true),
                 ("PermissionRequest", 86400, false),
-                ("PermissionDenied", 5, true),
                 ("Stop", 5, true),
                 ("SubagentStart", 5, true),
                 ("SubagentStop", 5, true),
