@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastHookCheck: Date = .distantPast
     private var globalShortcutMonitor: Any?
     private var localShortcutMonitor: Any?
+    private var defaultsObserver: NSObjectProtocol?
 
     let appState = AppState()
 
@@ -20,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableSuddenTermination()
         // Pre-set app icon so Dock/menu bar use the packaged bundle icon.
         NSApp.applicationIconImage = SettingsWindowController.bundleAppIcon()
+        StatusItemController.shared.syncVisibility()
         // Start HookServer BEFORE installing hooks into CLI configs.
         // If we write settings.json first, Claude Code picks up the new hooks
         // immediately but the socket isn't listening yet — PermissionRequest
@@ -40,13 +42,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Hooks auto-recovery: periodic + app activation trigger
         hookRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            self?.checkAndRepairHooks()
+            Task { @MainActor in
+                self?.checkAndRepairHooks()
+            }
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.checkAndRepairHooks()
+            Task { @MainActor in
+                self?.checkAndRepairHooks()
+            }
         }
 
         #if DEBUG
@@ -74,6 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         SoundManager.shared.playBoot()
         setupGlobalShortcut()
+        observeSettingsChanges()
 
         // Boot animation: brief expand to confirm app is running
         Task { @MainActor in
@@ -94,6 +101,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hookRecoveryTimer?.invalidate()
         teardownGlobalShortcut()
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+        }
         appState.saveSessions()
         hookServer?.stop()
         appState.stopSessionDiscovery()
@@ -175,6 +185,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let repaired = ConfigInstaller.verifyAndRepair()
         if !repaired.isEmpty {
             Self.log.info("Auto-repaired hooks for: \(repaired.joined(separator: ", "))")
+        }
+    }
+
+    private func observeSettingsChanges() {
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                StatusItemController.shared.syncVisibility()
+            }
         }
     }
 }
