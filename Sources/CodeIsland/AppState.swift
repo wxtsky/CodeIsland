@@ -221,6 +221,7 @@ final class AppState {
     /// Prefers the PID captured by the bridge (_ppid), falls back to scanning for Claude processes by CWD.
     private func tryMonitorSession(_ sessionId: String) {
         guard processMonitors[sessionId] == nil else { return }
+        guard sessions[sessionId]?.isRemote != true else { return }
 
         // Primary: use PID from bridge (works for any CLI)
         if let pid = sessions[sessionId]?.cliPid, pid > 0, kill(pid, 0) == 0 {
@@ -372,6 +373,7 @@ final class AppState {
 
     private func refreshProviderTitle(for trackedSessionId: String, providerSessionId: String? = nil) {
         guard let session = sessions[trackedSessionId] else { return }
+        guard !session.isRemote else { return }
 
         let lookupSessionId = providerSessionId ?? session.providerSessionId ?? trackedSessionId
         if let providerSessionId {
@@ -417,7 +419,9 @@ final class AppState {
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory)
 
         // Model transcript read: done AFTER reduceEvent so extractMetadata has filled in cwd
-        if sessions[sessionId]?.model == nil && !modelReadAttempted.contains(sessionId) {
+        if sessions[sessionId]?.model == nil
+            && !modelReadAttempted.contains(sessionId)
+            && sessions[sessionId]?.isRemote != true {
             modelReadAttempted.insert(sessionId)
             let cwd = sessions[sessionId]?.cwd
             let model = Self.readModelFromTranscript(sessionId: sessionId, cwd: cwd)
@@ -454,6 +458,7 @@ final class AppState {
         }
 
         if let provider = sessions[sessionId]?.source,
+           sessions[sessionId]?.isRemote != true,
            SessionTitleStore.supports(provider: provider) {
             refreshProviderTitle(for: sessionId)
         }
@@ -469,6 +474,16 @@ final class AppState {
 
         scheduleSave()
         startRotationIfNeeded()
+        refreshDerivedState()
+    }
+
+    func removeRemoteSessions(hostId: String) {
+        let ids = sessions.compactMap { key, session in
+            session.remoteHostId == hostId ? key : nil
+        }
+        for id in ids {
+            removeSession(id)
+        }
         refreshDerivedState()
     }
 

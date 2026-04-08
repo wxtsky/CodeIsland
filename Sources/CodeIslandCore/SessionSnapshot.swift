@@ -47,6 +47,8 @@ public struct SessionSnapshot {
     public var sessionTitle: String?
     public var sessionTitleSource: SessionTitleSource?
     public var providerSessionId: String?
+    public var remoteHostId: String?
+    public var remoteHostName: String?
     /// nil = unchecked, false = not YOLO, true = YOLO
     public var isYoloMode: Bool?
 
@@ -118,6 +120,17 @@ public struct SessionSnapshot {
 
     public var projectDisplayName: String {
         displayName
+    }
+
+    public var isRemote: Bool {
+        guard let remoteHostId else { return false }
+        return !remoteHostId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public var remoteDisplayName: String? {
+        guard let remoteHostName else { return nil }
+        let trimmed = remoteHostName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     public var sessionLabel: String? {
@@ -209,6 +222,9 @@ public struct SessionSnapshot {
 
     /// Short terminal/app name for display tag
     public var terminalName: String? {
+        if isRemote {
+            return remoteDisplayName ?? "Remote"
+        }
         // If termBundleId is a known app, show app name (APP mode)
         if let bid = termBundleId, let name = Self.appBundleNames[bid] {
             return name
@@ -263,10 +279,19 @@ public struct SessionSnapshot {
         if let cwd = cwd {
             // Show parent/folder instead of just folder
             let parts = cwd.split(separator: "/")
+            let pathText: String
             if parts.count >= 2 {
-                return "\(parts[parts.count - 2])/\(parts[parts.count - 1])"
+                pathText = "\(parts[parts.count - 2])/\(parts[parts.count - 1])"
+            } else {
+                pathText = cwd
             }
-            return cwd
+            if let remote = remoteDisplayName {
+                return "\(pathText) · \(remote)"
+            }
+            return pathText
+        }
+        if let remote = remoteDisplayName {
+            return remote
         }
         return model
     }
@@ -365,6 +390,7 @@ public func reduceEvent(
 
     // Always update metadata from every event
     extractMetadata(into: &sessions, sessionId: sessionId, event: event)
+    let isRemote = sessions[sessionId]?.isRemote == true
 
     // Route subagent-specific events
     if let agentId = event.agentId {
@@ -505,7 +531,23 @@ public func reduceEvent(
         if let roots = event.rawJSON["workspace_roots"] as? [String], let first = roots.first, !first.isEmpty {
             sessions[sessionId]?.cwd = first
         }
-        effects.append(.tryMonitorSession(sessionId: sessionId))
+        if let remoteHostId = event.rawJSON["_remote_host_id"] as? String, !remoteHostId.isEmpty {
+            sessions[sessionId]?.remoteHostId = remoteHostId
+        }
+        if let remoteHostName = event.rawJSON["_remote_host_name"] as? String, !remoteHostName.isEmpty {
+            sessions[sessionId]?.remoteHostName = remoteHostName
+        }
+        if let providerSessionId = event.rawJSON["session_id"] as? String, !providerSessionId.isEmpty,
+           sessions[sessionId]?.isRemote == true {
+            sessions[sessionId]?.providerSessionId = providerSessionId
+        }
+        if let sessionTitle = event.rawJSON["session_title"] as? String,
+           !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sessions[sessionId]?.sessionTitle = sessionTitle
+        }
+        if !isRemote {
+            effects.append(.tryMonitorSession(sessionId: sessionId))
+        }
     case "SessionEnd":
         // Side effect: AppState handles pending permission deny before removal
         effects.append(.removeSession(sessionId: sessionId))
@@ -527,7 +569,7 @@ public func reduceEvent(
     sessions[sessionId]?.lastActivity = Date()
 
     // Ensure process monitor is set up (covers sessions created implicitly)
-    if sessions[sessionId]?.cwd != nil {
+    if sessions[sessionId]?.cwd != nil, !isRemote {
         effects.append(.tryMonitorSession(sessionId: sessionId))
     }
 
@@ -627,6 +669,21 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     }
     if let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) {
         sessions[sessionId]?.source = source
+    }
+    if let remoteHostId = event.rawJSON["_remote_host_id"] as? String, !remoteHostId.isEmpty {
+        sessions[sessionId]?.remoteHostId = remoteHostId
+    }
+    if let remoteHostName = event.rawJSON["_remote_host_name"] as? String, !remoteHostName.isEmpty {
+        sessions[sessionId]?.remoteHostName = remoteHostName
+    }
+    if sessions[sessionId]?.isRemote == true,
+       let providerSessionId = event.rawJSON["session_id"] as? String,
+       !providerSessionId.isEmpty {
+        sessions[sessionId]?.providerSessionId = providerSessionId
+    }
+    if let sessionTitle = event.rawJSON["session_title"] as? String,
+       !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        sessions[sessionId]?.sessionTitle = sessionTitle
     }
 }
 

@@ -34,6 +34,8 @@ struct TerminalActivator {
     ]
 
     static func activate(session: SessionSnapshot, sessionId: String? = nil) {
+        guard !session.isRemote else { return }
+
         // Native app by bundle ID (e.g. Codex APP vs Codex CLI)
         if let bundleId = session.termBundleId,
            nativeAppBundles[bundleId] != nil {

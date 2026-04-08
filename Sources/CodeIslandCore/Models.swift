@@ -22,7 +22,14 @@ public struct HookEvent {
             return nil
         }
         self.eventName = eventName
-        self.sessionId = json["session_id"] as? String
+        let rawSessionId = json["session_id"] as? String
+        if let rawSessionId,
+           let remoteHostId = json["_remote_host_id"] as? String,
+           !remoteHostId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            self.sessionId = "remote:\(remoteHostId):\(rawSessionId)"
+        } else {
+            self.sessionId = rawSessionId
+        }
         self.toolName = json["tool_name"] as? String
         self.toolInput = json["tool_input"] as? [String: Any]
         self.agentId = json["agent_id"] as? String

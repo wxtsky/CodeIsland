@@ -10,6 +10,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case mascots
     case sound
     case shortcuts
+    case remote
     case hooks
     case about
 
@@ -23,6 +24,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
         case .shortcuts: return "command.circle.fill"
+        case .remote: return "network"
         case .hooks: return "link.circle.fill"
         case .about: return "info.circle.fill"
         }
@@ -36,6 +38,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return .pink
         case .sound: return .green
         case .shortcuts: return .indigo
+        case .remote: return .mint
         case .hooks: return .purple
         case .about: return .cyan
         }
@@ -49,7 +52,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.hooks, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .about]),
 ]
 
 // MARK: - Main View
@@ -85,12 +88,159 @@ struct SettingsView: View {
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
                 case .shortcuts: ShortcutsPage()
+                case .remote: RemoteHostsPage()
                 case .hooks: HooksPage()
                 case .about: AboutPage()
                 }
             }
         }
         .toolbar(removing: .sidebarToggle)
+    }
+}
+
+// MARK: - Remote Page
+
+private struct RemoteHostsPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var remoteManager = RemoteManager.shared
+
+    @State private var name = ""
+    @State private var host = ""
+    @State private var user = ""
+    @State private var port = ""
+    @State private var identityFile = ""
+    @State private var autoConnect = false
+
+    var body: some View {
+        Form {
+            Section(l10n["remote_hosts"]) {
+                if remoteManager.hosts.isEmpty {
+                    Text(l10n["remote_hosts_empty"])
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(remoteManager.hosts) { remoteHost in
+                        RemoteHostRow(host: remoteHost)
+                    }
+                }
+            }
+
+            Section(l10n["add_remote_host"]) {
+                TextField(l10n["remote_name"], text: $name)
+                TextField(l10n["remote_host"], text: $host)
+                TextField(l10n["remote_user"], text: $user)
+                TextField(l10n["remote_port"], text: $port)
+                TextField(l10n["remote_identity"], text: $identityFile)
+                Toggle(l10n["remote_auto_connect"], isOn: $autoConnect)
+
+                Button(l10n["remote_add_button"]) {
+                    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedName.isEmpty, !trimmedHost.isEmpty else { return }
+
+                    remoteManager.addHost(RemoteHost(
+                        name: trimmedName,
+                        host: trimmedHost,
+                        user: user.trimmingCharacters(in: .whitespacesAndNewlines),
+                        port: Int(port.trimmingCharacters(in: .whitespacesAndNewlines)),
+                        identityFile: identityFile.trimmingCharacters(in: .whitespacesAndNewlines),
+                        autoConnect: autoConnect
+                    ))
+
+                    name = ""
+                    host = ""
+                    user = ""
+                    port = ""
+                    identityFile = ""
+                    autoConnect = false
+                }
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            Section {
+                Text(l10n["remote_hint"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+private struct RemoteHostRow: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var remoteManager = RemoteManager.shared
+    let host: RemoteHost
+
+    private var status: SSHForwarder.Status {
+        remoteManager.connectionStatus[host.id] ?? .disconnected
+    }
+
+    private var statusText: String {
+        switch status {
+        case .connected:
+            return l10n["remote_connected"]
+        case .connecting:
+            return l10n["remote_connecting"]
+        case .disconnected:
+            return l10n["remote_disconnected"]
+        case .failed(let message):
+            return message
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(host.name)
+                    Text(host.displayAddress)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if remoteManager.installRunning[host.id] == true {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            Text(statusText)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            if let message = remoteManager.lastMessage[host.id], !message.isEmpty {
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+
+            HStack(spacing: 8) {
+                switch status {
+                case .connected, .connecting:
+                    Button(l10n["remote_disconnect"]) {
+                        remoteManager.disconnect(id: host.id)
+                    }
+                default:
+                    Button(l10n["remote_connect"]) {
+                        remoteManager.connect(id: host.id)
+                    }
+                }
+
+                Button(l10n["reinstall"]) {
+                    remoteManager.reconnect(id: host.id)
+                }
+
+                Button(role: .destructive) {
+                    remoteManager.removeHost(id: host.id)
+                } label: {
+                    Text(l10n["remote_remove"])
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 4)
     }
 }
 

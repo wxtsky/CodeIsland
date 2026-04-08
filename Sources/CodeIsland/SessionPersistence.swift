@@ -28,8 +28,9 @@ enum SessionPersistence {
     private static let filePath = dirPath + "/sessions.json"
 
     static func save(_ sessions: [String: SessionSnapshot]) {
-        let persisted = sessions.map { (id, s) in
-            PersistedSession(
+        let persisted: [PersistedSession] = sessions.compactMap { (id, s) in
+            guard !s.isRemote else { return nil }
+            return PersistedSession(
                 sessionId: id,
                 cwd: s.cwd,
                 source: s.source,
@@ -56,7 +57,7 @@ enum SessionPersistence {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(persisted)
-            try data.write(to: URL(fileURLWithPath: filePath), options: .atomic)
+            try data.write(to: URL(fileURLWithPath: filePath), options: Data.WritingOptions.atomic)
         } catch {}
     }
 

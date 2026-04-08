@@ -1,0 +1,272 @@
+import Foundation
+
+struct RemoteInstallResult: Sendable {
+    let ok: Bool
+    let message: String
+}
+
+private struct RemoteCommandResult: Sendable {
+    let stdout: String
+    let stderr: String
+    let exitCode: Int32
+
+    var ok: Bool { exitCode == 0 }
+}
+
+enum RemoteInstaller {
+    private static let remoteHookVersion = "0.1.0"
+
+    static func installAll(host: RemoteHost) async -> RemoteInstallResult {
+        guard let source = remoteHookSource() else {
+            return RemoteInstallResult(ok: false, message: "Missing remote hook resource")
+        }
+
+        let upload = await uploadRemoteHook(source: source, host: host)
+        guard upload.ok else {
+            return RemoteInstallResult(ok: false, message: "Upload failed: \(upload.stderrSummary)")
+        }
+
+        let configure = await configureRemoteHooks(host: host)
+        guard configure.ok else {
+            return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
+        }
+
+        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex remote hooks installed" : configure.stdoutSummary
+        return RemoteInstallResult(ok: true, message: summary)
+    }
+
+    static func cleanupRemoteSocket(host: RemoteHost) async {
+        _ = await runSSH(host: host, command: "rm -f \(shellSingleQuoted(host.remoteSocketPath))", timeout: 8)
+    }
+
+    private static func remoteHookSource() -> String? {
+        if let url = Bundle.module.url(forResource: "codeisland-remote-hook", withExtension: "py", subdirectory: "Resources"),
+           let src = try? String(contentsOf: url) {
+            return src
+        }
+        if let url = Bundle.module.url(forResource: "codeisland-remote-hook", withExtension: "py"),
+           let src = try? String(contentsOf: url) {
+            return src
+        }
+        return nil
+    }
+
+    private static func uploadRemoteHook(source: String, host: RemoteHost) async -> RemoteCommandResult {
+        let encoded = Data(source.utf8).base64EncodedString()
+        let py = """
+import base64, os, pathlib
+
+target = pathlib.Path.home() / ".codeisland" / "codeisland-remote-hook.py"
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_bytes(base64.b64decode('''\(encoded)'''))
+os.chmod(target, 0o755)
+print(target)
+"""
+        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
+    }
+
+    private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
+        let hostId = pythonStringLiteral(host.id)
+        let hostName = pythonStringLiteral(host.name)
+        let version = pythonStringLiteral(remoteHookVersion)
+        let py = """
+import json
+import pathlib
+import shutil
+
+home = pathlib.Path.home()
+hook_path = home / ".codeisland" / "codeisland-remote-hook.py"
+host_id = \(hostId)
+host_name = \(hostName)
+version = \(version)
+
+def ensure_json(path):
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
+
+def command_for(source):
+    return f"CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
+
+def remove_our_hooks(hooks):
+    for event in list(hooks.keys()):
+        entries = hooks.get(event)
+        if not isinstance(entries, list):
+            continue
+        next_entries = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                next_entries.append(entry)
+                continue
+            commands = []
+            if isinstance(entry.get("hooks"), list):
+                commands.extend([h.get("command", "") for h in entry["hooks"] if isinstance(h, dict)])
+            if isinstance(entry.get("command"), str):
+                commands.append(entry["command"])
+            if isinstance(entry.get("bash"), str):
+                commands.append(entry["bash"])
+            if any("codeisland-remote-hook.py" in c for c in commands):
+                continue
+            next_entries.append(entry)
+        if next_entries:
+            hooks[event] = next_entries
+        else:
+            hooks.pop(event, None)
+
+def install_claude():
+    claude_root = home / ".claude"
+    if not claude_root.exists() and shutil.which("claude") is None:
+        return "Claude skipped"
+
+    settings_path = claude_root / "settings.json"
+    data = ensure_json(settings_path)
+    hooks = data.get("hooks") or {}
+    remove_our_hooks(hooks)
+
+    cmd = command_for("claude")
+    without_matcher = [{"hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_matcher = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_long_timeout = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 86400}]}]
+    precompact = [
+        {"matcher": "auto", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+        {"matcher": "manual", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+    ]
+    hooks["UserPromptSubmit"] = without_matcher
+    hooks["PermissionRequest"] = with_long_timeout
+    hooks["Notification"] = with_matcher
+    hooks["Stop"] = without_matcher
+    hooks["SessionStart"] = without_matcher
+    hooks["SessionEnd"] = without_matcher
+    hooks["PreCompact"] = precompact
+    data["hooks"] = hooks
+    write_json(settings_path, data)
+    return "Claude ok"
+
+def ensure_toml_codex_hooks(path):
+    content = path.read_text() if path.exists() else ""
+    if "codex_hooks = true" in content:
+        return
+    lines = content.splitlines()
+    try:
+        idx = next(i for i, line in enumerate(lines) if line.strip() == "[features]")
+        lines.insert(idx + 1, "codex_hooks = true")
+    except StopIteration:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend(["[features]", "codex_hooks = true"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\\n".join(lines).rstrip() + "\\n")
+
+def install_codex():
+    codex_root = home / ".codex"
+    if not codex_root.exists() and shutil.which("codex") is None:
+        return "Codex skipped"
+
+    hooks_path = codex_root / "hooks.json"
+    data = ensure_json(hooks_path)
+    hooks = data.get("hooks") or {}
+    remove_our_hooks(hooks)
+
+    cmd = command_for("codex")
+    entry = [{"hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    hooks["SessionStart"] = entry
+    hooks["UserPromptSubmit"] = entry
+    hooks["Stop"] = entry
+    data["hooks"] = hooks
+    write_json(hooks_path, data)
+    ensure_toml_codex_hooks(codex_root / "config.toml")
+    return "Codex ok"
+
+parts = [install_claude(), install_codex()]
+print(" · ".join(parts))
+"""
+        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 30)
+    }
+
+    private static func runSSH(host: RemoteHost, command: String, timeout: TimeInterval) async -> RemoteCommandResult {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.arguments = sshArguments(host: host) + [command]
+
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+            process.standardInput = FileHandle.nullDevice
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(returning: RemoteCommandResult(stdout: "", stderr: error.localizedDescription, exitCode: -1))
+                return
+            }
+
+            let timeoutTask = Task.detached {
+                let ns = UInt64(timeout * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: ns)
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+
+            Task.detached {
+                process.waitUntilExit()
+                timeoutTask.cancel()
+                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+                let out = String(data: outData, encoding: .utf8) ?? ""
+                let err = String(data: errData, encoding: .utf8) ?? ""
+                continuation.resume(returning: RemoteCommandResult(stdout: out, stderr: err, exitCode: process.terminationStatus))
+            }
+        }
+    }
+
+    private static func sshArguments(host: RemoteHost) -> [String] {
+        var args: [String] = [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=8",
+            "-o", "ServerAliveInterval=15",
+            "-o", "ServerAliveCountMax=2",
+        ]
+        if let port = host.port {
+            args += ["-p", String(port)]
+        }
+        let trimmedIdentity = host.identityFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedIdentity.isEmpty {
+            args += ["-i", trimmedIdentity]
+        }
+        args.append(host.sshTarget)
+        return args
+    }
+
+    private static func pythonStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
+    }
+
+    private static func shellSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+private extension RemoteCommandResult {
+    var stderrSummary: String {
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "unknown error" : trimmed
+    }
+
+    var stdoutSummary: String {
+        stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}

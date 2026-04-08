@@ -1234,6 +1234,7 @@ private struct SessionIdentityLine: View {
             ProjectNameLink(
                 name: session.projectDisplayName,
                 cwd: session.cwd,
+                isInteractive: !session.isRemote,
                 fontSize: projectFontSize,
                 color: projectColor,
                 cardHovering: cardHovering
@@ -1269,6 +1270,7 @@ private struct SessionIdentityLine: View {
 private struct ProjectNameLink: View {
     let name: String
     let cwd: String?
+    let isInteractive: Bool
     let fontSize: CGFloat
     let color: Color
     let cardHovering: Bool
@@ -1280,7 +1282,7 @@ private struct ProjectNameLink: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .overlay(alignment: .bottom) {
-                if cwd != nil {
+                if cwd != nil, isInteractive {
                     GeometryReader { geo in
                         Path { path in
                             path.move(to: CGPoint(x: 0, y: geo.size.height))
@@ -1292,11 +1294,11 @@ private struct ProjectNameLink: View {
                 }
             }
             .onTapGesture {
-                if let cwd = cwd {
+                if isInteractive, let cwd = cwd {
                     NSWorkspace.shared.open(URL(fileURLWithPath: cwd))
                 }
             }
-            .help(cwd != nil ? "\(L10n.shared["open_path"]) \(cwd!)" : "")
+            .help(isInteractive && cwd != nil ? "\(L10n.shared["open_path"]) \(cwd!)" : "")
     }
 }
 
@@ -1398,6 +1400,9 @@ private struct SessionCard: View {
                     Spacer(minLength: 8)
 
                     HStack(spacing: 4) {
+                        if let remote = session.remoteDisplayName {
+                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                        }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
                         }
@@ -1734,35 +1739,56 @@ private struct TerminalJumpButton: View {
     }
 
     var body: some View {
-        Button {
-            TerminalActivator.activate(session: session, sessionId: sessionId)
-        } label: {
-            HStack(spacing: 4) {
-                if let icon = termIcon {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 13, height: 13)
-                }
-                if let term = session.terminalName {
-                    Text(term)
-                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+        Group {
+            if session.isRemote {
+                HStack(spacing: 4) {
+                    Image(systemName: "network")
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(green)
+                    if let term = session.terminalName {
+                        Text(term)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(green)
+                    }
                 }
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(green.opacity(hovering ? 1.0 : 0.5))
-                    .offset(x: hovering ? 2 : 0)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(green.opacity(0.08))
+                )
+            } else {
+                Button {
+                    TerminalActivator.activate(session: session, sessionId: sessionId)
+                } label: {
+                    HStack(spacing: 4) {
+                        if let icon = termIcon {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 13, height: 13)
+                        }
+                        if let term = session.terminalName {
+                            Text(term)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(green)
+                        }
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(green.opacity(hovering ? 1.0 : 0.5))
+                            .offset(x: hovering ? 2 : 0)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(green.opacity(hovering ? 0.18 : 0.08))
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { h in
+                    withAnimation(.easeOut(duration: 0.15)) { hovering = h }
+                }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(green.opacity(hovering ? 0.18 : 0.08))
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { h in
-            withAnimation(.easeOut(duration: 0.15)) { hovering = h }
         }
     }
 }
