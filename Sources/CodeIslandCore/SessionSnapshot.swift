@@ -42,6 +42,8 @@ public struct SessionSnapshot {
     public var tmuxClientTty: String?   // tmux client TTY for real terminal detection
     public var tmuxEnv: String?         // raw TMUX env var (socket info for non-default tmux server)
     public var termBundleId: String?    // __CFBundleIdentifier for precise terminal ID
+    public var cmuxSurfaceId: String?   // cmux surface UUID (from CMUX_SURFACE_ID env var)
+    public var cmuxWorkspaceId: String? // cmux workspace UUID (from CMUX_WORKSPACE_ID env var)
     public var cliPid: pid_t?            // CLI process PID (from bridge _ppid)
     public var source: String = "claude" // "claude" or "codex"
     public var interrupted: Bool = false
@@ -507,6 +509,13 @@ public func reduceEvent(
         if let roots = event.rawJSON["workspace_roots"] as? [String], let first = roots.first, !first.isEmpty {
             sessions[sessionId]?.cwd = first
         }
+        // cmux surface / workspace (restore directly from payload on SessionStart to avoid extractMetadata ordering dependency)
+        if let surface = event.rawJSON["_cmux_surface_id"] as? String, !surface.isEmpty {
+            sessions[sessionId]?.cmuxSurfaceId = surface
+        }
+        if let workspace = event.rawJSON["_cmux_workspace_id"] as? String, !workspace.isEmpty {
+            sessions[sessionId]?.cmuxWorkspaceId = workspace
+        }
         effects.append(.tryMonitorSession(sessionId: sessionId))
     case "SessionEnd":
         // Side effect: AppState handles pending permission deny before removal
@@ -632,6 +641,13 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     }
     if let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) {
         sessions[sessionId]?.source = source
+    }
+    // cmux surface / workspace (injected by bridge from CMUX_SURFACE_ID / CMUX_WORKSPACE_ID env vars)
+    if let surface = event.rawJSON["_cmux_surface_id"] as? String, !surface.isEmpty {
+        sessions[sessionId]?.cmuxSurfaceId = surface
+    }
+    if let workspace = event.rawJSON["_cmux_workspace_id"] as? String, !workspace.isEmpty {
+        sessions[sessionId]?.cmuxWorkspaceId = workspace
     }
 }
 

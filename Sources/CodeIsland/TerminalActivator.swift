@@ -88,6 +88,16 @@ struct TerminalActivator {
             ? (session.tmuxClientTty ?? session.ttyPath)
             : session.ttyPath
 
+        // --- cmux: surface-level precise jump (workspace + surface) ---
+        // Must be handled before generic tab-switching logic to avoid degrading to bringToFront
+        if lower.contains("cmux") {
+            activateCmux(
+                surfaceId: session.cmuxSurfaceId,
+                workspaceId: session.cmuxWorkspaceId
+            )
+            return
+        }
+
         // --- Tab-level switching (5 terminals) ---
 
         if lower.contains("iterm") {
@@ -596,8 +606,9 @@ struct TerminalActivator {
     }
 
     /// Find a CLI binary in common paths (Homebrew Intel + Apple Silicon, system)
-    private static func findBinary(_ name: String) -> String? {
-        let paths = [
+    /// Support extraPaths for priority search (e.g. app-bundled binaries like cmux)
+    private static func findBinary(_ name: String, extraPaths: [String] = []) -> String? {
+        let paths = extraPaths + [
             "/opt/homebrew/bin/\(name)",
             "/usr/local/bin/\(name)",
             "/usr/bin/\(name)",
@@ -634,5 +645,35 @@ struct TerminalActivator {
         guard let tmuxEnv = tmuxEnv?.trimmingCharacters(in: .whitespacesAndNewlines),
               !tmuxEnv.isEmpty else { return nil }
         return ["TMUX": tmuxEnv]
+    }
+
+    // MARK: - cmux (CLI: focus-panel cross-workspace surface jump)
+
+    /// Activate cmux and precisely focus on the specified surface.
+    /// Prefers surface UUID (CMUX_SURFACE_ID); optionally pass workspace UUID to narrow scope.
+    /// - Parameters:
+    ///   - surfaceId: cmux surface UUID string (from CMUX_SURFACE_ID env var)
+    ///   - workspaceId: cmux workspace UUID string (from CMUX_WORKSPACE_ID env var, optional)
+    private static func activateCmux(surfaceId: String?, workspaceId: String?) {
+        // Reuse activateByBundleId: unified handling of Space switching, hidden state, app not running, etc.
+        activateByBundleId("com.cmuxterm.app")
+
+        // No surface ID — degrade to app-level activation (already done above)
+        guard let sid = surfaceId, !sid.isEmpty else { return }
+
+        // Prefer bundle-embedded binary, then fall back to Homebrew / system paths
+        guard let cmuxBin = findBinary("cmux", extraPaths: [
+            "/Applications/cmux.app/Contents/Resources/bin/cmux",
+            NSHomeDirectory() + "/Applications/cmux.app/Contents/Resources/bin/cmux",
+        ]) else { return }
+
+        // Invoke focus-panel CLI asynchronously to avoid blocking the main thread
+        DispatchQueue.global(qos: .userInitiated).async {
+            var args = ["focus-panel", "--panel", sid]
+            if let wid = workspaceId, !wid.isEmpty {
+                args += ["--workspace", wid]
+            }
+            _ = runProcess(cmuxBin, args: args)
+        }
     }
 }

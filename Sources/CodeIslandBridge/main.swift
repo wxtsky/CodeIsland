@@ -289,6 +289,16 @@ if !tty.isEmpty {
     json["_tty"] = tty
 }
 
+// cmux surface / workspace (env vars injected by cmux)
+// cmux auto-injects CMUX_SURFACE_ID and CMUX_WORKSPACE_ID into each terminal on launch
+// Bridge simply carries them into the payload during env collection; no extra process calls needed
+if let cmuxSurface = env["CMUX_SURFACE_ID"], !cmuxSurface.isEmpty {
+    json["_cmux_surface_id"] = cmuxSurface
+}
+if let cmuxWorkspace = env["CMUX_WORKSPACE_ID"], !cmuxWorkspace.isEmpty {
+    json["_cmux_workspace_id"] = cmuxWorkspace
+}
+
 // Source tag (e.g. "codex" when called via --source codex)
 if let source = sourceTag {
     json["_source"] = source
