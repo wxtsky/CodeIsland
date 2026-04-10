@@ -1,10 +1,9 @@
-import SwiftUI
-import CoreServices
-import os.log
-import SQLite3
 import CodeIslandCore
+import CoreServices
+import SQLite3
+import SwiftUI
 
-private let log = Logger(subsystem: "com.codeisland", category: "AppState")
+private let log = CodeIslandLogger(subsystem: "com.codeisland", category: "AppState")
 
 struct ProcessIdentity: Equatable {
     let pid: pid_t
@@ -673,6 +672,9 @@ final class AppState {
         }
 
         let sessionId = event.sessionId ?? "default"
+        log.debug(
+            "\(HookLogMessage.hookEventReceived(sessionId: sessionId, eventName: event.eventName, payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+        )
 
         // Skip Codex APP internal sessions (title generation, etc.) — they have no transcript
         if (event.rawJSON["_source"] as? String) == "codex"
@@ -776,6 +778,9 @@ final class AppState {
 
     func handlePermissionRequest(_ event: HookEvent, continuation: CheckedContinuation<Data, Never>) {
         let sessionId = event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.permissionRequest("received", sessionId: sessionId, toolName: event.toolName ?? "unknown", payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+        )
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
@@ -793,6 +798,9 @@ final class AppState {
 
         let request = PermissionRequest(event: event, continuation: continuation)
         permissionQueue.append(request)
+        log.info(
+            "PermissionRequest queued sid=\(sessionId) queue=\(self.permissionQueue.count)"
+        )
 
         // Show UI only if this is the first (or only) queued item
         if permissionQueue.count == 1 {
@@ -830,6 +838,9 @@ final class AppState {
         }
         pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.permissionRequestResolved(sessionId: sessionId, decision: always ? "allow_always" : "allow", data: CodeIslandLog.serializedJSONString(from: responseData)))"
+        )
         sessions[sessionId]?.status = .running
 
         showNextPending()
@@ -840,8 +851,12 @@ final class AppState {
         guard !permissionQueue.isEmpty else { return }
         let pending = permissionQueue.removeFirst()
         let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
-        pending.continuation.resume(returning: Data(response.utf8))
+        let responseData = Data(response.utf8)
+        pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.permissionRequestResolved(sessionId: sessionId, decision: "deny", data: CodeIslandLog.serializedJSONString(from: responseData)))"
+        )
         sessions[sessionId]?.status = .idle
         sessions[sessionId]?.currentTool = nil
         sessions[sessionId]?.toolDescription = nil
@@ -856,6 +871,9 @@ final class AppState {
 
     func handleQuestion(_ event: HookEvent, continuation: CheckedContinuation<Data, Never>) {
         let sessionId = event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.questionNotification("received", sessionId: sessionId, payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+        )
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
@@ -873,6 +891,9 @@ final class AppState {
 
         let request = QuestionRequest(event: event, question: question, continuation: continuation)
         questionQueue.append(request)
+        log.info(
+            "Question queued sid=\(sessionId) queue=\(self.questionQueue.count) from=notification"
+        )
 
         if questionQueue.count == 1 {
             activeSessionId = sessionId
@@ -886,25 +907,55 @@ final class AppState {
 
     func handleAskUserQuestion(_ event: HookEvent, continuation: CheckedContinuation<Data, Never>) {
         let sessionId = event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.askUserQuestion("received", sessionId: sessionId, payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+        )
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)
 
-        let payload: QuestionPayload
-        if let questions = event.toolInput?["questions"] as? [[String: Any]],
-           let first = questions.first {
-            let questionText = first["question"] as? String ?? "Question"
-            let header = first["header"] as? String
-            var optionLabels: [String]?
-            var optionDescs: [String]?
-            if let opts = first["options"] as? [[String: Any]] {
-                optionLabels = opts.compactMap { $0["label"] as? String }
-                optionDescs = opts.compactMap { $0["description"] as? String }
+        var askItems: [AskUserQuestionItem] = []
+        if let questions = event.toolInput?["questions"] as? [[String: Any]] {
+            var usedAnswerKeys = Set<String>()
+            askItems = questions.enumerated().compactMap { index, item in
+                let questionText = item["question"] as? String ?? "Question"
+                let header = item["header"] as? String
+                var optionLabels: [String]?
+                var optionDescs: [String]?
+                if let opts = item["options"] as? [[String: Any]] {
+                    optionLabels = opts.compactMap { $0["label"] as? String }
+                    optionDescs = opts.compactMap { $0["description"] as? String }
+                }
+                if optionLabels?.isEmpty == true {
+                    optionLabels = nil
+                }
+                if optionDescs?.isEmpty == true {
+                    optionDescs = nil
+                }
+                let payload = QuestionPayload(
+                    question: questionText,
+                    options: optionLabels,
+                    descriptions: optionDescs,
+                    header: header
+                )
+                let trimmedHeader = header?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let baseKey = (trimmedHeader?.isEmpty == false ? trimmedHeader : nil) ?? "answer_\(index + 1)"
+                var answerKey = baseKey
+                if usedAnswerKeys.contains(answerKey) {
+                    var suffix = 2
+                    while usedAnswerKeys.contains("\(baseKey)_\(suffix)") {
+                        suffix += 1
+                    }
+                    answerKey = "\(baseKey)_\(suffix)"
+                }
+                usedAnswerKeys.insert(answerKey)
+                return AskUserQuestionItem(payload: payload, answerKey: answerKey)
             }
-            payload = QuestionPayload(question: questionText, options: optionLabels, descriptions: optionDescs, header: header)
-        } else {
+        }
+
+        if askItems.isEmpty {
             let questionText = event.toolInput?["question"] as? String ?? "Question"
             var options: [String]?
             if let stringOpts = event.toolInput?["options"] as? [String] {
@@ -912,7 +963,29 @@ final class AppState {
             } else if let dictOpts = event.toolInput?["options"] as? [[String: Any]] {
                 options = dictOpts.compactMap { $0["label"] as? String }
             }
-            payload = QuestionPayload(question: questionText, options: options)
+            if !questionText.isEmpty {
+                let payload = QuestionPayload(question: questionText, options: options)
+                askItems = [AskUserQuestionItem(payload: payload, answerKey: "answer")]
+            }
+        }
+
+        guard !askItems.isEmpty else {
+            let obj: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "PermissionRequest",
+                    "decision": [
+                        "behavior": "allow",
+                        "updatedInput": [
+                            "answers": [:]
+                        ],
+                    ] as [String: Any],
+                ] as [String: Any]
+            ]
+            let responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+            continuation.resume(returning: responseData)
+            sessions[sessionId]?.status = .processing
+            refreshDerivedState()
+            return
         }
 
         drainPermissions(forSession: sessionId)
@@ -921,8 +994,18 @@ final class AppState {
         sessions[sessionId]?.status = .waitingQuestion
         sessions[sessionId]?.lastActivity = Date()
 
-        let request = QuestionRequest(event: event, question: payload, continuation: continuation, isFromPermission: true)
+        let askState = AskUserQuestionState(items: askItems, answers: [:])
+        let request = QuestionRequest(
+            event: event,
+            question: askItems[0].payload,
+            continuation: continuation,
+            isFromPermission: true,
+            askUserQuestionState: askState
+        )
         questionQueue.append(request)
+        log.info(
+            "Question queued sid=\(sessionId) queue=\(self.questionQueue.count) from=permission"
+        )
 
         if questionQueue.count == 1 {
             activeSessionId = sessionId
@@ -936,6 +1019,12 @@ final class AppState {
 
     func answerQuestion(_ answer: String) {
         guard !questionQueue.isEmpty else { return }
+
+        // AskUserQuestion now uses batch selection + explicit confirm, so direct answer is ignored.
+        if questionQueue[0].isFromPermission, questionQueue[0].askUserQuestionState != nil {
+            return
+        }
+
         let pending = questionQueue.removeFirst()
         let responseData: Data
         if pending.isFromPermission {
@@ -963,6 +1052,60 @@ final class AppState {
         }
         pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.questionResolved(sessionId: sessionId, action: "answer", data: CodeIslandLog.serializedJSONString(from: responseData)))"
+        )
+        sessions[sessionId]?.status = .processing
+
+        showNextPending()
+        refreshDerivedState()
+    }
+
+    var canConfirmAskUserQuestion: Bool {
+        guard let pending = questionQueue.first, pending.isFromPermission,
+            let askState = pending.askUserQuestionState
+        else { return false }
+        return askState.canConfirm
+    }
+
+    func selectAskUserQuestionOption(questionIndex: Int, option: String) {
+        guard !questionQueue.isEmpty else { return }
+        guard questionQueue[0].isFromPermission, var askState = questionQueue[0].askUserQuestionState else {
+            return
+        }
+        askState.select(questionIndex: questionIndex, option: option)
+        questionQueue[0].askUserQuestionState = askState
+
+        let sessionId = questionQueue[0].event.sessionId ?? "default"
+        sessions[sessionId]?.status = .waitingQuestion
+        sessions[sessionId]?.lastActivity = Date()
+        refreshDerivedState()
+    }
+
+    func confirmAskUserQuestionAnswers() {
+        guard !questionQueue.isEmpty else { return }
+        guard questionQueue[0].isFromPermission, let askState = questionQueue[0].askUserQuestionState,
+            askState.canConfirm
+        else { return }
+
+        let pending = questionQueue.removeFirst()
+        let sessionId = pending.event.sessionId ?? "default"
+        let obj: [String: Any] = [
+            "hookSpecificOutput": [
+                "hookEventName": "PermissionRequest",
+                "decision": [
+                    "behavior": "allow",
+                    "updatedInput": [
+                        "answers": askState.answers
+                    ],
+                ] as [String: Any],
+            ] as [String: Any]
+        ]
+        let responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        pending.continuation.resume(returning: responseData)
+        log.info(
+            "\(HookLogMessage.questionResolved(sessionId: sessionId, action: "confirm", data: CodeIslandLog.serializedJSONString(from: responseData)))"
+        )
         sessions[sessionId]?.status = .processing
 
         showNextPending()
@@ -980,6 +1123,9 @@ final class AppState {
         }
         pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
+        log.info(
+            "\(HookLogMessage.questionResolved(sessionId: sessionId, action: "skip", data: CodeIslandLog.serializedJSONString(from: responseData)))"
+        )
         sessions[sessionId]?.status = .processing
 
         showNextPending()
@@ -1001,6 +1147,7 @@ final class AppState {
         let hadPending = questionQueue.contains(where: { $0.event.sessionId == sessionId })
             || permissionQueue.contains(where: { $0.event.sessionId == sessionId })
         guard hadPending else { return }
+        log.info("Peer disconnect drained pending sid=\(sessionId)")
 
         drainQuestions(forSession: sessionId)
         drainPermissions(forSession: sessionId)
@@ -1014,11 +1161,19 @@ final class AppState {
         refreshDerivedState()
     }
 
-    /// Drain all queued questions for a specific session, resuming their continuations with empty
+    /// Drain all queued questions for a specific session.
+    /// AskUserQuestion-derived requests are denied; notification questions return empty.
     private func drainQuestions(forSession sessionId: String) {
         questionQueue.removeAll { item in
             guard item.event.sessionId == sessionId else { return false }
-            item.continuation.resume(returning: Data("{}".utf8))
+            if item.isFromPermission {
+                let denyData = Data(
+                    #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
+                        .utf8)
+                item.continuation.resume(returning: denyData)
+            } else {
+                item.continuation.resume(returning: Data("{}".utf8))
+            }
             return true
         }
     }

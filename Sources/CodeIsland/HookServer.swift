@@ -1,9 +1,8 @@
+import CodeIslandCore
 import Foundation
 import Network
-import os.log
-import CodeIslandCore
 
-private let log = Logger(subsystem: "com.codeisland", category: "HookServer")
+private let log = CodeIslandLogger(subsystem: "com.codeisland", category: "HookServer")
 
 @MainActor
 class HookServer {
@@ -104,29 +103,64 @@ class HookServer {
     ]
 
     private func processRequest(data: Data, connection: NWConnection) {
+        CodeIslandLog.appendDebugEvent([
+            "ts": CodeIslandLog.nowISO8601(),
+            "kind": "hook_request_raw",
+            "socketPath": HookServer.socketPath,
+            "payload": CodeIslandLog.jsonValue(from: data),
+        ])
+
         guard let event = HookEvent(from: data) else {
+            log.error(
+                "\(HookLogMessage.parseFailed(raw: CodeIslandLog.serializedJSONString(from: data)))"
+            )
             sendResponse(connection: connection, data: Data("{\"error\":\"parse_failed\"}".utf8))
             return
         }
 
+        CodeIslandLog.appendDebugEvent([
+            "ts": CodeIslandLog.nowISO8601(),
+            "kind": "hook_request_parsed",
+            "sessionId": event.sessionId ?? "default",
+            "eventName": event.eventName,
+            "toolName": event.toolName ?? "",
+            "payload": event.rawJSON,
+        ])
+
         if let rawSource = event.rawJSON["_source"] as? String,
-           SessionSnapshot.normalizedSupportedSource(rawSource) == nil {
+            SessionSnapshot.normalizedSupportedSource(rawSource) == nil
+        {
+            log.debug(
+                "\(HookLogMessage.unsupportedSourceDropped(payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+            )
             sendResponse(connection: connection, data: Data("{}".utf8))
             return
         }
 
         if event.eventName == "PermissionRequest" {
             let sessionId = event.sessionId ?? "default"
+            log.info(
+                "\(HookLogMessage.permissionRequest("routed", sessionId: sessionId, toolName: event.toolName ?? "unknown", payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+            )
 
             // Auto-approve safe internal tools without showing UI
             if let toolName = event.toolName, Self.autoApproveTools.contains(toolName) {
+                log.info(
+                    "PermissionRequest auto-approved sid=\(sessionId) tool=\(toolName)"
+                )
                 let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
+                log.info(
+                    "\(HookLogMessage.permissionRequestAutoApproveResponse(sessionId: sessionId, data: CodeIslandLog.serializedJSONString(from: Data(response.utf8))))"
+                )
                 sendResponse(connection: connection, data: Data(response.utf8))
                 return
             }
 
             // AskUserQuestion is a question, not a permission — route to QuestionBar
             if event.toolName == "AskUserQuestion" {
+                log.info(
+                    "\(HookLogMessage.askUserQuestion("routed", sessionId: sessionId, payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+                )
                 monitorPeerDisconnect(connection: connection, sessionId: sessionId)
                 Task {
                     let responseBody = await withCheckedContinuation { continuation in
@@ -146,6 +180,9 @@ class HookServer {
         } else if EventNormalizer.normalize(event.eventName) == "Notification",
                   QuestionPayload.from(event: event) != nil {
             let questionSessionId = event.sessionId ?? "default"
+            log.info(
+                "\(HookLogMessage.questionNotification("routed", sessionId: questionSessionId, payload: CodeIslandLog.serializedJSONString(fromJSONObject: event.rawJSON)))"
+            )
             monitorPeerDisconnect(connection: connection, sessionId: questionSessionId)
             Task {
                 let responseBody = await withCheckedContinuation { continuation in
@@ -199,6 +236,12 @@ class HookServer {
     }
 
     private func sendResponse(connection: NWConnection, data: Data) {
+        log.info("\(HookLogMessage.hookResponse(data: CodeIslandLog.serializedJSONString(from: data)))")
+        CodeIslandLog.appendDebugEvent([
+            "ts": CodeIslandLog.nowISO8601(),
+            "kind": "hook_response",
+            "payload": CodeIslandLog.jsonValue(from: data),
+        ])
         // Mark as responded BEFORE cancel() so the disconnect monitor ignores our own teardown.
         if let context = connectionContexts[ObjectIdentifier(connection)] {
             context.responded = true

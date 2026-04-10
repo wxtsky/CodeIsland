@@ -117,11 +117,18 @@ struct NotchPanelView: View {
                                 question: q.question.question,
                                 options: q.question.options,
                                 descriptions: q.question.descriptions,
+                                askItems: q.askUserQuestionState?.items,
+                                selectedAnswers: q.askUserQuestionState?.answers ?? [:],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
                                 queuePosition: 1,
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0) },
+                                onSelect: { index, option in
+                                    appState.selectAskUserQuestionOption(questionIndex: index, option: option)
+                                },
+                                onConfirm: { appState.confirmAskUserQuestionAnswers() },
+                                confirmEnabled: appState.canConfirmAskUserQuestion,
                                 onSkip: { appState.skipQuestion() }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
@@ -130,11 +137,16 @@ struct NotchPanelView: View {
                                 question: preview.question,
                                 options: preview.options,
                                 descriptions: preview.descriptions,
+                                askItems: nil,
+                                selectedAnswers: [:],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
                                 queuePosition: 1,
                                 queueTotal: 1,
                                 onAnswer: { _ in },
+                                onSelect: { _, _ in },
+                                onConfirm: { },
+                                confirmEnabled: false,
                                 onSkip: { }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
@@ -850,11 +862,16 @@ private struct QuestionBar: View {
     let question: String
     let options: [String]?
     let descriptions: [String]?
+    let askItems: [AskUserQuestionItem]?
+    let selectedAnswers: [String: String]
     let sessionSource: String?
     let sessionContext: String?
     let queuePosition: Int
     let queueTotal: Int
     let onAnswer: (String) -> Void
+    let onSelect: (Int, String) -> Void
+    let onConfirm: () -> Void
+    let confirmEnabled: Bool
     let onSkip: () -> Void
 
     @State private var textInput = ""
@@ -908,8 +925,63 @@ private struct QuestionBar: View {
             }
             .padding(.horizontal, 14)
 
-            // Options
-            if let options = options, !options.isEmpty {
+            if let askItems, !askItems.isEmpty {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(Array(askItems.enumerated()), id: \.offset) { qIndex, item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.payload.question)
+                                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .lineLimit(3)
+
+                                if let itemOptions = item.payload.options, !itemOptions.isEmpty {
+                                    ForEach(Array(itemOptions.enumerated()), id: \.offset) { idx, option in
+                                        let desc = item.payload.descriptions?.indices.contains(idx) == true
+                                            ? item.payload.descriptions?[idx] : nil
+                                        OptionRow(
+                                            index: idx + 1,
+                                            label: option,
+                                            description: desc,
+                                            isSelected: selectedAnswers[item.answerKey] == option,
+                                            accent: cyan
+                                        ) {
+                                            onSelect(qIndex, option)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .frame(maxHeight: 230)
+
+                HStack(spacing: 6) {
+                    PixelButton(
+                        label: L10n.shared["skip"],
+                        fg: .white.opacity(0.6),
+                        bg: Color.white.opacity(0.06),
+                        border: Color.white.opacity(0.12),
+                        action: onSkip
+                    )
+                    PixelButton(
+                        label: L10n.shared["confirm"],
+                        fg: confirmEnabled ? .white.opacity(0.95) : .white.opacity(0.45),
+                        bg: confirmEnabled
+                            ? Color(red: 0.16, green: 0.38, blue: 0.18)
+                            : Color.white.opacity(0.04),
+                        border: confirmEnabled
+                            ? Color(red: 0.28, green: 0.62, blue: 0.32)
+                            : Color.white.opacity(0.12),
+                        action: {
+                            if confirmEnabled { onConfirm() }
+                        }
+                    )
+                }
+                .padding(.horizontal, 14)
+            } else if let options = options, !options.isEmpty {
                 VStack(spacing: 4) {
                     ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
                         let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
@@ -918,6 +990,17 @@ private struct QuestionBar: View {
                             onAnswer(option)
                         }
                     }
+                }
+                .padding(.horizontal, 14)
+
+                HStack(spacing: 6) {
+                    PixelButton(
+                        label: L10n.shared["skip"],
+                        fg: .white.opacity(0.6),
+                        bg: Color.white.opacity(0.06),
+                        border: Color.white.opacity(0.12),
+                        action: onSkip
+                    )
                 }
                 .padding(.horizontal, 14)
             } else {
@@ -944,18 +1027,15 @@ private struct QuestionBar: View {
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
                 )
                 .padding(.horizontal, 14)
-            }
 
-            // Skip button
-            HStack(spacing: 6) {
-                PixelButton(
-                    label: L10n.shared["skip"],
-                    fg: .white.opacity(0.6),
-                    bg: Color.white.opacity(0.06),
-                    border: Color.white.opacity(0.12),
-                    action: onSkip
-                )
-                if options == nil || options?.isEmpty == true {
+                HStack(spacing: 6) {
+                    PixelButton(
+                        label: L10n.shared["skip"],
+                        fg: .white.opacity(0.6),
+                        bg: Color.white.opacity(0.06),
+                        border: Color.white.opacity(0.12),
+                        action: onSkip
+                    )
                     PixelButton(
                         label: L10n.shared["submit"],
                         fg: .white.opacity(0.95),
@@ -964,8 +1044,8 @@ private struct QuestionBar: View {
                         action: { if !textInput.isEmpty { onAnswer(textInput) } }
                     )
                 }
+                .padding(.horizontal, 14)
             }
-            .padding(.horizontal, 14)
         }
         .padding(.vertical, 10)
         .onAppear { isFocused = true }
@@ -987,9 +1067,9 @@ private struct OptionRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 // Selector arrow
-                Text(hovering ? "▸" : " ")
+                Text(isSelected ? "✓" : (hovering ? "▸" : " "))
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(accent)
+                    .foregroundStyle(isSelected ? accent : accent)
                     .frame(width: 10)
                 // Number
                 Text("\(index).")
@@ -1013,11 +1093,18 @@ private struct OptionRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                    .fill(
+                        isSelected
+                            ? accent.opacity(0.18)
+                            : (hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(hovering ? accent.opacity(0.4) : Color.clear, lineWidth: 1)
+                    .strokeBorder(
+                        isSelected ? accent.opacity(0.8) : (hovering ? accent.opacity(0.4) : Color.clear),
+                        lineWidth: 1
+                    )
             )
         }
         .buttonStyle(.plain)
