@@ -81,6 +81,10 @@ cd CodeIsland
 # Development (debug build + launch)
 swift build && open .build/debug/CodeIsland.app
 
+# Development (hot-restart watch mode)
+# Prerequisite: brew install fswatch
+scripts/dev-hot-restart.sh
+
 # Release (universal binary: Apple Silicon + Intel)
 ./build.sh
 open .build/release/CodeIsland.app

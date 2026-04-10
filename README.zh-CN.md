@@ -81,6 +81,10 @@ cd CodeIsland
 # 开发模式（debug 构建 + 启动）
 swift build && open .build/debug/CodeIsland.app
 
+# 开发模式（热重启监听）
+# 前置依赖：brew install fswatch
+scripts/dev-hot-restart.sh
+
 # 发布模式（通用二进制：Apple Silicon + Intel）
 ./build.sh
 open .build/release/CodeIsland.app
