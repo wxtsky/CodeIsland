@@ -49,6 +49,13 @@ final class AppState {
         if case .completionCard = surface { return true }
         return false
     }
+    /// True when an interactive card (approval or question) is visible — completions must queue.
+    private var isShowingInteractive: Bool {
+        switch surface {
+        case .approvalCard, .questionCard: return true
+        default: return false
+        }
+    }
     private var modelReadRetryAt: [String: Date] = [:]
 
     var rotatingSessionId: String?
@@ -526,8 +533,8 @@ final class AppState {
         // Don't queue duplicates
         if completionQueue.contains(sessionId) || justCompletedSessionId == sessionId { return }
 
-        if isShowingCompletion {
-            // Already showing one — queue this for later
+        if isShowingCompletion || isShowingInteractive {
+            // Already showing a completion or interactive card — queue this for later
             completionQueue.append(sessionId)
         } else {
             // Show immediately
@@ -592,15 +599,8 @@ final class AppState {
     }
 
     private func showNextCompletionOrCollapse() {
-        while let next = completionQueue.first {
-            completionQueue.removeFirst()
-            if sessions[next] != nil {
-                withAnimation(NotchAnimation.pop) {
-                    showCompletion(next)
-                }
-                return
-            }
-        }
+        // showNextPending handles: interactive items first, then completionQueue, then collapse
+        if showNextPending() { return }
         withAnimation(NotchAnimation.close) {
             surface = .collapsed
         }
@@ -1036,6 +1036,19 @@ final class AppState {
             activeSessionId = sid
             surface = .questionCard(sessionId: sid)
             return true
+        } else if !completionQueue.isEmpty {
+            // No interactive items — drain queued completions
+            while let next = completionQueue.first {
+                completionQueue.removeFirst()
+                if sessions[next] != nil {
+                    withAnimation(NotchAnimation.pop) { doShowCompletion(next) }
+                    return true
+                }
+            }
+            // All queued completions were stale
+            if case .approvalCard = surface { surface = .collapsed }
+            else if case .questionCard = surface { surface = .collapsed }
+            return false
         } else if case .approvalCard = surface {
             surface = .collapsed
         } else if case .questionCard = surface {
