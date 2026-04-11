@@ -205,6 +205,8 @@ final class L10n: ObservableObject {
         "type_answer": "Type your answer...",
         "skip": "SKIP",
         "submit": "SUBMIT",
+        "back": "BACK",
+        "confirm": "CONFIRM",
         "open_path": "Open",
         "copy_session_id": "Copy session ID",
 
@@ -394,6 +396,8 @@ final class L10n: ObservableObject {
         "type_answer": "输入回答…",
         "skip": "跳过",
         "submit": "提交",
+        "back": "返回",
+        "confirm": "确认",
         "open_path": "打开",
         "copy_session_id": "复制会话 ID",
 

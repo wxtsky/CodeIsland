@@ -135,6 +135,22 @@ public struct ChatMessage: Identifiable {
     }
 }
 
+public struct AskUserQuestionItem {
+    public let question: String
+    public let header: String?
+    public let options: [String]?
+    public let descriptions: [String]?
+    public let multiSelect: Bool
+
+    public init(question: String, header: String?, options: [String]?, descriptions: [String]?, multiSelect: Bool) {
+        self.question = question
+        self.header = header
+        self.options = options
+        self.descriptions = descriptions
+        self.multiSelect = multiSelect
+    }
+}
+
 public struct QuestionPayload {
     public let question: String
     public let options: [String]?

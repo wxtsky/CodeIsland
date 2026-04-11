@@ -893,17 +893,26 @@ final class AppState {
         tryMonitorSession(sessionId)
 
         let payload: QuestionPayload
-        if let questions = event.toolInput?["questions"] as? [[String: Any]],
-           let first = questions.first {
-            let questionText = first["question"] as? String ?? "Question"
-            let header = first["header"] as? String
-            var optionLabels: [String]?
-            var optionDescs: [String]?
-            if let opts = first["options"] as? [[String: Any]] {
-                optionLabels = opts.compactMap { $0["label"] as? String }
-                optionDescs = opts.compactMap { $0["description"] as? String }
+        var allItems: [AskUserQuestionItem] = []
+        if let questions = event.toolInput?["questions"] as? [[String: Any]] {
+            for q in questions {
+                let qText = q["question"] as? String ?? "Question"
+                let qHeader = q["header"] as? String
+                let qMultiSelect = q["multiSelect"] as? Bool ?? false
+                var qLabels: [String]?
+                var qDescs: [String]?
+                if let opts = q["options"] as? [[String: Any]] {
+                    qLabels = opts.compactMap { $0["label"] as? String }
+                    qDescs = opts.compactMap { $0["description"] as? String }
+                }
+                allItems.append(AskUserQuestionItem(
+                    question: qText, header: qHeader,
+                    options: qLabels, descriptions: qDescs,
+                    multiSelect: qMultiSelect
+                ))
             }
-            payload = QuestionPayload(question: questionText, options: optionLabels, descriptions: optionDescs, header: header)
+            let first = allItems.first!
+            payload = QuestionPayload(question: first.question, options: first.options, descriptions: first.descriptions, header: first.header)
         } else {
             let questionText = event.toolInput?["question"] as? String ?? "Question"
             var options: [String]?
@@ -921,7 +930,7 @@ final class AppState {
         sessions[sessionId]?.status = .waitingQuestion
         sessions[sessionId]?.lastActivity = Date()
 
-        let request = QuestionRequest(event: event, question: payload, continuation: continuation, isFromPermission: true)
+        let request = QuestionRequest(event: event, question: payload, continuation: continuation, isFromPermission: true, allQuestions: allItems)
         questionQueue.append(request)
 
         if questionQueue.count == 1 {
@@ -935,18 +944,32 @@ final class AppState {
     }
 
     func answerQuestion(_ answer: String) {
+        answerQuestionMulti([(question: "", answer: answer)])
+    }
+
+    func answerQuestionMulti(_ answers: [(question: String, answer: String)]) {
         guard !questionQueue.isEmpty else { return }
         let pending = questionQueue.removeFirst()
         let responseData: Data
         if pending.isFromPermission {
-            let answerKey = pending.question.header ?? "answer"
+            // Build answers dict: {questionText: answer} for each question
+            var answersDict: [String: String] = [:]
+            if !pending.allQuestions.isEmpty {
+                for a in answers {
+                    answersDict[a.question] = a.answer
+                }
+            } else {
+                let answerKey = pending.question.question
+                let answerVal = answers.first?.answer ?? ""
+                answersDict[answerKey] = answerVal
+            }
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "PermissionRequest",
                     "decision": [
                         "behavior": "allow",
                         "updatedInput": [
-                            "answers": [answerKey: answer]
+                            "answers": answersDict
                         ]
                     ] as [String: Any]
                 ] as [String: Any]
@@ -956,7 +979,7 @@ final class AppState {
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "Notification",
-                    "answer": answer
+                    "answer": answers.first?.answer ?? ""
                 ] as [String: Any]
             ]
             responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
