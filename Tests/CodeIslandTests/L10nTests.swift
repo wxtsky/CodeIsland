@@ -18,6 +18,22 @@ final class L10nTests: XCTestCase {
         XCTAssertTrue(missingKeys.isEmpty, "Turkish is missing keys: \(missingKeys)")
     }
 
+    func testKoreanTranslationsContainAllKeysPresentInEnglish() {
+        let enKeys = Set(L10n.strings["en"]?.keys ?? Dictionary<String, String>().keys)
+        let koKeys = Set(L10n.strings["ko"]?.keys ?? Dictionary<String, String>().keys)
+
+        let missingKeys = enKeys.subtracting(koKeys)
+        XCTAssertTrue(missingKeys.isEmpty, "Korean is missing keys: \(missingKeys)")
+    }
+
+    func testJapaneseTranslationsContainAllKeysPresentInEnglish() {
+        let enKeys = Set(L10n.strings["en"]?.keys ?? Dictionary<String, String>().keys)
+        let jaKeys = Set(L10n.strings["ja"]?.keys ?? Dictionary<String, String>().keys)
+
+        let missingKeys = enKeys.subtracting(jaKeys)
+        XCTAssertTrue(missingKeys.isEmpty, "Japanese is missing keys: \(missingKeys)")
+    }
+
     func testTurkishTranslationReturnsCorrectValue() {
         L10n.shared.language = "tr"
 
@@ -27,6 +43,28 @@ final class L10nTests: XCTestCase {
         XCTAssertEqual(L10n.shared["language"], "Dil")
         XCTAssertEqual(L10n.shared["settings_title"], "CodeIsland Ayarları")
         XCTAssertEqual(L10n.shared["quit"], "Çık")
+    }
+
+    func testKoreanTranslationReturnsCorrectValue() {
+        L10n.shared.language = "ko"
+
+        XCTAssertEqual(L10n.shared["general"], "일반")
+        XCTAssertEqual(L10n.shared["behavior"], "동작")
+        XCTAssertEqual(L10n.shared["appearance"], "외관")
+        XCTAssertEqual(L10n.shared["language"], "언어")
+        XCTAssertEqual(L10n.shared["settings_title"], "CodeIsland 설정")
+        XCTAssertEqual(L10n.shared["quit"], "종료")
+    }
+
+    func testJapaneseTranslationReturnsCorrectValue() {
+        L10n.shared.language = "ja"
+
+        XCTAssertEqual(L10n.shared["general"], "一般")
+        XCTAssertEqual(L10n.shared["behavior"], "動作")
+        XCTAssertEqual(L10n.shared["appearance"], "外観")
+        XCTAssertEqual(L10n.shared["language"], "言語")
+        XCTAssertEqual(L10n.shared["settings_title"], "CodeIsland 設定")
+        XCTAssertEqual(L10n.shared["quit"], "終了")
     }
 
     func testEffectiveLanguageReturnsTurkishWhenSystemLocaleIsTurkish() {
@@ -44,7 +82,7 @@ final class L10nTests: XCTestCase {
     }
 
     func testAllLanguageOptionsAvailableInSettings() {
-        let availableLanguages = ["system", "en", "zh", "tr"]
+        let availableLanguages = ["system", "en", "zh", "ja", "ko", "tr"]
 
         for lang in availableLanguages {
             L10n.shared.language = lang
@@ -63,5 +101,29 @@ final class L10nTests: XCTestCase {
         let updateAvailable = L10n.shared["update_available_body"]
         let formattedUpdate = String(format: updateAvailable, "1.0.19", "1.0.18")
         XCTAssertEqual(formattedUpdate, "CodeIsland 1.0.19 mevcut (şimdiki: 1.0.18). İndirmek ister misiniz?")
+    }
+
+    func testKoreanNumericPlaceholdersWork() {
+        L10n.shared.language = "ko"
+
+        let customSoundSet = L10n.shared["custom_sound_set"]
+        let formatted = String(format: customSoundSet, "mysound.wav")
+        XCTAssertEqual(formatted, "사용자 지정: mysound.wav")
+
+        let updateAvailable = L10n.shared["update_available_body"]
+        let formattedUpdate = String(format: updateAvailable, "1.0.19", "1.0.18")
+        XCTAssertEqual(formattedUpdate, "CodeIsland 1.0.19 버전을 사용할 수 있습니다(현재: 1.0.18). 다운로드하시겠습니까?")
+    }
+
+    func testJapaneseNumericPlaceholdersWork() {
+        L10n.shared.language = "ja"
+
+        let customSoundSet = L10n.shared["custom_sound_set"]
+        let formatted = String(format: customSoundSet, "mysound.wav")
+        XCTAssertEqual(formatted, "カスタム: mysound.wav")
+
+        let updateAvailable = L10n.shared["update_available_body"]
+        let formattedUpdate = String(format: updateAvailable, "1.0.19", "1.0.18")
+        XCTAssertEqual(formattedUpdate, "CodeIsland 1.0.19 が利用可能です (現在: 1.0.18)。ダウンロードしますか？")
     }
 }

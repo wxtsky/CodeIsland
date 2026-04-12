@@ -18,7 +18,7 @@ enum NotchHeightMode: String, CaseIterable {
 
 enum SettingsKey {
     // Language
-    static let appLanguage = "appLanguage"                 // "system", "en", "zh", "tr"
+    static let appLanguage = "appLanguage"                 // "system", "en", "zh", "ja", "ko", "tr"
 
     // General - System
     static let launchAtLogin = "launchAtLogin"
