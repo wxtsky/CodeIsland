@@ -31,7 +31,7 @@ enum RemoteInstaller {
             return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
         }
 
-        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex remote hooks installed" : configure.stdoutSummary
+        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex/CodeBuddy remote hooks installed" : configure.stdoutSummary
         return RemoteInstallResult(ok: true, message: summary)
     }
 
@@ -184,7 +184,36 @@ def install_codex():
     ensure_toml_codex_hooks(codex_root / "config.toml")
     return "Codex ok"
 
-parts = [install_claude(), install_codex()]
+def install_codebuddy():
+    codebuddy_root = home / ".codebuddy"
+    if not codebuddy_root.exists() and shutil.which("codebuddy") is None:
+        return "CodeBuddy skipped"
+
+    settings_path = codebuddy_root / "settings.json"
+    data = ensure_json(settings_path)
+    hooks = data.get("hooks") or {}
+    remove_our_hooks(hooks)
+
+    cmd = command_for("codebuddy")
+    without_matcher = [{"hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_matcher = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_long_timeout = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 86400}]}]
+    precompact = [
+        {"matcher": "auto", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+        {"matcher": "manual", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+    ]
+    hooks["UserPromptSubmit"] = without_matcher
+    hooks["PermissionRequest"] = with_long_timeout
+    hooks["Notification"] = with_matcher
+    hooks["Stop"] = without_matcher
+    hooks["SessionStart"] = without_matcher
+    hooks["SessionEnd"] = without_matcher
+    hooks["PreCompact"] = precompact
+    data["hooks"] = hooks
+    write_json(settings_path, data)
+    return "CodeBuddy ok"
+
+parts = [install_claude(), install_codex(), install_codebuddy()]
 print(" · ".join(parts))
 """
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 30)

@@ -22,8 +22,16 @@ def _claude_jsonl_path(session_id, cwd):
     return path if os.path.exists(path) else None
 
 
-def _scan_claude_jsonl(session_id, cwd):
-    path = _claude_jsonl_path(session_id, cwd)
+def _codebuddy_jsonl_path(session_id, cwd):
+    if not session_id or not cwd:
+        return None
+    home = os.path.expanduser("~")
+    project_dir = cwd.replace("/", "-").replace(".", "-")
+    path = os.path.join(home, ".codebuddy", "projects", project_dir, f"{session_id}.jsonl")
+    return path if os.path.exists(path) else None
+
+
+def _scan_session_jsonl(path):
     if not path:
         return {}
 
@@ -65,6 +73,14 @@ def _scan_claude_jsonl(session_id, cwd):
         "last_user_message": last_user,
         "last_assistant_message": last_assistant,
     }
+
+
+def _scan_claude_jsonl(session_id, cwd):
+    return _scan_session_jsonl(_claude_jsonl_path(session_id, cwd))
+
+
+def _scan_codebuddy_jsonl(session_id, cwd):
+    return _scan_session_jsonl(_codebuddy_jsonl_path(session_id, cwd))
 
 
 def _read_stdin_json():
@@ -148,6 +164,16 @@ def main():
 
     if SOURCE == "claude":
         extras = _scan_claude_jsonl(session_id, cwd)
+        for key, value in extras.items():
+            if value and not payload.get(key):
+                payload[key] = value
+        if event_name == "UserPromptSubmit" and not payload.get("prompt"):
+            prompt = extras.get("last_user_message")
+            if prompt:
+                payload["prompt"] = prompt
+
+    if SOURCE == "codebuddy":
+        extras = _scan_codebuddy_jsonl(session_id, cwd)
         for key, value in extras.items():
             if value and not payload.get(key):
                 payload[key] = value
