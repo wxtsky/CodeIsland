@@ -118,7 +118,7 @@ func nonEmptyString(_ value: Any?) -> String? {
     return trimmed.isEmpty ? nil : trimmed
 }
 
-func connectSocket(_ path: String) -> Int32? {
+func connectSocket(_ path: String, timeoutMs: Int32 = 3000) -> Int32? {
     let sock = socket(AF_UNIX, SOCK_STREAM, 0)
     guard sock >= 0 else { return nil }
 
@@ -150,7 +150,7 @@ func connectSocket(_ path: String) -> Int32? {
     if result != 0 {
         // Wait for connect to complete (or timeout)
         var pfd = pollfd(fd: sock, events: Int16(POLLOUT), revents: 0)
-        let ready = poll(&pfd, 1, 3000)  // 3 seconds
+        let ready = poll(&pfd, 1, timeoutMs)
         if ready <= 0 {
             close(sock)
             return nil
@@ -275,7 +275,7 @@ debugLog("event=\(eventName) normalized=\(normalizedEventName) session=\(session
 
 // Arm deadline for env collection + connect + send (protects all events).
 // For blocking events, this is disarmed right before the long recvAll wait.
-alarm(8)
+alarm(isBlocking ? 8 : 4)
 
 // --- Deep terminal environment collection ---
 // Terminal app identification (only include when present)
@@ -359,16 +359,17 @@ if resolvedTrackedPID != immediateParentPID {
 guard let enriched = try? JSONSerialization.data(withJSONObject: json) else { exit(0) }
 
 // --- Connect to Unix socket ---
-guard let sock = connectSocket(socketPath) else {
+let connectTimeoutMs: Int32 = isBlocking ? 3000 : 1000
+guard let sock = connectSocket(socketPath, timeoutMs: connectTimeoutMs) else {
     debugLog("socket connect failed")
     exit(0)
 }
 
 // Set socket timeouts
-var sendTv = timeval(tv_sec: isBlocking ? 86400 : 3, tv_usec: 0)
+var sendTv = timeval(tv_sec: isBlocking ? 86400 : 1, tv_usec: 0)
 setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &sendTv, socklen_t(MemoryLayout<timeval>.size))
 // Recv timeout: server responds within ms, but allow headroom for main-thread scheduling
-var recvTv = timeval(tv_sec: isBlocking ? 86400 : 3, tv_usec: 0)
+var recvTv = timeval(tv_sec: isBlocking ? 86400 : 1, tv_usec: 0)
 setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &recvTv, socklen_t(MemoryLayout<timeval>.size))
 
 // Send enriched event data

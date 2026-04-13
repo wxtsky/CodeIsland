@@ -149,12 +149,12 @@ struct ConfigInstaller {
             configPath: ".gemini/settings.json", configKey: "hooks",
             format: .nested,
             events: [
-                ("SessionStart", 5000, false),
-                ("SessionEnd", 5000, false),
-                ("BeforeTool", 5000, false),
-                ("AfterTool", 5000, false),
-                ("BeforeAgent", 5000, false),
-                ("AfterAgent", 5000, false),
+                ("SessionStart", 10000, false),
+                ("SessionEnd", 10000, false),
+                ("BeforeTool", 10000, false),
+                ("AfterTool", 10000, false),
+                ("BeforeAgent", 10000, false),
+                ("AfterAgent", 10000, false),
             ]
         ),
         // Cursor
