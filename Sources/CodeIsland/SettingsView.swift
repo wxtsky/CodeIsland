@@ -331,6 +331,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
+    @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
@@ -363,6 +364,12 @@ private struct BehaviorPage: View {
                     desc: l10n["collapse_on_mouse_leave_desc"],
                     isOn: $collapseOnMouseLeave,
                     animation: .collapseMouseLeave
+                )
+                BehaviorToggleRow(
+                    title: l10n["auto_collapse_after_session_jump"],
+                    desc: l10n["auto_collapse_after_session_jump_desc"],
+                    isOn: $autoCollapseAfterSessionJump,
+                    animation: .clickJumpCollapse
                 )
                 BehaviorToggleRow(
                     title: l10n["haptic_on_hover"],
@@ -1310,7 +1317,90 @@ private struct AboutPage: View {
 // MARK: - Behavior Animation Previews
 
 private enum BehaviorAnim {
-    case hideFullscreen, hideNoSession, smartSuppress, collapseMouseLeave, hapticHover
+    case hideFullscreen, hideNoSession, smartSuppress, collapseMouseLeave, clickJumpCollapse, hapticHover
+}
+
+struct ClickJumpCollapsePreviewTimeline {
+    let expand: Double
+    let showClickRing: Bool
+    let ringOpacity: Double
+    let ringRadius: CGFloat
+    let cursorX: CGFloat
+    let cursorY: CGFloat
+    let clickPointY: CGFloat
+    let showSuccessArrow: Bool
+    let successArrowOpacity: Double
+}
+
+func clickJumpCollapsePreviewTimeline(progress: Double) -> ClickJumpCollapsePreviewTimeline {
+    // Wrap to [0,1) so loop seam is identical between end and start.
+    let p = progress >= 1 ? progress.truncatingRemainder(dividingBy: 1) : min(1, max(0, progress))
+
+    let clickPointY: CGFloat = 16 // lowered ~20% vs previous ~8
+
+    // Seam-friendly phases:
+    // [0.00, 0.08): expanded + cursor very fast move in (from offscreen)
+    // [0.08, 0.26): expanded + cursor hover before click
+    // [0.26, 0.32): click ring pulse
+    // [0.32, 0.47): collapse (match mouse-leave collapse speed)
+    // [0.47, 0.62): collapsed hold
+    // [0.62, 0.80): cursor moves fully offscreen
+    // [0.80, 0.93): expand back (match mouse-leave expand speed, after cursor is offscreen)
+    // [0.93, 1.00): fully expanded idle with cursor still offscreen
+    let expand: Double
+    switch p {
+    case ..<0.32:
+        expand = 1.0
+    case ..<0.47:
+        expand = max(0, 1.0 - (p - 0.32) / 0.15)
+    case ..<0.80:
+        expand = 0
+    case ..<0.93:
+        expand = min(1, (p - 0.80) / 0.13)
+    default:
+        expand = 1.0
+    }
+
+    // Cursor path: offscreen -> click point -> offscreen, aligned to mouse-leave move-out timing.
+    let cursorX: CGFloat
+    let cursorY: CGFloat
+    switch p {
+    case ..<0.08:
+        let m = p / 0.08
+        cursorX = CGFloat((1 - m) * 34)
+        cursorY = CGFloat((1 - m) * 28)
+    case ..<0.62:
+        cursorX = 0
+        cursorY = 0
+    case ..<0.80:
+        let m = (p - 0.62) / 0.18
+        cursorX = CGFloat(m * 34)
+        cursorY = CGFloat(m * 28)
+    default:
+        cursorX = 34
+        cursorY = 28
+    }
+
+    let ringWindow = p >= 0.26 && p <= 0.32
+    let ringPhase = ringWindow ? (p - 0.26) / 0.06 : 0
+    let ringOpacity = ringWindow ? sin(ringPhase * .pi) : 0
+    let ringRadius: CGFloat = 4 + CGFloat(ringPhase) * 6
+
+    let arrowWindow = p >= 0.34 && p <= 0.42
+    let arrowPhase = arrowWindow ? (p - 0.34) / 0.08 : 0
+    let arrowOpacity = arrowWindow ? sin(arrowPhase * .pi) : 0
+
+    return ClickJumpCollapsePreviewTimeline(
+        expand: expand,
+        showClickRing: ringWindow,
+        ringOpacity: ringOpacity,
+        ringRadius: ringRadius,
+        cursorX: cursorX,
+        cursorY: cursorY,
+        clickPointY: clickPointY,
+        showSuccessArrow: arrowWindow,
+        successArrowOpacity: arrowOpacity
+    )
 }
 
 private struct BehaviorToggleRow: View {
@@ -1360,6 +1450,7 @@ private struct NotchMiniAnim: View {
         case .hideNoSession:    drawNoSession(c, sz: sz, t: t)
         case .smartSuppress:    drawSuppress(c, sz: sz, t: t)
         case .collapseMouseLeave: drawMouseLeave(c, sz: sz, t: t)
+        case .clickJumpCollapse: drawClickJumpCollapse(c, sz: sz, t: t)
         case .hapticHover:      drawHaptic(c, sz: sz, t: t)
         }
     }
@@ -1521,7 +1612,46 @@ private struct NotchMiniAnim: View {
         }
     }
 
-    // 5) Haptic: cursor enters → notch shakes briefly (vibration effect)
+    // 5) Click jump: panel starts expanded -> cursor clicks with ring -> collapse hold -> seamless loop
+    private func drawClickJumpCollapse(_ c: GraphicsContext, sz: CGSize, t: Double) {
+        let cycle = t.truncatingRemainder(dividingBy: 3.5) / 3.5
+        let timeline = clickJumpCollapsePreviewTimeline(progress: cycle)
+
+        let pw = lerp(28, 64, timeline.expand)
+        let ph = lerp(10, 34, timeline.expand)
+        drawPill(c, sz: sz, w: pw, h: ph, op: 1.0)
+
+        if timeline.showClickRing {
+            let r = timeline.ringRadius
+            let circle = Path(ellipseIn: CGRect(
+                x: sz.width / 2 - r,
+                y: timeline.clickPointY - r / 2,
+                width: r * 2,
+                height: r * 2
+            ))
+            c.stroke(circle, with: .color(.white.opacity(0.45 * timeline.ringOpacity)), lineWidth: 1)
+        }
+
+        if timeline.showSuccessArrow {
+            c.draw(
+                Text("↗").font(.system(size: 10, weight: .bold)).foregroundColor(.green.opacity(0.75 * timeline.successArrowOpacity)),
+                at: CGPoint(x: sz.width / 2 + 13, y: timeline.clickPointY + 10)
+            )
+        }
+
+        let cx = sz.width / 2 + 2 + timeline.cursorX
+        let cy = timeline.clickPointY + timeline.cursorY
+        var arrow = Path()
+        arrow.move(to: CGPoint(x: cx, y: cy))
+        arrow.addLine(to: CGPoint(x: cx, y: cy + 8))
+        arrow.addLine(to: CGPoint(x: cx + 2.5, y: cy + 6))
+        arrow.addLine(to: CGPoint(x: cx + 5.5, y: cy + 6))
+        arrow.closeSubpath()
+        c.fill(arrow, with: .color(.white.opacity(0.9)))
+        c.stroke(arrow, with: .color(.black.opacity(0.4)), lineWidth: 0.5)
+    }
+
+    // 6) Haptic: cursor enters → notch shakes briefly (vibration effect)
     private func drawHaptic(_ c: GraphicsContext, sz: CGSize, t: Double) {
         let cycle = t.truncatingRemainder(dividingBy: 2.5) / 2.5
 

@@ -1512,6 +1512,7 @@ private struct SessionListView: View {
                 ForEach(group.ids, id: \.self) { sessionId in
                     if let session = appState.sessions[sessionId] {
                         SessionCard(
+                            appState: appState,
                             sessionId: sessionId,
                             session: session,
                             isCompletion: onlySessionId != nil
@@ -1691,14 +1692,47 @@ private struct SessionsExpandLink: View {
     }
 }
 
+func shouldTriggerJumpFailureFeedback(_ jumpChecks: [Bool]) -> Bool {
+    !jumpChecks.contains(true)
+}
+
+func jumpFailureShakeSequence() -> [Int] {
+    [8, -8, 6, -6, 3, -3, 0]
+}
+
+enum JumpValidationOutcome: Equatable {
+    case success
+    case failed
+    case cancelled
+}
+
+func evaluateJumpValidation(
+    delays: [UInt64],
+    isCancelled: () -> Bool = { Task.isCancelled },
+    sleep: (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) },
+    checkSucceeded: () async -> Bool
+) async -> JumpValidationOutcome {
+    for delay in delays {
+        await sleep(delay)
+        if isCancelled() { return .cancelled }
+        if await checkSucceeded() { return .success }
+    }
+
+    return isCancelled() ? .cancelled : .failed
+}
+
 private struct SessionCard: View {
+    var appState: AppState
     let sessionId: String
     let session: SessionSnapshot
     var isCompletion: Bool = false
     @State private var hovering = false
+    @State private var failureShakeOffset: CGFloat = 0
+    @State private var jumpValidationTask: Task<Void, Never>?
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
+    @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
     private var fontSize: CGFloat { CGFloat(contentFontSize) }
     private var aiLineLimit: Int? { aiMessageLines > 0 ? aiMessageLines : nil }
     private var statusNameColor: Color {
@@ -1714,7 +1748,7 @@ private struct SessionCard: View {
 
     var body: some View {
         Button {
-            TerminalActivator.activate(session: session, sessionId: sessionId)
+            handleSessionClick()
         } label: {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
@@ -1827,10 +1861,74 @@ private struct SessionCard: View {
                 .fill(hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
         )
         .padding(.horizontal, 6)
+        .offset(x: failureShakeOffset)
         } // end Button label
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .onDisappear {
+            jumpValidationTask?.cancel()
+            jumpValidationTask = nil
+        }
+    }
+
+    private func handleSessionClick() {
+        TerminalActivator.activate(session: session, sessionId: sessionId)
+
+        guard autoCollapseAfterSessionJump, !session.isRemote else { return }
+
+        jumpValidationTask?.cancel()
+        jumpValidationTask = Task {
+            let delays: [UInt64] = [120_000_000, 320_000_000, 640_000_000]
+            let outcome = await evaluateJumpValidation(
+                delays: delays,
+                checkSucceeded: { await checkJumpSucceeded() }
+            )
+
+            switch outcome {
+            case .success:
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    switch appState.surface {
+                    case .sessionList, .completionCard:
+                        withAnimation(NotchAnimation.close) {
+                            appState.surface = .collapsed
+                        }
+                    default:
+                        break
+                    }
+                }
+            case .failed:
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    SoundManager.shared.preview("8bit_error")
+                }
+                guard !Task.isCancelled else { return }
+                await runJumpFailureShakeAnimation()
+            case .cancelled:
+                return
+            }
+        }
+    }
+
+    private func checkJumpSucceeded() async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let succeeded = TerminalVisibilityDetector.isSessionTabVisible(session)
+                    || TerminalVisibilityDetector.isTerminalFrontmostForSession(session)
+                continuation.resume(returning: succeeded)
+            }
+        }
+    }
+
+    @MainActor
+    private func runJumpFailureShakeAnimation() async {
+        for offset in jumpFailureShakeSequence() {
+            withAnimation(.easeInOut(duration: 0.035)) {
+                failureShakeOffset = CGFloat(offset)
+            }
+            try? await Task.sleep(nanoseconds: 35_000_000)
+        }
     }
 
     private func timeAgo(_ date: Date) -> String {
