@@ -1,6 +1,25 @@
+# Build artifacts
 .build/
+.swiftpm/
+
+# Superpowers artifacts
 .superpowers/
 HANDOFF.md
 docs/superpowers/
-dev.sh
+
+# macOS system files
 .DS_Store
+
+# IDE vscode/cursor
+.vscode/
+.cursor/
+
+# Tmp files
+.log
+.tmp
+
+# Code agents config files
+.agents/
+.claude/
+skills-lock.json
+CLAUDE.md
