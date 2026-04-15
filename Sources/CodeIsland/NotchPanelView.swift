@@ -117,7 +117,8 @@ struct NotchPanelView: View {
                                 queueTotal: appState.permissionQueue.count,
                                 onAllow: { appState.approvePermission(always: false) },
                                 onAlwaysAllow: { appState.approvePermission(always: true) },
-                                onDeny: { appState.denyPermission() }
+                                onDeny: { appState.denyPermission() },
+                                onDismiss: { appState.dismissPermissionPrompt() }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
@@ -667,6 +668,7 @@ private struct ApprovalBar: View {
     let onAllow: () -> Void
     let onAlwaysAllow: () -> Void
     let onDeny: () -> Void
+    let onDismiss: () -> Void
 
     private var fileName: String? {
         guard let fp = toolInput?["file_path"] as? String else { return nil }
@@ -726,6 +728,7 @@ private struct ApprovalBar: View {
             // Pixel-style buttons
             HStack(spacing: 6) {
                 PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
+                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
                 PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
                 PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
             }
