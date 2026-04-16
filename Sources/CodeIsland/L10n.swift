@@ -203,7 +203,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "Real-time AI coding agent status panel for macOS",
-        "about_desc2": "Supports 8 CLI/IDE tools via Unix socket IPC",
+        "about_desc2": "Supports 10 CLI/IDE tools via Unix socket IPC",
 
         // Window
         "settings_title": "CodeIsland Settings",
@@ -430,7 +430,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS 实时 AI 编码 Agent 状态面板",
-        "about_desc2": "通过 Unix socket IPC 支持 8 种 CLI/IDE 工具",
+        "about_desc2": "通过 Unix socket IPC 支持 10 种 CLI/IDE 工具",
 
         // Window
         "settings_title": "CodeIsland 设置",
@@ -526,6 +526,13 @@ final class L10n: ObservableObject {
         "smart_suppress_desc": "エージェントのターミナルタブが前面にあるときはパネルを自動展開しません",
         "collapse_on_mouse_leave": "マウスが離れたら自動で折りたたむ",
         "collapse_on_mouse_leave_desc": "マウスが離れると展開したパネルをノッチ状態に戻します",
+        "auto_collapse_after_session_jump": "セッション移動後に自動で折りたたむ",
+        "auto_collapse_after_session_jump_desc": "セッションをクリックして対応するターミナルやクライアントへ正常に切り替えた後、パネルを自動で折りたたみます",
+        "haptic_on_hover": "ホバー時に触覚フィードバック",
+        "haptic_on_hover_desc": "ノッチにホバーしたときにトラックパッドの触覚フィードバックを発生させます",
+        "haptic_light": "弱",
+        "haptic_medium": "中",
+        "haptic_strong": "強",
         "shortcuts": "ショートカット",
         "shortcut_recording": "記録中…",
         "shortcut_none": "未設定",
@@ -566,6 +573,12 @@ final class L10n: ObservableObject {
         "max_visible_sessions_desc": "この数を超えるセッションはスクロールして表示します",
         "collapsed_width_scale": "アイランドの幅",
         "collapsed_width_scale_desc": "ノッチのないディスプレイで折りたたみ時のアイランド幅を調整します",
+        "notch_height_mode": "トップバーの高さ",
+        "notch_height_mode_desc": "パネルを実際のノッチの高さ、メニューバーの高さ、またはカスタム値に合わせます",
+        "notch_height_match_notch": "ノッチの高さに合わせる",
+        "notch_height_match_menubar": "メニューバーの高さに合わせる",
+        "notch_height_custom": "カスタム高さ",
+        "custom_notch_height": "カスタム高さ",
         "default": "デフォルト",
         "content": "内容",
         "content_font_size": "内容の文字サイズ",
@@ -644,7 +657,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS 向けリアルタイム AI コーディングエージェント状態パネル",
-        "about_desc2": "Unix socket IPC を通じて 8 種類の CLI/IDE ツールをサポート",
+        "about_desc2": "Unix socket IPC を通じて 10 種類の CLI/IDE ツールをサポート",
 
         // Window
         "settings_title": "CodeIsland 設定",
@@ -683,6 +696,7 @@ final class L10n: ObservableObject {
         "enable_sound_tooltip": "サウンドを有効化",
         "settings": "設定",
         "deny": "拒否",
+        "dismiss": "閉じる",
         "allow_once": "1回だけ許可",
         "always": "常に",
         "type_answer": "回答を入力してください...",
@@ -739,6 +753,13 @@ final class L10n: ObservableObject {
         "smart_suppress_desc": "에이전트의 터미널 탭이 전경일 때 패널을 자동 확장하지 않습니다",
         "collapse_on_mouse_leave": "마우스가 벗어나면 자동 접기",
         "collapse_on_mouse_leave_desc": "마우스가 멀어지면 확장된 패널을 노치 상태로 다시 접습니다",
+        "auto_collapse_after_session_jump": "세션 이동 후 자동 접기",
+        "auto_collapse_after_session_jump_desc": "세션을 클릭해 해당 터미널이나 클라이언트로 성공적으로 전환한 뒤 패널을 자동으로 접습니다",
+        "haptic_on_hover": "호버 시 햅틱 피드백",
+        "haptic_on_hover_desc": "노치 위에 마우스를 올리면 트랙패드 햅틱 피드백을 발생시킵니다",
+        "haptic_light": "약함",
+        "haptic_medium": "중간",
+        "haptic_strong": "강함",
         "shortcuts": "단축키",
         "shortcut_recording": "기록 중…",
         "shortcut_none": "설정되지 않음",
@@ -779,6 +800,12 @@ final class L10n: ObservableObject {
         "max_visible_sessions_desc": "이 수를 넘는 세션은 스크롤해서 볼 수 있습니다",
         "collapsed_width_scale": "아일랜드 너비",
         "collapsed_width_scale_desc": "노치가 없는 디스플레이에서 접힌 아일랜드 너비를 조정합니다",
+        "notch_height_mode": "상단 바 높이",
+        "notch_height_mode_desc": "패널을 실제 노치 높이, 메뉴 막대 높이 또는 사용자 지정 값에 맞춥니다",
+        "notch_height_match_notch": "노치 높이에 맞춤",
+        "notch_height_match_menubar": "메뉴 막대 높이에 맞춤",
+        "notch_height_custom": "사용자 지정 높이",
+        "custom_notch_height": "사용자 지정 높이",
         "default": "기본값",
         "content": "콘텐츠",
         "content_font_size": "콘텐츠 글꼴 크기",
@@ -857,7 +884,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS용 실시간 AI 코딩 에이전트 상태 패널",
-        "about_desc2": "Unix socket IPC를 통해 8개의 CLI/IDE 도구를 지원합니다",
+        "about_desc2": "Unix socket IPC를 통해 10개의 CLI/IDE 도구를 지원합니다",
 
         // Window
         "settings_title": "CodeIsland 설정",
@@ -896,6 +923,7 @@ final class L10n: ObservableObject {
         "enable_sound_tooltip": "사운드 켜기",
         "settings": "설정",
         "deny": "거부",
+        "dismiss": "닫기",
         "allow_once": "한 번 허용",
         "always": "항상",
         "type_answer": "답변을 입력하세요...",
@@ -1083,7 +1111,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS için gerçek zamanlı AI kodlama ajanı durum paneli",
-        "about_desc2": "Unix socket IPC üzerinden 8 CLI/IDE aracını destekler",
+        "about_desc2": "Unix socket IPC üzerinden 10 CLI/IDE aracını destekler",
 
         // Window
         "settings_title": "CodeIsland Ayarları",
