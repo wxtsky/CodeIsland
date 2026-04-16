@@ -22,6 +22,8 @@ enum HookFormat {
     case nested
     /// Cursor style: [{command: "..."}]
     case flat
+    /// TraeCli style: YAML managed block in ~/.trae/traecli.yaml
+    case traecli
     /// GitHub Copilot CLI style: [{type, bash, timeoutSec}] with top-level version
     case copilot
     /// Kimi Code CLI style: TOML [[hooks]] arrays in ~/.kimi/config.toml
@@ -32,6 +34,7 @@ enum HookFormat {
         case .claude: return "claude"
         case .nested: return "nested"
         case .flat: return "flat"
+        case .traecli: return "traecli"
         case .copilot: return "copilot"
         case .kimi: return "kimi"
         }
@@ -42,6 +45,7 @@ enum HookFormat {
         case "claude": self = .claude
         case "nested": self = .nested
         case "flat": self = .flat
+        case "traecli": self = .traecli
         case "copilot": self = .copilot
         case "kimi": self = .kimi
         default: return nil
@@ -91,6 +95,7 @@ struct ConfigInstaller {
     private static let customCLIConfigsKey = SessionSnapshot.customCLIConfigsKey
     /// Absolute path for external CLI hooks — avoids tilde expansion issues in IDE environments
     private static let bridgeCommand = codeislandDir + "/codeisland-bridge"
+    private static let traecliConfigPath = NSHomeDirectory() + "/.trae/traecli.yaml"
 
     // Legacy paths for migration cleanup (#32)
     private static let legacyBridgePath = NSHomeDirectory() + "/.claude/hooks/codeisland-bridge"
@@ -183,6 +188,13 @@ struct ConfigInstaller {
             configPath: ".trae-cn/hooks.json", configKey: "hooks",
             format: .flat,
             events: defaultEvents(for: .flat)
+        ),
+        // TraeCli
+        CLIConfig(
+            name: "TraeCli", source: "traecli",
+            configPath: ".trae/traecli.yaml", configKey: "hooks",
+            format: .traecli,
+            events: defaultEvents(for: .traecli)
         ),
         // Qoder — Claude Code fork
         CLIConfig(
@@ -328,6 +340,22 @@ struct ConfigInstaller {
                 ("afterAgentThought", 5, false),
                 ("afterAgentResponse", 5, false),
                 ("stop", 5, false),
+            ]
+        case .traecli:
+            return [
+                ("session_start", 5, false),
+                ("session_end", 5, true),
+                ("user_prompt_submit", 5, true),
+                ("pre_tool_use", 5, false),
+                ("post_tool_use", 5, true),
+                ("post_tool_use_failure", 5, true),
+                ("permission_request", 86400, false),
+                ("notification", 86400, false),
+                ("subagent_start", 5, true),
+                ("subagent_stop", 5, true),
+                ("stop", 5, true),
+                ("pre_compact", 5, true),
+                ("post_compact", 5, true),    
             ]
         case .copilot:
             return [
@@ -490,6 +518,8 @@ struct ConfigInstaller {
             guard isEnabled(source: cli.source) else { continue }
             if cli.source == "claude" {
                 if !installClaudeHooks(cli: cli, fm: fm) { ok = false }
+            } else if cli.source == "traecli" {
+                if !installTraecliHooks(fm: fm) { ok = false }
             } else {
                 if !installExternalHooks(cli: cli, fm: fm) { ok = false }
             }
@@ -518,7 +548,11 @@ struct ConfigInstaller {
         try? fm.removeItem(atPath: legacyHookScriptPath)
 
         for cli in allCLIs {
-            uninstallHooks(cli: cli, fm: fm)
+            if cli.source == "traecli" {
+                uninstallTraecliHooks(fm: fm)
+            } else {
+                uninstallHooks(cli: cli, fm: fm)
+            }
         }
 
         uninstallOpencodePlugin(fm: fm)
@@ -534,6 +568,7 @@ struct ConfigInstaller {
     /// Check if a specific CLI's hooks are installed
     static func isInstalled(source: String) -> Bool {
         if source == "opencode" { return isOpencodePluginInstalled(fm: FileManager.default) }
+        if source == "traecli" { return isTraecliHooksInstalled(fm: FileManager.default) }
         guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
         return isHooksInstalled(for: cli, fm: FileManager.default)
     }
@@ -570,6 +605,8 @@ struct ConfigInstaller {
             guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
             if cli.source == "claude" {
                 return installClaudeHooks(cli: cli, fm: fm)
+            } else if cli.source == "traecli" {
+                return installTraecliHooks(fm: fm)
             } else {
                 installExternalHooks(cli: cli, fm: fm)
                 if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
@@ -579,7 +616,11 @@ struct ConfigInstaller {
             if source == "opencode" {
                 uninstallOpencodePlugin(fm: fm)
             } else if let cli = allCLIs.first(where: { $0.source == source }) {
-                uninstallHooks(cli: cli, fm: fm)
+                if cli.source == "traecli" {
+                    uninstallTraecliHooks(fm: fm)
+                } else {
+                    uninstallHooks(cli: cli, fm: fm)
+                }
             }
             return true
         }
@@ -599,6 +640,13 @@ struct ConfigInstaller {
                 ? fm.fileExists(atPath: NSHomeDirectory() + "/.copilot")
                 : fm.fileExists(atPath: cli.dirPath)
             guard dirExists else { continue }
+            if cli.source == "traecli" {
+                if isTraecliHooksInstalled(fm: fm) { continue }
+                if installTraecliHooks(fm: fm) {
+                    repaired.append(cli.name)
+                }
+                continue
+            }
             if isHooksInstalled(for: cli, fm: fm) { continue }
             if cli.source == "claude" {
                 if installClaudeHooks(cli: cli, fm: fm) {
@@ -853,6 +901,9 @@ struct ConfigInstaller {
                 entry = ["hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
             case .flat:
                 entry = ["command": baseCommand]
+            case .traecli:
+                // Treat like flat for custom JSON hook configs; built-in TraeCli uses YAML install path.
+                entry = ["command": baseCommand]
             case .copilot:
                 // Copilot CLI stdin lacks session_id/hook_event_name — pass event name via flag
                 let copilotCommand = "\(baseCommand) --event \(event)"
@@ -874,6 +925,289 @@ struct ConfigInstaller {
             return false
         }
         return fm.createFile(atPath: cli.fullPath, contents: data)
+    }
+
+    private static func renderManagedTraecliHooks(source: String = "traecli") -> String {
+        let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
+        let escapedCommand = "\(quotedBridge) --source \(source)".replacingOccurrences(of: "'", with: "''")
+
+        let events = defaultEvents(for: .traecli)
+        let timeout = events.map { $0.1 }.max() ?? 5
+
+        var lines: [String] = ["  - type: command"]
+        lines.append("    command: '\(escapedCommand)'")
+        lines.append("    timeout: '\(timeout)s'")
+        lines.append("    matchers:")
+        for (event, _, _) in events {
+            lines.append("      - event: \(event)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func isTraecliCommandListItemStart(_ trimmed: String) -> Bool {
+        // Accept exact "- type: command" and variants with trailing whitespace/comments.
+        let prefix = "- type: command"
+        guard trimmed.hasPrefix(prefix) else { return false }
+        let rest = trimmed.dropFirst(prefix.count)
+        if rest.isEmpty { return true }
+        guard let c = rest.first else { return true }
+        return c == " " || c == "\t" || c == "#"
+    }
+
+    private static func parseYAMLScalar(_ raw: String) -> String {
+        // Handles simple single-line YAML scalars used by TraeCli config.
+        let s = raw.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("'") && s.hasSuffix("'") && s.count >= 2 {
+            let inner = String(s.dropFirst().dropLast())
+            return inner.replacingOccurrences(of: "''", with: "'")
+        }
+        if s.hasPrefix("\"") && s.hasSuffix("\"") && s.count >= 2 {
+            let inner = String(s.dropFirst().dropLast())
+            // Minimal escape handling
+            return inner
+                .replacingOccurrences(of: "\\\\", with: "\\")
+                .replacingOccurrences(of: "\\\"", with: "\"")
+        }
+        return s
+    }
+
+    private static func extractTraecliCommand(from blockLines: ArraySlice<String>) -> String? {
+        for line in blockLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("command:") else { continue }
+            let raw = trimmed.dropFirst("command:".count)
+            return parseYAMLScalar(String(raw))
+        }
+        return nil
+    }
+
+    private static func normalizeTraecliCommandForCompare(_ command: String) -> String {
+        var s = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Collapse whitespace
+        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        guard !s.isEmpty else { return s }
+
+        // Parse first token, allowing quoted path with spaces.
+        var first = ""
+        var rest = ""
+        if s.hasPrefix("\"") {
+            let afterQuote = s.index(after: s.startIndex)
+            if let endQuote = s[afterQuote...].firstIndex(of: "\"") {
+                first = String(s[afterQuote..<endQuote])
+                rest = String(s[s.index(after: endQuote)...])
+            } else {
+                first = s
+                rest = ""
+            }
+        } else {
+            if let space = s.firstIndex(of: " ") {
+                first = String(s[..<space])
+                rest = String(s[space...])
+            } else {
+                first = s
+                rest = ""
+            }
+        }
+
+        first = first.trimmingCharacters(in: .whitespaces)
+        rest = rest.trimmingCharacters(in: .whitespaces)
+        if first.hasPrefix("~/") {
+            first = NSHomeDirectory() + "/" + first.dropFirst(2)
+        }
+        // Normalize home prefix
+        let home = NSHomeDirectory()
+        if first.hasPrefix(home + "/") {
+            // Keep absolute; just ensure no double slashes
+            first = first.replacingOccurrences(of: "//", with: "/")
+        }
+        if !rest.isEmpty {
+            rest = rest.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            return "\(first) \(rest)"
+        }
+        return first
+    }
+
+    private static func expectedTraecliCommandCandidates(source: String) -> [String] {
+        let base = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
+        let abs = "\(bridgeCommand) --source \(source)"
+        let absQuoted = "\"\(bridgeCommand)\" --source \(source)"
+        let tilde = "~/.codeisland/codeisland-bridge --source \(source)"
+        let tildeQuoted = "\"~/.codeisland/codeisland-bridge\" --source \(source)"
+        let actualRendered = "\(base) --source \(source)"
+        return [actualRendered, abs, absQuoted, tilde, tildeQuoted]
+    }
+
+    private static func isOurTraecliInjectedCommand(_ command: String, source: String) -> Bool {
+        let normalized = normalizeTraecliCommandForCompare(command)
+        for candidate in expectedTraecliCommandCandidates(source: source) {
+            if normalized == normalizeTraecliCommandForCompare(candidate) {
+                return true
+            }
+        }
+        return false
+    }
+
+    static func removeManagedTraecliHooks(from contents: String, source: String = "traecli") -> String {
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
+        var result: [String] = []
+        result.reserveCapacity(lines.count)
+
+        // Legacy compatibility: previous versions could leave extra comment lines around our hook.
+        // We do NOT key off any marker token. Instead, when removing a hook by command match,
+        // we also remove contiguous same-indent comment lines adjacent to that hook.
+
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Detect a YAML list item start like "  - type: command" (indent may vary).
+            if isTraecliCommandListItemStart(trimmed) {
+                let indent = line.prefix { $0 == " " }.count
+
+                var j = i + 1
+                while j < lines.count {
+                    let next = lines[j]
+                    let nextTrimmed = next.trimmingCharacters(in: .whitespaces)
+                    let nextIndent = next.prefix { $0 == " " }.count
+
+                    // Next item in the same list (same indent + "- ") => current block ends.
+                    if nextIndent == indent && nextTrimmed.hasPrefix("- ") {
+                        break
+                    }
+                    // Leaving the list block (less indent + non-empty) => current block ends.
+                    if nextIndent < indent && !nextTrimmed.isEmpty {
+                        break
+                    }
+                    j += 1
+                }
+
+                // Remove only if the command matches what we inject.
+                if let cmd = extractTraecliCommand(from: lines[i..<j]), isOurTraecliInjectedCommand(cmd, source: source) {
+                    // Expand deletion to include adjacent same-indent comment lines.
+                    var start = i
+                    while start > 0 {
+                        let prev = lines[start - 1]
+                        let prevTrimmed = prev.trimmingCharacters(in: .whitespaces)
+                        let prevIndent = prev.prefix { $0 == " " }.count
+                        if prevIndent == indent && prevTrimmed.hasPrefix("#") {
+                            start -= 1
+                            continue
+                        }
+                        break
+                    }
+
+                    var end = j
+                    while end < lines.count {
+                        let next = lines[end]
+                        let nextTrimmed = next.trimmingCharacters(in: .whitespaces)
+                        let nextIndent = next.prefix { $0 == " " }.count
+                        if nextIndent == indent && nextTrimmed.hasPrefix("#") {
+                            end += 1
+                            continue
+                        }
+                        break
+                    }
+
+                    // Remove the already-appended leading comment lines (if any).
+                    let removeCount = i - start
+                    if removeCount > 0, result.count >= removeCount {
+                        result.removeLast(removeCount)
+                    }
+                    i = end
+                    continue
+                }
+                result.append(contentsOf: lines[i..<j])
+                i = j
+                continue
+            }
+
+            result.append(line)
+            i += 1
+        }
+
+        while result.count >= 2 && result.suffix(2).allSatisfy({ $0.isEmpty }) {
+            result.removeLast()
+        }
+        return result.joined(separator: "\n")
+    }
+
+    static func mergeTraecliHooks(into contents: String, source: String = "traecli") -> String {
+        let cleaned = removeManagedTraecliHooks(from: contents, source: source)
+        let managedLines = renderManagedTraecliHooks(source: source).components(separatedBy: "\n")
+        var lines = cleaned.components(separatedBy: "\n")
+
+        // Find a top-level hooks key. Handle common scalar/empty forms like "hooks: []" to
+        // avoid producing invalid YAML by appending block items to a flow sequence.
+        if let hooksIndex = lines.firstIndex(where: { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard line == trimmed else { return false } // top-level only
+            return trimmed.range(of: #"^hooks:\s*(\[\s*\]|\{\s*\}|null|~)?\s*(#.*)?$"#, options: .regularExpression) != nil
+        }) {
+            let trimmed = lines[hooksIndex].trimmingCharacters(in: .whitespaces)
+            if trimmed.range(of: #"^hooks:\s*(\[\s*\]|\{\s*\}|null|~)\s*(#.*)?$"#, options: .regularExpression) != nil {
+                lines[hooksIndex] = "hooks:"
+            }
+            lines.insert(contentsOf: managedLines, at: hooksIndex + 1)
+        } else {
+            while !lines.isEmpty && lines.last == "" {
+                lines.removeLast()
+            }
+            if !lines.isEmpty {
+                lines.append("")
+            }
+            lines.append("hooks:")
+            lines.append(contentsOf: managedLines)
+        }
+
+        var merged = lines.joined(separator: "\n")
+        if !merged.hasSuffix("\n") {
+            merged.append("\n")
+        }
+        return merged
+    }
+
+    @discardableResult
+    private static func installTraecliHooks(fm: FileManager) -> Bool {
+        let configDir = (traecliConfigPath as NSString).deletingLastPathComponent
+        guard fm.fileExists(atPath: configDir) else { return true }
+
+        var original = ""
+        if fm.fileExists(atPath: traecliConfigPath) {
+            guard let data = fm.contents(atPath: traecliConfigPath) else { return false }
+            // Never clobber existing file contents if decoding fails.
+            guard let decoded = String(data: data, encoding: .utf8) else { return false }
+            original = decoded
+        }
+
+        let merged = mergeTraecliHooks(into: original)
+        guard let data = merged.data(using: .utf8) else { return false }
+        do {
+            try data.write(to: URL(fileURLWithPath: traecliConfigPath), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func uninstallTraecliHooks(fm: FileManager) {
+        guard fm.fileExists(atPath: traecliConfigPath),
+              let original = try? String(contentsOfFile: traecliConfigPath, encoding: .utf8)
+        else { return }
+
+        let cleaned = removeManagedTraecliHooks(from: original, source: "traecli")
+        guard cleaned != original, let data = cleaned.data(using: .utf8) else { return }
+        try? data.write(to: URL(fileURLWithPath: traecliConfigPath), options: .atomic)
+    }
+
+    private static func isTraecliHooksInstalled(fm: FileManager) -> Bool {
+        guard fm.fileExists(atPath: traecliConfigPath),
+              let contents = try? String(contentsOfFile: traecliConfigPath, encoding: .utf8)
+        else { return false }
+
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        return removeManagedTraecliHooks(from: normalized, source: "traecli") != normalized
     }
 
     // MARK: - Codex config.toml

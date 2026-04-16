@@ -117,6 +117,99 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue.count, 0)
     }
 
+    // MARK: - Permission queue does not overwrite
+
+    func testTwoPermissionRequestsKeepFirstVisibleUntilHandled() async throws {
+        let appState = AppState()
+        let sessionId = "s-perm"
+
+        let event1 = try makePermissionRequestEvent(
+            sessionId: sessionId,
+            description: "first approval",
+            command: "echo 1"
+        )
+        let event2 = try makePermissionRequestEvent(
+            sessionId: sessionId,
+            description: "second approval",
+            command: "echo 2"
+        )
+
+        let r1 = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event1, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        let r2 = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event2, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(appState.permissionQueue.count, 2)
+        XCTAssertEqual(appState.currentTool, "Bash")
+        XCTAssertEqual(appState.toolDescription, "first approval")
+
+        appState.approvePermission()
+        let response1 = await r1.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response1), "allow")
+
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+        XCTAssertEqual(appState.toolDescription, "second approval")
+
+        appState.denyPermission()
+        let response2 = await r2.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response2), "deny")
+        XCTAssertEqual(appState.permissionQueue.count, 0)
+    }
+
+    func testPermissionRequestKeepsSessionListSurfaceWhenAlreadyOpen() async throws {
+        let appState = AppState()
+        appState.surface = .sessionList
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-list",
+            description: "needs approval",
+            command: "echo 1"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.surface, .sessionList)
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+
+        appState.approvePermission()
+        let response = await responseTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "allow")
+        XCTAssertEqual(appState.surface, .sessionList)
+    }
+
+    func testApprovalInlineSummaryPrefersToolDescriptionAndFallsBackToCommand() async throws {
+        // Prefer toolDescription
+        let withDesc = approvalInlineSummary(
+            tool: "Bash",
+            toolDescription: "needs approval",
+            toolInput: ["command": "echo 1"]
+        )
+        XCTAssertEqual(withDesc, .text("needs approval"))
+
+        // Empty description falls back to bash command
+        let fallback = approvalInlineSummary(
+            tool: "Bash",
+            toolDescription: "   ",
+            toolInput: ["command": "echo 2"]
+        )
+        XCTAssertEqual(fallback, .bashCommand("echo 2"))
+    }
+
     // MARK: - Duplicate headers dedup
 
     func testDuplicateHeadersGetDedupedKeys() async throws {
@@ -214,6 +307,24 @@ final class AppStateQuestionFlowTests: XCTestCase {
         guard let event = HookEvent(from: data) else {
             XCTFail("Failed to parse HookEvent")
             throw NSError(domain: "AppStateQuestionFlowTests", code: 1)
+        }
+        return event
+    }
+
+    private func makePermissionRequestEvent(sessionId: String, description: String, command: String) throws -> HookEvent {
+        let payload: [String: Any] = [
+            "hook_event_name": "PermissionRequest",
+            "session_id": sessionId,
+            "tool_name": "Bash",
+            "tool_input": [
+                "command": command,
+                "description": description,
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        guard let event = HookEvent(from: data) else {
+            XCTFail("Failed to parse HookEvent")
+            throw NSError(domain: "AppStateQuestionFlowTests", code: 2)
         }
         return event
     }

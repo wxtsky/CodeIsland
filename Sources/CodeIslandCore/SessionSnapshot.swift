@@ -16,6 +16,7 @@ public struct SessionSnapshot {
         "cursor",
         "trae",
         "traecn",
+        "traecli",
         "copilot",
         "qoder",
         "droid",
@@ -92,6 +93,7 @@ public struct SessionSnapshot {
             "trae-cn": "traecn",
             "trae_cn": "traecn",
             "trae cn": "traecn",
+            "traecli": "traecli",
         ]
         let canonical = aliases[normalized] ?? normalized
         let dynamicSupportedSources = supportedSources.union(loadCustomSources())
@@ -105,6 +107,7 @@ public struct SessionSnapshot {
         if canonical.hasPrefix("codybuddycn") || canonical.hasPrefix("codebuddycn") { return "codybuddycn" }
         if canonical.hasPrefix("stepfun") { return "stepfun" }
         if canonical.hasPrefix("traecn") { return "traecn" }
+        if canonical.hasPrefix("traecli") { return "traecli" }
         if canonical.hasPrefix("trae") { return "trae" }
         return nil
     }
@@ -240,6 +243,7 @@ public struct SessionSnapshot {
         case "cursor": return "Cursor"
         case "trae": return "Trae"
         case "traecn": return "Trae CN"
+        case "traecli": return "Traecli"
         case "qoder": return "Qoder"
         case "droid": return "Factory"
         case "codebuddy": return "CodeBuddy"

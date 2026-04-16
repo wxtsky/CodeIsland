@@ -213,6 +213,12 @@ final class AppState {
 
     private func resolvedSessionProcessIdentity(for sessionId: String) -> ProcessIdentity? {
         guard let process = currentSessionProcessIdentity(for: sessionId) else { return nil }
+        if let resolved = Self.trackedProcessIdentity(for: process.pid, source: sessions[sessionId]?.source) {
+            if resolved != process {
+                setSessionProcessIdentity(resolved, for: sessionId)
+            }
+            return resolved
+        }
         if process.startTime != nil { return process }
         guard let refreshed = Self.liveProcessIdentity(for: process.pid) else { return process }
         setSessionProcessIdentity(refreshed, for: sessionId)
@@ -240,6 +246,42 @@ final class AppState {
         guard process.pid > 0, kill(process.pid, 0) == 0 else { return false }
         guard let expectedStart = process.startTime else { return true }
         return getProcessStartTime(process.pid) == expectedStart
+    }
+
+    private nonisolated static func trackedProcessIdentity(for pid: pid_t, source: String?) -> ProcessIdentity? {
+        guard pid > 0 else { return nil }
+
+        var currentPid: pid_t? = pid
+        var visited = Set<pid_t>()
+        var firstLiveProcess: ProcessIdentity?
+
+        for _ in 0..<6 {
+            guard let candidatePid = currentPid,
+                  candidatePid > 0,
+                  !visited.contains(candidatePid),
+                  let process = liveProcessIdentity(for: candidatePid) else {
+                break
+            }
+
+            visited.insert(candidatePid)
+            if firstLiveProcess == nil {
+                firstLiveProcess = process
+            }
+            if let path = executablePath(for: candidatePid),
+               CLIProcessResolver.sourceMatchesExecutablePath(path, source: source) {
+                return process
+            }
+            currentPid = parentPID(for: candidatePid)
+        }
+
+        return firstLiveProcess
+    }
+
+    private nonisolated static func parentPID(for pid: pid_t) -> pid_t? {
+        var info = proc_bsdinfo()
+        let ret = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+        guard ret > 0, info.pbi_ppid > 0 else { return nil }
+        return pid_t(info.pbi_ppid)
     }
 
     private nonisolated static func isNativeAppProcess(_ pid: pid_t, source: String) -> Bool {
@@ -555,6 +597,7 @@ final class AppState {
         case "cursor":     return findCursorPids(candidatePids: candidatePids)
         case "trae":       return findTraePids(candidatePids: candidatePids)
         case "traecn":     return findTraeCNPids(candidatePids: candidatePids)
+        case "traecli":   return findTraeCliPids(candidatePids: candidatePids)
         case "copilot":    return findCopilotPids(candidatePids: candidatePids)
         case "qoder":      return findQoderPids(candidatePids: candidatePids)
         case "droid":      return findFactoryPids(candidatePids: candidatePids)
@@ -662,11 +705,27 @@ final class AppState {
     private(set) var totalSessionCount: Int = 0
 
     var currentTool: String? {
+        // When approvals/questions are pending, always reflect the *front of the queue*.
+        // Otherwise a second incoming request can overwrite session.currentTool and make
+        // the first pending item appear to “disappear” in compact UI.
+        if let pending = pendingPermission {
+            return pending.event.toolName
+        }
+        if pendingQuestion != nil {
+            // AskUserQuestion arrives via PermissionRequest tool.
+            return "AskUserQuestion"
+        }
         guard let id = activeSessionId, let s = sessions[id] else { return nil }
         return s.currentTool
     }
 
     var toolDescription: String? {
+        if let pending = pendingPermission {
+            return pending.event.toolDescription
+        }
+        if let q = pendingQuestion {
+            return q.question.question
+        }
         guard let id = activeSessionId, let s = sessions[id] else { return nil }
         return s.toolDescription
     }
@@ -860,7 +919,11 @@ final class AppState {
         // Show UI only if this is the first (or only) queued item
         if permissionQueue.count == 1 {
             activeSessionId = sessionId
-            surface = .approvalCard(sessionId: sessionId)
+            // If user is already browsing the session list, keep them there and
+            // let inline controls handle approval without stealing focus.
+            if surface != .sessionList {
+                surface = .approvalCard(sessionId: sessionId)
+            }
             SoundManager.shared.handleEvent("PermissionRequest")
         }
         refreshDerivedState()
@@ -1200,7 +1263,10 @@ final class AppState {
         if let next = permissionQueue.first {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
-            surface = .approvalCard(sessionId: sid)
+            // When the session list is open, keep it open; approvals can be handled inline.
+            if surface != .sessionList {
+                surface = .approvalCard(sessionId: sid)
+            }
             return true
         } else if let next = questionQueue.first {
             let sid = next.event.sessionId ?? "default"
@@ -2154,6 +2220,28 @@ final class AppState {
                 "/opt/homebrew/bin/trae-cn",
                 "/.traecn/",
                 "/.trae-cn/",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    private nonisolated static func findTraeCliPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/opt/homebrew/bin/coco",
+                "/opt/homebrew/bin/traecli",
+                "/usr/local/bin/coco",
+                "/usr/local/bin/traecli",
+                "/.local/bin/coco",
+                "/.local/bin/traecli",
+            ],
+            argSubstrings: [
+                "/opt/homebrew/bin/coco",
+                "/opt/homebrew/bin/traecli",
+                "/usr/local/bin/coco",
+                "/usr/local/bin/traecli",
+                "/.local/bin/coco",
+                "/.local/bin/traecli",
             ],
             candidatePids: candidatePids
         )

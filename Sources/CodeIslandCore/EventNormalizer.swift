@@ -27,6 +27,19 @@ public enum EventNormalizer {
         case "preToolUse":            return "PreToolUse"
         case "postToolUse":           return "PostToolUse"
         case "errorOccurred":         return "Notification"
+        // Traecli (snake_case)
+        case "session_start":         return "SessionStart"
+        case "session_end":           return "SessionEnd"
+        case "user_prompt_submit":    return "UserPromptSubmit"
+        case "pre_tool_use":          return "PreToolUse"
+        case "post_tool_use":         return "PostToolUse"
+        case "post_tool_use_failure": return "PostToolUseFailure"
+        case "permission_request":    return "PermissionRequest"
+        case "subagent_start":        return "SubagentStart"
+        case "subagent_stop":         return "SubagentStop"
+        case "pre_compact":           return "PreCompact"
+        case "post_compact":          return "PostCompact"
+        case "notification":          return "Notification"
         default:                      return name
         }
     }

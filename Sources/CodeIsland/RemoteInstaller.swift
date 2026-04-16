@@ -14,7 +14,7 @@ private struct RemoteCommandResult: Sendable {
 }
 
 enum RemoteInstaller {
-    private static let remoteHookVersion = "0.1.0"
+    private static let remoteHookVersion = "0.1.1"
 
     static func installAll(host: RemoteHost) async -> RemoteInstallResult {
         guard let source = remoteHookSource() else {
@@ -31,7 +31,7 @@ enum RemoteInstaller {
             return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
         }
 
-        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex/CodeBuddy remote hooks installed" : configure.stdoutSummary
+        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex/CodeBuddy/Traecli remote hooks installed" : configure.stdoutSummary
         return RemoteInstallResult(ok: true, message: summary)
     }
 
@@ -66,13 +66,19 @@ print(target)
     }
 
     private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
+        let py = configureRemoteHooksScript(host: host)
+        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 30)
+    }
+
+    static func configureRemoteHooksScript(host: RemoteHost) -> String {
         let hostId = pythonStringLiteral(host.id)
         let hostName = pythonStringLiteral(host.name)
         let version = pythonStringLiteral(remoteHookVersion)
-        let py = """
+        return """
 import json
 import pathlib
 import shutil
+import os
 
 home = pathlib.Path.home()
 hook_path = home / ".codeisland" / "codeisland-remote-hook.py"
@@ -91,6 +97,12 @@ def ensure_json(path):
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
+
+def write_text_atomic(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
 
 def command_for(source):
     return f"CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
@@ -119,6 +131,147 @@ def remove_our_hooks(hooks):
             hooks[event] = next_entries
         else:
             hooks.pop(event, None)
+
+TRAECLI_EVENTS = [
+    ("session_start", 5),
+    ("session_end", 5),
+    ("user_prompt_submit", 5),
+    ("pre_tool_use", 5),
+    ("post_tool_use", 5),
+    ("post_tool_use_failure", 5),
+    ("permission_request", 86400),
+    ("notification", 86400),
+    ("subagent_start", 5),
+    ("subagent_stop", 5),
+    ("stop", 5),
+    ("pre_compact", 5),
+    ("post_compact", 5),
+]
+
+def _render_managed_traecli_hooks(cmd):
+    # Escape single quotes for YAML single-quoted string
+    escaped = cmd.replace("'", "''")
+    timeout = max([t for (_, t) in TRAECLI_EVENTS] or [5])
+    lines = ["  - type: command"]
+    lines.append(f"    command: '{escaped}'")
+    lines.append(f"    timeout: '{timeout}s'")
+    lines.append("    matchers:")
+    for (event, _) in TRAECLI_EVENTS:
+        lines.append(f"      - event: {event}")
+    return "\\n".join(lines)
+
+def _remove_managed_traecli_hooks(contents):
+    normalized = contents.replace("\\r\\n", "\\n")
+    lines = normalized.split("\\n")
+    result = []
+
+    # Legacy compatibility: previous versions could leave extra comment lines around our hook.
+    # We do NOT key off any marker token. Instead, when removing a hook by command match,
+    # we also remove contiguous same-indent comment lines adjacent to that hook.
+
+    def _parse_scalar(raw):
+        raw = raw.strip()
+        if raw.startswith("'") and raw.endswith("'") and len(raw) >= 2:
+            return raw[1:-1].replace("''", "'")
+        if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+            inner = raw[1:-1]
+            bs = chr(92)
+            return inner.replace(bs + bs, bs).replace(bs + '"', '"')
+        return raw
+
+    def _normalize_cmd(cmd):
+        return " ".join((cmd or "").strip().split())
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        prefix = "- type: command"
+        if stripped.startswith(prefix) and (stripped == prefix or stripped[len(prefix):].startswith((" ", "\t", "#"))):
+            indent = len(line) - len(line.lstrip(" "))
+            j = i + 1
+            cmd_value = None
+            while j < len(lines):
+                nxt = lines[j]
+                nxt_stripped = nxt.strip()
+                nxt_indent = len(nxt) - len(nxt.lstrip(" "))
+                if nxt_indent == indent and nxt_stripped.startswith("- "):
+                    break
+                if nxt_indent < indent and nxt_stripped != "":
+                    break
+                if nxt_stripped.startswith("command:"):
+                    cmd_value = _parse_scalar(nxt_stripped.split(":", 1)[1])
+                j += 1
+
+            if cmd_value and _normalize_cmd(cmd_value) == _normalize_cmd(command_for("traecli")):
+                # Remove adjacent same-indent comment lines already appended.
+                while result:
+                    prev = result[-1]
+                    prev_stripped = prev.strip()
+                    prev_indent = len(prev) - len(prev.lstrip(" "))
+                    if prev_indent == indent and prev_stripped.startswith("#"):
+                        result.pop()
+                        continue
+                    break
+
+                # Skip forward adjacent same-indent comment lines.
+                k = j
+                while k < len(lines):
+                    nxt = lines[k]
+                    nxt_stripped = nxt.strip()
+                    nxt_indent = len(nxt) - len(nxt.lstrip(" "))
+                    if nxt_indent == indent and nxt_stripped.startswith("#"):
+                        k += 1
+                        continue
+                    break
+
+                i = k
+                continue
+
+            result.extend(lines[i:j])
+            i = j
+            continue
+
+        result.append(line)
+        i += 1
+    # Trim trailing empty lines (keep one newline at end)
+    while len(result) >= 2 and (result[-1] == "") and (result[-2] == ""):
+        result.pop()
+    return "\\n".join(result)
+
+def _merge_traecli_hooks(contents, cmd):
+    cleaned = _remove_managed_traecli_hooks(contents)
+    managed_lines = _render_managed_traecli_hooks(cmd).split("\\n")
+    lines = cleaned.split("\\n")
+    hooks_index = None
+    hooks_scalar = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if line != stripped:
+            continue
+        if not stripped.startswith("hooks:"):
+            continue
+        tail = stripped[len("hooks:"):]
+        before_comment = tail.split("#", 1)[0].strip()
+        if before_comment in ("", "[]", "{}", "null", "~"):
+            hooks_index = i
+            hooks_scalar = before_comment
+            break
+    if hooks_index is not None:
+        if hooks_scalar and hooks_scalar != "":
+            lines[hooks_index] = "hooks:"
+        lines[hooks_index+1:hooks_index+1] = managed_lines
+    else:
+        while lines and lines[-1] == "":
+            lines.pop()
+        if lines:
+            lines.append("")
+        lines.append("hooks:")
+        lines.extend(managed_lines)
+    merged = "\\n".join(lines)
+    if not merged.endswith("\\n"):
+        merged += "\\n"
+    return merged
 
 def install_claude():
     claude_root = home / ".claude"
@@ -213,10 +366,24 @@ def install_codebuddy():
     write_json(settings_path, data)
     return "CodeBuddy ok"
 
-parts = [install_claude(), install_codex(), install_codebuddy()]
+def install_traecli():
+    traecli_root = home / ".trae"
+    if not traecli_root.exists() and shutil.which("traecli") is None:
+        return "Traecli skipped"
+
+    config_path = traecli_root / "traecli.yaml"
+    try:
+        original = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    except Exception:
+        return "Traecli read failed"
+    cmd = command_for("traecli")
+    merged = _merge_traecli_hooks(original, cmd)
+    write_text_atomic(config_path, merged)
+    return "Traecli ok"
+
+parts = [install_claude(), install_codex(), install_codebuddy(), install_traecli()]
 print(" · ".join(parts))
 """
-        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 30)
     }
 
     private static func runSSH(host: RemoteHost, command: String, timeout: TimeInterval) async -> RemoteCommandResult {

@@ -5,12 +5,87 @@ import socket
 import subprocess
 import sys
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 SOCKET_PATH = os.environ.get("CODEISLAND_SOCKET_PATH", "/tmp/codeisland.sock")
 REMOTE_HOST_ID = os.environ.get("CODEISLAND_REMOTE_HOST_ID", "")
 REMOTE_HOST_NAME = os.environ.get("CODEISLAND_REMOTE_HOST_NAME", "")
 SOURCE = os.environ.get("CODEISLAND_SOURCE", "")
 TIMEOUT_SECONDS = 300
+
+
+def _normalize_event(name):
+    """Best-effort normalization matching CodeIslandCore.EventNormalizer."""
+    if not isinstance(name, str):
+        return ""
+    # Cursor (camelCase)
+    if name == "beforeSubmitPrompt":
+        return "UserPromptSubmit"
+    if name == "beforeShellExecution":
+        return "PreToolUse"
+    if name == "afterShellExecution":
+        return "PostToolUse"
+    if name == "beforeReadFile":
+        return "PreToolUse"
+    if name == "afterFileEdit":
+        return "PostToolUse"
+    if name == "beforeMCPExecution":
+        return "PreToolUse"
+    if name == "afterMCPExecution":
+        return "PostToolUse"
+    if name == "afterAgentThought":
+        return "Notification"
+    if name == "afterAgentResponse":
+        return "AfterAgentResponse"
+    if name == "stop":
+        return "Stop"
+    # Gemini
+    if name == "BeforeTool":
+        return "PreToolUse"
+    if name == "AfterTool":
+        return "PostToolUse"
+    if name == "BeforeAgent":
+        return "SubagentStart"
+    if name == "AfterAgent":
+        return "SubagentStop"
+    # GitHub Copilot CLI
+    if name == "sessionStart":
+        return "SessionStart"
+    if name == "sessionEnd":
+        return "SessionEnd"
+    if name == "userPromptSubmitted":
+        return "UserPromptSubmit"
+    if name == "preToolUse":
+        return "PreToolUse"
+    if name == "postToolUse":
+        return "PostToolUse"
+    if name == "errorOccurred":
+        return "Notification"
+    # TraeCli (snake_case)
+    if name == "session_start":
+        return "SessionStart"
+    if name == "session_end":
+        return "SessionEnd"
+    if name == "user_prompt_submit":
+        return "UserPromptSubmit"
+    if name == "pre_tool_use":
+        return "PreToolUse"
+    if name == "post_tool_use":
+        return "PostToolUse"
+    if name == "post_tool_use_failure":
+        return "PostToolUseFailure"
+    if name == "permission_request":
+        return "PermissionRequest"
+    if name == "subagent_start":
+        return "SubagentStart"
+    if name == "subagent_stop":
+        return "SubagentStop"
+    if name == "pre_compact":
+        return "PreCompact"
+    if name == "post_compact":
+        return "PostCompact"
+    if name == "notification":
+        return "Notification"
+    return name
 
 
 def _claude_jsonl_path(session_id, cwd):
@@ -153,6 +228,8 @@ def main():
     if not event_name or not session_id:
         return 1
 
+    normalized_event = _normalize_event(event_name)
+
     payload = dict(data)
     payload["hook_event_name"] = event_name
     payload["session_id"] = session_id
@@ -167,7 +244,7 @@ def main():
         for key, value in extras.items():
             if value and not payload.get(key):
                 payload[key] = value
-        if event_name == "UserPromptSubmit" and not payload.get("prompt"):
+        if normalized_event == "UserPromptSubmit" and not payload.get("prompt"):
             prompt = extras.get("last_user_message")
             if prompt:
                 payload["prompt"] = prompt
@@ -177,12 +254,15 @@ def main():
         for key, value in extras.items():
             if value and not payload.get(key):
                 payload[key] = value
-        if event_name == "UserPromptSubmit" and not payload.get("prompt"):
+        if normalized_event == "UserPromptSubmit" and not payload.get("prompt"):
             prompt = extras.get("last_user_message")
             if prompt:
                 payload["prompt"] = prompt
 
-    expects_response = event_name == "PermissionRequest"
+    # Blocking events: permission prompts + question prompts
+    expects_response = normalized_event == "PermissionRequest" or (
+        normalized_event == "Notification" and payload.get("question")
+    )
     response = _send_event(payload, expects_response)
     if response:
         print(response)

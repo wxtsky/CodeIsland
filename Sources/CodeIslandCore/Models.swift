@@ -1,5 +1,49 @@
 import Foundation
 
+public enum CLIProcessResolver {
+    public static func sourceMatchesExecutablePath(_ path: String, source: String?) -> Bool {
+        guard let normalizedSource = SessionSnapshot.normalizedSupportedSource(source) else { return false }
+        let lowercasedPath = path.lowercased()
+
+        switch normalizedSource {
+        case "traecli":
+            return lowercasedPath.hasSuffix("/coco")
+                || lowercasedPath.hasSuffix("/traecli")
+                || lowercasedPath.contains("/coco ")
+                || lowercasedPath.contains("/traecli ")
+        case "codex":
+            return lowercasedPath.hasSuffix("/codex") || lowercasedPath.contains("/codex ")
+        case "claude":
+            return lowercasedPath.hasSuffix("/claude") || lowercasedPath.contains("/claude ")
+        case "qwen":
+            return lowercasedPath.hasSuffix("/qwen")
+                || lowercasedPath.hasSuffix("/qwen-code")
+                || lowercasedPath.contains("/qwen ")
+                || lowercasedPath.contains("/qwen-code ")
+        case "gemini":
+            return lowercasedPath.hasSuffix("/gemini") || lowercasedPath.contains("/gemini ")
+        default:
+            return lowercasedPath.contains("/\(normalizedSource)")
+        }
+    }
+
+    public static func resolvedTrackedPID(
+        immediateParentPID: Int32,
+        source: String?,
+        ancestry: [(pid: Int32, executablePath: String?)]
+    ) -> Int32 {
+        guard immediateParentPID > 0 else { return immediateParentPID }
+
+        if let directMatch = ancestry.first(where: {
+            sourceMatchesExecutablePath($0.executablePath ?? "", source: source)
+        }) {
+            return directMatch.pid
+        }
+
+        return immediateParentPID
+    }
+}
+
 public enum AgentStatus {
     case idle
     case processing

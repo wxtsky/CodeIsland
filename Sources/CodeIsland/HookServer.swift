@@ -7,6 +7,12 @@ private let log = Logger(subsystem: "com.codeisland", category: "HookServer")
 
 @MainActor
 class HookServer {
+    enum RouteKind: Equatable {
+        case permission
+        case question
+        case event
+    }
+
     private let appState: AppState
     nonisolated static var socketPath: String { SocketPath.path }
     private var listener: NWListener?
@@ -116,6 +122,17 @@ class HookServer {
         "EnterPlanMode", "ExitPlanMode",
     ]
 
+    static func routeKind(for event: HookEvent) -> RouteKind {
+        let normalizedEventName = EventNormalizer.normalize(event.eventName)
+        if normalizedEventName == "PermissionRequest" {
+            return .permission
+        }
+        if normalizedEventName == "Notification", QuestionPayload.from(event: event) != nil {
+            return .question
+        }
+        return .event
+    }
+
     private func processRequest(data: Data, connection: NWConnection) {
         guard let event = HookEvent(from: data) else {
             sendResponse(connection: connection, data: Data("{\"error\":\"parse_failed\"}".utf8))
@@ -128,7 +145,8 @@ class HookServer {
             return
         }
 
-        if event.eventName == "PermissionRequest" {
+        switch Self.routeKind(for: event) {
+        case .permission:
             let sessionId = event.sessionId ?? "default"
 
             // Auto-approve safe internal tools without showing UI
@@ -156,8 +174,8 @@ class HookServer {
                 }
                 self.sendResponse(connection: connection, data: responseBody)
             }
-        } else if EventNormalizer.normalize(event.eventName) == "Notification",
-                  QuestionPayload.from(event: event) != nil {
+
+        case .question:
             let questionSessionId = event.sessionId ?? "default"
             monitorPeerDisconnect(connection: connection, sessionId: questionSessionId)
             Task {
@@ -166,7 +184,8 @@ class HookServer {
                 }
                 self.sendResponse(connection: connection, data: responseBody)
             }
-        } else {
+
+        case .event:
             appState.handleEvent(event)
             sendResponse(connection: connection, data: Data("{}".utf8))
         }

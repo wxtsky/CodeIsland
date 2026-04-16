@@ -69,6 +69,35 @@ func runCommand(_ path: String, args: [String]) -> String? {
     }
 }
 
+func executablePath(for pid: pid_t) -> String? {
+    var pathBuffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+    let len = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
+    guard len > 0 else { return nil }
+    return String(cString: pathBuffer)
+}
+
+func parentPID(of pid: pid_t) -> pid_t? {
+    var info = proc_bsdinfo()
+    let ret = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+    guard ret > 0, info.pbi_ppid > 0 else { return nil }
+    return pid_t(info.pbi_ppid)
+}
+
+func buildAncestry(startingAt pid: pid_t, maxDepth: Int = 6) -> [(pid: pid_t, executablePath: String?)] {
+    guard pid > 0 else { return [] }
+    var result: [(pid: pid_t, executablePath: String?)] = []
+    var current: pid_t? = pid
+    var visited = Set<pid_t>()
+
+    while let currentPid = current, currentPid > 0, result.count < maxDepth, !visited.contains(currentPid) {
+        visited.insert(currentPid)
+        result.append((pid: currentPid, executablePath: executablePath(for: currentPid)))
+        current = parentPID(of: currentPid)
+    }
+
+    return result
+}
+
 func debugLog(_ message: String) {
     guard ProcessInfo.processInfo.environment["CODEISLAND_DEBUG"] != nil else { return }
     let ts = ISO8601DateFormatter().string(from: Date())
@@ -236,12 +265,13 @@ guard let sessionId = json["session_id"] as? String, !sessionId.isEmpty else {
 
 // Event type detection
 let eventName = json["hook_event_name"] as? String ?? ""
-let isPermission = eventName == "PermissionRequest"
-let isQuestion = (eventName == "Notification" || eventName == "afterAgentThought")
+let normalizedEventName = EventNormalizer.normalize(eventName)
+let isPermission = normalizedEventName == "PermissionRequest"
+let isQuestion = (normalizedEventName == "Notification" || eventName == "afterAgentThought")
     && json["question"] as? String != nil
 let isBlocking = isPermission || isQuestion
 
-debugLog("event=\(eventName) session=\(sessionId) permission=\(isPermission) question=\(isQuestion)")
+debugLog("event=\(eventName) normalized=\(normalizedEventName) session=\(sessionId) permission=\(isPermission) question=\(isQuestion)")
 
 // Arm deadline for env collection + connect + send (protects all events).
 // For blocking events, this is disarmed right before the long recvAll wait.
@@ -304,8 +334,20 @@ if let source = sourceTag {
     json["_source"] = source
 }
 
-// Parent PID — the CLI process that spawned this hook (works for any CLI)
-json["_ppid"] = getppid()
+// Resolve the tracked PID. Some CLIs execute hooks through `sh -c`, so `getppid()` can be a
+// transient shell instead of the long-lived CLI process. Walk a short parent chain and prefer
+// the first executable that matches the provider binary.
+let immediateParentPID = getppid()
+let ancestry = buildAncestry(startingAt: immediateParentPID)
+let resolvedTrackedPID = CLIProcessResolver.resolvedTrackedPID(
+    immediateParentPID: Int32(immediateParentPID),
+    source: sourceTag,
+    ancestry: ancestry.map { (pid: Int32($0.pid), executablePath: $0.executablePath) }
+)
+json["_ppid"] = resolvedTrackedPID
+if resolvedTrackedPID != immediateParentPID {
+    json["_hook_ppid"] = Int32(immediateParentPID)
+}
 
 // --- Serialize enriched JSON ---
 guard let enriched = try? JSONSerialization.data(withJSONObject: json) else { exit(0) }
