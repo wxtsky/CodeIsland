@@ -29,6 +29,7 @@ public struct SessionSnapshot {
         "hermes",
         "qwen",
         "kimi",
+        "pi",
     ]
 
     public var status: AgentStatus = .idle
@@ -255,6 +256,7 @@ public struct SessionSnapshot {
         case "hermes": return "Hermes"
         case "qwen": return "Qwen Code"
         case "kimi": return "Kimi Code CLI"
+        case "pi": return "pi"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {
                 return customName

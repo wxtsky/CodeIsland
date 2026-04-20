@@ -618,6 +618,7 @@ final class AppState {
         case "hermes":     return findHermesPids(candidatePids: candidatePids)
         case "qwen":       return findQwenPids(candidatePids: candidatePids)
         case "kimi":       return findKimiPids(candidatePids: candidatePids)
+        case "pi":         return findPiPids(candidatePids: candidatePids)
         default:           return []
         }
     }
@@ -2346,6 +2347,19 @@ final class AppState {
             argSubstrings: [
                 "/kimi-cli/",
                 "kimi_cli",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    private nonisolated static func findPiPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/pi-coding-agent/",
+                "/bin/pi",
+            ],
+            argSubstrings: [
+                "pi-coding-agent",
             ],
             candidatePids: candidatePids
         )
