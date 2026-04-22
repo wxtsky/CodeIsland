@@ -237,6 +237,30 @@ guard !input.isEmpty,
     exit(0)
 }
 
+// Generic compatibility: accept common camelCase aliases from third-party forks
+if json["hook_event_name"] == nil {
+    if let event = nonEmptyString(json["hookEventName"]) {
+        json["hook_event_name"] = event
+    } else if let event = nonEmptyString(json["eventName"]) {
+        json["hook_event_name"] = event
+    } else if let event = nonEmptyString(json["event"]) {
+        json["hook_event_name"] = event
+    } else if let event = eventTag {
+        json["hook_event_name"] = event
+    }
+}
+if json["session_id"] == nil {
+    if let sessionId = nonEmptyString(json["sessionId"]) {
+        json["session_id"] = sessionId
+    } else if let payload = json["payload"] as? [String: Any],
+              let sessionId = nonEmptyString(payload["session_id"]) ?? nonEmptyString(payload["sessionId"]) {
+        json["session_id"] = sessionId
+    } else if let data = json["data"] as? [String: Any],
+              let sessionId = nonEmptyString(data["session_id"]) ?? nonEmptyString(data["sessionId"]) {
+        json["session_id"] = sessionId
+    }
+}
+
 // Copilot CLI adaptation: its stdin JSON lacks session_id and hook_event_name.
 // Normalize Copilot's camelCase payload and pass through sessionId when present.
 if sourceTag == "copilot" {
@@ -258,6 +282,14 @@ if sourceTag == "copilot" {
 }
 
 // Validate: must have non-empty session_id
+if json["session_id"] == nil,
+   let source = sourceTag,
+   !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    // Fallback for third-party providers that don't include a stable session ID.
+    // Use source + parent pid so a single CLI process maps to one session.
+    json["session_id"] = "\(source)-ppid-\(getppid())"
+    debugLog("session_id missing, generated fallback id: \(json["session_id"] ?? "")")
+}
 guard let sessionId = json["session_id"] as? String, !sessionId.isEmpty else {
     debugLog("no session_id, dropping")
     exit(0)
