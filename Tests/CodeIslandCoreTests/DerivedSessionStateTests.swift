@@ -27,6 +27,13 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(SessionSnapshot.normalizedSupportedSource("traecli"), "traecli")
     }
 
+    func testNormalizesThirdPartySourceAliases() {
+        XCTAssertEqual(SessionSnapshot.normalizedSupportedSource("workbody"), "workbuddy")
+        XCTAssertEqual(SessionSnapshot.normalizedSupportedSource("work-body"), "workbuddy")
+        XCTAssertEqual(SessionSnapshot.normalizedSupportedSource("hermes-agents"), "hermes")
+        XCTAssertEqual(SessionSnapshot.normalizedSupportedSource("anti-gravity"), "antigravity")
+    }
+
     func testNormalizesCocoSnakeCaseEvents() {
         XCTAssertEqual(EventNormalizer.normalize("pre_tool_use"), "PreToolUse")
         XCTAssertEqual(EventNormalizer.normalize("permission_request"), "PermissionRequest")
