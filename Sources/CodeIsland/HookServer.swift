@@ -116,11 +116,10 @@ class HookServer {
     }
 
     /// Internal tools that are safe to auto-approve without user confirmation.
-    private static let autoApproveTools: Set<String> = [
-        "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
-        "TodoRead", "TodoWrite",
-        "EnterPlanMode", "ExitPlanMode",
-    ]
+    /// Read from user settings; defaults to all known internal tools.
+    private static var autoApproveTools: Set<String> {
+        SettingsManager.shared.autoApproveTools
+    }
 
     static func routeKind(for event: HookEvent) -> RouteKind {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)

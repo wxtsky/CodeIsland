@@ -112,6 +112,20 @@ final class L10n: ObservableObject {
         "tool_history_limit": "Tool History Limit",
         "tool_history_limit_desc": "Max number of recent tool calls shown per session",
 
+        // Auto-approve tools
+        "auto_approve_tools": "Auto-approve Tools",
+        "auto_approve_tools_desc": "These internal tools are auto-approved without showing a confirmation dialog. Disable tools you want to review manually.",
+        "auto_approve_TaskCreate": "Create a new task",
+        "auto_approve_TaskUpdate": "Update an existing task",
+        "auto_approve_TaskGet": "Get task details",
+        "auto_approve_TaskList": "List all tasks",
+        "auto_approve_TaskOutput": "Get task output",
+        "auto_approve_TaskStop": "Stop a running task",
+        "auto_approve_TodoRead": "Read todo list",
+        "auto_approve_TodoWrite": "Write todo list",
+        "auto_approve_EnterPlanMode": "Enter plan mode",
+        "auto_approve_ExitPlanMode": "Exit plan mode and request approval",
+
         // Appearance
         "preview": "Preview",
         "panel": "Panel",
@@ -345,6 +359,20 @@ final class L10n: ObservableObject {
         "10_seconds": "10 秒",
         "tool_history_limit": "工具历史上限",
         "tool_history_limit_desc": "每个会话显示的最近工具调用数量上限",
+
+        // Auto-approve tools
+        "auto_approve_tools": "自动批准工具",
+        "auto_approve_tools_desc": "这些内部工具会自动批准，无需弹出确认对话框。关闭你想要手动审核的工具。",
+        "auto_approve_TaskCreate": "创建新任务",
+        "auto_approve_TaskUpdate": "更新已有任务",
+        "auto_approve_TaskGet": "获取任务详情",
+        "auto_approve_TaskList": "列出所有任务",
+        "auto_approve_TaskOutput": "获取任务输出",
+        "auto_approve_TaskStop": "停止运行中的任务",
+        "auto_approve_TodoRead": "读取待办列表",
+        "auto_approve_TodoWrite": "写入待办列表",
+        "auto_approve_EnterPlanMode": "进入计划模式",
+        "auto_approve_ExitPlanMode": "退出计划模式并请求审批",
 
         // Appearance
         "preview": "预览",
@@ -580,6 +608,20 @@ final class L10n: ObservableObject {
         "tool_history_limit": "ツール履歴の上限",
         "tool_history_limit_desc": "セッションごとに表示する最近のツール呼び出し数の上限です",
 
+        // Auto-approve tools
+        "auto_approve_tools": "自動承認ツール",
+        "auto_approve_tools_desc": "これらの内部ツールは確認ダイアログなしで自動承認されます。手動で確認したいツールはオフにしてください。",
+        "auto_approve_TaskCreate": "新しいタスクを作成",
+        "auto_approve_TaskUpdate": "既存のタスクを更新",
+        "auto_approve_TaskGet": "タスクの詳細を取得",
+        "auto_approve_TaskList": "すべてのタスクを一覧表示",
+        "auto_approve_TaskOutput": "タスクの出力を取得",
+        "auto_approve_TaskStop": "実行中のタスクを停止",
+        "auto_approve_TodoRead": "Todoリストを読み取り",
+        "auto_approve_TodoWrite": "Todoリストに書き込み",
+        "auto_approve_EnterPlanMode": "プランモードに移行",
+        "auto_approve_ExitPlanMode": "プランモードを終了して承認を要求",
+
         // Appearance
         "preview": "プレビュー",
         "panel": "パネル",
@@ -814,6 +856,20 @@ final class L10n: ObservableObject {
         "tool_history_limit": "도구 기록 제한",
         "tool_history_limit_desc": "세션별로 표시할 최근 도구 호출의 최대 개수입니다",
 
+        // Auto-approve tools
+        "auto_approve_tools": "자동 승인 도구",
+        "auto_approve_tools_desc": "이 내부 도구들은 확인 대화상자 없이 자동 승인됩니다. 수동으로 검토하려는 도구는 비활성화하세요.",
+        "auto_approve_TaskCreate": "새 작업 만들기",
+        "auto_approve_TaskUpdate": "기존 작업 업데이트",
+        "auto_approve_TaskGet": "작업 상세 정보 가져오기",
+        "auto_approve_TaskList": "모든 작업 나열",
+        "auto_approve_TaskOutput": "작업 출력 가져오기",
+        "auto_approve_TaskStop": "실행 중인 작업 중지",
+        "auto_approve_TodoRead": "할 일 목록 읽기",
+        "auto_approve_TodoWrite": "할 일 목록 쓰기",
+        "auto_approve_EnterPlanMode": "계획 모드 진입",
+        "auto_approve_ExitPlanMode": "계획 모드 종료 및 승인 요청",
+
         // Appearance
         "preview": "미리보기",
         "panel": "패널",
@@ -1047,6 +1103,20 @@ final class L10n: ObservableObject {
         "10_seconds": "10 Saniye",
         "tool_history_limit": "Araç Geçmişi Limiti",
         "tool_history_limit_desc": "Oturum başına gösterilen son araç çağrı sayısı",
+
+        // Auto-approve tools
+        "auto_approve_tools": "Otomatik Onay Araçları",
+        "auto_approve_tools_desc": "Bu iç araçlar onay iletişim kutusu gösterilmeden otomatik olarak onaylanır. Manuel olarak incelemek istediğiniz araçları devre dışı bırakın.",
+        "auto_approve_TaskCreate": "Yeni görev oluştur",
+        "auto_approve_TaskUpdate": "Mevcut görevi güncelle",
+        "auto_approve_TaskGet": "Görev detaylarını al",
+        "auto_approve_TaskList": "Tüm görevleri listele",
+        "auto_approve_TaskOutput": "Görev çıktısını al",
+        "auto_approve_TaskStop": "Çalışan görevi durdur",
+        "auto_approve_TodoRead": "Yapılacaklar listesini oku",
+        "auto_approve_TodoWrite": "Yapılacaklar listesine yaz",
+        "auto_approve_EnterPlanMode": "Plan moduna gir",
+        "auto_approve_ExitPlanMode": "Plan modundan çık ve onay iste",
 
         // Appearance
         "preview": "Önizleme",

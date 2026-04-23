@@ -83,6 +83,9 @@ enum SettingsKey {
 
     // Default mascot source when no sessions exist (falls back to this instead of always "claude")
     static let defaultSource = "defaultSource"
+
+    // Auto-approve tools (comma-separated tool names)
+    static let autoApproveTools = "autoApproveTools"
 }
 
 struct SettingsDefaults {
@@ -128,6 +131,8 @@ struct SettingsDefaults {
     static let collapsedWidthScale = 100  // percentage
 
     static let defaultSource = "claude"
+
+    static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode,ExitPlanMode"
 }
 
 @MainActor
@@ -171,6 +176,7 @@ class SettingsManager {
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
+            SettingsKey.autoApproveTools: SettingsDefaults.autoApproveTools,
         ])
     }
 
@@ -282,6 +288,30 @@ class SettingsManager {
     var defaultSource: String {
         get { defaults.string(forKey: SettingsKey.defaultSource) ?? SettingsDefaults.defaultSource }
         set { defaults.set(newValue, forKey: SettingsKey.defaultSource) }
+    }
+
+    /// All known auto-approvable tool names (for UI display).
+    static let allAutoApproveTools: [(name: String, description: String)] = [
+        ("TaskCreate", "Create task"),
+        ("TaskUpdate", "Update task"),
+        ("TaskGet", "Get task"),
+        ("TaskList", "List tasks"),
+        ("TaskOutput", "Get task output"),
+        ("TaskStop", "Stop task"),
+        ("TodoRead", "Read todos"),
+        ("TodoWrite", "Write todos"),
+        ("EnterPlanMode", "Enter plan mode"),
+        ("ExitPlanMode", "Exit plan mode"),
+    ]
+
+    var autoApproveTools: Set<String> {
+        get {
+            let raw = defaults.string(forKey: SettingsKey.autoApproveTools) ?? SettingsDefaults.autoApproveTools
+            return Set(raw.split(separator: ",").map(String.init))
+        }
+        set {
+            defaults.set(newValue.sorted().joined(separator: ","), forKey: SettingsKey.autoApproveTools)
+        }
     }
 }
 
