@@ -1,8 +1,31 @@
 import XCTest
 @testable import CodeIsland
 import CodeIslandCore
+import Yams
 
 final class ConfigInstallerTests: XCTestCase {
+    private func yamlRootDict(_ yaml: String, file: StaticString = #filePath, line: UInt = #line) throws -> [String: Any] {
+        let any = try XCTUnwrap(try Yams.load(yaml: yaml), file: file, line: line)
+        if let d = any as? [String: Any] { return d }
+        if let d = any as? [AnyHashable: Any] {
+            var out: [String: Any] = [:]
+            out.reserveCapacity(d.count)
+            for (k, v) in d {
+                guard let ks = k as? String else { continue }
+                out[ks] = v
+            }
+            return out
+        }
+        XCTFail("YAML root is not a mapping", file: file, line: line)
+        return [:]
+    }
+
+    private func yamlHooks(_ yaml: String, file: StaticString = #filePath, line: UInt = #line) throws -> [[String: Any]] {
+        let root = try yamlRootDict(yaml, file: file, line: line)
+        let hooksAny = try XCTUnwrap(root["hooks"], file: file, line: line)
+        let hooks = try XCTUnwrap(hooksAny as? [Any], file: file, line: line)
+        return hooks.compactMap { $0 as? [String: Any] }
+    }
     func testRemoveManagedHookEntriesAlsoPrunesLegacyVibeIslandHooks() throws {
         let hooks: [String: Any] = [
             "SessionEnd": [
@@ -160,17 +183,19 @@ final class ConfigInstallerTests: XCTestCase {
 
         let merged = ConfigInstaller.mergeTraecliHooks(into: original)
 
-        XCTAssertTrue(merged.contains("hooks:\n"))
-        XCTAssertTrue(merged.contains("command: '"))
-        XCTAssertTrue(merged.contains("codeisland-bridge --source traecli"))
-        XCTAssertTrue(merged.contains("event: permission_request"))
+        let hooks = try! yamlHooks(merged)
+        XCTAssertEqual(hooks.count, 1)
+        let cmd = hooks.first?["command"] as? String
+        XCTAssertTrue(cmd?.contains("codeisland-bridge --source traecli") ?? false)
 
         // Managed block should be a SINGLE hook with multiple matchers. TraeCli may de-dup by
         // (type + command), so emitting one hook per event can drop most events.
-        XCTAssertEqual(merged.components(separatedBy: "- type: command").count - 1, 1)
-        XCTAssertTrue(merged.contains("event: pre_tool_use"))
-        XCTAssertTrue(merged.contains("event: post_tool_use"))
-        XCTAssertTrue(merged.contains("event: stop"))
+        let matchers = hooks.first?["matchers"] as? [Any]
+        let events = (matchers ?? []).compactMap { ($0 as? [String: Any])?["event"] as? String }
+        XCTAssertTrue(events.contains("permission_request"))
+        XCTAssertTrue(events.contains("pre_tool_use"))
+        XCTAssertTrue(events.contains("post_tool_use"))
+        XCTAssertTrue(events.contains("stop"))
     }
 
     func testMergeCocoHooksReplacesExistingManagedBlockWithoutTouchingUserHooks() {
@@ -201,12 +226,13 @@ hooks:
 
         let merged = ConfigInstaller.mergeTraecliHooks(into: original)
 
-        XCTAssertTrue(merged.contains("command: 'echo user-hook'"))
-        XCTAssertFalse(merged.contains("CODEISLAND_MANAGED_TRAECLI_HOOK"))
+        let hooks = try! yamlHooks(merged)
+        let commands = hooks.compactMap { $0["command"] as? String }
+        XCTAssertTrue(commands.contains("echo user-hook"))
 
         // New managed block should still contain a traecli bridge command.
-        XCTAssertEqual(merged.components(separatedBy: "codeisland-bridge --source traecli").count - 1, 1)
-        XCTAssertEqual(merged.components(separatedBy: "- type: command").count - 1, 2)
+        XCTAssertEqual(commands.filter { $0.contains("codeisland-bridge") && $0.contains("--source traecli") }.count, 1)
+        XCTAssertEqual(hooks.count, 2)
     }
 
     func testMergeTraecliHooksRemovesQuotedBridgeCommandToAvoidDuplicates() {
@@ -234,19 +260,42 @@ hooks:
 
         let merged = ConfigInstaller.mergeTraecliHooks(into: original)
 
-        // Old quoted command should be removed, and the new managed block inserted once.
-        XCTAssertEqual(merged.components(separatedBy: "codeisland-bridge").count - 1, 1)
-        XCTAssertEqual(merged.components(separatedBy: "--source traecli").count - 1, 1)
+        let hooks = try! yamlHooks(merged)
+        let commands = hooks.compactMap { $0["command"] as? String }
+        XCTAssertEqual(commands.filter { $0.contains("codeisland-bridge") }.count, 1)
+        XCTAssertEqual(commands.filter { $0.contains("--source traecli") }.count, 1)
     }
 
     func testMergeTraecliHooksHandlesHooksFlowSequenceWithoutBreakingYAML() {
         let original = "model: GPT-5.4\nhooks: []\n"
         let merged = ConfigInstaller.mergeTraecliHooks(into: original)
 
-        // Should rewrite hooks into a block list and inject our managed hook.
-        XCTAssertTrue(merged.contains("hooks:\n"))
-        XCTAssertFalse(merged.contains("hooks: []"))
-        XCTAssertEqual(merged.components(separatedBy: "--source traecli").count - 1, 1)
+        // Should rewrite hooks into a list and inject our managed hook.
+        let hooks = try! yamlHooks(merged)
+        let commands = hooks.compactMap { $0["command"] as? String }
+        XCTAssertEqual(commands.filter { $0.contains("--source traecli") }.count, 1)
+    }
+
+    func testMergeTraecliHooksNormalizesMixedIndentationToValidYAML() {
+        // Simulate a user file with 4-space indented list items, which previously could
+        // become invalid YAML when we injected a 2-space indented managed block.
+        let original = """
+model:
+    name: GPT-5.4
+hooks:
+    - type: command
+      command: echo user-hook
+      matchers:
+        - event: stop
+"""
+
+        let merged = ConfigInstaller.mergeTraecliHooks(into: original)
+        // Must be parseable and must contain both user + managed hook.
+        let hooks = try! yamlHooks(merged)
+        let commands = hooks.compactMap { $0["command"] as? String }
+        XCTAssertTrue(commands.contains("echo user-hook"))
+        XCTAssertEqual(commands.filter { $0.contains("codeisland-bridge") && $0.contains("--source traecli") }.count, 1)
+        XCTAssertEqual(hooks.count, 2)
     }
 
     func testMergeTraecliHooksIsIdempotent() {
@@ -284,8 +333,10 @@ hooks:
 
         let merged = ConfigInstaller.mergeTraecliHooks(into: original)
 
-        XCTAssertTrue(merged.contains("command: 'echo user-hook'"))
-        XCTAssertEqual(merged.components(separatedBy: "--source traecli").count - 1, 1)
+        let hooks = try! yamlHooks(merged)
+        let commands = hooks.compactMap { $0["command"] as? String }
+        XCTAssertTrue(commands.contains("echo user-hook"))
+        XCTAssertEqual(commands.filter { $0.contains("--source traecli") }.count, 1)
     }
 
     func testRemoveManagedTraecliHooksDeletesHookWhenCommandMatches() {
@@ -330,6 +381,8 @@ hooks:
         XCTAssertTrue(script.contains("TRAECLI_EVENTS"))
         XCTAssertTrue(script.contains("\"session_start\""))
         XCTAssertTrue(script.contains("\"session_end\""))
+        // Ensure remote TraeCli YAML merge has indentation repair to avoid invalid YAML.
+        XCTAssertTrue(script.contains("def _normalize_traecli_hooks_list_indentation"))
     }
 
     func testRemoteTraecliPermissionRequestRoutesAsPermissionAndUsesRemoteSessionNamespace() async throws {

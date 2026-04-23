@@ -148,20 +148,125 @@ TRAECLI_EVENTS = [
     ("post_compact", 5),
 ]
 
-def _render_managed_traecli_hooks(cmd):
+def _normalize_traecli_hooks_list_indentation(contents):
+    # Best-effort repair for invalid YAML produced by mixed indentation under top-level `hooks:`.
+    #
+    # Only normalize indentation of *hook items* ("- type:" / "- command:")
+    # and shift the entire list item block left to match the smallest indent.
+    normalized = contents.replace("\\r\\n", "\\n")
+    lines = normalized.split("\\n")
+
+    hooks_index = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if line != stripped:
+            continue
+        if stripped.startswith("hooks:"):
+            hooks_index = i
+            break
+    if hooks_index is None:
+        return normalized
+
+    def _is_top_level_key(line):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            return False
+        if line != stripped:
+            return False
+        return ":" in stripped and not stripped.startswith("hooks:")
+
+    # Find the smallest indent among hook items.
+    indents = []
+    i = hooks_index + 1
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            i += 1
+            continue
+        if _is_top_level_key(line):
+            break
+        if stripped.startswith("- type:") or stripped.startswith("- command:"):
+            indents.append(len(line) - len(line.lstrip(" ")))
+        i += 1
+    if not indents:
+        return normalized
+    base_indent = min(indents)
+
+    out = list(lines)
+    i = hooks_index + 1
+    while i < len(out):
+        line = out[i]
+        stripped = line.strip()
+        if not stripped:
+            i += 1
+            continue
+        if _is_top_level_key(line):
+            break
+        if stripped.startswith("- type:") or stripped.startswith("- command:"):
+            indent = len(line) - len(line.lstrip(" "))
+            if indent > base_indent:
+                delta = indent - base_indent
+                j = i
+                while j < len(out):
+                    nxt = out[j]
+                    nxt_stripped = nxt.strip()
+                    nxt_indent = len(nxt) - len(nxt.lstrip(" "))
+                    if j != i:
+                        if nxt_indent == indent and nxt_stripped.startswith("- "):
+                            break
+                        if nxt_indent < indent and nxt_stripped != "":
+                            break
+                    if nxt.startswith(" " * delta):
+                        out[j] = nxt[delta:]
+                    j += 1
+                i = j
+                continue
+        i += 1
+
+    return "\\n".join(out)
+
+def _detect_traecli_hook_item_indent(lines, hooks_index):
+    def _is_top_level_key(line):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            return False
+        if line != stripped:
+            return False
+        return ":" in stripped and not stripped.startswith("hooks:")
+
+    indents = []
+    i = hooks_index + 1
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            i += 1
+            continue
+        if _is_top_level_key(line):
+            break
+        if stripped.startswith("- type:") or stripped.startswith("- command:"):
+            indents.append(len(line) - len(line.lstrip(" ")))
+        i += 1
+    return min(indents) if indents else 2
+
+def _render_managed_traecli_hooks(cmd, indent=2):
     # Escape single quotes for YAML single-quoted string
     escaped = cmd.replace("'", "''")
     timeout = max([t for (_, t) in TRAECLI_EVENTS] or [5])
-    lines = ["  - type: command"]
-    lines.append(f"    command: '{escaped}'")
-    lines.append(f"    timeout: '{timeout}s'")
-    lines.append("    matchers:")
+    pad = " " * indent
+    pad2 = " " * (indent + 2)
+    pad4 = " " * (indent + 4)
+    lines = [f"{pad}- type: command"]
+    lines.append(f"{pad2}command: '{escaped}'")
+    lines.append(f"{pad2}timeout: '{timeout}s'")
+    lines.append(f"{pad2}matchers:")
     for (event, _) in TRAECLI_EVENTS:
-        lines.append(f"      - event: {event}")
+        lines.append(f"{pad4}- event: {event}")
     return "\\n".join(lines)
 
 def _remove_managed_traecli_hooks(contents):
-    normalized = contents.replace("\\r\\n", "\\n")
+    normalized = _normalize_traecli_hooks_list_indentation(contents)
     lines = normalized.split("\\n")
     result = []
 
@@ -180,7 +285,22 @@ def _remove_managed_traecli_hooks(contents):
         return raw
 
     def _normalize_cmd(cmd):
-        return " ".join((cmd or "").strip().split())
+        s = " ".join((cmd or "").strip().split())
+        if not s:
+            return s
+        # Normalize first token: allow quoted executable path.
+        if s.startswith('"'):
+            end = s.find('"', 1)
+            if end != -1:
+                first = s[1:end]
+                rest = s[end+1:].strip()
+                s = first + (" " + rest if rest else "")
+        parts = s.split(" ", 1)
+        first = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        if first.startswith("~/"):
+            first = str(home) + "/" + first[2:]
+        return first + (" " + rest if rest else "")
 
     i = 0
     while i < len(lines):
@@ -240,8 +360,8 @@ def _remove_managed_traecli_hooks(contents):
     return "\\n".join(result)
 
 def _merge_traecli_hooks(contents, cmd):
-    cleaned = _remove_managed_traecli_hooks(contents)
-    managed_lines = _render_managed_traecli_hooks(cmd).split("\\n")
+    normalized = _normalize_traecli_hooks_list_indentation(contents)
+    cleaned = _remove_managed_traecli_hooks(normalized)
     lines = cleaned.split("\\n")
     hooks_index = None
     hooks_scalar = None
@@ -258,10 +378,13 @@ def _merge_traecli_hooks(contents, cmd):
             hooks_scalar = before_comment
             break
     if hooks_index is not None:
+        indent = _detect_traecli_hook_item_indent(lines, hooks_index)
+        managed_lines = _render_managed_traecli_hooks(cmd, indent=indent).split("\\n")
         if hooks_scalar and hooks_scalar != "":
             lines[hooks_index] = "hooks:"
         lines[hooks_index+1:hooks_index+1] = managed_lines
     else:
+        managed_lines = _render_managed_traecli_hooks(cmd, indent=2).split("\\n")
         while lines and lines[-1] == "":
             lines.pop()
         if lines:

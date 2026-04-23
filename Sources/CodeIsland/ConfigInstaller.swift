@@ -1,5 +1,6 @@
 import Foundation
 import CodeIslandCore
+import Yams
 
 // MARK: - Hook Identifiers
 
@@ -965,21 +966,127 @@ struct ConfigInstaller {
         )
     }
 
-    private static func renderManagedTraecliHooks(source: String = "traecli") -> String {
+    private static func managedTraecliHookObject(source: String = "traecli") -> [String: Any] {
         let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
-        let escapedCommand = "\(quotedBridge) --source \(source)".replacingOccurrences(of: "'", with: "''")
+        let command = "\(quotedBridge) --source \(source)"
 
         let events = defaultEvents(for: .traecli)
         let timeout = events.map { $0.1 }.max() ?? 5
 
-        var lines: [String] = ["  - type: command"]
-        lines.append("    command: '\(escapedCommand)'")
-        lines.append("    timeout: '\(timeout)s'")
-        lines.append("    matchers:")
-        for (event, _, _) in events {
-            lines.append("      - event: \(event)")
+        let matchers: [[String: Any]] = events.map { (event, _, _) in
+            ["event": event]
         }
-        return lines.joined(separator: "\n")
+
+        return [
+            "type": "command",
+            "command": command,
+            "timeout": "\(timeout)s",
+            "matchers": matchers,
+        ]
+    }
+
+    private static func asStringKeyedDict(_ any: Any) -> [String: Any]? {
+        if let d = any as? [String: Any] { return d }
+        if let d = any as? [AnyHashable: Any] {
+            var out: [String: Any] = [:]
+            out.reserveCapacity(d.count)
+            for (k, v) in d {
+                guard let ks = k as? String else { continue }
+                out[ks] = v
+            }
+            return out
+        }
+        return nil
+    }
+
+    /// Best-effort repair for invalid YAML produced by mixed indentation under `hooks:`.
+    ///
+    /// This is only used as a recovery step when YAML parsing fails, to make the file
+    /// parseable so it can be re-serialized via Yams.
+    private static func normalizeTraecliHooksListIndentation(_ contents: String) -> String {
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
+        guard let hooksIndex = lines.firstIndex(where: { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard line == trimmed else { return false } // top-level only
+            return trimmed.hasPrefix("hooks:")
+        }) else {
+            return normalized
+        }
+
+        // Determine the intended indentation for *hook items* under hooks:
+        // Only consider "- type:" / "- command:" so we don't confuse nested matcher lists.
+        var hookIndent: Int?
+        var i = hooksIndex + 1
+        var indents: [Int] = []
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                i += 1
+                continue
+            }
+            // Stop if we hit another top-level key.
+            if line == trimmed, trimmed.contains(":"), !trimmed.hasPrefix("hooks:") {
+                break
+            }
+            if trimmed.hasPrefix("- type:") || trimmed.hasPrefix("- command:") {
+                indents.append(line.prefix { $0 == " " }.count)
+            }
+            i += 1
+        }
+        hookIndent = indents.min()
+        guard let baseIndent = hookIndent else { return normalized }
+
+        var out = lines
+        i = hooksIndex + 1
+        while i < out.count {
+            let line = out[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                i += 1
+                continue
+            }
+            // Stop when leaving hooks section (top-level key).
+            if line == trimmed, trimmed.contains(":"), !trimmed.hasPrefix("hooks:") {
+                break
+            }
+
+            if (trimmed.hasPrefix("- type:") || trimmed.hasPrefix("- command:")) {
+                let indent = line.prefix { $0 == " " }.count
+                if indent > baseIndent {
+                    let delta = indent - baseIndent
+                    // Shift the whole list item block left by delta spaces.
+                    var j = i
+                    while j < out.count {
+                        let next = out[j]
+                        let nextTrimmed = next.trimmingCharacters(in: .whitespaces)
+                        let nextIndent = next.prefix { $0 == " " }.count
+
+                        if j != i {
+                            // Next item in the same list at the original indent ends the block.
+                            if nextIndent == indent && nextTrimmed.hasPrefix("- ") {
+                                break
+                            }
+                            // Leaving this list item (less indent + non-empty) ends the block.
+                            if nextIndent < indent && !nextTrimmed.isEmpty {
+                                break
+                            }
+                        }
+
+                        if next.hasPrefix(String(repeating: " ", count: delta)) {
+                            out[j] = String(next.dropFirst(delta))
+                        }
+                        j += 1
+                    }
+                    i = j
+                    continue
+                }
+            }
+            i += 1
+        }
+
+        return out.joined(separator: "\n")
     }
 
     private static func isTraecliCommandListItemStart(_ trimmed: String) -> Bool {
@@ -1085,7 +1192,7 @@ struct ConfigInstaller {
         return false
     }
 
-    static func removeManagedTraecliHooks(from contents: String, source: String = "traecli") -> String {
+    private static func removeManagedTraecliHooksLegacy(from contents: String, source: String = "traecli") -> String {
         let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         var result: [String] = []
@@ -1171,39 +1278,85 @@ struct ConfigInstaller {
         return result.joined(separator: "\n")
     }
 
+    static func removeManagedTraecliHooks(from contents: String, source: String = "traecli") -> String {
+        // Fast path: empty file.
+        if contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return contents
+        }
+
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        let parseInputs = [normalized, normalizeTraecliHooksListIndentation(normalized)]
+        for input in parseInputs {
+            do {
+                guard let loaded = try Yams.load(yaml: input) else { continue }
+                guard var root = asStringKeyedDict(loaded) else { continue }
+                guard let hooksAny = root["hooks"] else { return contents }
+                guard let hooks = hooksAny as? [Any] else { return contents }
+
+                var didRemove = false
+                var cleaned: [Any] = []
+                cleaned.reserveCapacity(hooks.count)
+                for item in hooks {
+                    guard let hook = asStringKeyedDict(item),
+                          let command = hook["command"] as? String,
+                          isOurTraecliInjectedCommand(command, source: source)
+                    else {
+                        cleaned.append(item)
+                        continue
+                    }
+                    didRemove = true
+                }
+
+                guard didRemove else { return contents }
+                root["hooks"] = cleaned
+
+                var dumped = try Yams.dump(object: root)
+                if !dumped.hasSuffix("\n") { dumped.append("\n") }
+                return dumped
+            } catch {
+                continue
+            }
+        }
+
+        // YAML still unparseable — fall back to the legacy remover (best effort).
+        return removeManagedTraecliHooksLegacy(from: contents, source: source)
+    }
+
     static func mergeTraecliHooks(into contents: String, source: String = "traecli") -> String {
-        let cleaned = removeManagedTraecliHooks(from: contents, source: source)
-        let managedLines = renderManagedTraecliHooks(source: source).components(separatedBy: "\n")
-        var lines = cleaned.components(separatedBy: "\n")
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+        let parseInputs = [normalized, normalizeTraecliHooksListIndentation(normalized)]
 
-        // Find a top-level hooks key. Handle common scalar/empty forms like "hooks: []" to
-        // avoid producing invalid YAML by appending block items to a flow sequence.
-        if let hooksIndex = lines.firstIndex(where: { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard line == trimmed else { return false } // top-level only
-            return trimmed.range(of: #"^hooks:\s*(\[\s*\]|\{\s*\}|null|~)?\s*(#.*)?$"#, options: .regularExpression) != nil
-        }) {
-            let trimmed = lines[hooksIndex].trimmingCharacters(in: .whitespaces)
-            if trimmed.range(of: #"^hooks:\s*(\[\s*\]|\{\s*\}|null|~)\s*(#.*)?$"#, options: .regularExpression) != nil {
-                lines[hooksIndex] = "hooks:"
+        for input in parseInputs {
+            do {
+                let loaded = try Yams.load(yaml: input)
+                var root: [String: Any] = loaded.flatMap(asStringKeyedDict) ?? [:]
+
+                let hooksAny = root["hooks"]
+                var hooks: [Any] = []
+                if let existing = hooksAny as? [Any] {
+                    hooks = existing
+                }
+
+                // Remove existing managed hook(s) and then prepend the fresh one.
+                hooks.removeAll { item in
+                    guard let hook = asStringKeyedDict(item),
+                          let command = hook["command"] as? String
+                    else { return false }
+                    return isOurTraecliInjectedCommand(command, source: source)
+                }
+                hooks.insert(managedTraecliHookObject(source: source), at: 0)
+                root["hooks"] = hooks
+
+                var dumped = try Yams.dump(object: root)
+                if !dumped.hasSuffix("\n") { dumped.append("\n") }
+                return dumped
+            } catch {
+                continue
             }
-            lines.insert(contentsOf: managedLines, at: hooksIndex + 1)
-        } else {
-            while !lines.isEmpty && lines.last == "" {
-                lines.removeLast()
-            }
-            if !lines.isEmpty {
-                lines.append("")
-            }
-            lines.append("hooks:")
-            lines.append(contentsOf: managedLines)
         }
 
-        var merged = lines.joined(separator: "\n")
-        if !merged.hasSuffix("\n") {
-            merged.append("\n")
-        }
-        return merged
+        // Still unparseable: last resort, do not clobber user data.
+        return contents.hasSuffix("\n") ? contents : (contents + "\n")
     }
 
     @discardableResult
