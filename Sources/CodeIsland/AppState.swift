@@ -1118,6 +1118,32 @@ final class AppState {
         refreshDerivedState()
     }
 
+    func denyPermissionWithReason(_ reason: String) {
+        guard !permissionQueue.isEmpty else { return }
+        let pending = permissionQueue.removeFirst()
+        let sessionId = pending.event.sessionId ?? "default"
+        dismissedPermissionSessionIds.remove(sessionId)
+        var decision: [String: Any] = ["behavior": "deny"]
+        let trimmed = reason.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { decision["reason"] = trimmed }
+        let obj: [String: Any] = [
+            "hookSpecificOutput": [
+                "hookEventName": "PermissionRequest",
+                "decision": decision
+            ] as [String: Any]
+        ]
+        let responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        pending.continuation.resume(returning: responseData)
+        sessions[sessionId]?.status = .idle
+        sessions[sessionId]?.currentTool = nil
+        sessions[sessionId]?.toolDescription = nil
+        if activeSessionId == sessionId {
+            activeSessionId = mostActiveSessionId()
+        }
+        showNextPending()
+        refreshDerivedState()
+    }
+
     func dismissPermissionPrompt() {
         guard let pending = permissionQueue.first else { return }
 

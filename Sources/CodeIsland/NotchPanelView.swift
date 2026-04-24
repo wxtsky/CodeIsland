@@ -848,6 +848,10 @@ private struct ApprovalBar: View {
     let onDeny: () -> Void
     let onDismiss: () -> Void
 
+    @State private var showEditInput: Bool = false
+    @State private var editText: String = ""
+    @FocusState private var editFocused: Bool
+
     // Jump validation state for click-to-jump functionality
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
@@ -915,8 +919,9 @@ private struct ApprovalBar: View {
             // Pixel-style buttons
             HStack(spacing: 6) {
                 if tool == "ExitPlanMode" {
-                    PixelButton(label: L10n.shared["plan_manually_approve"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
-                    PixelButton(label: L10n.shared["plan_auto_accept"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAllowAutoAccept)
+                    PixelButton(label: L10n.shared["plan_manually_approve"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: { showEditInput = false; onAllow() })
+                    PixelButton(label: L10n.shared["plan_auto_accept"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: { showEditInput = false; onAllowAutoAccept() })
+                    PixelButton(label: L10n.shared["plan_edit"], fg: .white.opacity(0.95), bg: Color(red: 0.38, green: 0.26, blue: 0.10), border: Color(red: 0.68, green: 0.50, blue: 0.20), action: { showEditInput.toggle(); if !showEditInput { editText = "" } })
                 } else {
                     PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
                     PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
@@ -925,6 +930,32 @@ private struct ApprovalBar: View {
                 }
             }
             .padding(.horizontal, 14)
+
+            if tool == "ExitPlanMode" && showEditInput {
+                HStack(spacing: 6) {
+                    Text(">")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color(red: 0.68, green: 0.50, blue: 0.20))
+                    TextField(L10n.shared["type_answer"], text: $editText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.white)
+                        .focused($editFocused)
+                        .onSubmit {
+                            guard !editText.isEmpty else { return }
+                            appState.denyPermissionWithReason(editText)
+                            showEditInput = false
+                            editText = ""
+                        }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(4)
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color(red: 0.68, green: 0.50, blue: 0.20).opacity(0.3), lineWidth: 1))
+                .padding(.horizontal, 14)
+                .onAppear { editFocused = true }
+            }
         }
         .padding(.vertical, 10)
         .offset(x: failureShakeOffset)
@@ -1888,6 +1919,9 @@ private struct SessionCard: View {
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
     @State private var showApprovalDetails = false
+    @State private var showInlineEditInput = false
+    @State private var inlineEditText: String = ""
+    @FocusState private var inlineEditFocused: Bool
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
@@ -2014,14 +2048,21 @@ private struct SessionCard: View {
                                 fg: .white,
                                 bg: Color(red: 0.25, green: 0.65, blue: 0.35),
                                 enabled: isActiveApproval,
-                                action: { appState.approvePermission(always: false) }
+                                action: { showInlineEditInput = false; appState.approvePermission(always: false) }
                             )
                             inlineActionButton(
                                 L10n.shared["plan_auto_accept"],
                                 fg: .white,
                                 bg: Color(red: 0.25, green: 0.55, blue: 0.85),
                                 enabled: isActiveApproval,
-                                action: { appState.approvePermissionWithAutoAcceptEdits() }
+                                action: { showInlineEditInput = false; appState.approvePermissionWithAutoAcceptEdits() }
+                            )
+                            inlineActionButton(
+                                L10n.shared["plan_edit"],
+                                fg: .white,
+                                bg: Color(red: 0.55, green: 0.40, blue: 0.15),
+                                enabled: isActiveApproval,
+                                action: { withAnimation(NotchAnimation.micro) { showInlineEditInput.toggle(); if !showInlineEditInput { inlineEditText = "" } } }
                             )
                         } else {
                             inlineActionButton(
@@ -2046,6 +2087,31 @@ private struct SessionCard: View {
                                 action: { appState.denyPermission() }
                             )
                         }
+                    }
+
+                    if tool == "ExitPlanMode" && showInlineEditInput {
+                        HStack(spacing: 6) {
+                            Text(">")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color(red: 0.68, green: 0.50, blue: 0.20))
+                            TextField(L10n.shared["type_answer"], text: $inlineEditText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.white)
+                                .focused($inlineEditFocused)
+                                .onSubmit {
+                                    guard !inlineEditText.isEmpty else { return }
+                                    appState.denyPermissionWithReason(inlineEditText)
+                                    showInlineEditInput = false
+                                    inlineEditText = ""
+                                }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(4)
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color(red: 0.68, green: 0.50, blue: 0.20).opacity(0.3), lineWidth: 1))
+                        .onAppear { inlineEditFocused = true }
                     }
 
                     // Always show a compact, 1-line summary so the session list has approval context
