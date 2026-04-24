@@ -344,7 +344,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
-    @State private var autoApproveSet: Set<String> = SettingsManager.shared.autoApproveTools
+    @AppStorage(SettingsKey.autoApproveTools) private var autoApproveSet: Set<String> = .init(rawValue: SettingsDefaults.autoApproveTools) ?? []
 
     var body: some View {
         Form {
@@ -411,7 +411,6 @@ private struct BehaviorPage: View {
                             } else {
                                 autoApproveSet.remove(tool.name)
                             }
-                            SettingsManager.shared.autoApproveTools = autoApproveSet
                         }
                     )) {
                         VStack(alignment: .leading, spacing: 1) {

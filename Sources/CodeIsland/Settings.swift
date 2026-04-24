@@ -132,7 +132,7 @@ struct SettingsDefaults {
 
     static let defaultSource = "claude"
 
-    static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode,ExitPlanMode"
+    static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode"
 }
 
 @MainActor
@@ -312,6 +312,18 @@ class SettingsManager {
         set {
             defaults.set(newValue.sorted().joined(separator: ","), forKey: SettingsKey.autoApproveTools)
         }
+    }
+}
+
+// MARK: - AppStorage-compatible Set<String>
+
+extension Set<String>: @retroactive RawRepresentable {
+    public var rawValue: String {
+        sorted().joined(separator: ",")
+    }
+
+    public init?(rawValue: String) {
+        self = Set(rawValue.split(separator: ",").map(String.init))
     }
 }
 
