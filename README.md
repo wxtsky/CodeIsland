@@ -1,152 +1,47 @@
 <h1 align="center">
   <img src="logo.png" width="48" height="48" alt="CodeIsland Logo" valign="middle">&nbsp;
-  CodeIsland
+  CodeIsland (Uncle-Peke fork)
 </h1>
+
 <p align="center">
-  <b>Real-time AI coding agent status panel for macOS Dynamic Island (Notch)</b><br>
-  <a href="#installation">Install</a> •
-  <a href="#features">Features</a> •
-  <a href="#supported-tools">Supported Tools</a> •
-  <a href="#build-from-source">Build</a><br>
-  English | <a href="README.zh-CN.md">简体中文</a>
+  <b>Real-time AI coding agent status panel for the macOS notch.</b>
 </p>
 
 ---
 
-> **This is a fork** of the original [wxtsky/CodeIsland](https://github.com/wxtsky/CodeIsland) (MIT). Huge thanks to [@wxtsky](https://github.com/wxtsky) for the original work. This fork adds small tweaks (e.g. ExitPlanMode approval UI refinements) and is distributed via the Uncle-Peke Homebrew tap. For the official upstream release, use `wxtsky/tap`.
+> Fork of [wxtsky/CodeIsland](https://github.com/wxtsky/CodeIsland) (MIT) — huge thanks to [@wxtsky](https://github.com/wxtsky). This fork adds small UX tweaks around Claude Code's ExitPlanMode approval UI. For the official signed & notarized upstream build, use [`wxtsky/tap`](https://github.com/wxtsky/CodeIsland#installation).
 
 ---
 
-<p align="center">
-  <img src="docs/images/notch-panel.png" width="700" alt="CodeIsland Panel Preview">
-</p>
-
-## What is CodeIsland?
-
-CodeIsland lives in your MacBook's notch area and shows you what your AI coding agents are doing — in real time. No more switching windows to check if Claude is waiting for approval or if Codex finished its task.
-
-It connects to **11 AI coding tools** via Unix socket IPC, displaying session status, tool calls, permission requests, and more — all in a compact, pixel-art styled panel.
-
-## Features
-
-- **Notch-native UI** — Expands from the MacBook notch, collapses when idle
-- **11 AI tools supported** — Claude Code, Codex, Gemini CLI, Cursor, Copilot, Trae/Traecli, Qoder, Factory, CodeBuddy, OpenCode, Kimi Code CLI
-- **Live status tracking** — See active sessions, tool calls, and AI responses in real time
-- **Permission management** — Approve/deny tool permissions directly from the panel
-- **Question answering** — Respond to agent questions without leaving your current app
-- **Pixel-art mascots** — Each AI tool has its own animated character
-- **One-click jump** — Click a session to jump to its terminal tab or IDE window
-- **Smart suppress** — Tab-level terminal detection: only suppresses notifications when you're looking at the specific session tab, not just the terminal app
-- **Sound effects** — Optional 8-bit sound notifications for session events
-- **Auto hook install** — Automatically configures hooks for all detected CLI tools, with auto-repair and version tracking
-- **Bilingual UI** — English and Chinese, auto-detects system language
-- **Multi-display** — Works with external monitors, auto-detects notch displays
-
-## Supported Tools
-
-| | Tool | Events | Jump | Status |
-|:---:|------|--------|------|--------|
-| <img src="docs/images/mascots/claude.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/claude.png" width="16"> Claude Code | 13 | Terminal tab | Full |
-| <img src="docs/images/mascots/codex.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/codex.png" width="16"> Codex | 3 | Terminal | Basic |
-| <img src="docs/images/mascots/gemini.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/gemini.png" width="16"> Gemini CLI | 6 | Terminal | Full |
-| <img src="docs/images/mascots/cursor.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cursor.png" width="16"> Cursor | 10 | IDE | Full |
-| <img src="docs/images/mascots/trae.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/traecli.png" width="16"> TraeCli | 10 | Terminal | Full |
-| <img src="docs/images/mascots/qoder.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/qoder.png" width="16"> Qoder | 10 | IDE | Full |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/copilot.png" width="16"> Copilot | 6 | Terminal | Full |
-| <img src="docs/images/mascots/factory.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/factory.png" width="16"> Factory | 10 | IDE | Full |
-| <img src="docs/images/mascots/codebuddy.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/codebuddy.png" width="16"> CodeBuddy | 10 | APP/Terminal | Full |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/kimi.png" width="16"> Kimi Code CLI | 10 | Terminal | Full |
-| <img src="docs/images/mascots/opencode.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/opencode.png" width="16"> OpenCode | All | APP/Terminal | Full |
-
-## Installation
-
-### Homebrew — Official upstream (signed & notarized)
+## Install
 
 ```bash
-brew tap wxtsky/tap
-brew install --cask codeisland
+brew install --cask Uncle-Peke/tap/codeisland
 ```
 
-### Homebrew — This fork (Uncle-Peke, unsigned)
+Update later with:
 
 ```bash
-brew tap Uncle-Peke/tap
-brew install --cask codeisland
+brew upgrade --cask codeisland
 ```
 
-> The fork build is **not** signed with a Developer ID. Homebrew Cask clears the quarantine attribute automatically on install, so it launches without Gatekeeper warnings.
-
-### Manual Download
-
-- Upstream: [wxtsky/CodeIsland releases](https://github.com/wxtsky/CodeIsland/releases) (signed)
-- This fork: [Uncle-Peke/CodeIsland releases](https://github.com/Uncle-Peke/CodeIsland/releases) (unsigned)
-
-Download `CodeIsland.dmg`, open it, and drag `CodeIsland.app` to your Applications folder. Launch CodeIsland — it will automatically install hooks for all detected AI tools.
-
-> **Note:** On first launch, macOS may show a security warning. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-
-### Build from Source
+## Build from Source
 
 Requires **macOS 14+** and **Swift 5.9+**.
 
 ```bash
-git clone https://github.com/wxtsky/CodeIsland.git
+git clone https://github.com/Uncle-Peke/CodeIsland.git
 cd CodeIsland
-
-# Development (debug build + launch)
-swift build && ./.build/debug/CodeIsland
-
-# Release (universal binary: Apple Silicon + Intel)
 ./build.sh
 open .build/release/CodeIsland.app
 ```
 
-## How It Works
+## Limitations vs upstream
 
-```
-AI Tool (Claude/Codex/Gemini/Cursor/...)
-  → Hook event triggered
-    → codeisland-bridge (native Swift binary, ~86KB)
-      → Unix socket → /tmp/codeisland-<uid>.sock
-        → CodeIsland app receives event
-          → Updates UI in real time
-```
-
-CodeIsland installs lightweight hooks into each AI tool's config. When the tool triggers an event (session start, tool call, permission request, etc.), the hook sends a JSON message through a Unix socket. CodeIsland listens on this socket and updates the notch panel instantly.
-
-For **OpenCode**, a JS plugin connects directly to the socket — no bridge binary needed.
-
-## Settings
-
-CodeIsland provides a 7-tab settings panel:
-
-- **General** — Language, launch at login, display selection
-- **Behavior** — Auto-hide, smart suppress, session cleanup
-- **Appearance** — Panel height, font size, AI reply lines
-- **Mascots** — Preview all pixel-art characters and their animations
-- **Sound** — 8-bit sound effects for session events
-- **Hooks** — View CLI installation status, reinstall or uninstall hooks
-- **About** — Version info and links
-
-## Requirements
-
-- macOS 14.0 (Sonoma) or later
-- Works best on MacBooks with a notch, but also works on external displays
-
-## Acknowledgments
-
-This project was inspired by [claude-island](https://github.com/farouqaldori/claude-island) by [@farouqaldori](https://github.com/farouqaldori). Thanks for the original idea of bringing AI agent status into the macOS notch.
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=wxtsky%2FCodeIsland&type=date&legend=bottom-right">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&legend=top-left" />
- </picture>
-</a>
+- **Unsigned DMG** — no Developer ID signing or notarization. Homebrew Cask handles quarantine automatically; direct DMG users need `xattr -dr com.apple.quarantine /Applications/CodeIsland.app`
+- **No Sparkle auto-update** — the in-app "Check for Updates" is a no-op. Use `brew upgrade` instead
+- **Independent release cadence** — upstream changes need to be manually merged
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
