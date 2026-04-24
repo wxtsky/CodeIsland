@@ -1,0 +1,78 @@
+name: Build macOS ARM DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version written to the app bundle. Leave empty to use Info.plist.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build unsigned ARM64 DMG
+    runs-on: macos-15
+    env:
+      BUILD_ARCH: arm64
+      SKIP_SIGN: "1"
+      SKIP_NOTARIZE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building version $VERSION"
+
+      - name: Select Xcode 26
+        run: |
+          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -type d | sort | tail -n 1)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "Xcode 26 is required to compile AppIcon.icon"
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+
+      - name: Show build environment
+        run: |
+          sw_vers
+          xcodebuild -version
+          uname -m
+
+      - name: Install DMG tooling
+        run: |
+          if ! command -v create-dmg >/dev/null 2>&1; then
+            brew install create-dmg
+          fi
+
+      - name: Build DMG
+        run: ./scripts/build-dmg.sh "$VERSION"
+
+      - name: Verify ARM64 app binary
+        run: |
+          APP_ARCHS="$(lipo -archs .build/dmg-staging/CodeIsland.app/Contents/MacOS/CodeIsland)"
+          HELPER_ARCHS="$(lipo -archs .build/dmg-staging/CodeIsland.app/Contents/Helpers/codeisland-bridge)"
+          SPARKLE_ARCHS="$(lipo -archs .build/dmg-staging/CodeIsland.app/Contents/Frameworks/Sparkle.framework/Sparkle)"
+          test "$APP_ARCHS" = "arm64"
+          test "$HELPER_ARCHS" = "arm64"
+          test "$SPARKLE_ARCHS" = "arm64"
+          ls -lh .build/CodeIsland.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeIsland-macos-arm64-dmg
+          path: .build/CodeIsland.dmg
+          if-no-files-found: error

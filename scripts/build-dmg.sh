@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: ./scripts/build-dmg.sh <version>
+# Usage: [BUILD_ARCH=universal|arm64] ./scripts/build-dmg.sh <version>
 # Example: ./scripts/build-dmg.sh 1.0.7
+# Example: BUILD_ARCH=arm64 SKIP_SIGN=1 SKIP_NOTARIZE=1 ./scripts/build-dmg.sh 1.0.7
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
@@ -17,13 +18,30 @@ STAGING_DIR="$BUILD_DIR/dmg-staging"
 APP_DIR="$STAGING_DIR/CodeIsland.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 OUTPUT_DMG="$BUILD_DIR/CodeIsland.dmg"
+BUILD_ARCH="${BUILD_ARCH:-universal}"
 
-echo "==> Building CodeIsland ${VERSION} (universal)"
+case "$BUILD_ARCH" in
+    universal|arm64)
+        ;;
+    *)
+        echo "ERROR: BUILD_ARCH must be 'universal' or 'arm64' (got '$BUILD_ARCH')" >&2
+        exit 1
+        ;;
+esac
 
-# Build for both architectures
+echo "==> Building CodeIsland ${VERSION} (${BUILD_ARCH})"
+
 cd "$REPO_ROOT"
-swift build -c release --arch arm64
-swift build -c release --arch x86_64
+case "$BUILD_ARCH" in
+    universal)
+        # Build for both architectures
+        swift build -c release --arch arm64
+        swift build -c release --arch x86_64
+        ;;
+    arm64)
+        swift build -c release --arch arm64
+        ;;
+esac
 
 ARM_DIR="$BUILD_DIR/arm64-apple-macosx/release"
 X86_DIR="$BUILD_DIR/x86_64-apple-macosx/release"
@@ -36,11 +54,20 @@ mkdir -p "$CONTENTS_DIR/MacOS"
 mkdir -p "$CONTENTS_DIR/Helpers"
 mkdir -p "$CONTENTS_DIR/Resources"
 
-# Create universal binaries
-lipo -create "$ARM_DIR/CodeIsland" "$X86_DIR/CodeIsland" \
-     -output "$CONTENTS_DIR/MacOS/CodeIsland"
-lipo -create "$ARM_DIR/codeisland-bridge" "$X86_DIR/codeisland-bridge" \
-     -output "$CONTENTS_DIR/Helpers/codeisland-bridge"
+case "$BUILD_ARCH" in
+    universal)
+        # Create universal binaries
+        lipo -create "$ARM_DIR/CodeIsland" "$X86_DIR/CodeIsland" \
+             -output "$CONTENTS_DIR/MacOS/CodeIsland"
+        lipo -create "$ARM_DIR/codeisland-bridge" "$X86_DIR/codeisland-bridge" \
+             -output "$CONTENTS_DIR/Helpers/codeisland-bridge"
+        ;;
+    arm64)
+        cp "$ARM_DIR/CodeIsland" "$CONTENTS_DIR/MacOS/CodeIsland"
+        cp "$ARM_DIR/codeisland-bridge" "$CONTENTS_DIR/Helpers/codeisland-bridge"
+        ;;
+esac
+chmod +x "$CONTENTS_DIR/MacOS/CodeIsland" "$CONTENTS_DIR/Helpers/codeisland-bridge"
 
 # Write Info.plist (use the root Info.plist as base, update version)
 CURRENT_VER=$(defaults read "$REPO_ROOT/Info.plist" CFBundleShortVersionString)
@@ -71,10 +98,11 @@ for bundle in "$BUILD_DIR"/*/release/*.bundle; do
 done
 
 # ---------------------------------------------------------------------------
-# Embed Sparkle.framework (universal, Sparkle-Project-signed via Apple Dev ID).
-# The xcframework slice already contains the signed Autoupdate / Updater.app /
-# XPC services, so we keep those signatures intact and sign only the outer
-# bundle below — never pass --deep/--force through the framework.
+# Embed Sparkle.framework. The default release build keeps Sparkle universal;
+# arm64 builds thin it while copying so the unsigned CI artifact stays ARM-only.
+# The xcframework slice already contains signed Autoupdate / Updater.app / XPC
+# services, so we keep those signatures intact and sign only the outer bundle
+# below — never pass --deep/--force through the framework.
 # ---------------------------------------------------------------------------
 mkdir -p "$CONTENTS_DIR/Frameworks"
 SPARKLE_SRC="$BUILD_DIR/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
@@ -83,7 +111,14 @@ if [ ! -d "$SPARKLE_SRC" ]; then
     exit 1
 fi
 rm -rf "$CONTENTS_DIR/Frameworks/Sparkle.framework"
-cp -R "$SPARKLE_SRC" "$CONTENTS_DIR/Frameworks/"
+case "$BUILD_ARCH" in
+    universal)
+        cp -R "$SPARKLE_SRC" "$CONTENTS_DIR/Frameworks/"
+        ;;
+    arm64)
+        ditto --arch arm64 "$SPARKLE_SRC" "$CONTENTS_DIR/Frameworks/Sparkle.framework"
+        ;;
+esac
 echo "==> Embedded Sparkle.framework from $SPARKLE_SRC"
 
 # SwiftPM builds binaries with @loader_path as the only non-system rpath, which
