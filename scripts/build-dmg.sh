@@ -125,6 +125,15 @@ elif security find-identity -v -p codesigning | grep -q "$(printf '%s' "$SIGN_ID
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_IDENTITY" "$SPARKLE_FW"
 
+    # Bundled helpers (hook bridge) also need a proper signature before the
+    # outer bundle is sealed, otherwise codesign's nested check rejects the
+    # parent with "code object is not signed at all / In subcomponent: ...".
+    for helper in "$CONTENTS_DIR"/Helpers/*; do
+        [ -f "$helper" ] || continue
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$helper"
+    done
+
     # Finally, sign the main bundle. Entitlements only on the top-level app —
     # Sparkle components have their own entitlements baked into their signatures.
     codesign --force --options runtime --timestamp \
@@ -153,6 +162,7 @@ create-dmg \
     --hide-extension "CodeIsland.app" \
     --app-drop-link 425 190 \
     --no-internet-enable \
+    --sandbox-safe \
     "$OUTPUT_DMG" \
     "$STAGING_DIR/"
 
