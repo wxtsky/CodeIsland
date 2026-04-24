@@ -42,6 +42,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.startSessionDiscovery()
         RemoteManager.shared.startup()
 
+        // ESP32 BLE bridge (opt-in): mirrors the Dynamic Island onto a real-buddy
+        // companion device and routes its button press back to TerminalActivator.
+        ESP32StatePublisher.shared.attach(appState)
+        ESP32BridgeManager.shared.onFocusRequest = { [weak appState] mascot in
+            guard let appState else { return }
+            ESP32FocusCoordinator.handle(mascot: mascot, appState: appState)
+        }
+        let esp32Enabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
+        let esp32Heartbeat = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
+        ESP32StatePublisher.shared.configure(
+            enabled: esp32Enabled,
+            heartbeatSeconds: esp32Heartbeat > 0 ? esp32Heartbeat : SettingsDefaults.esp32HeartbeatSeconds
+        )
+
         // Hooks auto-recovery: periodic + app activation trigger
         hookRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor in

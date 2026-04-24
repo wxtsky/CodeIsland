@@ -13,6 +13,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case shortcuts
     case remote
     case hooks
+    case esp32
     case about
 
     var id: String { rawValue }
@@ -27,6 +28,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return "command.circle.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
+        case .esp32: return "dot.radiowaves.left.and.right"
         case .about: return "info.circle.fill"
         }
     }
@@ -41,6 +43,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return .indigo
         case .remote: return .mint
         case .hooks: return .purple
+        case .esp32: return .red
         case .about: return .cyan
         }
     }
@@ -53,7 +56,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .esp32, .about]),
 ]
 
 // MARK: - Main View
@@ -91,6 +94,7 @@ struct SettingsView: View {
                 case .shortcuts: ShortcutsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage()
+                case .esp32: ESP32Page()
                 case .about: AboutPage()
                 }
             }
@@ -1120,6 +1124,99 @@ private struct SoundEventRow: View {
     private func clearCustomSound() {
         customPath = ""
         UserDefaults.standard.removeObject(forKey: SettingsKey.soundCustomPath(soundName))
+    }
+}
+
+// MARK: - ESP32 Bridge Page
+
+private struct ESP32Page: View {
+    @ObservedObject private var l10n = L10n.shared
+    @AppStorage(SettingsKey.esp32BridgeEnabled) private var enabled: Bool = SettingsDefaults.esp32BridgeEnabled
+    @AppStorage(SettingsKey.esp32HeartbeatSeconds) private var heartbeat: Double = SettingsDefaults.esp32HeartbeatSeconds
+    @State private var refreshTick = 0
+
+    private var bridge: ESP32BridgeManager { ESP32BridgeManager.shared }
+
+    private var statusText: String {
+        _ = refreshTick // force recompute
+        switch bridge.status {
+        case .off: return "Disabled"
+        case .poweredOff: return bridge.lastError ?? "Bluetooth off"
+        case .scanning: return "Scanning for real-buddy device…"
+        case .connecting: return "Connecting…"
+        case .connected: return "Connected" + (bridge.connectedPeripheralName.map { " · \($0)" } ?? "")
+        case .reconnecting(let s): return "Reconnecting in \(s)s…"
+        }
+    }
+
+    private var statusColor: Color {
+        _ = refreshTick
+        switch bridge.status {
+        case .connected: return .green
+        case .scanning, .connecting: return .orange
+        case .reconnecting: return .yellow
+        case .off: return .secondary
+        case .poweredOff: return .red
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("real-buddy ESP32 Bridge") {
+                Toggle("Enable BLE bridge", isOn: $enabled)
+                    .onChange(of: enabled) { _, newValue in
+                        ESP32StatePublisher.shared.configure(enabled: newValue,
+                                                             heartbeatSeconds: heartbeat)
+                    }
+
+                HStack {
+                    Text("Status")
+                    Spacer()
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                    Text(statusText)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Button("Rescan") {
+                    bridge.stop()
+                    if enabled { bridge.start() }
+                }
+                .disabled(!enabled)
+            }
+
+            Section("Heartbeat") {
+                HStack {
+                    Text("Interval")
+                    Spacer()
+                    Text(String(format: "%.0f s", heartbeat))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(value: $heartbeat, in: 1...30, step: 1)
+                    .onChange(of: heartbeat) { _, newValue in
+                        ESP32StatePublisher.shared.configure(enabled: enabled,
+                                                             heartbeatSeconds: newValue)
+                    }
+                Text("The ESP32 firmware leaves AGENT mode after 60 s of silence, so shorter intervals keep the display live across disconnects.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text("Pushes the current mascot and status shown on the Dynamic Island to a real-buddy ESP32 device over Bluetooth LE, and lets its button focus the matching agent terminal.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            refreshTick &+= 1
+        }
     }
 }
 

@@ -81,6 +81,9 @@ enum SettingsKey {
     // Island collapsed width scale for non-notch screens (percentage: 50–150, default 100)
     static let collapsedWidthScale = "collapsedWidthScale"
 
+    // ESP32 BLE bridge (real-buddy companion device)
+    static let esp32BridgeEnabled = "esp32BridgeEnabled"
+    static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
 }
 
 struct SettingsDefaults {
@@ -124,6 +127,9 @@ struct SettingsDefaults {
     static let showToolStatus = true
 
     static let collapsedWidthScale = 100  // percentage
+
+    static let esp32BridgeEnabled = false
+    static let esp32HeartbeatSeconds = 5.0
 }
 
 @MainActor
@@ -166,6 +172,8 @@ class SettingsManager {
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
+            SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
+            SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
         ])
     }
 

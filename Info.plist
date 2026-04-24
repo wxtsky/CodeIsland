@@ -27,5 +27,7 @@
 	</dict>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>CodeIsland needs to control terminal apps to jump to the correct window and tab when you click a session.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CodeIsland uses Bluetooth LE to mirror the Dynamic Island onto your real-buddy ESP32 companion device.</string>
 </dict>
 </plist>
