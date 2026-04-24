@@ -21,8 +21,6 @@ let package = Package(
                 "CodeIslandCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Yams", package: "Yams"),
-                .product(name: "Sparkle", package: "Sparkle"),
-                .product(name: "Yams", package: "Yams"),
             ],
             path: "Sources/CodeIsland",
             resources: [
