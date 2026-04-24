@@ -882,6 +882,25 @@ final class AppState {
                 }
                 showNextPending()
             }
+        } else {
+            // Even when not waiting, drain any stale ExitPlanMode permission that arrived
+            // late (after Claude Code already resolved plan mode via the terminal dialog).
+            let en = EventNormalizer.normalize(event.eventName)
+            if (en == "PreToolUse" || en == "PostToolUse") && event.toolName != "ExitPlanMode" {
+                let hasStaleExitPlan = permissionQueue.contains {
+                    $0.event.sessionId == sessionId && $0.event.toolName == "ExitPlanMode"
+                }
+                if hasStaleExitPlan {
+                    let allowResponse = Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8)
+                    permissionQueue.removeAll { item in
+                        guard item.event.sessionId == sessionId,
+                              item.event.toolName == "ExitPlanMode" else { return false }
+                        item.continuation.resume(returning: allowResponse)
+                        return true
+                    }
+                    showNextPending()
+                }
+            }
         }
 
         // Detect Cursor YOLO mode once per session (nil = unchecked)
@@ -967,6 +986,18 @@ final class AppState {
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
+
+        // ExitPlanMode: if the session is already running/processing, Claude Code resolved
+        // plan mode via the terminal dialog before this hook arrived. Auto-approve silently.
+        if event.toolName == "ExitPlanMode" {
+            let currentStatus = sessions[sessionId]?.status
+            if currentStatus == .running || currentStatus == .processing {
+                let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
+                continuation.resume(returning: Data(response.utf8))
+                return
+            }
+        }
+
         // Extract metadata so blocking-first sessions have cwd, source, cliPid, terminal info
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)
@@ -1035,6 +1066,32 @@ final class AppState {
             let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
             responseData = Data(response.utf8)
         }
+        pending.continuation.resume(returning: responseData)
+        sessions[sessionId]?.status = .running
+
+        showNextPending()
+        refreshDerivedState()
+    }
+
+    func approvePermissionWithAutoAcceptEdits() {
+        guard !permissionQueue.isEmpty else { return }
+        let pending = permissionQueue.removeFirst()
+        let sessionId = pending.event.sessionId ?? "default"
+        dismissedPermissionSessionIds.remove(sessionId)
+        let obj: [String: Any] = [
+            "hookSpecificOutput": [
+                "hookEventName": "PermissionRequest",
+                "decision": [
+                    "behavior": "allow",
+                    "updatedPermissions": [[
+                        "type": "setMode",
+                        "mode": "acceptEdits",
+                        "destination": "session"
+                    ]]
+                ] as [String: Any]
+            ] as [String: Any]
+        ]
+        let responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         pending.continuation.resume(returning: responseData)
         sessions[sessionId]?.status = .running
 

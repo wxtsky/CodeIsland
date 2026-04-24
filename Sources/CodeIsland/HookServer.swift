@@ -119,7 +119,7 @@ class HookServer {
     private static let autoApproveTools: Set<String> = [
         "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
         "TodoRead", "TodoWrite",
-        "EnterPlanMode", "ExitPlanMode",
+        "EnterPlanMode",
     ]
 
     static func routeKind(for event: HookEvent) -> RouteKind {

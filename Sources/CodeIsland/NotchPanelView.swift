@@ -121,6 +121,7 @@ struct NotchPanelView: View {
                                 appState: appState,
                                 onAllow: { appState.approvePermission(always: false) },
                                 onAlwaysAllow: { appState.approvePermission(always: true) },
+                                onAllowAutoAccept: { appState.approvePermissionWithAutoAcceptEdits() },
                                 onDeny: { appState.denyPermission() },
                                 onDismiss: { appState.dismissPermissionPrompt() }
                             )
@@ -843,6 +844,7 @@ private struct ApprovalBar: View {
     let appState: AppState
     let onAllow: () -> Void
     let onAlwaysAllow: () -> Void
+    let onAllowAutoAccept: () -> Void
     let onDeny: () -> Void
     let onDismiss: () -> Void
 
@@ -912,10 +914,15 @@ private struct ApprovalBar: View {
 
             // Pixel-style buttons
             HStack(spacing: 6) {
-                PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
-                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
-                PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
-                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
+                if tool == "ExitPlanMode" {
+                    PixelButton(label: L10n.shared["plan_manually_approve"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
+                    PixelButton(label: L10n.shared["plan_auto_accept"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAllowAutoAccept)
+                } else {
+                    PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
+                    PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
+                    PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
+                    PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
+                }
             }
             .padding(.horizontal, 14)
         }
@@ -2001,27 +2008,44 @@ private struct SessionCard: View {
                             enabled: true,
                             action: { withAnimation(NotchAnimation.micro) { showApprovalDetails.toggle() } }
                         )
-                        inlineActionButton(
-                            L10n.shared["allow_once"],
-                            fg: .white,
-                            bg: Color(red: 0.25, green: 0.65, blue: 0.35),
-                            enabled: isActiveApproval,
-                            action: { appState.approvePermission(always: false) }
-                        )
-                        inlineActionButton(
-                            L10n.shared["always"],
-                            fg: .white,
-                            bg: Color(red: 0.25, green: 0.55, blue: 0.85),
-                            enabled: isActiveApproval,
-                            action: { appState.approvePermission(always: true) }
-                        )
-                        inlineActionButton(
-                            L10n.shared["deny"],
-                            fg: .white,
-                            bg: Color(red: 0.85, green: 0.3, blue: 0.3),
-                            enabled: isActiveApproval,
-                            action: { appState.denyPermission() }
-                        )
+                        if tool == "ExitPlanMode" {
+                            inlineActionButton(
+                                L10n.shared["plan_manually_approve"],
+                                fg: .white,
+                                bg: Color(red: 0.25, green: 0.65, blue: 0.35),
+                                enabled: isActiveApproval,
+                                action: { appState.approvePermission(always: false) }
+                            )
+                            inlineActionButton(
+                                L10n.shared["plan_auto_accept"],
+                                fg: .white,
+                                bg: Color(red: 0.25, green: 0.55, blue: 0.85),
+                                enabled: isActiveApproval,
+                                action: { appState.approvePermissionWithAutoAcceptEdits() }
+                            )
+                        } else {
+                            inlineActionButton(
+                                L10n.shared["allow_once"],
+                                fg: .white,
+                                bg: Color(red: 0.25, green: 0.65, blue: 0.35),
+                                enabled: isActiveApproval,
+                                action: { appState.approvePermission(always: false) }
+                            )
+                            inlineActionButton(
+                                L10n.shared["always"],
+                                fg: .white,
+                                bg: Color(red: 0.25, green: 0.55, blue: 0.85),
+                                enabled: isActiveApproval,
+                                action: { appState.approvePermission(always: true) }
+                            )
+                            inlineActionButton(
+                                L10n.shared["deny"],
+                                fg: .white,
+                                bg: Color(red: 0.85, green: 0.3, blue: 0.3),
+                                enabled: isActiveApproval,
+                                action: { appState.denyPermission() }
+                            )
+                        }
                     }
 
                     // Always show a compact, 1-line summary so the session list has approval context
