@@ -987,17 +987,6 @@ final class AppState {
             sessions[sessionId] = SessionSnapshot()
         }
 
-        // ExitPlanMode: if the session is already running/processing, Claude Code resolved
-        // plan mode via the terminal dialog before this hook arrived. Auto-approve silently.
-        if event.toolName == "ExitPlanMode" {
-            let currentStatus = sessions[sessionId]?.status
-            if currentStatus == .running || currentStatus == .processing {
-                let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
-                continuation.resume(returning: Data(response.utf8))
-                return
-            }
-        }
-
         // Extract metadata so blocking-first sessions have cwd, source, cliPid, terminal info
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)

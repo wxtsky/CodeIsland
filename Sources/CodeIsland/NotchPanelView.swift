@@ -812,6 +812,27 @@ private struct ApprovalToolDetailView: View {
                     }
                 }
 
+            case "ExitPlanMode":
+                if let plan = toolInput?["plan"] as? String, !plan.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(plan)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(maxLines ?? 6)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(L10n.shared["plan_view_full"])
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Color(red: 0.6, green: 0.8, blue: 1.0).opacity(0.85))
+                    }
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded {
+                            PlanPreviewWindowController.shared.show(planText: plan)
+                        }
+                    )
+                }
+
             default:
                 VStack(alignment: .leading, spacing: 2) {
                     if let input = toolInput {
@@ -919,9 +940,9 @@ private struct ApprovalBar: View {
             // Pixel-style buttons
             HStack(spacing: 6) {
                 if tool == "ExitPlanMode" {
+                    PixelButton(label: L10n.shared["plan_edit"], fg: .white.opacity(0.95), bg: Color(red: 0.38, green: 0.26, blue: 0.10), border: Color(red: 0.68, green: 0.50, blue: 0.20), action: { showEditInput.toggle(); if !showEditInput { editText = "" } })
                     PixelButton(label: L10n.shared["plan_manually_approve"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: { showEditInput = false; onAllow() })
                     PixelButton(label: L10n.shared["plan_auto_accept"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: { showEditInput = false; onAllowAutoAccept() })
-                    PixelButton(label: L10n.shared["plan_edit"], fg: .white.opacity(0.95), bg: Color(red: 0.38, green: 0.26, blue: 0.10), border: Color(red: 0.68, green: 0.50, blue: 0.20), action: { showEditInput.toggle(); if !showEditInput { editText = "" } })
                 } else {
                     PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
                     PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
@@ -2044,6 +2065,13 @@ private struct SessionCard: View {
                         )
                         if tool == "ExitPlanMode" {
                             inlineActionButton(
+                                L10n.shared["plan_edit"],
+                                fg: .white,
+                                bg: Color(red: 0.55, green: 0.40, blue: 0.15),
+                                enabled: isActiveApproval,
+                                action: { withAnimation(NotchAnimation.micro) { showInlineEditInput.toggle(); if !showInlineEditInput { inlineEditText = "" } } }
+                            )
+                            inlineActionButton(
                                 L10n.shared["plan_manually_approve"],
                                 fg: .white,
                                 bg: Color(red: 0.25, green: 0.65, blue: 0.35),
@@ -2056,13 +2084,6 @@ private struct SessionCard: View {
                                 bg: Color(red: 0.25, green: 0.55, blue: 0.85),
                                 enabled: isActiveApproval,
                                 action: { showInlineEditInput = false; appState.approvePermissionWithAutoAcceptEdits() }
-                            )
-                            inlineActionButton(
-                                L10n.shared["plan_edit"],
-                                fg: .white,
-                                bg: Color(red: 0.55, green: 0.40, blue: 0.15),
-                                enabled: isActiveApproval,
-                                action: { withAnimation(NotchAnimation.micro) { showInlineEditInput.toggle(); if !showInlineEditInput { inlineEditText = "" } } }
                             )
                         } else {
                             inlineActionButton(

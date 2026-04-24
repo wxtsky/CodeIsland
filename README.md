@@ -13,6 +13,10 @@
 
 ---
 
+> **This is a fork** of the original [wxtsky/CodeIsland](https://github.com/wxtsky/CodeIsland) (MIT). Huge thanks to [@wxtsky](https://github.com/wxtsky) for the original work. This fork adds small tweaks (e.g. ExitPlanMode approval UI refinements) and is distributed via the Uncle-Peke Homebrew tap. For the official upstream release, use `wxtsky/tap`.
+
+---
+
 <p align="center">
   <img src="docs/images/notch-panel.png" width="700" alt="CodeIsland Panel Preview">
 </p>
@@ -56,19 +60,28 @@ It connects to **11 AI coding tools** via Unix socket IPC, displaying session st
 
 ## Installation
 
-### Homebrew (Recommended)
+### Homebrew — Official upstream (signed & notarized)
 
 ```bash
 brew tap wxtsky/tap
 brew install --cask codeisland
 ```
 
+### Homebrew — This fork (Uncle-Peke, unsigned)
+
+```bash
+brew tap Uncle-Peke/tap
+brew install --cask codeisland
+```
+
+> The fork build is **not** signed with a Developer ID. Homebrew Cask clears the quarantine attribute automatically on install, so it launches without Gatekeeper warnings.
+
 ### Manual Download
 
-1. Go to [Releases](https://github.com/wxtsky/CodeIsland/releases)
-2. Download `CodeIsland.dmg`
-3. Open the DMG and drag `CodeIsland.app` to your Applications folder
-4. Launch CodeIsland — it will automatically install hooks for all detected AI tools
+- Upstream: [wxtsky/CodeIsland releases](https://github.com/wxtsky/CodeIsland/releases) (signed)
+- This fork: [Uncle-Peke/CodeIsland releases](https://github.com/Uncle-Peke/CodeIsland/releases) (unsigned)
+
+Download `CodeIsland.dmg`, open it, and drag `CodeIsland.app` to your Applications folder. Launch CodeIsland — it will automatically install hooks for all detected AI tools.
 
 > **Note:** On first launch, macOS may show a security warning. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
