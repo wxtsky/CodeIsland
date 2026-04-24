@@ -10,6 +10,8 @@
 ---
 
 > Fork of [wxtsky/CodeIsland](https://github.com/wxtsky/CodeIsland) (MIT) — huge thanks to [@wxtsky](https://github.com/wxtsky). This fork adds small UX tweaks around Claude Code's ExitPlanMode approval UI. For the official signed & notarized upstream build, use [`wxtsky/tap`](https://github.com/wxtsky/CodeIsland#installation).
+>
+> **Issues / bug reports:** this fork is a personal build and does not accept bug reports. Please file issues on the [upstream repository](https://github.com/wxtsky/CodeIsland/issues).
 
 ---
 

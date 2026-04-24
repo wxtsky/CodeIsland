@@ -1165,8 +1165,7 @@ private struct AboutPage: View {
 
                 HStack(spacing: 12) {
                     aboutLink("GitHub", icon: "chevron.left.forwardslash.chevron.right", url: "https://github.com/Uncle-Peke/CodeIsland")
-                    aboutLink("Issues", icon: "ladybug", url: "https://github.com/Uncle-Peke/CodeIsland/issues")
-                    aboutLink("Upstream", icon: "arrow.up.forward.square", url: "https://github.com/wxtsky/CodeIsland")
+                    aboutLink("Report Issue (upstream)", icon: "ladybug", url: "https://github.com/wxtsky/CodeIsland/issues")
                 }
 
                 // In-app update section
