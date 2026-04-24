@@ -69,7 +69,7 @@ struct KimiView: View {
         let rect = CGRect(x: v.ox + (cx - w/2) * v.s,
                           y: v.oy + (cy - h/2 - v.y0 + dy) * v.s,
                           width: w * v.s, height: h * v.s)
-        var path = Path(roundedRect: rect, cornerRadius: r * v.s)
+        let path = Path(roundedRect: rect, cornerRadius: r * v.s)
         c.fill(path, with: .linearGradient(
             Gradient(colors: [Self.bodyLt, Self.bodyC, Self.bodyDk]),
             startPoint: CGPoint(x: rect.midX, y: rect.minY),

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/"
+     version="2.0">
+  <channel>
+    <title>CodeIsland</title>
+    <link>https://raw.githubusercontent.com/wxtsky/CodeIsland/main/appcast.xml</link>
+    <description>Most recent CodeIsland updates</description>
+    <language>en</language>
+    <item>
+      <title>Version 1.0.22</title>
+      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.22</link>
+      <sparkle:version>1.0.22</sparkle:version>
+      <sparkle:shortVersionString>1.0.22</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Thu, 23 Apr 2026 06:30:09 +0000</pubDate>
+      <enclosure
+        url="https://github.com/wxtsky/CodeIsland/releases/download/v1.0.22/CodeIsland.dmg"
+        sparkle:edSignature="eHIbcCSFOXYH5OfG6TDu6xfP1lU2zpGo8Y83shiLLn1P1bBNG0gOfzL78GG9URyWbiW9e/ekjtzMKjdrdfMkBQ=="
+        length="7778448"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

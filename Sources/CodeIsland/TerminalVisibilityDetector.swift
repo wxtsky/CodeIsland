@@ -61,10 +61,15 @@ struct TerminalVisibilityDetector {
             return true
         }
 
-        // IDE integrated terminals: can't query tab state, assume NOT visible
-        // (show notification — safer than suppressing when user may be editing code)
+        // IDE integrated terminals (VS Code, JetBrains): we can't query which internal
+        // tool-window is focused without Accessibility permission, so fall back to the
+        // app-frontmost signal — if the IDE is the frontmost app, assume the terminal is
+        // effectively "in view" and let smart-suppress silence the notification (#112).
+        // Trade-off: if the user has the editor focused and not the terminal pane, a
+        // completion event is also suppressed. That's the same trade-off the OS makes
+        // for any app-level "do not disturb while focused" heuristic.
         if session.isIDETerminal {
-            return false
+            return true
         }
 
         // tmux takes priority: if session runs in a tmux pane, check that pane
@@ -140,7 +145,7 @@ struct TerminalVisibilityDetector {
         let dirName = escapeAppleScript((cwd as NSString).lastPathComponent)
         // Also require the session's source keyword in the title to reduce false positives
         // when multiple CLI tools run in the same project directory
-        let sourceKeyword = escapeAppleScript(session.source ?? "claude")
+        let sourceKeyword = escapeAppleScript(session.source)
         let script = """
         tell application "System Events"
             tell process "Ghostty"

@@ -70,6 +70,32 @@ for bundle in "$BUILD_DIR"/*/release/*.bundle; do
     fi
 done
 
+# ---------------------------------------------------------------------------
+# Embed Sparkle.framework (universal, Sparkle-Project-signed via Apple Dev ID).
+# The xcframework slice already contains the signed Autoupdate / Updater.app /
+# XPC services, so we keep those signatures intact and sign only the outer
+# bundle below — never pass --deep/--force through the framework.
+# ---------------------------------------------------------------------------
+mkdir -p "$CONTENTS_DIR/Frameworks"
+SPARKLE_SRC="$BUILD_DIR/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [ ! -d "$SPARKLE_SRC" ]; then
+    echo "ERROR: $SPARKLE_SRC not found. Run 'swift build -c release' first to let SwiftPM resolve Sparkle." >&2
+    exit 1
+fi
+rm -rf "$CONTENTS_DIR/Frameworks/Sparkle.framework"
+cp -R "$SPARKLE_SRC" "$CONTENTS_DIR/Frameworks/"
+echo "==> Embedded Sparkle.framework from $SPARKLE_SRC"
+
+# SwiftPM builds binaries with @loader_path as the only non-system rpath, which
+# resolves Sparkle when the .dylib sits next to the executable (as it does
+# inside .build/). Inside a real .app the binary lives in Contents/MacOS while
+# the framework lives in Contents/Frameworks, so we add @executable_path/..
+# /Frameworks explicitly. Changing the load commands invalidates any prior
+# signature — we re-sign below.
+install_name_tool -add_rpath "@executable_path/../Frameworks" \
+    "$CONTENTS_DIR/MacOS/CodeIsland"
+echo "==> Added @executable_path/../Frameworks rpath to CodeIsland binary"
+
 echo "==> App bundle assembled at $APP_DIR"
 
 # ---------------------------------------------------------------------------
@@ -80,11 +106,43 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: xuteng wang (K46MBL36P
 if [ "${SKIP_SIGN:-0}" = "1" ]; then
     echo "==> SKIP_SIGN=1 — leaving adhoc signature"
 elif security find-identity -v -p codesigning | grep -q "$(printf '%s' "$SIGN_IDENTITY" | sed 's/[][\\.^$*/]/\\&/g')"; then
-    echo "==> Signing with '$SIGN_IDENTITY'"
-    codesign --deep --force --options runtime \
+    echo "==> Signing with '$SIGN_IDENTITY' (inside-out for Sparkle, then outer bundle)"
+    SPARKLE_FW="$CONTENTS_DIR/Frameworks/Sparkle.framework"
+    SPARKLE_B="$SPARKLE_FW/Versions/B"
+
+    # Inside-out: seal Sparkle's inner components with our identity first so
+    # hardened runtime + notarization accept them. --force replaces the adhoc
+    # signature SwiftPM left in place. No --deep at any step — we walk the
+    # tree ourselves to keep ordering explicit.
+    for xpc in "$SPARKLE_B"/XPCServices/*.xpc; do
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$xpc"
+    done
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$SPARKLE_B/Autoupdate"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$SPARKLE_B/Updater.app"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" "$SPARKLE_FW"
+
+    # Bundled helpers (hook bridge) also need a proper signature before the
+    # outer bundle is sealed, otherwise codesign's nested check rejects the
+    # parent with "code object is not signed at all / In subcomponent: ...".
+    for helper in "$CONTENTS_DIR"/Helpers/*; do
+        [ -f "$helper" ] || continue
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" "$helper"
+    done
+
+    # Finally, sign the main bundle. Entitlements only on the top-level app —
+    # Sparkle components have their own entitlements baked into their signatures.
+    codesign --force --options runtime --timestamp \
         --entitlements "$REPO_ROOT/CodeIsland.entitlements" \
         --sign "$SIGN_IDENTITY" \
         "$APP_DIR"
+
+    echo "==> Verifying nested signatures"
+    codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 else
     echo "==> Developer ID identity '$SIGN_IDENTITY' not in keychain — leaving adhoc signature"
     echo "    (install your Developer ID cert or set SIGN_IDENTITY=...)"
@@ -104,6 +162,7 @@ create-dmg \
     --hide-extension "CodeIsland.app" \
     --app-drop-link 425 190 \
     --no-internet-enable \
+    --sandbox-safe \
     "$OUTPUT_DMG" \
     "$STAGING_DIR/"
 
@@ -131,3 +190,11 @@ else
 fi
 
 echo "==> Done: $OUTPUT_DMG"
+
+if [ "${SKIP_SIGN:-0}" != "1" ] && [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
+    echo ""
+    echo "==> Release checklist:"
+    echo "    1. gh release create v${VERSION} --notes '…' \"$OUTPUT_DMG\""
+    echo "    2. ./scripts/update-appcast.sh ${VERSION} \"$OUTPUT_DMG\""
+    echo "    3. git add appcast.xml && git commit -m 'release: v${VERSION}' && git push"
+fi

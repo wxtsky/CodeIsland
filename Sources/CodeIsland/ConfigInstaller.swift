@@ -115,7 +115,6 @@ struct ConfigInstaller {
                 ("PostToolUse", 5, true),
                 ("PostToolUseFailure", 5, true),
                 ("PermissionRequest", 86400, false),
-                ("PermissionDenied", 5, true),
                 ("Stop", 5, true),
                 ("SubagentStart", 5, true),
                 ("SubagentStop", 5, true),
@@ -125,7 +124,6 @@ struct ConfigInstaller {
                 ("PreCompact", 5, true),
             ],
             versionedEvents: [
-                "PermissionDenied": "2.1.89",
                 "PostToolUseFailure": "2.1.89",
             ]
         ),
@@ -149,12 +147,12 @@ struct ConfigInstaller {
             configPath: ".gemini/settings.json", configKey: "hooks",
             format: .nested,
             events: [
-                ("SessionStart", 5000, false),
-                ("SessionEnd", 5000, false),
-                ("BeforeTool", 5000, false),
-                ("AfterTool", 5000, false),
-                ("BeforeAgent", 5000, false),
-                ("AfterAgent", 5000, false),
+                ("SessionStart", 10000, false),
+                ("SessionEnd", 10000, false),
+                ("BeforeTool", 10000, false),
+                ("AfterTool", 10000, false),
+                ("BeforeAgent", 10000, false),
+                ("AfterAgent", 10000, false),
             ]
         ),
         // Cursor
@@ -810,11 +808,14 @@ struct ConfigInstaller {
             try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
         }
 
-        var settings: [String: Any] = [:]
-        if let json = parseJSONFile(at: cli.fullPath, fm: fm) {
-            settings = json
+        // Read raw text (preserved verbatim for minimal-diff write-back).
+        let originalText: String? = fm.contents(atPath: cli.fullPath).flatMap { String(data: $0, encoding: .utf8) }
+        // Refuse to touch unparseable files (#89 — protect user data).
+        if let text = originalText, !text.isEmpty, parseJSONFile(at: cli.fullPath, fm: fm) == nil {
+            return false
         }
 
+        let settings = parseJSONFile(at: cli.fullPath, fm: fm) ?? [:]
         var hooks = settings[cli.configKey] as? [String: Any] ?? [:]
         let events = compatibleEvents(for: cli)
 
@@ -839,12 +840,33 @@ struct ConfigInstaller {
             eventHooks.append(["matcher": "", "hooks": [hookEntry]])
             hooks[event] = eventHooks
         }
-        settings[cli.configKey] = hooks
 
-        guard let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]) else {
+        return writeJSONWithKey(
+            cli: cli,
+            originalText: originalText,
+            key: cli.configKey,
+            value: hooks,
+            fm: fm
+        )
+    }
+
+    /// Minimal-diff write of a single top-level key, preserving user comments / key order / escaping.
+    /// Creates the file fresh if `originalText` is nil. Returns false on any failure (caller-side #89 guard).
+    private static func writeJSONWithKey(
+        cli: CLIConfig,
+        originalText: String?,
+        key: String,
+        value: Any,
+        fm: FileManager
+    ) -> Bool {
+        let source: String = {
+            if let t = originalText, !t.isEmpty { return t }
+            return "{}\n"
+        }()
+        guard let merged = JSONMinimalEditor.setTopLevelValue(in: source, key: key, value: value) else {
             return false
         }
-        return fm.createFile(atPath: cli.fullPath, contents: data)
+        return fm.createFile(atPath: cli.fullPath, contents: Data(merged.utf8))
     }
 
     // MARK: - External CLIs (use bridge binary directly)
@@ -878,11 +900,14 @@ struct ConfigInstaller {
             guard fm.fileExists(atPath: cli.dirPath) else { return true } // CLI not installed, skip OK
         }
 
-        var root: [String: Any] = [:]
-        if let json = parseJSONFile(at: cli.fullPath, fm: fm) {
-            root = json
+        // Read raw text for minimal-diff write-back.
+        let originalText: String? = fm.contents(atPath: cli.fullPath).flatMap { String(data: $0, encoding: .utf8) }
+        // Refuse to touch unparseable files (#89 safety guard).
+        if let text = originalText, !text.isEmpty, parseJSONFile(at: cli.fullPath, fm: fm) == nil {
+            return false
         }
 
+        let root = parseJSONFile(at: cli.fullPath, fm: fm) ?? [:]
         var hooks = root[cli.configKey] as? [String: Any] ?? [:]
         // Quote the path in case home directory contains spaces or special characters
         let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
@@ -896,7 +921,9 @@ struct ConfigInstaller {
             let entry: [String: Any]
             switch cli.format {
             case .claude:
-                entry = ["matcher": "*", "hooks": [["type": "command", "command": baseCommand] as [String: Any]]]
+                // Qwen Code (a Claude fork) reuses this format and NEEDS timeout per entry
+                // — otherwise long-running PermissionRequest hooks hang the agent (#103).
+                entry = ["matcher": "*", "hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
             case .nested:
                 entry = ["hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
             case .flat:
@@ -916,15 +943,26 @@ struct ConfigInstaller {
             hooks[event] = eventEntries
         }
 
-        root[cli.configKey] = hooks
-        // Copilot CLI requires a top-level "version" field
-        if cli.format == .copilot {
-            root["version"] = 1
+        // Seed file if missing — ensure Copilot's required "version" key lands first so the key-order
+        // for downstream readers stays stable across installs.
+        var seeded = originalText
+        if cli.format == .copilot, (originalText == nil || originalText?.isEmpty == true) {
+            seeded = "{\n  \"version\": 1\n}\n"
+        } else if cli.format == .copilot, root["version"] == nil {
+            // Only insert `version` when the user hasn't set one themselves — don't clobber a
+            // user-bumped schema version in case Copilot ships v2+ in the future.
+            if let t = originalText, let withVer = JSONMinimalEditor.setTopLevelValue(in: t, key: "version", value: 1) {
+                seeded = withVer
+            }
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else {
-            return false
-        }
-        return fm.createFile(atPath: cli.fullPath, contents: data)
+
+        return writeJSONWithKey(
+            cli: cli,
+            originalText: seeded,
+            key: cli.configKey,
+            value: hooks,
+            fm: fm
+        )
     }
 
     private static func renderManagedTraecliHooks(source: String = "traecli") -> String {
@@ -1408,13 +1446,20 @@ struct ConfigInstaller {
             return
         }
 
-        guard var root = parseJSONFile(at: cli.fullPath, fm: fm),
-              var hooks = root[cli.configKey] as? [String: Any] else { return }
+        guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
+              var hooks = root[cli.configKey] as? [String: Any],
+              let originalText = fm.contents(atPath: cli.fullPath).flatMap({ String(data: $0, encoding: .utf8) })
+        else { return }
 
         hooks = removeManagedHookEntries(from: hooks)
 
-        root[cli.configKey] = hooks.isEmpty ? nil : hooks
-        if let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) {
+        let merged: String?
+        if hooks.isEmpty {
+            merged = JSONMinimalEditor.deleteTopLevelKey(in: originalText, key: cli.configKey)
+        } else {
+            merged = JSONMinimalEditor.setTopLevelValue(in: originalText, key: cli.configKey, value: hooks)
+        }
+        if let merged, let data = merged.data(using: .utf8) {
             fm.createFile(atPath: cli.fullPath, contents: data)
         }
     }
@@ -1553,32 +1598,48 @@ struct ConfigInstaller {
     ///
     /// Returns the new file contents to write, or `nil` when the original contents
     /// are present but unparseable / not a JSON object — in that case the caller
-    /// MUST NOT overwrite the file (see issue #89).
+    /// MUST NOT overwrite the file (see issue #89). Uses minimal-diff editing so
+    /// user comments, key order, and whitespace are preserved (#105/#106).
     static func mergeOpencodePluginRef(
         originalContents: String?,
         pluginRef: String,
         identifier: String
     ) -> String? {
-        var config: [String: Any] = [:]
-        if let contents = originalContents {
-            let stripped = stripJSONComments(contents)
-            guard let data = stripped.data(using: .utf8),
-                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return nil
-            }
-            config = parsed
+        // Brand-new file — emit a minimal canonical document.
+        guard let contents = originalContents, !contents.isEmpty else {
+            let config: [String: Any] = [
+                "$schema": "https://opencode.ai/config.json",
+                "plugin": [pluginRef],
+            ]
+            guard let data = try? JSONSerialization.data(
+                withJSONObject: config,
+                options: [.prettyPrinted, .withoutEscapingSlashes]
+            ), var merged = String(data: data, encoding: .utf8) else { return nil }
+            if !merged.hasSuffix("\n") { merged += "\n" }
+            return merged
         }
 
-        var plugins = config["plugin"] as? [String] ?? []
+        // Verify parseable and dedup plugin entries against the parsed view.
+        let stripped = stripJSONComments(contents)
+        guard let data = stripped.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        var plugins = parsed["plugin"] as? [String] ?? []
         plugins.removeAll { $0.contains("vibe-island") || $0.contains(identifier) }
         plugins.append(pluginRef)
-        config["plugin"] = plugins
-        if config["$schema"] == nil {
-            config["$schema"] = "https://opencode.ai/config.json"
-        }
-        guard let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]),
-              let merged = String(data: data, encoding: .utf8) else {
+
+        // Replace the plugin array in-place, preserving surrounding text exactly.
+        guard var merged = JSONMinimalEditor.setTopLevelValue(in: contents, key: "plugin", value: plugins) else {
             return nil
+        }
+        // Add $schema if missing — minimal-diff insertion at end of object.
+        if parsed["$schema"] == nil {
+            guard let withSchema = JSONMinimalEditor.setTopLevelValue(
+                in: merged, key: "$schema", value: "https://opencode.ai/config.json"
+            ) else { return merged }
+            merged = withSchema
         }
         return merged
     }
@@ -1594,20 +1655,18 @@ struct ConfigInstaller {
         guard let contents = originalContents else { return nil }
         let stripped = stripJSONComments(contents)
         guard let data = stripped.data(using: .utf8),
-              var config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        guard var plugins = config["plugin"] as? [String],
+        guard var plugins = parsed["plugin"] as? [String],
               plugins.contains(where: { $0.contains(identifier) }) else {
             return nil
         }
         plugins.removeAll { $0.contains(identifier) }
-        config["plugin"] = plugins.isEmpty ? nil : plugins
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]),
-              let cleaned = String(data: jsonData, encoding: .utf8) else {
-            return nil
+        if plugins.isEmpty {
+            return JSONMinimalEditor.deleteTopLevelKey(in: contents, key: "plugin")
         }
-        return cleaned
+        return JSONMinimalEditor.setTopLevelValue(in: contents, key: "plugin", value: plugins)
     }
 
     @discardableResult

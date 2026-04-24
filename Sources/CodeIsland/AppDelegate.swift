@@ -40,6 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         panelController?.showPanel()
 
         appState.startSessionDiscovery()
+        appState.startCodexAppServerWatcher()
         RemoteManager.shared.startup()
 
         // ESP32 BLE bridge (opt-in): mirrors the Dynamic Island onto a real-buddy
@@ -88,11 +89,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        // Check for updates silently after a short delay
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            UpdateChecker.shared.checkForUpdates()
-        }
+        // Sparkle runs scheduled checks itself on the cadence declared in
+        // Info.plist (SUScheduledCheckInterval). Start the updater once — it
+        // no-ops for Homebrew-installed builds (brew owns those upgrades).
+        UpdateChecker.shared.start()
 
         SoundManager.shared.playBoot()
         setupGlobalShortcut()
@@ -119,6 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.saveSessions()
         RemoteManager.shared.shutdown()
         hookServer?.stop()
+        appState.stopCodexAppServerWatcher()
         appState.stopSessionDiscovery()
     }
 

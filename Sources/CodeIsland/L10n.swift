@@ -149,6 +149,8 @@ final class L10n: ObservableObject {
         "speed_normal": "1× Normal",
         "speed_fast": "1.5× Fast",
         "speed_very_fast": "2× Very Fast",
+        "default_mascot": "Default Mascot",
+        "default_mascot_desc": "Shown in the island when no sessions are active",
 
         // Sound
         "enable_sound": "Enable Sound Effects",
@@ -381,6 +383,8 @@ final class L10n: ObservableObject {
         "speed_normal": "1× 正常",
         "speed_fast": "1.5× 快速",
         "speed_very_fast": "2× 极速",
+        "default_mascot": "默认角色",
+        "default_mascot_desc": "没有活跃会话时在灵动岛显示的角色",
 
         // Sound
         "enable_sound": "启用音效",
@@ -613,6 +617,8 @@ final class L10n: ObservableObject {
         "speed_normal": "1× 通常",
         "speed_fast": "1.5× 高速",
         "speed_very_fast": "2× 超高速",
+        "default_mascot": "デフォルトキャラ",
+        "default_mascot_desc": "アクティブなセッションがないときにノッチに表示",
 
         // Sound
         "enable_sound": "効果音を有効化",
@@ -845,6 +851,8 @@ final class L10n: ObservableObject {
         "speed_normal": "1× 보통",
         "speed_fast": "1.5× 빠름",
         "speed_very_fast": "2× 매우 빠름",
+        "default_mascot": "기본 캐릭터",
+        "default_mascot_desc": "활성 세션이 없을 때 노치에 표시",
 
         // Sound
         "enable_sound": "사운드 효과 사용",
@@ -1077,6 +1085,8 @@ final class L10n: ObservableObject {
         "speed_normal": "1× Normal",
         "speed_fast": "1.5× Hızlı",
         "speed_very_fast": "2× Çok Hızlı",
+        "default_mascot": "Varsayılan Maskot",
+        "default_mascot_desc": "Aktif oturum yokken çentikte gösterilir",
 
         // Sound
         "enable_sound": "Ses Efektlerini Etkinleştir",

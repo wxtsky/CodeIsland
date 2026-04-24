@@ -174,7 +174,13 @@ struct TerminalActivator {
             return
         }
 
-        // --- Other terminals (Alacritty, Warp, Hyper, Tabby, Rio, etc.) ---
+        // --- Warp (SQLite pane precision jump + Cmd+N tab switch) ---
+        if lower.contains("warp") {
+            activateWarp(cwd: session.cwd)
+            return
+        }
+
+        // --- Other terminals (Alacritty, Hyper, Tabby, Rio, etc.) ---
         // Try window-level matching via System Events (title contains CWD folder name),
         // similar to IDE window matching. Falls back to app-level if no match.
         if let bundleId = session.termBundleId, let cwd = session.cwd, !cwd.isEmpty {
@@ -486,57 +492,99 @@ struct TerminalActivator {
 
     private static func activateTerminalApp(ttyPath: String?, cwd: String?) {
         // If Terminal.app is not running, launch it and return — no tab matching possible.
-        guard NSWorkspace.shared.runningApplications.contains(where: {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == "com.apple.Terminal"
         }) else {
             bringToFront("Terminal")
             return
         }
-        // Strategy 1: tty match (precise)
-        if let tty = ttyPath, !tty.isEmpty {
-            let escaped = escapeAppleScript(tty)
-            let script = """
-            tell application "Terminal"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        if tty of t is "\(escaped)" then
-                            if miniaturized of w then set miniaturized of w to false
-                            set selected tab of w to t
-                            set index of w to 1
-                        end if
-                    end repeat
-                end repeat
-                activate
-            end tell
-            """
-            runAppleScript(script)
-            return
-        }
-        // Strategy 2: match by cwd directory name in tab custom title
-        if let cwd = cwd, !cwd.isEmpty {
-            let dirName = escapeAppleScript((cwd as NSString).lastPathComponent)
-            let script = """
-            tell application "Terminal"
+        if app.isHidden { app.unhide() }
+        app.activate()
+
+        let ttyEscaped = ttyPath.map(escapeAppleScript) ?? ""
+        let dirEscaped = cwd.map { escapeAppleScript(($0 as NSString).lastPathComponent) } ?? ""
+
+        // Try tty → tab auto-name → user custom title → deminiaturize any window as a last resort.
+        // Terminal.app auto-generates `name of t` containing the running command + cwd; `custom title`
+        // only exists when the user set it explicitly, so matching against `name` works for the
+        // overwhelming default case.
+        let script = """
+        tell application "Terminal"
+            set tty to "\(ttyEscaped)"
+            set dir to "\(dirEscaped)"
+            set found to false
+
+            -- Strategy 1: precise tty match
+            if tty is not "" then
                 repeat with w in windows
                     repeat with t in tabs of w
                         try
-                            if custom title of t contains "\(dirName)" then
+                            if tty of t is tty then
                                 if miniaturized of w then set miniaturized of w to false
                                 set selected tab of w to t
                                 set index of w to 1
-                                activate
-                                return
+                                set found to true
+                                exit repeat
                             end if
                         end try
                     end repeat
+                    if found then exit repeat
                 end repeat
-                activate
-            end tell
-            """
-            runAppleScript(script)
-            return
-        }
-        bringToFront("Terminal")
+            end if
+
+            -- Strategy 2: auto tab title contains the cwd folder name
+            if not found and dir is not "" then
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        try
+                            if (name of t as text) contains dir then
+                                if miniaturized of w then set miniaturized of w to false
+                                set selected tab of w to t
+                                set index of w to 1
+                                set found to true
+                                exit repeat
+                            end if
+                        end try
+                    end repeat
+                    if found then exit repeat
+                end repeat
+            end if
+
+            -- Strategy 3: user-set custom title
+            if not found and dir is not "" then
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        try
+                            if custom title of t contains dir then
+                                if miniaturized of w then set miniaturized of w to false
+                                set selected tab of w to t
+                                set index of w to 1
+                                set found to true
+                                exit repeat
+                            end if
+                        end try
+                    end repeat
+                    if found then exit repeat
+                end repeat
+            end if
+
+            -- Fallback: unminimize the first miniaturized window so the user always sees something.
+            if not found then
+                repeat with w in windows
+                    try
+                        if miniaturized of w then
+                            set miniaturized of w to false
+                            set index of w to 1
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+            end if
+
+            activate
+        end tell
+        """
+        runAppleScript(script)
     }
 
     // MARK: - WezTerm (CLI: wezterm cli list + activate-tab)
@@ -851,6 +899,70 @@ struct TerminalActivator {
                 args += ["--workspace", wid]
             }
             _ = runProcess(cmuxBin, args: args)
+        }
+    }
+
+    // MARK: - Warp (SQLite pane lookup + optional tab keystroke)
+
+    /// Bring Warp forward, and when the SQLite state shows that the target cwd lives
+    /// in a non-active tab, send the default "go to tab N" keystroke (Cmd+digit).
+    ///
+    /// The keystroke path requires Accessibility permission; without it CGEvent.post
+    /// becomes a silent no-op and we gracefully degrade to plain app activation —
+    /// which is what the previous implementation did unconditionally, so this is a
+    /// strict improvement rather than a regression risk.
+    private static func activateWarp(cwd: String?) {
+        let warpBundleId = "dev.warp.Warp-Stable"
+
+        guard let warpApp = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == warpBundleId
+        }) else {
+            bringToFront("Warp")
+            return
+        }
+        if warpApp.isHidden { warpApp.unhide() }
+        warpApp.activate()
+
+        guard let cwd, !cwd.isEmpty else { return }
+
+        // SQLite I/O is fast (sub-ms on a warm cache) but run it off the main thread
+        // anyway; we've already handed the user a visible activation.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let resolver = WarpPaneResolver()
+            let matches: [WarpPaneMatch]
+            do {
+                matches = try resolver.resolve(cwd: cwd)
+            } catch {
+                return
+            }
+            guard let best = matches.first else { return }
+            if best.isActiveTab { return }
+
+            let targetPosition = best.tabIndexInWindow + 1
+            guard (1...9).contains(targetPosition) else { return }
+
+            DispatchQueue.main.async {
+                sendWarpGoToTab(position: targetPosition)
+            }
+        }
+    }
+
+    /// Synthesize Warp's default "jump to tab N" shortcut (Cmd+<digit>, 1-9) for the
+    /// frontmost window. 10+ would require an extra keycode table; we bail for now.
+    private static func sendWarpGoToTab(position: Int) {
+        guard (1...9).contains(position) else { return }
+        // ANSI virtual keycodes for digits 1..9 (QWERTY layout).
+        let digitKeyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+        let keyCode = digitKeyCodes[position - 1]
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
+
+        if let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
+            down.flags = .maskCommand
+            down.post(tap: .cghidEventTap)
+        }
+        if let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
+            up.flags = .maskCommand
+            up.post(tap: .cghidEventTap)
         }
     }
 }

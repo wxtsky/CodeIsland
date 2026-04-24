@@ -61,7 +61,7 @@ public enum CLIProcessResolver {
     }
 }
 
-public enum AgentStatus {
+public enum AgentStatus: Sendable {
     case idle
     case processing
     case running
@@ -73,6 +73,7 @@ public struct HookEvent {
     public let eventName: String
     public let sessionId: String?
     public let toolName: String?
+    public let toolUseId: String?
     public let agentId: String?
     public let toolInput: [String: Any]?
     public let rawJSON: [String: Any]  // Full payload for event-specific fields
@@ -93,6 +94,8 @@ public struct HookEvent {
         }
         self.toolName = HookEvent.firstString(in: json, keys: ["tool_name", "toolName", "tool", "name"])
             ?? HookEvent.firstString(inNestedDictionary: json, containerKeys: ["tool", "payload", "data"], keys: ["name", "tool_name", "toolName"])
+        self.toolUseId = HookEvent.firstString(in: json, keys: ["tool_use_id", "toolUseId"])
+            ?? HookEvent.firstString(inNestedDictionary: json, containerKeys: ["tool", "tool_use", "toolUse", "payload", "data"], keys: ["id", "tool_use_id", "toolUseId"])
         self.toolInput = HookEvent.firstDictionary(in: json, keys: ["tool_input", "toolInput", "input", "arguments", "args", "params"])
             ?? HookEvent.firstDictionary(inNestedDictionary: json, containerKeys: ["tool", "payload", "data"], keys: ["input", "tool_input", "toolInput", "arguments", "args", "params"])
         self.agentId = json["agent_id"] as? String
@@ -212,7 +215,7 @@ public struct HookEvent {
     }
 }
 
-public struct SubagentState {
+public struct SubagentState: Sendable {
     public let agentId: String
     public let agentType: String
     public var status: AgentStatus = .running
@@ -227,7 +230,7 @@ public struct SubagentState {
     }
 }
 
-public struct ToolHistoryEntry: Identifiable {
+public struct ToolHistoryEntry: Identifiable, Sendable {
     public let id = UUID()
     public let tool: String
     public let description: String?
@@ -244,7 +247,7 @@ public struct ToolHistoryEntry: Identifiable {
     }
 }
 
-public struct ChatMessage: Identifiable {
+public struct ChatMessage: Identifiable, Sendable {
     public let id = UUID()
     public let isUser: Bool
     public let text: String

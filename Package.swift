@@ -4,6 +4,11 @@ import PackageDescription
 let package = Package(
     name: "CodeIsland",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Sparkle — auto-update framework. Pinned to 2.6+ for stable
+        // SPUStandardUpdaterController + ed25519 signature verification.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
+    ],
     targets: [
         .target(
             name: "CodeIslandCore",
@@ -11,7 +16,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "CodeIsland",
-            dependencies: ["CodeIslandCore"],
+            dependencies: [
+                "CodeIslandCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/CodeIsland",
             resources: [
                 .copy("Resources")

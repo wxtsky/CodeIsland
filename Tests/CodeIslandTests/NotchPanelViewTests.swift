@@ -11,7 +11,7 @@ final class NotchPanelViewTests: XCTestCase {
     }
 
     func testJumpFailureShakeSequenceUsesFastAlternatingOffsets() {
-        XCTAssertEqual(jumpFailureShakeSequence(), [8, -8, 6, -6, 3, -3, 0])
+        XCTAssertEqual(JumpAnimationHelper.shakeSequence, [8, -8, 6, -6, 3, -3, 0])
     }
 
     func testEvaluateJumpValidationReturnsSuccessWhenCheckSucceeds() async {

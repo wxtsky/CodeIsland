@@ -210,10 +210,16 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                     self.fullscreenLatch = true
                     self.updateVisibility()
                     self.startFullscreenExitPoller()
-                } else if !self.fullscreenLatch {
+                } else {
+                    // Non-fullscreen space: clear any stale latch immediately so the panel
+                    // doesn't stay hidden for up to 1.5s while the exit poller catches up (#104).
+                    if self.fullscreenLatch {
+                        self.fullscreenLatch = false
+                        self.fullscreenPoller?.invalidate()
+                        self.fullscreenPoller = nil
+                    }
                     self.updateVisibility()
                 }
-                // If latch is set but not detected: ignore (poller will handle exit)
             }
         }
 

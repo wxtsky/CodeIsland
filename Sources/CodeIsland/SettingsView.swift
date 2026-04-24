@@ -880,6 +880,7 @@ private struct MascotsPage: View {
     @ObservedObject private var l10n = L10n.shared
     @State private var previewStatus: AgentStatus = .processing
     @AppStorage(SettingsKey.mascotSpeed) private var mascotSpeed = SettingsDefaults.mascotSpeed
+    @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
     private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
         ("Clawd", "claude", "Claude Code", Color(red: 0.871, green: 0.533, blue: 0.427)),
@@ -925,6 +926,15 @@ private struct MascotsPage: View {
                     get: { Double(mascotSpeed) },
                     set: { mascotSpeed = Int($0) }
                 ), in: 0...300, step: 25)
+
+                Picker(selection: $defaultSource) {
+                    ForEach(mascotList, id: \.source) { mascot in
+                        Text(mascot.desc).tag(mascot.source)
+                    }
+                } label: {
+                    Text(l10n["default_mascot"])
+                    Text(l10n["default_mascot_desc"])
+                }
             }
 
             Section {
@@ -1320,7 +1330,7 @@ private struct AboutPage: View {
                 if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
             }
 
-        case let .available(version, _, _):
+        case let .available(version):
             VStack(spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle.fill")
@@ -1346,31 +1356,16 @@ private struct AboutPage: View {
                         }
                     }
                 } else {
+                    // Sparkle owns the download + install alert; this button just
+                    // re-surfaces it if the user dismissed it earlier.
                     aboutButton(l10n["update_now"], icon: "arrow.down.to.line") {
-                        updater.performUpdate()
+                        updater.checkForUpdates()
                     }
                 }
             }
 
-        case let .downloading(progress):
-            VStack(spacing: 6) {
-                Text(l10n["update_downloading"])
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                ProgressView(value: progress)
-                    .frame(width: 200)
-                Text("\(Int(progress * 100))%")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-
-        case .installing:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(l10n["update_installing"])
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
+        // Download progress and install state are owned by Sparkle's standard
+        // UI, not the About page — those enum cases no longer exist.
 
         case let .failed(message):
             VStack(spacing: 8) {

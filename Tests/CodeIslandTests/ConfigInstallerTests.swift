@@ -510,4 +510,87 @@ hooks:
             )
         )
     }
+
+    // MARK: - Minimal-diff merge preserves user formatting (#105 / #106 / #119)
+
+    func testMergeOpencodePluginRefPreservesJSONCCommentsAndKeyOrder() throws {
+        let original = """
+        {
+          // Default model
+          "model": "github-copilot/gpt-5.4",
+          "permission": {
+            "bash": "allow"
+          },
+          "plugin": ["file:///old/other-plugin.js"]
+        }
+
+        """ // trailing blank line emulates user's EOF newline
+        let merged = try XCTUnwrap(
+            ConfigInstaller.mergeOpencodePluginRef(
+                originalContents: original,
+                pluginRef: "file:///tmp/codeisland.js",
+                identifier: "codeisland"
+            )
+        )
+        // Comment survives.
+        XCTAssertTrue(merged.contains("// Default model"), "JSONC comment must survive minimal-diff merge")
+        // Slashes not escaped.
+        XCTAssertFalse(merged.contains("\\/"), "Slashes must not be escaped as \\/")
+        // Key order: model → permission → plugin (unchanged from original)
+        let modelIdx = try XCTUnwrap(merged.range(of: "\"model\""))
+        let permIdx = try XCTUnwrap(merged.range(of: "\"permission\""))
+        let pluginIdx = try XCTUnwrap(merged.range(of: "\"plugin\""))
+        XCTAssertTrue(modelIdx.lowerBound < permIdx.lowerBound)
+        XCTAssertTrue(permIdx.lowerBound < pluginIdx.lowerBound)
+        // New plugin ref added, old other-plugin kept.
+        XCTAssertTrue(merged.contains("file:///tmp/codeisland.js"))
+        XCTAssertTrue(merged.contains("file:///old/other-plugin.js"))
+    }
+
+    func testMergeOpencodePluginRefPreservesUnrelatedEnvAndApiKey() throws {
+        // #119: ANTHROPIC_API_KEY and other env entries must NOT vanish across an install.
+        let original = """
+        {
+          "env": {
+            "ANTHROPIC_API_KEY": "sk-super-secret",
+            "MAX_MCP_OUTPUT_TOKENS": "200000"
+          },
+          "autoMemoryEnabled": false,
+          "plugin": []
+        }
+        """
+        let merged = try XCTUnwrap(
+            ConfigInstaller.mergeOpencodePluginRef(
+                originalContents: original,
+                pluginRef: "file:///tmp/codeisland.js",
+                identifier: "codeisland"
+            )
+        )
+        XCTAssertTrue(merged.contains("\"ANTHROPIC_API_KEY\": \"sk-super-secret\""),
+                      "User's API key must survive the install")
+        XCTAssertTrue(merged.contains("\"MAX_MCP_OUTPUT_TOKENS\": \"200000\""))
+        XCTAssertTrue(merged.contains("\"autoMemoryEnabled\": false"))
+        XCTAssertTrue(merged.contains("file:///tmp/codeisland.js"))
+    }
+
+    func testRemoveOpencodePluginRefPreservesOriginalFormatting() throws {
+        let original = """
+        {
+          "model": "sonnet",
+          "plugin": ["file:///tmp/codeisland.js", "file:///user/other.js"],
+          "autoshare": false
+        }
+
+        """
+        let cleaned = try XCTUnwrap(
+            ConfigInstaller.removeOpencodePluginRef(
+                originalContents: original,
+                identifier: "codeisland"
+            )
+        )
+        XCTAssertTrue(cleaned.contains("\"model\": \"sonnet\""))
+        XCTAssertTrue(cleaned.contains("file:///user/other.js"))
+        XCTAssertFalse(cleaned.contains("file:///tmp/codeisland.js"))
+        XCTAssertFalse(cleaned.contains("\\/"), "No slash escaping")
+    }
 }

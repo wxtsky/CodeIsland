@@ -81,6 +81,9 @@ enum SettingsKey {
     // Island collapsed width scale for non-notch screens (percentage: 50–150, default 100)
     static let collapsedWidthScale = "collapsedWidthScale"
 
+    // Default mascot source when no sessions exist (falls back to this instead of always "claude")
+    static let defaultSource = "defaultSource"
+
     // ESP32 BLE bridge (real-buddy companion device)
     static let esp32BridgeEnabled = "esp32BridgeEnabled"
     static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
@@ -128,6 +131,8 @@ struct SettingsDefaults {
 
     static let collapsedWidthScale = 100  // percentage
 
+    static let defaultSource = "claude"
+
     static let esp32BridgeEnabled = false
     static let esp32HeartbeatSeconds = 5.0
 }
@@ -174,6 +179,7 @@ class SettingsManager {
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
             SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
             SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
+            SettingsKey.defaultSource: SettingsDefaults.defaultSource,
         ])
     }
 
@@ -280,6 +286,11 @@ class SettingsManager {
     var sessionGroupingMode: String {
         get { defaults.string(forKey: SettingsKey.sessionGroupingMode) ?? SettingsDefaults.sessionGroupingMode }
         set { defaults.set(newValue, forKey: SettingsKey.sessionGroupingMode) }
+    }
+
+    var defaultSource: String {
+        get { defaults.string(forKey: SettingsKey.defaultSource) ?? SettingsDefaults.defaultSource }
+        set { defaults.set(newValue, forKey: SettingsKey.defaultSource) }
     }
 }
 

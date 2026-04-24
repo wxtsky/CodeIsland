@@ -59,7 +59,7 @@ if [ -z "$SIGN_ID" ]; then
     SIGN_ID=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/' 2>/dev/null || true)
 fi
 if [ -z "$SIGN_ID" ]; then
-    SIGN_ID=$(security find-identity -v -p codesigning | grep -v "REVOKED" | head -1 | sed 's/.*"\(.*\)".*/\1/' 2>/dev/null || true)
+    SIGN_ID=$(security find-identity -v -p codesigning | grep -v "REVOKED" | grep '"' | head -1 | sed 's/.*"\(.*\)".*/\1/' 2>/dev/null || true)
 fi
 if [ -z "$SIGN_ID" ]; then
     echo "No developer certificate found, using ad-hoc signing..."
