@@ -60,9 +60,12 @@ GFXcanvas16* gfx = &canvas;
 
 // --- Buddy config frames ---
 #define BUDDY_BRIGHTNESS_FRAME          0xFE
+#define BUDDY_ORIENTATION_FRAME         0xFD
 #define BUDDY_BRIGHTNESS_MIN_PERCENT    10
 #define BUDDY_BRIGHTNESS_MAX_PERCENT    100
 #define BUDDY_BRIGHTNESS_DEFAULT_PERCENT 70
+#define BUDDY_SCREEN_UP                 0
+#define BUDDY_SCREEN_DOWN               1
 
 // QR code for https://github.com/Lakphy/CodeIsland (version 3, ECC M, border 2).
 #define CODEISLAND_QR_SIZE 33
@@ -109,6 +112,8 @@ volatile uint8_t  bleStatusId = 0;    // 0=idle, 1=processing, 2=running, 3=wait
 volatile bool     bleConnected = false;
 volatile unsigned long lastBleData = 0;
 volatile uint8_t  buddyBrightnessPercent = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
+volatile uint8_t  buddyScreenOrientation = BUDDY_SCREEN_UP;
+volatile bool     buddyOrientationDirty = false;
 char              bleToolName[18] = {0};
 BLECharacteristic* pNotifyChar = nullptr;
 portMUX_TYPE      bleMux = portMUX_INITIALIZER_UNLOCKED;
@@ -224,6 +229,24 @@ uint8_t clampBuddyBrightness(uint8_t percent) {
   return percent;
 }
 
+uint8_t clampBuddyOrientation(uint8_t orientation) {
+  return orientation == BUDDY_SCREEN_DOWN ? BUDDY_SCREEN_DOWN : BUDDY_SCREEN_UP;
+}
+
+uint8_t tftRotationForBuddyOrientation(uint8_t orientation) {
+  return orientation == BUDDY_SCREEN_DOWN ? (uint8_t)((LCD_ROT + 2) % 4) : LCD_ROT;
+}
+
+const char* buddyOrientationStr(uint8_t orientation) {
+  return orientation == BUDDY_SCREEN_DOWN ? "down" : "up";
+}
+
+void applyBuddyScreenOrientation(uint8_t orientation) {
+  uint8_t clamped = clampBuddyOrientation(orientation);
+  tft.setRotation(tftRotationForBuddyOrientation(clamped));
+  tft.fillScreen(0x0000);
+}
+
 uint8_t scaledBrightness(uint8_t base) {
   uint8_t percent = buddyBrightnessPercent;
   uint16_t scaled = (uint16_t)base * percent / BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
@@ -319,6 +342,19 @@ class CharCallbacks : public BLECharacteristicCallbacks {
       portEXIT_CRITICAL(&bleMux);
       lastInteraction = millis();
       Serial.printf("[BLE] Brightness config: %d%%\n", percent);
+      return;
+    }
+
+    if (len == 2 && data[0] == BUDDY_ORIENTATION_FRAME) {
+      uint8_t orientation = clampBuddyOrientation(data[1]);
+      portENTER_CRITICAL(&bleMux);
+      if (buddyScreenOrientation != orientation) {
+        buddyScreenOrientation = orientation;
+        buddyOrientationDirty = true;
+      }
+      portEXIT_CRITICAL(&bleMux);
+      lastInteraction = millis();
+      Serial.printf("[BLE] Screen orientation config: %s\n", buddyOrientationStr(orientation));
       return;
     }
 
@@ -447,7 +483,9 @@ void setup() {
   Serial.println("[LCD]  Initializing...");
   Serial.printf("[LCD]  Pins: MOSI=%d SCLK=%d CS=%d DC=%d RST=%d BL=%d\n",
     TFT_MOSI, TFT_SCLK, TFT_CS, TFT_DC, TFT_RST, TFT_BL);
-  Serial.printf("[LCD]  Size: %dx%d  Rotation: %d\n", LCD_W, LCD_H, LCD_ROT);
+  Serial.printf("[LCD]  Size: %dx%d  Rotation: %d (%s)\n",
+    LCD_W, LCD_H, tftRotationForBuddyOrientation(buddyScreenOrientation),
+    buddyOrientationStr(buddyScreenOrientation));
   ledcAttach(TFT_BL, BL_PWM_FREQ, BL_PWM_BITS);
   currentBrightness = activeBrightness();
   ledcWrite(TFT_BL, currentBrightness);
@@ -457,8 +495,7 @@ void setup() {
   Serial.printf("[BTN]  Pin=%d (INPUT_PULLUP)\n", BTN_PIN);
   SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
   tft.init(LCD_W, LCD_H);
-  tft.setRotation(LCD_ROT);
-  tft.fillScreen(0x0000);
+  applyBuddyScreenOrientation(buddyScreenOrientation);
   Serial.printf("[LCD]  Canvas buffer: %d bytes\n", LCD_W * LCD_H * 2);
   Serial.println("[LCD]  OK");
 
@@ -518,6 +555,22 @@ void setup() {
 void loop() {
   unsigned long now = millis();
   loopCount++;
+
+  bool shouldApplyOrientation = false;
+  uint8_t localOrientation = BUDDY_SCREEN_UP;
+  portENTER_CRITICAL(&bleMux);
+  if (buddyOrientationDirty) {
+    buddyOrientationDirty = false;
+    localOrientation = buddyScreenOrientation;
+    shouldApplyOrientation = true;
+  }
+  portEXIT_CRITICAL(&bleMux);
+  if (shouldApplyOrientation) {
+    applyBuddyScreenOrientation(localOrientation);
+    Serial.printf("[LCD]  Screen orientation applied: %s (rotation=%d)\n",
+      buddyOrientationStr(localOrientation),
+      tftRotationForBuddyOrientation(localOrientation));
+  }
 
   // Frame rate limiter
   bool isSleepy = (appMode == MODE_DEMO && currentScene == SCENE_SLEEP)

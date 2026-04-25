@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import os.log
+import CodeIslandCore
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -53,10 +54,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let buddyEnabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
         let buddySyncInterval = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
         let buddyBrightness = UserDefaults.standard.double(forKey: SettingsKey.buddyScreenBrightnessPercent)
+        let buddyScreenOrientation = BuddyScreenOrientation(
+            settingsValue: UserDefaults.standard.string(forKey: SettingsKey.buddyScreenOrientation)
+        )
         ESP32StatePublisher.shared.configure(
             enabled: buddyEnabled,
             heartbeatSeconds: buddySyncInterval > 0 ? buddySyncInterval : SettingsDefaults.esp32HeartbeatSeconds,
-            brightnessPercent: buddyBrightness > 0 ? buddyBrightness : SettingsDefaults.buddyScreenBrightnessPercent
+            brightnessPercent: buddyBrightness > 0 ? buddyBrightness : SettingsDefaults.buddyScreenBrightnessPercent,
+            screenOrientation: buddyScreenOrientation
         )
 
         // Hooks auto-recovery: periodic + app activation trigger

@@ -21,6 +21,7 @@ final class ESP32StatePublisher {
     private var heartbeatTimer: Timer?
     private var heartbeatInterval: TimeInterval = 5.0
     private var brightnessPercent: Double = Double(ESP32Protocol.defaultBrightnessPercent)
+    private var screenOrientation: BuddyScreenOrientation = .up
 
     private init() {
         self.bridge = ESP32BridgeManager.shared
@@ -30,23 +31,29 @@ final class ESP32StatePublisher {
     func attach(_ appState: AppState) {
         self.appState = appState
         bridge.onConnected = { [weak self] in
-            self?.syncBrightness()
+            self?.syncConfig()
             self?.flush(reason: "connected")
         }
     }
 
     /// Invoke when a knob that changes what the island displays may have
     /// changed (new Settings value, toggled enabled flag, etc).
-    func configure(enabled: Bool, heartbeatSeconds: Double, brightnessPercent: Double) {
+    func configure(
+        enabled: Bool,
+        heartbeatSeconds: Double,
+        brightnessPercent: Double,
+        screenOrientation: BuddyScreenOrientation
+    ) {
         self.heartbeatInterval = max(1.0, heartbeatSeconds)
         self.brightnessPercent = Double(ESP32Protocol.clampedBrightnessPercent(brightnessPercent))
+        self.screenOrientation = screenOrientation
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         if enabled {
             if bridge.status == .off {
                 bridge.start()
             }
-            syncBrightness()
+            syncConfig()
             heartbeatTimer = Timer.scheduledTimer(withTimeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     self?.flush(reason: "heartbeat")
@@ -70,8 +77,9 @@ final class ESP32StatePublisher {
         Self.log.debug("push(\(reason)): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
     }
 
-    private func syncBrightness() {
+    private func syncConfig() {
         bridge.sendBrightness(percent: brightnessPercent)
+        bridge.sendScreenOrientation(screenOrientation)
     }
 }
 

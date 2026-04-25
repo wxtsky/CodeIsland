@@ -17,6 +17,10 @@ import Foundation
 ///   byte[0] = 0xFE
 ///   byte[1] = brightness percentage (10..100)
 ///
+/// Screen orientation config frame:
+///   byte[0] = 0xFD
+///   byte[1] = orientation (0=up, 1=down)
+///
 /// Uplink (button notify):
 ///   1 byte = currently displayed mascot sourceId (focus request).
 ///
@@ -32,6 +36,7 @@ public enum ESP32Protocol {
     public static let maxToolNameBytes = 17
     public static let maxFrameBytes = 3 + maxToolNameBytes
     public static let brightnessFrameMarker: UInt8 = 0xFE
+    public static let orientationFrameMarker: UInt8 = 0xFD
     public static let minBrightnessPercent: UInt8 = 10
     public static let maxBrightnessPercent: UInt8 = 100
     public static let defaultBrightnessPercent: UInt8 = 70
@@ -44,6 +49,35 @@ public enum ESP32Protocol {
         let minValue = Int(minBrightnessPercent)
         let maxValue = Int(maxBrightnessPercent)
         return UInt8(min(max(rounded, minValue), maxValue))
+    }
+}
+
+/// Physical screen orientation for Buddy.
+public enum BuddyScreenOrientation: String, CaseIterable, Identifiable, Sendable {
+    case up
+    case down
+
+    public var id: String { rawValue }
+
+    public var wireValue: UInt8 {
+        switch self {
+        case .up: return 0
+        case .down: return 1
+        }
+    }
+
+    public init(settingsValue: String?) {
+        switch settingsValue {
+        case Self.down.rawValue: self = .down
+        default: self = .up
+        }
+    }
+
+    public init(wireValue: UInt8) {
+        switch wireValue {
+        case 1: self = .down
+        default: self = .up
+        }
     }
 }
 
@@ -202,5 +236,18 @@ public struct BuddyBrightnessPayload: Equatable, Sendable {
 
     public func encode() -> Data {
         Data([ESP32Protocol.brightnessFrameMarker, percent])
+    }
+}
+
+/// Encoded Buddy screen orientation config.
+public struct BuddyScreenOrientationPayload: Equatable, Sendable {
+    public let orientation: BuddyScreenOrientation
+
+    public init(orientation: BuddyScreenOrientation) {
+        self.orientation = orientation
+    }
+
+    public func encode() -> Data {
+        Data([ESP32Protocol.orientationFrameMarker, orientation.wireValue])
     }
 }

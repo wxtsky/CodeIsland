@@ -1144,6 +1144,7 @@ private struct BuddyPage: View {
     @AppStorage(SettingsKey.esp32BridgeEnabled) private var enabled: Bool = SettingsDefaults.esp32BridgeEnabled
     @AppStorage(SettingsKey.esp32HeartbeatSeconds) private var heartbeat: Double = SettingsDefaults.esp32HeartbeatSeconds
     @AppStorage(SettingsKey.buddyScreenBrightnessPercent) private var brightness: Double = SettingsDefaults.buddyScreenBrightnessPercent
+    @AppStorage(SettingsKey.buddyScreenOrientation) private var screenOrientation: String = SettingsDefaults.buddyScreenOrientation
     @State private var refreshTick = 0
 
     private var bridge: ESP32BridgeManager { ESP32BridgeManager.shared }
@@ -1188,7 +1189,8 @@ private struct BuddyPage: View {
         ESP32StatePublisher.shared.configure(
             enabled: enabled,
             heartbeatSeconds: heartbeat,
-            brightnessPercent: brightness
+            brightnessPercent: brightness,
+            screenOrientation: BuddyScreenOrientation(settingsValue: screenOrientation)
         )
     }
 
@@ -1253,6 +1255,18 @@ private struct BuddyPage: View {
                         configurePublisher()
                     }
                 Text(l10n["buddy_brightness_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(l10n["buddy_screen_orientation"], selection: $screenOrientation) {
+                    Text(l10n["buddy_screen_orientation_up"]).tag(BuddyScreenOrientation.up.rawValue)
+                    Text(l10n["buddy_screen_orientation_down"]).tag(BuddyScreenOrientation.down.rawValue)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: screenOrientation) { _, _ in
+                    configurePublisher()
+                }
+                Text(l10n["buddy_screen_orientation_desc"])
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

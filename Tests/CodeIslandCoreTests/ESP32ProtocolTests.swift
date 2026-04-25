@@ -85,6 +85,24 @@ final class ESP32ProtocolTests: XCTestCase {
         XCTAssertEqual(BuddyBrightnessPayload(percent: Double.nan).percent, ESP32Protocol.defaultBrightnessPercent)
     }
 
+    func testEncodeScreenOrientationConfigFrame() {
+        XCTAssertEqual(
+            Array(BuddyScreenOrientationPayload(orientation: .up).encode()),
+            [ESP32Protocol.orientationFrameMarker, 0]
+        )
+        XCTAssertEqual(
+            Array(BuddyScreenOrientationPayload(orientation: .down).encode()),
+            [ESP32Protocol.orientationFrameMarker, 1]
+        )
+    }
+
+    func testScreenOrientationDefaultsToUpForUnknownValues() {
+        XCTAssertEqual(BuddyScreenOrientation(settingsValue: "down"), .down)
+        XCTAssertEqual(BuddyScreenOrientation(settingsValue: "sideways"), .up)
+        XCTAssertEqual(BuddyScreenOrientation(wireValue: 1), .down)
+        XCTAssertEqual(BuddyScreenOrientation(wireValue: 7), .up)
+    }
+
     func testConvenienceInitFromSourceString() {
         let frame = MascotFramePayload(source: "factory", status: .running, toolName: "Edit")
         XCTAssertNotNil(frame)

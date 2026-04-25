@@ -88,6 +88,7 @@ enum SettingsKey {
     static let esp32BridgeEnabled = "esp32BridgeEnabled"
     static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
     static let buddyScreenBrightnessPercent = "buddyScreenBrightnessPercent"
+    static let buddyScreenOrientation = "buddyScreenOrientation"
 }
 
 struct SettingsDefaults {
@@ -137,6 +138,7 @@ struct SettingsDefaults {
     static let esp32BridgeEnabled = false
     static let esp32HeartbeatSeconds = 5.0
     static let buddyScreenBrightnessPercent = 70.0
+    static let buddyScreenOrientation = "up"
 }
 
 @MainActor
@@ -182,6 +184,7 @@ class SettingsManager {
             SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
             SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
             SettingsKey.buddyScreenBrightnessPercent: SettingsDefaults.buddyScreenBrightnessPercent,
+            SettingsKey.buddyScreenOrientation: SettingsDefaults.buddyScreenOrientation,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
         ])
     }

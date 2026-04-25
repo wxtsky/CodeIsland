@@ -113,6 +113,13 @@ final class ESP32BridgeManager: NSObject {
         peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
     }
 
+    /// Write Buddy screen orientation. No-op when not connected.
+    func sendScreenOrientation(_ orientation: BuddyScreenOrientation) {
+        guard let peripheral, let writeChar, status == .connected else { return }
+        let data = BuddyScreenOrientationPayload(orientation: orientation).encode()
+        peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+    }
+
     // MARK: - Internals
 
     private func beginScanIfPossible() {

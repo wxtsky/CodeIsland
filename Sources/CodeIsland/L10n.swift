@@ -226,6 +226,10 @@ final class L10n: ObservableObject {
         "buddy_display": "Display",
         "buddy_brightness": "Screen Brightness",
         "buddy_brightness_desc": "Adjust Buddy's screen brightness. The device still dims itself when idle.",
+        "buddy_screen_orientation": "Screen Direction",
+        "buddy_screen_orientation_up": "Up",
+        "buddy_screen_orientation_down": "Down",
+        "buddy_screen_orientation_desc": "Choose Buddy's physical direction. Down flips the screen 180°.",
         "buddy_desc": "Buddy mirrors the current island mascot and status over Bluetooth, and its button can focus the matching agent terminal.",
 
         // About
@@ -483,6 +487,10 @@ final class L10n: ObservableObject {
         "buddy_display": "屏幕",
         "buddy_brightness": "屏幕亮度",
         "buddy_brightness_desc": "调整 Buddy 的屏幕亮度。设备空闲时仍会自动变暗。",
+        "buddy_screen_orientation": "屏幕方向",
+        "buddy_screen_orientation_up": "上",
+        "buddy_screen_orientation_down": "下",
+        "buddy_screen_orientation_desc": "选择 Buddy 的物理朝向。选择“下”会将屏幕旋转 180°。",
         "buddy_desc": "Buddy 会通过蓝牙同步当前灵动岛的角色和状态，也可以用机身按钮切换到对应 Agent 的终端。",
 
         // About
@@ -740,6 +748,10 @@ final class L10n: ObservableObject {
         "buddy_display": "画面",
         "buddy_brightness": "画面の明るさ",
         "buddy_brightness_desc": "Buddy の画面の明るさを調整します。待機中はデバイス側で自動的に暗くなります。",
+        "buddy_screen_orientation": "画面の向き",
+        "buddy_screen_orientation_up": "上",
+        "buddy_screen_orientation_down": "下",
+        "buddy_screen_orientation_desc": "Buddy の物理的な向きを選びます。下を選ぶと画面が 180° 回転します。",
         "buddy_desc": "Buddy は現在のアイランドのマスコットと状態を Bluetooth で同期し、本体ボタンで対応するエージェントのターミナルにフォーカスできます。",
 
         // About
@@ -997,6 +1009,10 @@ final class L10n: ObservableObject {
         "buddy_display": "화면",
         "buddy_brightness": "화면 밝기",
         "buddy_brightness_desc": "Buddy의 화면 밝기를 조정합니다. 유휴 상태에서는 기기에서 계속 자동으로 어두워집니다.",
+        "buddy_screen_orientation": "화면 방향",
+        "buddy_screen_orientation_up": "위",
+        "buddy_screen_orientation_down": "아래",
+        "buddy_screen_orientation_desc": "Buddy의 물리적 방향을 선택합니다. 아래를 선택하면 화면이 180° 회전합니다.",
         "buddy_desc": "Buddy는 현재 아일랜드의 마스코트와 상태를 Bluetooth로 동기화하며, 기기 버튼으로 해당 에이전트 터미널에 포커스할 수 있습니다.",
 
         // About
@@ -1254,6 +1270,10 @@ final class L10n: ObservableObject {
         "buddy_display": "Ekran",
         "buddy_brightness": "Ekran Parlaklığı",
         "buddy_brightness_desc": "Buddy'nin ekran parlaklığını ayarlayın. Cihaz boşta kaldığında yine otomatik olarak kararır.",
+        "buddy_screen_orientation": "Ekran Yönü",
+        "buddy_screen_orientation_up": "Yukarı",
+        "buddy_screen_orientation_down": "Aşağı",
+        "buddy_screen_orientation_desc": "Buddy'nin fiziksel yönünü seçin. Aşağı seçeneği ekranı 180° döndürür.",
         "buddy_desc": "Buddy, geçerli ada maskotunu ve durumunu Bluetooth ile eşler; üzerindeki düğme de ilgili ajan terminaline odaklanabilir.",
 
         // About
