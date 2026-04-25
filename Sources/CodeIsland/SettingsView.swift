@@ -348,6 +348,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
+    @AppStorage(SettingsKey.autoApproveTools) private var autoApproveSet: Set<String> = .init(rawValue: SettingsDefaults.autoApproveTools) ?? []
 
     var body: some View {
         Form {
@@ -398,6 +399,32 @@ private struct BehaviorPage: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(.leading, 84)
+                }
+            }
+
+            Section(l10n["auto_approve_tools"]) {
+                Text(l10n["auto_approve_tools_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(SettingsManager.allAutoApproveTools, id: \.name) { tool in
+                    Toggle(isOn: Binding(
+                        get: { autoApproveSet.contains(tool.name) },
+                        set: { isOn in
+                            if isOn {
+                                autoApproveSet.insert(tool.name)
+                            } else {
+                                autoApproveSet.remove(tool.name)
+                            }
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(tool.name)
+                                .font(.system(size: 12, design: .monospaced))
+                            Text(l10n["auto_approve_\(tool.name)"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 

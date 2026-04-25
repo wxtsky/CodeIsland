@@ -33,6 +33,7 @@ struct TerminalActivator {
         "codybuddycn": "com.tencent.codebuddy.cn",
         "stepfun": "com.stepfun.app",
         "opencode": "ai.opencode.desktop",
+        "workbuddy": "com.workbuddy.workbuddy",
     ]
 
     /// Bundle IDs of apps that have both APP and CLI modes.
@@ -48,6 +49,7 @@ struct TerminalActivator {
         "com.tencent.codebuddy.cn": "CodyBuddyCN",
         "com.stepfun.app": "StepFun",
         "ai.opencode.desktop": "OpenCode",
+        "com.workbuddy.workbuddy": "WorkBuddy",
     ]
 
     static func activate(session: SessionSnapshot, sessionId: String? = nil) {

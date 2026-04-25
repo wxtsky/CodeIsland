@@ -91,6 +91,9 @@ enum SettingsKey {
     static let buddyScreenOrientation = "buddyScreenOrientation"
     static let selectedBuddyIdentifier = "selectedBuddyIdentifier"
     static let selectedBuddyName = "selectedBuddyName"
+
+    // Auto-approve tools (comma-separated tool names)
+    static let autoApproveTools = "autoApproveTools"
 }
 
 struct SettingsDefaults {
@@ -143,6 +146,8 @@ struct SettingsDefaults {
     static let buddyScreenOrientation = "up"
     static let selectedBuddyIdentifier = ""
     static let selectedBuddyName = ""
+
+    static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode"
 }
 
 @MainActor
@@ -192,6 +197,7 @@ class SettingsManager {
             SettingsKey.selectedBuddyIdentifier: SettingsDefaults.selectedBuddyIdentifier,
             SettingsKey.selectedBuddyName: SettingsDefaults.selectedBuddyName,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
+            SettingsKey.autoApproveTools: SettingsDefaults.autoApproveTools,
         ])
     }
 
@@ -303,6 +309,42 @@ class SettingsManager {
     var defaultSource: String {
         get { defaults.string(forKey: SettingsKey.defaultSource) ?? SettingsDefaults.defaultSource }
         set { defaults.set(newValue, forKey: SettingsKey.defaultSource) }
+    }
+
+    /// All known auto-approvable tool names (for UI display).
+    static let allAutoApproveTools: [(name: String, description: String)] = [
+        ("TaskCreate", "Create task"),
+        ("TaskUpdate", "Update task"),
+        ("TaskGet", "Get task"),
+        ("TaskList", "List tasks"),
+        ("TaskOutput", "Get task output"),
+        ("TaskStop", "Stop task"),
+        ("TodoRead", "Read todos"),
+        ("TodoWrite", "Write todos"),
+        ("EnterPlanMode", "Enter plan mode"),
+        ("ExitPlanMode", "Exit plan mode"),
+    ]
+
+    var autoApproveTools: Set<String> {
+        get {
+            let raw = defaults.string(forKey: SettingsKey.autoApproveTools) ?? SettingsDefaults.autoApproveTools
+            return Set(raw.split(separator: ",").map(String.init))
+        }
+        set {
+            defaults.set(newValue.sorted().joined(separator: ","), forKey: SettingsKey.autoApproveTools)
+        }
+    }
+}
+
+// MARK: - AppStorage-compatible Set<String>
+
+extension Set<String>: @retroactive RawRepresentable {
+    public var rawValue: String {
+        sorted().joined(separator: ",")
+    }
+
+    public init?(rawValue: String) {
+        self = Set(rawValue.split(separator: ",").map(String.init))
     }
 }
 
