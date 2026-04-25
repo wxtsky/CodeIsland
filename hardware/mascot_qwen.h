@@ -11,67 +11,82 @@
 #define QWN_KB_KEY  RGB565(97, 77, 133)
 #define QWN_KB_HI   0xFFFF
 
-static void drawQwenStar(float cx, float cy, float dy, float scale) {
-  // 6-pointed star: two overlapping triangles
-  float r = 4.8f * scale;
-  float ri = 2.5f * scale;
-  // Upward triangle
+static void drawQwenStar(float cx, float cy, float dy, float scale, float rotateDeg = 0.0f) {
+  float outerR = 4.8f * scale;
+  float innerR = 2.5f * scale;
+  float rot = rotateDeg * PI / 180.0f;
+  float vx[12], vy[12];
+  for (int i = 0; i < 12; i++) {
+    float a = i * PI / 6.0f - PI / 2.0f + rot;
+    float r = (i % 2 == 0) ? outerR : innerR;
+    vx[i] = cx + cosf(a) * r;
+    vy[i] = cy + sinf(a) * r;
+  }
+  uint16_t cols[12] = { QWN_LIGHT, QWN_LIGHT, QWN_BODY, QWN_BODY, QWN_DARK, QWN_DARK,
+                        QWN_DARK, QWN_BODY, QWN_BODY, QWN_LIGHT, QWN_LIGHT, QWN_BODY };
+  for (int i = 0; i < 12; i++) {
+    int j = (i + 1) % 12;
+    gfx->fillTriangle(sx(cx), sy(cy, dy), sx(vx[i]), sy(vy[i], dy), sx(vx[j]), sy(vy[j], dy), cols[i]);
+  }
+  float hiR = 2.0f * scale;
   gfx->fillTriangle(
-    sx(cx), sy(cy - r, dy),
-    sx(cx - r * 0.87f), sy(cy + r * 0.5f, dy),
-    sx(cx + r * 0.87f), sy(cy + r * 0.5f, dy),
-    QWN_BODY
+    sx(cx + cosf(-PI / 2.0f + rot + PI / 6.0f) * hiR), sy(cy + sinf(-PI / 2.0f + rot + PI / 6.0f) * hiR, dy),
+    sx(cx + cosf(PI * 2.0f / 3.0f - PI / 2.0f + rot + PI / 6.0f) * hiR), sy(cy + sinf(PI * 2.0f / 3.0f - PI / 2.0f + rot + PI / 6.0f) * hiR, dy),
+    sx(cx + cosf(PI * 4.0f / 3.0f - PI / 2.0f + rot + PI / 6.0f) * hiR), sy(cy + sinf(PI * 4.0f / 3.0f - PI / 2.0f + rot + PI / 6.0f) * hiR, dy),
+    dim565(QWN_LIGHT, 0.35f)
   );
-  // Downward triangle
-  gfx->fillTriangle(
-    sx(cx), sy(cy + r, dy),
-    sx(cx - r * 0.87f), sy(cy - r * 0.5f, dy),
-    sx(cx + r * 0.87f), sy(cy - r * 0.5f, dy),
-    QWN_LIGHT
-  );
-  // Center fill
-  gfx->fillRect(sx(cx - ri * 0.5f), sy(cy - ri * 0.3f, dy), sw(ri), sh(ri * 0.6f), QWN_BODY);
+}
+
+static void drawQwenFace(float dy, float eyeScale = 1.0f, float blink = 1.0f) {
+  float eyeH = fmaxf(0.3f, 1.5f * eyeScale * blink);
+  float eyeY = 9.5f + (1.5f - eyeH) / 2.0f;
+  gfx->fillRect(sx(5.5f), sy(eyeY, dy), sw(1.2f), sh(eyeH), QWN_FACE);
+  gfx->fillRect(sx(8.3f), sy(eyeY, dy), sw(1.2f), sh(eyeH), QWN_FACE);
 }
 
 void qwenSleep(float t) {
+  useViewport(15.0f, 12.0f, 4.0f);
   float phase = fmodf(t, 4.0f) / 4.0f;
   float fl = sinf(phase * 2.0f * PI) * 0.8f;
-  drawShadow(7.0f + fabsf(fl) * 0.3f);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
-  drawQwenStar(7.5f, 10.0f, fl, 0.9f);
+  float spin = sinf(phase * 2.0f * PI) * 8.0f;
+  drawShadow(6.0f + fabsf(fl) * 0.3f, 0.0f, 15.0f, 4.5f, 6.0f);
+  gfx->fillRect(sx(5.5f), sy(14, fl * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, fl * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
+  drawQwenStar(7.5f, 10.0f, fl, 0.9f, spin);
   float blinkPhase = fmodf(t, 4.0f);
-  float eyeH = (blinkPhase > 3.5f && blinkPhase < 3.7f) ? 0.15f : 0.5f;
-  gfx->fillRect(sx(5.5f), sy(9.5f, fl), sw(1.2f), sh(eyeH), QWN_FACE);
-  gfx->fillRect(sx(8.3f), sy(9.5f, fl), sw(1.2f), sh(eyeH), QWN_FACE);
+  float blink = (blinkPhase > 3.5f && blinkPhase < 3.7f) ? 0.15f : 0.5f;
+  drawQwenFace(fl, 1.0f, blink);
   drawZParticles(t);
 }
 
 void qwenWork(float t) {
+  useViewport(16.0f, 14.0f, 3.0f);
   float bounce = sinf(t * 2.0f * PI / 0.4f) * 1.0f;
-  drawShadow(7.0f, bounce);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
+  float spin = sinf(t * 2.0f * PI / 1.2f) * 12.0f;
+  drawShadow(7.0f, bounce, 16.0f, 4.0f, 7.0f);
+  gfx->fillRect(sx(5.5f), sy(14, bounce * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, bounce * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
   drawKeyboard(t, QWN_KB_BASE, QWN_KB_KEY, QWN_KB_HI);
-  drawQwenStar(7.5f, 10.0f, bounce, 1.0f);
+  drawQwenStar(7.5f, 10.0f, bounce, 1.0f, spin);
   float blinkPhase = fmodf(t, 2.5f);
-  float eyeH = (blinkPhase > 2.2f && blinkPhase < 2.35f) ? 0.1f : 1.0f;
-  gfx->fillRect(sx(5.5f), sy(9.5f, bounce), sw(1.2f), sh(eyeH), QWN_FACE);
-  gfx->fillRect(sx(8.3f), sy(9.5f, bounce), sw(1.2f), sh(eyeH), QWN_FACE);
+  float blink = (blinkPhase > 2.2f && blinkPhase < 2.35f) ? 0.1f : 1.0f;
+  drawQwenFace(bounce, 1.0f, blink);
 }
 
 void qwenAlert(float t) {
+  useViewport(16.0f, 14.0f, 3.0f);
   float pct = fmodf(t, 3.5f) / 3.5f;
-  float jumpY = lerpKF(kfJumpCommon, 18, pct);
+  float jumpY = lerpKF(kfJumpSoft, 18, pct);
   float bangOp = lerpKF(kfBangOpCommon, 6, pct);
   float bangSc = lerpKF(kfBangScCommon, 6, pct);
-  float pulse = 1.0f + sinf(pct * 20) * 0.15f;
-  drawShadow(7.0f, jumpY);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), QWN_DARK);
+  float pulse = (pct > 0.03f && pct < 0.55f) ? 1.0f + sinf(pct * 20.0f) * 0.15f : 1.0f;
+  float shakeX = (pct > 0.15f && pct < 0.55f) ? sinf(pct * 80.0f) * 0.6f : 0.0f;
+  drawShadow(7.0f, jumpY, 16.0f, 4.0f, 7.0f);
+  gfx->fillRect(sx(5.5f), sy(14, jumpY * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, jumpY * 0.3f), sw(1), sh(2), dim565(QWN_DARK, 0.7f));
+  setViewportShiftX(shakeX);
   drawQwenStar(7.5f, 10.0f, jumpY, pulse);
-  float eScale = lerpKF(kfEyeSCommon, 6, pct);
-  gfx->fillRect(sx(5.5f), sy(9.5f, jumpY), sw(1.2f), sh(eScale), QWN_FACE);
-  gfx->fillRect(sx(8.3f), sy(9.5f, jumpY), sw(1.2f), sh(eScale), QWN_FACE);
+  drawQwenFace(jumpY, pct > 0.03f && pct < 0.15f ? 1.3f : 1.0f);
+  setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, QWN_ALERT);
 }

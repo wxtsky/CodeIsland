@@ -6,19 +6,40 @@ extern GFXcanvas16* gfx;
 
 #define RGB565(r, g, b) (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
 
-#define SVG_W  15.0f
-#define SVG_H  10.0f
-#define SVG_Y0 6.0f
 #define LCD_W_  172
 #define LCD_H_  320
-#define SC_     (LCD_W_ / SVG_W)
-#define OX__    0.0f
-#define OY__    ((LCD_H_ - SVG_H * SC_) / 2.0f)
 
-inline int sx(float x)              { return (int)(OX__ + x * SC_); }
-inline int sy(float y, float dy=0)  { return (int)(OY__ + (y - SVG_Y0 + dy) * SC_); }
-inline int sw(float w)              { return (int)(w * SC_); }
-inline int sh(float h)              { return (int)(h * SC_); }
+static float vpS = LCD_W_ / 15.0f;
+static float vpOX = 0.0f;
+static float vpOY = (LCD_H_ - 10.0f * (LCD_W_ / 15.0f)) / 2.0f;
+static float vpY0 = 6.0f;
+static float vpShiftX = 0.0f;
+
+inline void useViewport(float svgW, float svgH, float svgY0) {
+  float sxScale = LCD_W_ / svgW;
+  float syScale = LCD_H_ / svgH;
+  vpS = fminf(sxScale, syScale);
+  vpOX = (LCD_W_ - svgW * vpS) / 2.0f;
+  vpOY = (LCD_H_ - svgH * vpS) / 2.0f;
+  vpY0 = svgY0;
+  vpShiftX = 0.0f;
+}
+
+inline void setViewportShiftX(float dx) { vpShiftX = dx; }
+
+inline int sx(float x)              { return (int)roundf(vpOX + (x + vpShiftX) * vpS); }
+inline int sy(float y, float dy=0)  { return (int)roundf(vpOY + (y - vpY0 + dy) * vpS); }
+inline int sw(float w)              { return (int)roundf(w * vpS); }
+inline int sh(float h)              { return (int)roundf(h * vpS); }
+
+inline uint16_t dim565(uint16_t c, float k) {
+  if (k <= 0.0f) return 0x0000;
+  if (k > 1.0f) k = 1.0f;
+  uint8_t r = (uint8_t)((((c >> 11) & 0x1F) * 255 / 31) * k);
+  uint8_t g = (uint8_t)((((c >> 5) & 0x3F) * 255 / 63) * k);
+  uint8_t b = (uint8_t)(((c & 0x1F) * 255 / 31) * k);
+  return RGB565(r, g, b);
+}
 
 inline float lerpKF(const float* kf, int nPairs, float pct) {
   if (pct <= kf[0]) return kf[1];
@@ -58,6 +79,11 @@ static const float kfJumpCommon[] = {
   0.25f,1.5f, 0.275f,-8, 0.30f,-8, 0.35f,1.2f, 0.375f,-5, 0.40f,-5,
   0.45f,1.0f, 0.475f,-3, 0.50f,-3, 0.55f,0.5f, 0.62f,0, 1.0f,0
 };
+static const float kfJumpSoft[] = {
+  0,0, 0.03f,0, 0.10f,-1, 0.15f,1.5f, 0.175f,-8, 0.20f,-8,
+  0.25f,1.5f, 0.275f,-6, 0.30f,-6, 0.35f,1.0f, 0.375f,-4, 0.40f,-4,
+  0.45f,0.8f, 0.475f,-2, 0.50f,-2, 0.55f,0.3f, 0.62f,0, 1.0f,0
+};
 static const float kfEyeSCommon[] = {
   0,1.0f, 0.03f,1.0f, 0.031f,1.3f, 0.15f,1.3f, 0.151f,1.0f, 1.0f,1.0f
 };
@@ -69,21 +95,21 @@ static const float kfBangScCommon[] = {
 };
 
 // Draw floating "z" particles (shared sleep element)
-inline void drawZParticles(float t, float baseX = 12.0f, float baseY = 8.0f) {
+inline void drawZParticles(float t, float baseX = 11.8f, float baseY = 7.7f,
+                           uint16_t baseColor = 0xFFFF) {
   for (int i = 0; i < 3; i++) {
     float period = 2.8f + i * 0.3f;
     float offset = i * 0.9f;
     float p = fmodf(t - offset, period);
     if (p < 0) p += period;
     p /= period;
-    float opacity = (p < 0.2f) ? (p / 0.2f) : (1.0f - (p - 0.2f) / 0.8f);
+    float baseOp = 0.70f - i * 0.10f;
+    float opacity = (p < 0.8f) ? baseOp : (1.0f - p) * 3.5f * baseOp;
     if (opacity <= 0.05f) continue;
-    float zx = baseX + sinf(p * PI * 2.0f) * 0.5f;
-    float zy = baseY - p * 5.0f;
-    int size = (i == 0) ? 2 : 1;
-    uint8_t gray = (uint8_t)(100 * opacity);
-    uint16_t zcol = RGB565(gray, gray, (uint8_t)min(255, gray + 20));
-    gfx->setTextColor(zcol);
+    float zx = baseX + i * 0.8f + sinf(p * PI * 2.0f) * 0.45f;
+    float zy = baseY - p * 4.6f;
+    int size = (p > 0.55f) ? 2 : 1;
+    gfx->setTextColor(dim565(baseColor, opacity));
     gfx->setTextSize(size);
     gfx->setCursor(sx(zx), sy(zy));
     gfx->print("z");
@@ -91,35 +117,43 @@ inline void drawZParticles(float t, float baseX = 12.0f, float baseY = 8.0f) {
 }
 
 // Draw keyboard (shared work element)
-inline void drawKeyboard(float t, uint16_t baseCol, uint16_t keyCol, uint16_t hiCol) {
-  gfx->fillRect(sx(-0.5f), sy(11.8f), sw(16), sh(3.5f), baseCol);
-  int keyPhase = ((int)(t / 0.1f)) % 6;
+inline void drawKeyboard(float t, uint16_t baseCol, uint16_t keyCol, uint16_t hiCol,
+                         float y = 13.0f, float keyPeriod = 0.1f) {
+  gfx->fillRect(sx(0.0f), sy(y), sw(15), sh(3), baseCol);
+  int keyPhase = ((int)(t / keyPeriod)) % 6;
   for (int row = 0; row < 2; row++) {
     for (int col = 0; col < 6; col++) {
-      float kx = 0.3f + col * 2.5f;
-      float ky = 12.2f + row * 1.2f;
-      uint16_t c = (row * 3 + col % 3 == keyPhase) ? hiCol : keyCol;
-      gfx->fillRect(sx(kx), sy(ky), sw(1.8f), sh(0.7f), c);
+      float kx = 0.5f + col * 2.4f;
+      float ky = y + 0.5f + row * 1.2f;
+      gfx->fillRect(sx(kx), sy(ky), sw(1.8f), sh(0.7f), keyCol);
     }
   }
+  int flashCol = keyPhase % 6;
+  int flashRow = keyPhase / 3;
+  gfx->fillRect(sx(0.5f + flashCol * 2.4f),
+                sy(y + 0.5f + flashRow * 1.2f),
+                sw(1.8f), sh(0.7f), hiCol);
 }
 
 // Draw exclamation bang (shared alert element)
-inline void drawBang(float bangOp, float bangSc, float jumpY, float dy, uint16_t alertCol) {
+inline void drawBang(float bangOp, float bangSc, float jumpY, float dy,
+                     uint16_t alertCol, float baseY = 4.0f) {
+  (void)dy;
   if (bangOp <= 0.05f) return;
   float bx = 13.0f;
-  float by = 4.5f + jumpY * 0.15f;
+  float by = baseY + jumpY * 0.15f;
   float bw = 2.0f * bangSc;
   float bh1 = 3.5f * bangSc;
   float bh2 = 1.5f * bangSc;
-  gfx->fillRect(sx(bx), sy(by, dy * 0.15f), sw(bw), sh(bh1), alertCol);
-  gfx->fillRect(sx(bx), sy(by + 4.0f * bangSc, dy * 0.15f), sw(bw), sh(bh2), alertCol);
+  gfx->fillRect(sx(bx), sy(by), sw(bw), sh(bh1), alertCol);
+  gfx->fillRect(sx(bx), sy(by + 4.0f * bangSc), sw(bw), sh(bh2), alertCol);
 }
 
 // Shadow helper
-inline void drawShadow(float width, float jumpY = 0) {
+inline void drawShadow(float width, float jumpY = 0, float y = 15.0f,
+                       float xBase = 3.0f, float baseWidth = 9.0f) {
   float sw_ = width * (1.0f - fabsf(fminf(0, jumpY)) * 0.04f);
-  uint8_t sg = (uint8_t)(50 - fabsf(fminf(0, jumpY)) * 3);
-  if (sg > 50) sg = 0;
-  gfx->fillRect(sx(3 + (9 - sw_)/2), sy(15), sw(sw_), sh(1), RGB565(sg, sg, sg));
+  float op = fmaxf(0.08f, 0.40f - fabsf(fminf(0, jumpY)) * 0.04f);
+  uint8_t sg = (uint8_t)(255.0f * op);
+  gfx->fillRect(sx(xBase + (baseWidth - sw_)/2), sy(y), sw(sw_), sh(1), RGB565(sg, sg, sg));
 }

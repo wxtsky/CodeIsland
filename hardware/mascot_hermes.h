@@ -11,56 +11,65 @@
 #define HRM_KB_KEY  RGB565(61, 46, 87)
 #define HRM_KB_HI   RGB565(217, 217, 242)
 
-static void drawHermesBody(float dy) {
-  // Main body (rounded rect)
-  gfx->fillRect(sx(3), sy(9, dy), sw(9), sh(6), HRM_BODY);
-  gfx->fillRect(sx(4), sy(8, dy), sw(7), sh(1), HRM_BODY);
-  // Pointed hood (triangle)
+static void drawHermesBody(float dy, float scale = 1.0f) {
+  float cx = 7.5f, cy = 10.5f;
+  float bw = 9.0f * scale, bh = 6.0f * scale;
+  float x = cx - bw / 2.0f;
+  float y = cy - bh / 2.0f + 1.0f;
+  gfx->fillRoundRect(sx(x), sy(y, dy), sw(bw), sh(bh), sw(1.5f * scale), HRM_BODY);
   gfx->fillTriangle(
-    sx(7.5f), sy(4.5f, dy),   // apex
-    sx(3), sy(9, dy),      // base left
-    sx(12), sy(9, dy),     // base right
+    sx(cx), sy(cy - bh / 2.0f - 3.0f * scale, dy),
+    sx(cx - bw / 2.0f - 0.5f), sy(cy - bh / 2.0f + 2.0f, dy),
+    sx(cx + bw / 2.0f + 0.5f), sy(cy - bh / 2.0f + 2.0f, dy),
     HRM_HOOD
   );
 }
 
 void hermesSleep(float t) {
+  useViewport(15.0f, 12.0f, 4.0f);
   float fl = sinf(fmodf(t, 4.0f) / 4.0f * 2.0f * PI) * 0.8f;
-  drawShadow(7.0f + fabsf(fl) * 0.3f);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
-  drawHermesBody(fl);
+  drawShadow(6.0f + fabsf(fl) * 0.3f, 0.0f, 15.0f, 4.5f, 6.0f);
+  gfx->fillRect(sx(5.5f), sy(14, fl * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, fl * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
+  drawHermesBody(fl, 0.9f);
   float blinkPhase = fmodf(t, 4.0f);
-  float eyeH = (blinkPhase > 3.5f && blinkPhase < 3.7f) ? 0.15f : 0.5f;
-  gfx->fillRect(sx(5.1f), sy(10.5f, fl), sw(1.8f), sh(eyeH), HRM_EYE);
-  gfx->fillRect(sx(8.7f), sy(10.5f, fl), sw(1.8f), sh(eyeH), HRM_EYE);
-  drawZParticles(t);
+  float eyeH = fmaxf(0.2f, 1.2f * ((blinkPhase > 3.5f && blinkPhase < 3.7f) ? 0.15f : 0.5f));
+  float eyeY = 10.5f + (1.2f - eyeH) / 2.0f;
+  gfx->fillRoundRect(sx(5.1f), sy(eyeY, fl), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
+  gfx->fillRoundRect(sx(8.7f), sy(eyeY, fl), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
+  drawZParticles(t, 11.8f, 7.7f, HRM_EYE);
 }
 
 void hermesWork(float t) {
+  useViewport(16.0f, 14.0f, 3.0f);
   float bounce = sinf(t * 2.0f * PI / 0.4f) * 1.0f;
-  drawShadow(7.0f, bounce);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
+  drawShadow(7.0f, bounce, 16.0f, 4.0f, 7.0f);
+  gfx->fillRect(sx(5.5f), sy(14, bounce * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, bounce * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
   drawKeyboard(t, HRM_KB_BASE, HRM_KB_KEY, HRM_KB_HI);
   drawHermesBody(bounce);
   float blinkPhase = fmodf(t, 2.5f);
-  float eyeH = (blinkPhase > 2.2f && blinkPhase < 2.35f) ? 0.1f : 1.0f;
-  gfx->fillRect(sx(5.1f), sy(10.5f, bounce), sw(1.8f), sh(eyeH), HRM_EYE);
-  gfx->fillRect(sx(8.7f), sy(10.5f, bounce), sw(1.8f), sh(eyeH), HRM_EYE);
+  float eyeH = fmaxf(0.2f, 1.2f * ((blinkPhase > 2.2f && blinkPhase < 2.35f) ? 0.1f : 1.0f));
+  float eyeY = 10.5f + (1.2f - eyeH) / 2.0f;
+  gfx->fillRoundRect(sx(5.1f), sy(eyeY, bounce), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
+  gfx->fillRoundRect(sx(8.7f), sy(eyeY, bounce), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
 }
 
 void hermesAlert(float t) {
+  useViewport(16.0f, 14.0f, 3.0f);
   float pct = fmodf(t, 3.5f) / 3.5f;
-  float jumpY = lerpKF(kfJumpCommon, 18, pct);
+  float jumpY = lerpKF(kfJumpSoft, 18, pct);
   float bangOp = lerpKF(kfBangOpCommon, 6, pct);
-  float bangSc = lerpKF(kfBangScCommon, 6, pct);
-  drawShadow(7.0f, jumpY);
-  gfx->fillRect(sx(5.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
-  gfx->fillRect(sx(8.5f), sy(15), sw(1), sh(1.5f), HRM_DARK);
+  float shakeX = (pct > 0.15f && pct < 0.55f) ? sinf(pct * 80.0f) * 0.6f : 0.0f;
+  drawShadow(7.0f, jumpY, 16.0f, 4.0f, 7.0f);
+  gfx->fillRect(sx(5.5f), sy(14, jumpY * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
+  gfx->fillRect(sx(8.5f), sy(14, jumpY * 0.3f), sw(1), sh(2), dim565(HRM_DARK, 0.7f));
+  setViewportShiftX(shakeX);
   drawHermesBody(jumpY);
-  float eScale = lerpKF(kfEyeSCommon, 6, pct);
-  gfx->fillRect(sx(5.1f), sy(10.5f, jumpY), sw(1.8f), sh(eScale), HRM_EYE);
-  gfx->fillRect(sx(8.7f), sy(10.5f, jumpY), sw(1.8f), sh(eScale), HRM_EYE);
-  drawBang(bangOp, bangSc, jumpY, jumpY, HRM_ALERT);
+  float eyeH = 1.2f * ((pct > 0.03f && pct < 0.15f) ? 1.3f : 1.0f);
+  float eyeY = 10.5f + (1.2f - eyeH) / 2.0f;
+  gfx->fillRoundRect(sx(5.1f), sy(eyeY, jumpY), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
+  gfx->fillRoundRect(sx(8.7f), sy(eyeY, jumpY), sw(1.8f), sh(eyeH), sw(0.4f), HRM_EYE);
+  setViewportShiftX(0.0f);
+  drawBang(bangOp, 1.0f, jumpY, jumpY, HRM_ALERT);
 }
