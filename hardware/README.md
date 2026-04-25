@@ -12,6 +12,10 @@ Buddy 是 [CodeIsland](https://github.com/wxtsky/CodeIsland) 的硬件外设功�
 
 ---
 
+## 0. 前提
+
+在上手 Buddy 桌宠之前，你需要有充足的动手能力（上手过程会比较坎坷）和基本的 AI 使用能力（便于辅助排查问题）。
+
 ## 1. 准备硬件
 
 Buddy 目前只适配下面这一款开发板，零售价约 60 CNY，淘宝上的第三方仿品同样可用。
