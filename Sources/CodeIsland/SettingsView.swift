@@ -1167,7 +1167,9 @@ private struct BuddyPage: View {
         switch bridge.status {
         case .off: return l10n["buddy_status_disabled"]
         case .poweredOff: return localizedPowerError
+        case .noSelection: return l10n["buddy_status_no_selection"]
         case .scanning: return l10n["buddy_status_scanning"]
+        case .searchingSelected: return l10n["buddy_status_searching_selected"]
         case .connecting: return l10n["buddy_status_connecting"]
         case .connected: return l10n["buddy_status_connected"]
         case .reconnecting(let s): return String(format: l10n["buddy_status_reconnecting"], s)
@@ -1178,9 +1180,9 @@ private struct BuddyPage: View {
         _ = refreshTick
         switch bridge.status {
         case .connected: return .green
-        case .scanning, .connecting: return .orange
+        case .scanning, .connecting, .searchingSelected: return .orange
         case .reconnecting: return .yellow
-        case .off: return .secondary
+        case .off, .noSelection: return .secondary
         case .poweredOff: return .red
         }
     }
@@ -1221,7 +1223,83 @@ private struct BuddyPage: View {
                 } label: {
                     Label(l10n["buddy_reconnect"], systemImage: "arrow.triangle.2.circlepath")
                 }
-                .disabled(!enabled)
+                .disabled(!enabled || bridge.selectedBuddyIdentifier == nil)
+            }
+
+            Section(l10n["buddy_select_section"]) {
+                if let selectedId = bridge.selectedBuddyIdentifier {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(l10n["buddy_selected_label"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(bridge.connectedPeripheralName ?? bridge.selectedBuddyName ?? selectedId.uuidString)
+                                .font(.body)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            bridge.forgetSelection()
+                        } label: {
+                            Text(l10n["buddy_forget"])
+                        }
+                    }
+                }
+
+                ForEach(bridge.discovered) { device in
+                    Button {
+                        bridge.select(buddyId: device.id)
+                    } label: {
+                        HStack {
+                            Image(systemName: device.id == bridge.selectedBuddyIdentifier
+                                  ? "largecircle.fill.circle"
+                                  : "circle")
+                                .foregroundStyle(device.id == bridge.selectedBuddyIdentifier ? Color.accentColor : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name)
+                                    .font(.body)
+                                Text("\(l10n["buddy_signal"]) \(device.rssi) dBm")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Spacer()
+                            Image(systemName: rssiIconName(device.rssi))
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if bridge.discovered.isEmpty {
+                    Text(l10n["buddy_no_devices"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Button {
+                        // Restart discovery to force a fresh round of advertising packets.
+                        bridge.stopDiscovery()
+                        bridge.startDiscovery()
+                    } label: {
+                        Label(l10n["buddy_refresh"], systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!enabled)
+                    Spacer()
+                    if bridge.status == .scanning {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(l10n["buddy_scanning"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
 
             Section(l10n["buddy_sync"]) {
@@ -1280,6 +1358,30 @@ private struct BuddyPage: View {
         .formStyle(.grouped)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             refreshTick &+= 1
+        }
+        .onAppear {
+            if enabled {
+                bridge.startDiscovery()
+            }
+        }
+        .onDisappear {
+            bridge.stopDiscovery()
+        }
+        .onChange(of: enabled) { _, newValue in
+            if newValue {
+                bridge.startDiscovery()
+            } else {
+                bridge.stopDiscovery()
+            }
+        }
+    }
+
+    private func rssiIconName(_ rssi: Int) -> String {
+        // CoreBluetooth RSSI typically ranges from ~-30 (close) to -100 (far).
+        switch rssi {
+        case ..<(-85): return "wifi.exclamationmark"
+        case ..<(-70): return "wifi"
+        default:       return "wifi"
         }
     }
 }

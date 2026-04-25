@@ -53,7 +53,11 @@ GFXcanvas16 canvas(LCD_W, LCD_H);
 GFXcanvas16* gfx = &canvas;
 
 // --- BLE UUIDs ---
-#define BLE_DEVICE_NAME      "Buddy"
+// Device name is generated at runtime as "Buddy-XXXXXX" using the lower
+// 24 bits of the eFuse MAC, so multiple Buddies can be distinguished.
+#define BLE_DEVICE_NAME_PREFIX "Buddy-"
+#define BLE_DEVICE_NAME_LEN  16   // "Buddy-" + 6 hex + NUL + headroom
+static char bleDeviceName[BLE_DEVICE_NAME_LEN] = "Buddy";
 #define SERVICE_UUID         "0000beef-0000-1000-8000-00805f9b34fb"
 #define CHARACTERISTIC_UUID  "0000beef-0001-1000-8000-00805f9b34fb"
 #define NOTIFY_CHAR_UUID     "0000beef-0002-1000-8000-00805f9b34fb"
@@ -438,11 +442,12 @@ void drawStatusBar() {
 // --- Draw onboarding screen ---
 void drawOnboardScreen(float t) {
   drawCenteredText("Buddy", 22, 3, RGB565(235, 235, 245));
-  drawCenteredText("Scan to get app", 54, 1, RGB565(130, 130, 150));
+  drawCenteredText(bleDeviceName, 50, 1, RGB565(120, 200, 255));
+  drawCenteredText("Scan to get app", 64, 1, RGB565(130, 130, 150));
 
   int qrPixels = CODEISLAND_QR_SIZE * CODEISLAND_QR_SCALE;
   int qrX = (LCD_W - qrPixels) / 2;
-  int qrY = 76;
+  int qrY = 84;
   drawCodeIslandQR(qrX, qrY, CODEISLAND_QR_SCALE);
 
   int y = qrY + qrPixels + 16;
@@ -499,9 +504,15 @@ void setup() {
   Serial.printf("[LCD]  Canvas buffer: %d bytes\n", LCD_W * LCD_H * 2);
   Serial.println("[LCD]  OK");
 
-  // BLE
+  // BLE — derive a unique name from the eFuse MAC so multiple Buddies
+  // can co-exist and be distinguished from the macOS app.
+  uint64_t mac = ESP.getEfuseMac();
+  uint32_t suffix = (uint32_t)(mac & 0xFFFFFFULL);
+  snprintf(bleDeviceName, BLE_DEVICE_NAME_LEN,
+           BLE_DEVICE_NAME_PREFIX "%06X", (unsigned int)suffix);
+  Serial.printf("[BLE]  Device name: %s\n", bleDeviceName);
   Serial.println("[BLE]  Initializing...");
-  BLEDevice::init(BLE_DEVICE_NAME);
+  BLEDevice::init(bleDeviceName);
   BLEServer* pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
@@ -528,7 +539,7 @@ void setup() {
   Serial.printf("[BLE]  Service UUID: %s\n", SERVICE_UUID);
   Serial.printf("[BLE]  Write UUID:   %s\n", CHARACTERISTIC_UUID);
   Serial.printf("[BLE]  Notify UUID:  %s\n", NOTIFY_CHAR_UUID);
-  Serial.printf("[BLE]  Advertising as: %s\n", BLE_DEVICE_NAME);
+  Serial.printf("[BLE]  Advertising as: %s\n", bleDeviceName);
 
   Serial.printf("[MASCOT] Loaded %d mascots:", NUM_MASCOTS);
   for (int i = 0; i < NUM_MASCOTS; i++) Serial.printf(" %s", mascots[i].name);

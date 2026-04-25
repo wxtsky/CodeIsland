@@ -89,6 +89,8 @@ enum SettingsKey {
     static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
     static let buddyScreenBrightnessPercent = "buddyScreenBrightnessPercent"
     static let buddyScreenOrientation = "buddyScreenOrientation"
+    static let selectedBuddyIdentifier = "selectedBuddyIdentifier"
+    static let selectedBuddyName = "selectedBuddyName"
 }
 
 struct SettingsDefaults {
@@ -139,6 +141,8 @@ struct SettingsDefaults {
     static let esp32HeartbeatSeconds = 5.0
     static let buddyScreenBrightnessPercent = 70.0
     static let buddyScreenOrientation = "up"
+    static let selectedBuddyIdentifier = ""
+    static let selectedBuddyName = ""
 }
 
 @MainActor
@@ -185,6 +189,8 @@ class SettingsManager {
             SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
             SettingsKey.buddyScreenBrightnessPercent: SettingsDefaults.buddyScreenBrightnessPercent,
             SettingsKey.buddyScreenOrientation: SettingsDefaults.buddyScreenOrientation,
+            SettingsKey.selectedBuddyIdentifier: SettingsDefaults.selectedBuddyIdentifier,
+            SettingsKey.selectedBuddyName: SettingsDefaults.selectedBuddyName,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
         ])
     }
