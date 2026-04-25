@@ -6,9 +6,10 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <pgmspace.h>
 
 // =========================================================
-//  Real Buddy — Multi-mascot ESP32 BLE Pet
+//  Buddy — Multi-mascot Bluetooth Pet
 //  Receives agent status over BLE, displays matching mascot
 //  Button: short=next mascot, long=toggle demo mode
 // =========================================================
@@ -52,15 +53,62 @@ GFXcanvas16 canvas(LCD_W, LCD_H);
 GFXcanvas16* gfx = &canvas;
 
 // --- BLE UUIDs ---
+#define BLE_DEVICE_NAME      "Buddy"
 #define SERVICE_UUID         "0000beef-0000-1000-8000-00805f9b34fb"
 #define CHARACTERISTIC_UUID  "0000beef-0001-1000-8000-00805f9b34fb"
 #define NOTIFY_CHAR_UUID     "0000beef-0002-1000-8000-00805f9b34fb"
+
+// --- Buddy config frames ---
+#define BUDDY_BRIGHTNESS_FRAME          0xFE
+#define BUDDY_BRIGHTNESS_MIN_PERCENT    10
+#define BUDDY_BRIGHTNESS_MAX_PERCENT    100
+#define BUDDY_BRIGHTNESS_DEFAULT_PERCENT 70
+
+// QR code for https://github.com/Lakphy/CodeIsland (version 3, ECC M, border 2).
+#define CODEISLAND_QR_SIZE 33
+#define CODEISLAND_QR_SCALE 4
+static const char CODEISLAND_QR[CODEISLAND_QR_SIZE][CODEISLAND_QR_SIZE + 1] PROGMEM = {
+  "000000000000000000000000000000000",
+  "000000000000000000000000000000000",
+  "001111111010101011110000111111100",
+  "001000001000100110000010100000100",
+  "001011101010101011011010101110100",
+  "001011101000110010011100101110100",
+  "001011101000001110001000101110100",
+  "001000001011001000000010100000100",
+  "001111111010101010101010111111100",
+  "000000000001011011100000000000000",
+  "001010001101001110100110010010100",
+  "001110100010000111111111110001100",
+  "001111001011011001011110111110100",
+  "000000010001010100001011001100000",
+  "001111011101110101101010110000100",
+  "000110100001011001110010110001100",
+  "000111101100100111100101111000100",
+  "001010010010110010101110110000000",
+  "001100011101000110110011100000100",
+  "000001100110001111100100110011100",
+  "001110011010000001001100001100100",
+  "000011000101010101001010101000000",
+  "001111101010011101000011111101000",
+  "000000000010001001110010001110100",
+  "001111111011010111000010101000100",
+  "001000001000010010001110001000000",
+  "001011101001010110100111111100100",
+  "001011101000110110100111001110100",
+  "001011101010110101010001001001100",
+  "001000001000110000100010011100000",
+  "001111111011100101100010001100100",
+  "000000000000000000000000000000000",
+  "000000000000000000000000000000000",
+};
 
 // --- Agent state from BLE ---
 volatile uint8_t  bleSourceId = 0;    // 0=claude, 1=codex, ...
 volatile uint8_t  bleStatusId = 0;    // 0=idle, 1=processing, 2=running, 3=waitApproval, 4=waitQuestion
 volatile bool     bleConnected = false;
 volatile unsigned long lastBleData = 0;
+volatile uint8_t  buddyBrightnessPercent = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
 char              bleToolName[18] = {0};
 BLECharacteristic* pNotifyChar = nullptr;
 portMUX_TYPE      bleMux = portMUX_INITIALIZER_UNLOCKED;
@@ -170,6 +218,53 @@ static const char* statusStr(uint8_t s) {
   }
 }
 
+uint8_t clampBuddyBrightness(uint8_t percent) {
+  if (percent < BUDDY_BRIGHTNESS_MIN_PERCENT) return BUDDY_BRIGHTNESS_MIN_PERCENT;
+  if (percent > BUDDY_BRIGHTNESS_MAX_PERCENT) return BUDDY_BRIGHTNESS_MAX_PERCENT;
+  return percent;
+}
+
+uint8_t scaledBrightness(uint8_t base) {
+  uint8_t percent = buddyBrightnessPercent;
+  uint16_t scaled = (uint16_t)base * percent / BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
+  if (scaled > 255) return 255;
+  if (scaled < 1) return 1;
+  return (uint8_t)scaled;
+}
+
+uint8_t activeBrightness() {
+  return scaledBrightness(BL_BRIGHT_ACTIVE);
+}
+
+uint8_t sleepBrightness() {
+  return scaledBrightness(BL_BRIGHT_SLEEP);
+}
+
+uint8_t idleBrightness() {
+  return scaledBrightness(BL_BRIGHT_IDLE);
+}
+
+void drawCenteredText(const char* text, int y, uint8_t textSize, uint16_t color) {
+  gfx->setTextSize(textSize);
+  gfx->setTextColor(color);
+  int16_t tw = strlen(text) * 6 * textSize;
+  gfx->setCursor((LCD_W - tw) / 2, y);
+  gfx->print(text);
+}
+
+void drawCodeIslandQR(int x, int y, uint8_t scale) {
+  int qrPixels = CODEISLAND_QR_SIZE * scale;
+  gfx->fillRect(x - 4, y - 4, qrPixels + 8, qrPixels + 8, RGB565(245, 245, 245));
+  for (int row = 0; row < CODEISLAND_QR_SIZE; row++) {
+    for (int col = 0; col < CODEISLAND_QR_SIZE; col++) {
+      char bit = (char)pgm_read_byte(&CODEISLAND_QR[row][col]);
+      if (bit == '1') {
+        gfx->fillRect(x + col * scale, y + row * scale, scale, scale, RGB565(10, 10, 14));
+      }
+    }
+  }
+}
+
 // --- Button state ---
 bool   btnStable   = HIGH;
 bool   btnLastRead = HIGH;
@@ -216,6 +311,17 @@ class CharCallbacks : public BLECharacteristicCallbacks {
     Serial.printf("[BLE] Write received, len=%d, raw hex:", len);
     for (size_t i = 0; i < len && i < 24; i++) Serial.printf(" %02X", data[i]);
     Serial.println();
+
+    if (len == 2 && data[0] == BUDDY_BRIGHTNESS_FRAME) {
+      uint8_t percent = clampBuddyBrightness(data[1]);
+      portENTER_CRITICAL(&bleMux);
+      buddyBrightnessPercent = percent;
+      portEXIT_CRITICAL(&bleMux);
+      lastInteraction = millis();
+      Serial.printf("[BLE] Brightness config: %d%%\n", percent);
+      return;
+    }
+
     if (len < 3) {
       Serial.println("[BLE] WARN: payload too short (<3), ignored");
       return;
@@ -266,7 +372,7 @@ void drawToolLabel() {
   gfx->setTextColor(RGB565(120, 120, 130));
   gfx->setTextSize(2);
   int16_t tw = strlen(localTool) * 12;
-  gfx->setCursor((LCD_W - tw) / 2, sy(19.0f));
+  gfx->setCursor((LCD_W - tw) / 2, sy(19.35f));
   gfx->print(localTool);
 }
 
@@ -277,7 +383,7 @@ void drawMascotName(uint8_t idx) {
   gfx->setTextSize(2);
   int16_t tw = strlen(name) * 12;
   gfx->setTextColor(RGB565(160, 160, 170));
-  gfx->setCursor((LCD_W - tw) / 2, sy(17.2f));
+  gfx->setCursor((LCD_W - tw) / 2, sy(17.45f));
   gfx->print(name);
 }
 
@@ -295,88 +401,29 @@ void drawStatusBar() {
 
 // --- Draw onboarding screen ---
 void drawOnboardScreen(float t) {
-  // Title
-  gfx->setTextSize(2);
-  const char* title = "Real Buddy";
-  int16_t tw = strlen(title) * 12;
-  gfx->setTextColor(RGB565(220, 220, 230));
-  gfx->setCursor((LCD_W - tw) / 2, 30);
-  gfx->print(title);
+  drawCenteredText("Buddy", 22, 3, RGB565(235, 235, 245));
+  drawCenteredText("Scan to get app", 54, 1, RGB565(130, 130, 150));
 
-  // Subtitle
-  gfx->setTextSize(1);
-  const char* sub = "Setup Guide";
-  tw = strlen(sub) * 6;
-  gfx->setTextColor(RGB565(120, 120, 140));
-  gfx->setCursor((LCD_W - tw) / 2, 55);
-  gfx->print(sub);
+  int qrPixels = CODEISLAND_QR_SIZE * CODEISLAND_QR_SCALE;
+  int qrX = (LCD_W - qrPixels) / 2;
+  int qrY = 76;
+  drawCodeIslandQR(qrX, qrY, CODEISLAND_QR_SCALE);
 
-  // Divider
-  gfx->drawFastHLine(20, 72, LCD_W - 40, RGB565(60, 60, 70));
+  int y = qrY + qrPixels + 16;
+  drawCenteredText("Open CodeIsland", y, 1, RGB565(170, 170, 190));
+  drawCenteredText("Settings > Buddy", y + 14, 1, RGB565(120, 200, 255));
+  drawCenteredText("Connect by Bluetooth", y + 28, 1, RGB565(130, 130, 150));
 
-  // Steps with animated highlight
-  int activeStep = ((int)(t / 2.5f)) % 3;
-  const char* steps[] = {
-    "1. Install:",
-    "npm i -g real-buddy",
-    "2. Initialize:",
-    "real-buddy init",
-    "3. Start:",
-    "real-buddy start"
-  };
-
-  int y = 85;
-  for (int i = 0; i < 3; i++) {
-    bool active = (i == activeStep);
-    // Step label
-    gfx->setTextSize(1);
-    gfx->setTextColor(active ? RGB565(180, 180, 200) : RGB565(90, 90, 100));
-    gfx->setCursor(12, y);
-    gfx->print(steps[i * 2]);
-    y += 14;
-
-    // Command (monospace look, highlighted)
-    gfx->setTextSize(1);
-    if (active) {
-      int cmdW = strlen(steps[i * 2 + 1]) * 6 + 8;
-      gfx->fillRect(10, y - 2, cmdW, 12, RGB565(30, 30, 50));
-      gfx->setTextColor(RGB565(100, 200, 255));
-    } else {
-      gfx->setTextColor(RGB565(70, 130, 170));
-    }
-    gfx->setCursor(14, y);
-    gfx->print(steps[i * 2 + 1]);
-    y += 22;
-  }
-
-  // Divider
-  gfx->drawFastHLine(20, y + 2, LCD_W - 40, RGB565(60, 60, 70));
-
-  // BLE status indicator
-  y += 14;
-  gfx->setTextSize(1);
+  y += 50;
   if (bleConnected) {
-    gfx->setTextColor(RGB565(50, 230, 50));
-    const char* msg = "BLE Connected!";
-    gfx->setCursor((LCD_W - strlen(msg) * 6) / 2, y);
-    gfx->print(msg);
+    drawCenteredText("Bluetooth connected", y, 1, RGB565(50, 230, 50));
   } else {
-    // Pulsing "Waiting for connection..."
     float pulse = (sinf(t * 3.0f) + 1.0f) * 0.5f;
     uint8_t g = 80 + (uint8_t)(pulse * 80);
-    gfx->setTextColor(RGB565(g, g, (uint8_t)(g + 30)));
-    const char* msg = "Waiting for BLE...";
-    gfx->setCursor((LCD_W - strlen(msg) * 6) / 2, y);
-    gfx->print(msg);
+    drawCenteredText("Waiting for Buddy...", y, 1, RGB565(g, g, (uint8_t)(g + 30)));
   }
 
-  // Bottom hint
-  y = LCD_H - 20;
-  gfx->setTextSize(1);
-  gfx->setTextColor(RGB565(60, 60, 80));
-  const char* hint = "Long press: demo mode";
-  gfx->setCursor((LCD_W - strlen(hint) * 6) / 2, y);
-  gfx->print(hint);
+  drawCenteredText("Long press: demo", LCD_H - 18, 1, RGB565(60, 60, 80));
 }
 
 // ============================================================
@@ -387,7 +434,7 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println("========================================");
-  Serial.println("  Real Buddy — Multi-mascot BLE Pet");
+  Serial.println("  Buddy — Multi-mascot Bluetooth Pet");
   Serial.println("========================================");
   Serial.printf("[BOOT] Chip: %s  Rev: %d  Cores: %d\n",
     ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
@@ -402,9 +449,10 @@ void setup() {
     TFT_MOSI, TFT_SCLK, TFT_CS, TFT_DC, TFT_RST, TFT_BL);
   Serial.printf("[LCD]  Size: %dx%d  Rotation: %d\n", LCD_W, LCD_H, LCD_ROT);
   ledcAttach(TFT_BL, BL_PWM_FREQ, BL_PWM_BITS);
-  ledcWrite(TFT_BL, BL_BRIGHT_ACTIVE);
-  Serial.printf("[LCD]  Backlight PWM: freq=%dHz bits=%d brightness=%d/255\n",
-    BL_PWM_FREQ, BL_PWM_BITS, BL_BRIGHT_ACTIVE);
+  currentBrightness = activeBrightness();
+  ledcWrite(TFT_BL, currentBrightness);
+  Serial.printf("[LCD]  Backlight PWM: freq=%dHz bits=%d brightness=%d/255 (%d%%)\n",
+    BL_PWM_FREQ, BL_PWM_BITS, currentBrightness, buddyBrightnessPercent);
   pinMode(BTN_PIN, INPUT_PULLUP);
   Serial.printf("[BTN]  Pin=%d (INPUT_PULLUP)\n", BTN_PIN);
   SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
@@ -416,7 +464,7 @@ void setup() {
 
   // BLE
   Serial.println("[BLE]  Initializing...");
-  BLEDevice::init("real-buddy");
+  BLEDevice::init(BLE_DEVICE_NAME);
   BLEServer* pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
@@ -443,15 +491,15 @@ void setup() {
   Serial.printf("[BLE]  Service UUID: %s\n", SERVICE_UUID);
   Serial.printf("[BLE]  Write UUID:   %s\n", CHARACTERISTIC_UUID);
   Serial.printf("[BLE]  Notify UUID:  %s\n", NOTIFY_CHAR_UUID);
-  Serial.println("[BLE]  Advertising started");
+  Serial.printf("[BLE]  Advertising as: %s\n", BLE_DEVICE_NAME);
 
   Serial.printf("[MASCOT] Loaded %d mascots:", NUM_MASCOTS);
   for (int i = 0; i < NUM_MASCOTS; i++) Serial.printf(" %s", mascots[i].name);
   Serial.println();
 
   Serial.printf("[CFG]  FPS active=%d sleep=%d\n", FPS_ACTIVE, FPS_SLEEP);
-  Serial.printf("[CFG]  Backlight active=%d sleep=%d idle=%d  idle_timeout=%lums\n",
-    BL_BRIGHT_ACTIVE, BL_BRIGHT_SLEEP, BL_BRIGHT_IDLE, BL_IDLE_TIMEOUT_MS);
+  Serial.printf("[CFG]  Backlight active=%d sleep=%d idle=%d brightness=%d%%  idle_timeout=%lums\n",
+    activeBrightness(), sleepBrightness(), idleBrightness(), buddyBrightnessPercent, BL_IDLE_TIMEOUT_MS);
   Serial.printf("[CFG]  Auto-cycle=%lums  BLE timeout=%lums\n", AUTO_CYCLE_MS, BLE_TIMEOUT_MS);
 
   lastSceneChange = millis();
@@ -542,13 +590,13 @@ void loop() {
   if (appMode == MODE_AGENT && bleConnected) {
     lastInteraction = now;
     Scene agentScene = statusToScene(bleStatusId);
-    targetBright = (agentScene == SCENE_SLEEP) ? BL_BRIGHT_SLEEP : BL_BRIGHT_ACTIVE;
+    targetBright = (agentScene == SCENE_SLEEP) ? sleepBrightness() : activeBrightness();
   } else if ((now - lastInteraction) > BL_IDLE_TIMEOUT_MS) {
-    targetBright = BL_BRIGHT_IDLE;
+    targetBright = idleBrightness();
   } else if (appMode == MODE_ONBOARD) {
-    targetBright = BL_BRIGHT_SLEEP;
+    targetBright = sleepBrightness();
   } else {
-    targetBright = (currentScene == SCENE_SLEEP) ? BL_BRIGHT_SLEEP : BL_BRIGHT_ACTIVE;
+    targetBright = (currentScene == SCENE_SLEEP) ? sleepBrightness() : activeBrightness();
   }
   if (currentBrightness != targetBright) {
     uint8_t prevBright = currentBrightness;
@@ -613,8 +661,8 @@ void loop() {
     unsigned long upSec = now / 1000;
     unsigned long idleSec = (now - lastInteraction) / 1000;
 
-    Serial.printf("[STAT] up=%lus | fps=%.1f | heap=%d | bright=%d/255\n",
-      upSec, currentFps, ESP.getFreeHeap(), currentBrightness);
+    Serial.printf("[STAT] up=%lus | fps=%.1f | heap=%d | bright=%d/255 (%d%%)\n",
+      upSec, currentFps, ESP.getFreeHeap(), currentBrightness, buddyBrightnessPercent);
     Serial.printf("[STAT] mode=%s | ble=%s | ever_connected=%s\n",
       appModeStr(appMode),
       bleConnected ? "CONNECTED" : "disconnected",

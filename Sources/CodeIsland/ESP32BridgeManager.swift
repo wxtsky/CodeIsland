@@ -4,11 +4,11 @@ import Observation
 import os
 import CodeIslandCore
 
-/// Connection lifecycle state for the ESP32 BLE bridge.
+/// Connection lifecycle state for the Buddy Bluetooth bridge.
 enum ESP32BridgeStatus: Equatable {
     case off                  // user has disabled the bridge
     case poweredOff           // Bluetooth radio is off / unauthorized / unsupported
-    case scanning             // looking for a "real-buddy" peripheral
+    case scanning             // looking for a Buddy peripheral
     case connecting           // found one, connecting / discovering characteristics
     case connected            // ready to write + receiving notifications
     case reconnecting(Int)    // seconds until next scan attempt
@@ -25,7 +25,7 @@ enum ESP32BridgeStatus: Equatable {
     }
 }
 
-/// CoreBluetooth central that talks to the ESP32 "real-buddy" LCD companion.
+/// CoreBluetooth central that talks to the Buddy LCD companion.
 ///
 /// Single peripheral assumption (first match wins). Writes use
 /// `.withoutResponse` to match the firmware's `WRITE_NR` property.
@@ -44,7 +44,7 @@ final class ESP32BridgeManager: NSObject {
     private(set) var lastError: String?
     private(set) var connectedPeripheralName: String?
 
-    // Backoff table (seconds) mirrors real-buddy's 1→2→4→8→…30 exponential.
+    // Backoff table (seconds) mirrors Buddy's 1→2→4→8→…30 exponential.
     private static let reconnectBackoff: [Int] = [1, 2, 4, 8, 16, 30]
 
     private var central: CBCentralManager?
@@ -54,7 +54,7 @@ final class ESP32BridgeManager: NSObject {
     private var reconnectAttempt = 0
     private var reconnectTimer: Timer?
 
-    /// Callback fired when the ESP32 notifies a button press with a
+    /// Callback fired when Buddy notifies a button press with a
     /// mascot `sourceId` byte. Nonisolated to allow CoreBluetooth delegate
     /// callbacks to forward to `@MainActor` consumers.
     var onFocusRequest: ((MascotID) -> Void)?
@@ -99,10 +99,17 @@ final class ESP32BridgeManager: NSObject {
         status = .off
     }
 
-    /// Write a single frame to the ESP32. No-op when not connected.
+    /// Write a single frame to Buddy. No-op when not connected.
     func send(_ frame: MascotFramePayload) {
         guard let peripheral, let writeChar, status == .connected else { return }
         let data = frame.encode()
+        peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+    }
+
+    /// Write Buddy screen brightness. No-op when not connected.
+    func sendBrightness(percent: Double) {
+        guard let peripheral, let writeChar, status == .connected else { return }
+        let data = BuddyBrightnessPayload(percent: percent).encode()
         peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
     }
 
@@ -117,7 +124,7 @@ final class ESP32BridgeManager: NSObject {
         reconnectTimer?.invalidate()
         reconnectTimer = nil
 
-        Self.log.info("Scanning for real-buddy peripheral")
+        Self.log.info("Scanning for Buddy peripheral")
         let serviceUUID = CBUUID(string: ESP32Protocol.serviceUUID)
         central.scanForPeripherals(withServices: [serviceUUID],
                                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
@@ -268,7 +275,7 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 self.lastError = "Device missing expected characteristics"
                 return
             }
-            Self.log.info("ESP32 ready")
+            Self.log.info("Buddy ready")
             self.reconnectAttempt = 0
             self.status = .connected
             self.onConnected?()

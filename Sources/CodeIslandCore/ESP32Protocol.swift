@@ -1,11 +1,11 @@
 import Foundation
 
-/// Protocol contract for the ESP32 "real-buddy" LCD companion device.
+/// Protocol contract for the Buddy LCD companion device.
 ///
 /// BLE service / characteristics:
 /// - Service:        `0000beef-0000-1000-8000-00805f9b34fb`
-/// - Write (host→ESP32, WRITE_NR): `0000beef-0001-1000-8000-00805f9b34fb`
-/// - Notify (ESP32→host):          `0000beef-0002-1000-8000-00805f9b34fb`
+/// - Write (host→Buddy, WRITE_NR): `0000beef-0001-1000-8000-00805f9b34fb`
+/// - Notify (Buddy→host):          `0000beef-0002-1000-8000-00805f9b34fb`
 ///
 /// Downlink frame (≤ 20 bytes):
 ///   byte[0] = sourceId (0..15, MascotID)
@@ -13,25 +13,41 @@ import Foundation
 ///   byte[2] = toolLen  (0..17)
 ///   byte[3..] = toolName UTF-8 (truncated to 17 bytes)
 ///
+/// Brightness config frame:
+///   byte[0] = 0xFE
+///   byte[1] = brightness percentage (10..100)
+///
 /// Uplink (button notify):
 ///   1 byte = currently displayed mascot sourceId (focus request).
 ///
-/// ESP32 firmware exits AGENT mode after 60 s with no writes, so the host
+/// Buddy firmware exits AGENT mode after 60 s with no writes, so the host
 /// should resend the current frame periodically (≥ every 30 s, 5 s is the
-/// recommended heartbeat).
+/// recommended sync interval).
 public enum ESP32Protocol {
     public static let serviceUUID = "0000beef-0000-1000-8000-00805f9b34fb"
     public static let writeCharacteristicUUID = "0000beef-0001-1000-8000-00805f9b34fb"
     public static let notifyCharacteristicUUID = "0000beef-0002-1000-8000-00805f9b34fb"
 
-    public static let advertisedDeviceName = "real-buddy"
+    public static let advertisedDeviceName = "Buddy"
     public static let maxToolNameBytes = 17
     public static let maxFrameBytes = 3 + maxToolNameBytes
-    /// Firmware's BLE inactivity timeout (ms). Host should stay well under this.
+    public static let brightnessFrameMarker: UInt8 = 0xFE
+    public static let minBrightnessPercent: UInt8 = 10
+    public static let maxBrightnessPercent: UInt8 = 100
+    public static let defaultBrightnessPercent: UInt8 = 70
+    /// Firmware's Bluetooth inactivity timeout (ms). Host should stay well under this.
     public static let firmwareInactivityTimeoutMs: Int = 60_000
+
+    public static func clampedBrightnessPercent(_ percent: Double) -> UInt8 {
+        guard percent.isFinite else { return defaultBrightnessPercent }
+        let rounded = Int(percent.rounded())
+        let minValue = Int(minBrightnessPercent)
+        let maxValue = Int(maxBrightnessPercent)
+        return UInt8(min(max(rounded, minValue), maxValue))
+    }
 }
 
-/// Mascot slot on the ESP32 (0..15). The index is the on-wire `sourceId`.
+/// Mascot slot on Buddy (0..15). The index is the on-wire `sourceId`.
 public enum MascotID: UInt8, CaseIterable, Sendable {
     case claude = 0
     case codex = 1
@@ -75,7 +91,7 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
 
     /// Fold a CodeIsland source string (including aliases like `traecn`,
     /// `traecli`, `codybuddycn`, `factory`, `ag`) into one of the 16 slots
-    /// supported by the ESP32 firmware.
+    /// supported by the Buddy firmware.
     public init?(sourceName: String?) {
         guard let raw = sourceName,
               let canonical = SessionSnapshot.normalizedSupportedSource(raw) else {
@@ -103,7 +119,7 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
     }
 }
 
-/// On-wire status code. Matches the ESP32 firmware's `statusToScene` table:
+/// On-wire status code. Matches the Buddy firmware's `statusToScene` table:
 /// 0 → SLEEP, 1/2 → WORK (toolName is drawn), 3/4 → ALERT.
 public enum MascotStatusCode: UInt8, Sendable {
     case idle = 0
@@ -145,7 +161,7 @@ public struct MascotFramePayload: Equatable, Sendable {
     /// Serialize to the on-wire byte layout.
     /// Tool name is always UTF-8 and byte-truncated to `maxToolNameBytes`;
     /// the truncation may split a multi-byte codepoint — acceptable since the
-    /// ESP32 uses the bytes only for a marquee label.
+    /// Buddy uses the bytes only for a marquee label.
     public func encode() -> Data {
         var data = Data()
         data.reserveCapacity(ESP32Protocol.maxFrameBytes)
@@ -166,5 +182,25 @@ public struct MascotFramePayload: Equatable, Sendable {
         data.append(UInt8(toolBytes.count))
         data.append(contentsOf: toolBytes)
         return data
+    }
+}
+
+/// Encoded Buddy screen brightness config.
+///
+/// Kept as a 2-byte frame so older firmware treats it as an ignored short
+/// payload instead of misreading it as an agent status update.
+public struct BuddyBrightnessPayload: Equatable, Sendable {
+    public let percent: UInt8
+
+    public init(percent: Double) {
+        self.percent = ESP32Protocol.clampedBrightnessPercent(percent)
+    }
+
+    public init(percent: UInt8) {
+        self.percent = ESP32Protocol.clampedBrightnessPercent(Double(percent))
+    }
+
+    public func encode() -> Data {
+        Data([ESP32Protocol.brightnessFrameMarker, percent])
     }
 }

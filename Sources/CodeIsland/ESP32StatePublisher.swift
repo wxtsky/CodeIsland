@@ -2,7 +2,7 @@ import Foundation
 import os
 import CodeIslandCore
 
-/// Drives the ESP32 bridge: pushes the *currently displayed* mascot/status
+/// Drives the Buddy bridge: pushes the *currently displayed* mascot/status
 /// both on every AppState mutation (via `notifyDirty()`) and on a fixed
 /// heartbeat so the firmware (60s inactivity timeout) never drops out of
 /// AGENT mode and reconnects/power-cycles resync immediately.
@@ -20,6 +20,7 @@ final class ESP32StatePublisher {
     private let bridge: ESP32BridgeManager
     private var heartbeatTimer: Timer?
     private var heartbeatInterval: TimeInterval = 5.0
+    private var brightnessPercent: Double = Double(ESP32Protocol.defaultBrightnessPercent)
 
     private init() {
         self.bridge = ESP32BridgeManager.shared
@@ -29,20 +30,23 @@ final class ESP32StatePublisher {
     func attach(_ appState: AppState) {
         self.appState = appState
         bridge.onConnected = { [weak self] in
+            self?.syncBrightness()
             self?.flush(reason: "connected")
         }
     }
 
     /// Invoke when a knob that changes what the island displays may have
     /// changed (new Settings value, toggled enabled flag, etc).
-    func configure(enabled: Bool, heartbeatSeconds: Double) {
+    func configure(enabled: Bool, heartbeatSeconds: Double, brightnessPercent: Double) {
         self.heartbeatInterval = max(1.0, heartbeatSeconds)
+        self.brightnessPercent = Double(ESP32Protocol.clampedBrightnessPercent(brightnessPercent))
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         if enabled {
             if bridge.status == .off {
                 bridge.start()
             }
+            syncBrightness()
             heartbeatTimer = Timer.scheduledTimer(withTimeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     self?.flush(reason: "heartbeat")
@@ -64,6 +68,10 @@ final class ESP32StatePublisher {
         let frame = appState.esp32DisplayFrame()
         bridge.send(frame)
         Self.log.debug("push(\(reason)): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
+    }
+
+    private func syncBrightness() {
+        bridge.sendBrightness(percent: brightnessPercent)
     }
 }
 

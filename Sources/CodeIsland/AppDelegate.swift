@@ -43,18 +43,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.startCodexAppServerWatcher()
         RemoteManager.shared.startup()
 
-        // ESP32 BLE bridge (opt-in): mirrors the Dynamic Island onto a real-buddy
-        // companion device and routes its button press back to TerminalActivator.
+        // Buddy bridge (opt-in): mirrors the Dynamic Island onto the companion
+        // device and routes its button press back to TerminalActivator.
         ESP32StatePublisher.shared.attach(appState)
         ESP32BridgeManager.shared.onFocusRequest = { [weak appState] mascot in
             guard let appState else { return }
             ESP32FocusCoordinator.handle(mascot: mascot, appState: appState)
         }
-        let esp32Enabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
-        let esp32Heartbeat = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
+        let buddyEnabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
+        let buddySyncInterval = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
+        let buddyBrightness = UserDefaults.standard.double(forKey: SettingsKey.buddyScreenBrightnessPercent)
         ESP32StatePublisher.shared.configure(
-            enabled: esp32Enabled,
-            heartbeatSeconds: esp32Heartbeat > 0 ? esp32Heartbeat : SettingsDefaults.esp32HeartbeatSeconds
+            enabled: buddyEnabled,
+            heartbeatSeconds: buddySyncInterval > 0 ? buddySyncInterval : SettingsDefaults.esp32HeartbeatSeconds,
+            brightnessPercent: buddyBrightness > 0 ? buddyBrightness : SettingsDefaults.buddyScreenBrightnessPercent
         )
 
         // Hooks auto-recovery: periodic + app activation trigger

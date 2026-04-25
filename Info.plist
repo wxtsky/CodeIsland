@@ -38,6 +38,6 @@
 	<key>SUScheduledCheckInterval</key>
 	<integer>14400</integer>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>CodeIsland uses Bluetooth LE to mirror the Dynamic Island onto your real-buddy ESP32 companion device.</string>
+	<string>CodeIsland uses Bluetooth to mirror the island onto Buddy.</string>
 </dict>
 </plist>

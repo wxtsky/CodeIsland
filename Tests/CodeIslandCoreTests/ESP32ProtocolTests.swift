@@ -74,6 +74,17 @@ final class ESP32ProtocolTests: XCTestCase {
         XCTAssertEqual(Array(frame.encode()), [15, 0, 0])
     }
 
+    func testEncodeBrightnessConfigFrame() {
+        let frame = BuddyBrightnessPayload(percent: UInt8(64))
+        XCTAssertEqual(Array(frame.encode()), [ESP32Protocol.brightnessFrameMarker, 64])
+    }
+
+    func testBrightnessConfigClampsToSupportedRange() {
+        XCTAssertEqual(BuddyBrightnessPayload(percent: 1.0).percent, ESP32Protocol.minBrightnessPercent)
+        XCTAssertEqual(BuddyBrightnessPayload(percent: 150.0).percent, ESP32Protocol.maxBrightnessPercent)
+        XCTAssertEqual(BuddyBrightnessPayload(percent: Double.nan).percent, ESP32Protocol.defaultBrightnessPercent)
+    }
+
     func testConvenienceInitFromSourceString() {
         let frame = MascotFramePayload(source: "factory", status: .running, toolName: "Edit")
         XCTAssertNotNil(frame)

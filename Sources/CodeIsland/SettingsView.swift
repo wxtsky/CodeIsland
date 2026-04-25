@@ -13,7 +13,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case shortcuts
     case remote
     case hooks
-    case esp32
+    case buddy
     case about
 
     var id: String { rawValue }
@@ -28,7 +28,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return "command.circle.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
-        case .esp32: return "dot.radiowaves.left.and.right"
+        case .buddy: return "dot.radiowaves.left.and.right"
         case .about: return "info.circle.fill"
         }
     }
@@ -43,7 +43,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return .indigo
         case .remote: return .mint
         case .hooks: return .purple
-        case .esp32: return .red
+        case .buddy: return .red
         case .about: return .cyan
         }
     }
@@ -56,7 +56,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .esp32, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
 ]
 
 // MARK: - Main View
@@ -94,7 +94,7 @@ struct SettingsView: View {
                 case .shortcuts: ShortcutsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage()
-                case .esp32: ESP32Page()
+                case .buddy: BuddyPage()
                 case .about: AboutPage()
                 }
             }
@@ -1137,25 +1137,39 @@ private struct SoundEventRow: View {
     }
 }
 
-// MARK: - ESP32 Bridge Page
+// MARK: - Buddy Page
 
-private struct ESP32Page: View {
+private struct BuddyPage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.esp32BridgeEnabled) private var enabled: Bool = SettingsDefaults.esp32BridgeEnabled
     @AppStorage(SettingsKey.esp32HeartbeatSeconds) private var heartbeat: Double = SettingsDefaults.esp32HeartbeatSeconds
+    @AppStorage(SettingsKey.buddyScreenBrightnessPercent) private var brightness: Double = SettingsDefaults.buddyScreenBrightnessPercent
     @State private var refreshTick = 0
 
     private var bridge: ESP32BridgeManager { ESP32BridgeManager.shared }
 
+    private var localizedPowerError: String {
+        switch bridge.lastError {
+        case "Bluetooth permission denied":
+            return l10n["buddy_status_bluetooth_denied"]
+        case "Bluetooth unsupported on this Mac":
+            return l10n["buddy_status_bluetooth_unsupported"]
+        case "Bluetooth is resetting":
+            return l10n["buddy_status_bluetooth_resetting"]
+        default:
+            return l10n["buddy_status_bluetooth_off"]
+        }
+    }
+
     private var statusText: String {
         _ = refreshTick // force recompute
         switch bridge.status {
-        case .off: return "Disabled"
-        case .poweredOff: return bridge.lastError ?? "Bluetooth off"
-        case .scanning: return "Scanning for real-buddy device…"
-        case .connecting: return "Connecting…"
-        case .connected: return "Connected" + (bridge.connectedPeripheralName.map { " · \($0)" } ?? "")
-        case .reconnecting(let s): return "Reconnecting in \(s)s…"
+        case .off: return l10n["buddy_status_disabled"]
+        case .poweredOff: return localizedPowerError
+        case .scanning: return l10n["buddy_status_scanning"]
+        case .connecting: return l10n["buddy_status_connecting"]
+        case .connected: return l10n["buddy_status_connected"]
+        case .reconnecting(let s): return String(format: l10n["buddy_status_reconnecting"], s)
         }
     }
 
@@ -1170,17 +1184,24 @@ private struct ESP32Page: View {
         }
     }
 
+    private func configurePublisher() {
+        ESP32StatePublisher.shared.configure(
+            enabled: enabled,
+            heartbeatSeconds: heartbeat,
+            brightnessPercent: brightness
+        )
+    }
+
     var body: some View {
         Form {
-            Section("real-buddy ESP32 Bridge") {
-                Toggle("Enable BLE bridge", isOn: $enabled)
-                    .onChange(of: enabled) { _, newValue in
-                        ESP32StatePublisher.shared.configure(enabled: newValue,
-                                                             heartbeatSeconds: heartbeat)
+            Section(l10n["buddy"]) {
+                Toggle(l10n["buddy_enable_bluetooth"], isOn: $enabled)
+                    .onChange(of: enabled) { _, _ in
+                        configurePublisher()
                     }
 
                 HStack {
-                    Text("Status")
+                    Text(l10n["buddy_connection_status"])
                     Spacer()
                     Circle()
                         .fill(statusColor)
@@ -1192,33 +1213,52 @@ private struct ESP32Page: View {
                         .truncationMode(.tail)
                 }
 
-                Button("Rescan") {
+                Button {
                     bridge.stop()
                     if enabled { bridge.start() }
+                } label: {
+                    Label(l10n["buddy_reconnect"], systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(!enabled)
             }
 
-            Section("Heartbeat") {
+            Section(l10n["buddy_sync"]) {
                 HStack {
-                    Text("Interval")
+                    Text(l10n["buddy_sync_interval"])
                     Spacer()
-                    Text(String(format: "%.0f s", heartbeat))
+                    Text(String(format: l10n["buddy_seconds_format"], heartbeat))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
                 Slider(value: $heartbeat, in: 1...30, step: 1)
-                    .onChange(of: heartbeat) { _, newValue in
-                        ESP32StatePublisher.shared.configure(enabled: enabled,
-                                                             heartbeatSeconds: newValue)
+                    .onChange(of: heartbeat) { _, _ in
+                        configurePublisher()
                     }
-                Text("The ESP32 firmware leaves AGENT mode after 60 s of silence, so shorter intervals keep the display live across disconnects.")
+                Text(l10n["buddy_sync_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(l10n["buddy_display"]) {
+                HStack {
+                    Text(l10n["buddy_brightness"])
+                    Spacer()
+                    Text("\(Int(brightness.rounded()))%")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(value: $brightness, in: Double(ESP32Protocol.minBrightnessPercent)...Double(ESP32Protocol.maxBrightnessPercent), step: 1)
+                    .onChange(of: brightness) { _, newValue in
+                        brightness = Double(ESP32Protocol.clampedBrightnessPercent(newValue))
+                        configurePublisher()
+                    }
+                Text(l10n["buddy_brightness_desc"])
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                Text("Pushes the current mascot and status shown on the Dynamic Island to a real-buddy ESP32 device over Bluetooth LE, and lets its button focus the matching agent terminal.")
+                Text(l10n["buddy_desc"])
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

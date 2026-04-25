@@ -84,9 +84,10 @@ enum SettingsKey {
     // Default mascot source when no sessions exist (falls back to this instead of always "claude")
     static let defaultSource = "defaultSource"
 
-    // ESP32 BLE bridge (real-buddy companion device)
+    // Buddy companion device
     static let esp32BridgeEnabled = "esp32BridgeEnabled"
     static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
+    static let buddyScreenBrightnessPercent = "buddyScreenBrightnessPercent"
 }
 
 struct SettingsDefaults {
@@ -135,6 +136,7 @@ struct SettingsDefaults {
 
     static let esp32BridgeEnabled = false
     static let esp32HeartbeatSeconds = 5.0
+    static let buddyScreenBrightnessPercent = 70.0
 }
 
 @MainActor
@@ -179,6 +181,7 @@ class SettingsManager {
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
             SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
             SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
+            SettingsKey.buddyScreenBrightnessPercent: SettingsDefaults.buddyScreenBrightnessPercent,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
         ])
     }

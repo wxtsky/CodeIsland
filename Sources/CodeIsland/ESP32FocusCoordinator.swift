@@ -3,16 +3,14 @@ import Foundation
 import os
 import CodeIslandCore
 
-/// Turns a button press from the ESP32 (1-byte `sourceId`) into a real
+/// Turns a button press from Buddy (1-byte `sourceId`) into a real
 /// "focus that agent's terminal/window" action.
 ///
-/// This fixes the long-standing real-buddy bug where the focus would always
-/// land on whichever terminal happened to be first in the scan list,
-/// regardless of which agent was actually running there. We pick the best
-/// session belonging to the requested mascot (preferring ones with pending
-/// work) and hand it to `TerminalActivator`, whose tab-level matchers
-/// already know how to land inside the exact iTerm2 session / Ghostty tab /
-/// Kitty window / tmux pane / Cursor project window / etc.
+/// This keeps focus routing aligned with the mascot currently shown on Buddy.
+/// We pick the best session belonging to the requested mascot (preferring
+/// ones with pending work) and hand it to `TerminalActivator`, whose tab-level
+/// matchers already know how to land inside the exact iTerm2 session / Ghostty
+/// tab / Kitty window / tmux pane / Cursor project window / etc.
 @MainActor
 enum ESP32FocusCoordinator {
     private static let log = Logger(subsystem: "com.codeisland", category: "esp32-focus")
