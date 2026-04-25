@@ -67,7 +67,13 @@ print(target)
 
     private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
         let py = configureRemoteHooksScript(host: host)
-        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 30)
+        // Run via the remote user's login shell so ~/.zprofile / ~/.bash_profile etc. are
+        // sourced — that's how $CODEX_HOME (and similar) reach a non-interactive ssh session.
+        // base64 keeps the script intact regardless of shell quoting.
+        let encoded = Data(py.utf8).base64EncodedString()
+        let inner = "echo '\(encoded)' | base64 -d | python3"
+        let command = "\"${SHELL:-/bin/bash}\" -lc \"\(inner)\""
+        return await runSSH(host: host, command: command, timeout: 30)
     }
 
     static func configureRemoteHooksScript(host: RemoteHost) -> String {
@@ -85,6 +91,13 @@ hook_path = home / ".codeisland" / "codeisland-remote-hook.py"
 host_id = \(hostId)
 host_name = \(hostName)
 version = \(version)
+
+def _codex_home():
+    raw = (os.environ.get("CODEX_HOME") or "").strip()
+    if not raw:
+        return home / ".codex"
+    expanded = os.path.expanduser(raw)
+    return pathlib.Path(expanded)
 
 def ensure_json(path):
     if path.exists():
@@ -318,7 +331,7 @@ def ensure_toml_codex_hooks(path):
     path.write_text("\\n".join(lines).rstrip() + "\\n")
 
 def install_codex():
-    codex_root = home / ".codex"
+    codex_root = _codex_home()
     if not codex_root.exists() and shutil.which("codex") is None:
         return "Codex skipped"
 

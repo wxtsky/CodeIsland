@@ -57,14 +57,22 @@ enum HookFormat {
 struct CLIConfig {
     let name: String           // display name
     let source: String         // --source flag value
-    let configPath: String     // path to config file (relative to home)
+    let configPath: String     // path to config file (relative to home, or to rootOverride if set)
     let configKey: String      // top-level JSON key containing hooks ("hooks" for most)
     let format: HookFormat
     let events: [(String, Int, Bool)]  // (eventName, timeout, async)
     /// Events that require a minimum CLI version (eventName → minVersion like "2.1.89")
     var versionedEvents: [String: String] = [:]
+    /// Optional root directory override. When set, `configPath` is resolved relative to this
+    /// directory instead of the user's home (used by Codex to honor $CODEX_HOME).
+    var rootOverride: (@Sendable () -> String)? = nil
+    /// Optional override for the user-visible config path (e.g. "$CODEX_HOME/hooks.json").
+    var displayPathOverride: (@Sendable () -> String)? = nil
 
     var fullPath: String {
+        if let override = rootOverride {
+            return override() + "/" + configPath
+        }
         if configPath.hasPrefix("/") { return configPath }
         if configPath.hasPrefix("~/") {
             return NSHomeDirectory() + "/" + configPath.dropFirst(2)
@@ -73,6 +81,7 @@ struct CLIConfig {
     }
     var dirPath: String { (fullPath as NSString).deletingLastPathComponent }
     var displayConfigPath: String {
+        if let override = displayPathOverride { return override() }
         if configPath.hasPrefix("/") || configPath.hasPrefix("~/") { return configPath }
         return "~/\(configPath)"
     }
@@ -101,6 +110,27 @@ struct ConfigInstaller {
     private static let legacyBridgePath = NSHomeDirectory() + "/.claude/hooks/codeisland-bridge"
     private static let legacyHookScriptPath = NSHomeDirectory() + "/.claude/hooks/codeisland-hook.sh"
 
+    // MARK: - Codex home resolution
+
+    /// Resolve Codex's config directory. Honors $CODEX_HOME (with a leading `~` expanded);
+    /// falls back to `~/.codex`. Whitespace-only or empty values are treated as unset.
+    static func codexHome() -> String {
+        let raw = (ProcessInfo.processInfo.environment["CODEX_HOME"] ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty else { return NSHomeDirectory() + "/.codex" }
+        if raw == "~" { return NSHomeDirectory() }
+        if raw.hasPrefix("~/") { return NSHomeDirectory() + "/" + raw.dropFirst(2) }
+        return raw
+    }
+
+    /// User-visible form of a Codex config path (uses `$CODEX_HOME/...` when the env var
+    /// is set, otherwise `~/.codex/...`).
+    static func displayCodexPath(filename: String) -> String {
+        let raw = (ProcessInfo.processInfo.environment["CODEX_HOME"] ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        return raw.isEmpty ? "~/.codex/\(filename)" : "$CODEX_HOME/\(filename)"
+    }
+
     // MARK: - All supported CLIs
 
     private static let builtInCLIs: [CLIConfig] = [
@@ -127,10 +157,10 @@ struct ConfigInstaller {
                 "PostToolUseFailure": "2.1.89",
             ]
         ),
-        // Codex
+        // Codex — honors $CODEX_HOME (falls back to ~/.codex)
         CLIConfig(
             name: "Codex", source: "codex",
-            configPath: ".codex/hooks.json", configKey: "hooks",
+            configPath: "hooks.json", configKey: "hooks",
             format: .nested,
             events: [
                 ("SessionStart", 5, false),
@@ -139,7 +169,9 @@ struct ConfigInstaller {
                 ("PreToolUse", 5, false),
                 ("PostToolUse", 5, false),
                 ("Stop", 5, false),
-            ]
+            ],
+            rootOverride: { ConfigInstaller.codexHome() },
+            displayPathOverride: { ConfigInstaller.displayCodexPath(filename: "hooks.json") }
         ),
         // Gemini CLI — timeout in milliseconds
         CLIConfig(
@@ -525,7 +557,7 @@ struct ConfigInstaller {
 
         // Codex requires codex_hooks = true in config.toml
         if isEnabled(source: "codex"),
-           fm.fileExists(atPath: NSHomeDirectory() + "/.codex") {
+           fm.fileExists(atPath: codexHome()) {
             enableCodexHooksConfig(fm: fm)
         }
 
@@ -660,7 +692,7 @@ struct ConfigInstaller {
         }
         // Codex config.toml: ensure codex_hooks = true
         if isEnabled(source: "codex"),
-           fm.fileExists(atPath: NSHomeDirectory() + "/.codex") {
+           fm.fileExists(atPath: codexHome()) {
             enableCodexHooksConfig(fm: fm)
         }
         // OpenCode plugin
@@ -1250,11 +1282,11 @@ struct ConfigInstaller {
 
     // MARK: - Codex config.toml
 
-    /// Ensure codex_hooks = true under [features] in ~/.codex/config.toml
-    /// so Codex actually fires hook events.
+    /// Ensure codex_hooks = true under [features] in $CODEX_HOME/config.toml
+    /// (or ~/.codex/config.toml when unset) so Codex actually fires hook events.
     @discardableResult
     private static func enableCodexHooksConfig(fm: FileManager) -> Bool {
-        let configPath = NSHomeDirectory() + "/.codex/config.toml"
+        let configPath = codexHome() + "/config.toml"
         var contents = ""
         if fm.fileExists(atPath: configPath) {
             contents = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
