@@ -1,0 +1,11 @@
+# Always keep fork's appcast.xml on upstream merges.
+# Reason: this fork is not Developer ID signed; taking upstream's signed
+# enclosure entries would cause Sparkle to offer fork users an upgrade to
+# upstream's signed DMG, which breaks their install. Upgrade path is the
+# Homebrew tap only, so the fork keeps an empty <channel>.
+#
+# Requires the merge driver to be registered in the local repo config:
+#   git config merge.ours.driver true
+# (cannot be committed — must be set in every clone that runs `git merge`,
+# including the cloud upstream-sync routine)
+appcast.xml merge=ours
