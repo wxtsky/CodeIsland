@@ -42,6 +42,14 @@ final class UpdateChecker: NSObject, ObservableObject {
 
     /// Wire up Sparkle. Call once from `AppDelegate.applicationDidFinishLaunching`.
     func start() {
+        #if DEBUG
+        // Sparkle crashes if we run without a proper Bundle ID (e.g. raw executable via Xcode/SPM)
+        if Bundle.main.bundleIdentifier == nil {
+            Self.log.info("No Bundle ID detected in DEBUG mode — skipping Sparkle")
+            return
+        }
+        #endif
+
         if isHomebrewInstall {
             Self.log.info("Homebrew install detected — disabling Sparkle auto-checks")
             updater.automaticallyChecksForUpdates = false
