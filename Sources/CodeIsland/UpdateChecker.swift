@@ -91,7 +91,9 @@ extension UpdateChecker: SPUUpdaterDelegate {
         let description = error.localizedDescription
         Task { @MainActor in
             Self.log.debug("Sparkle aborted: \(description)")
-            self.state = .failed(description)
+            if self.state == .checking {
+                self.state = .failed(description)
+            }
         }
     }
 }
