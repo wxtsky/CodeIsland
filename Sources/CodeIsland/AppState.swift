@@ -1280,12 +1280,16 @@ final class AppState {
         }
 
         guard !askItems.isEmpty else {
+            var updatedInput: [String: Any] = ["answers": [:] as [String: String]]
+            if let origQuestions = event.toolInput?["questions"] {
+                updatedInput["questions"] = origQuestions
+            }
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "PermissionRequest",
                     "decision": [
                         "behavior": "allow",
-                        "updatedInput": ["answers": [:] as [String: String]]
+                        "updatedInput": updatedInput
                     ] as [String: Any]
                 ] as [String: Any]
             ]
@@ -1332,14 +1336,16 @@ final class AppState {
         let responseData: Data
         if pending.isFromPermission {
             let answerKey = pending.question.header ?? "answer"
+            var updatedInput: [String: Any] = ["answers": [answerKey: answer]]
+            if let origQuestions = pending.event.toolInput?["questions"] {
+                updatedInput["questions"] = origQuestions
+            }
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "PermissionRequest",
                     "decision": [
                         "behavior": "allow",
-                        "updatedInput": [
-                            "answers": [answerKey: answer]
-                        ]
+                        "updatedInput": updatedInput
                     ] as [String: Any]
                 ] as [String: Any]
             ]
@@ -1378,14 +1384,16 @@ final class AppState {
                 let answerKey = pending.question.header ?? "answer"
                 answersDict[answerKey] = answers.first?.answer ?? ""
             }
+            var updatedInput: [String: Any] = ["answers": answersDict]
+            if let origQuestions = pending.event.toolInput?["questions"] {
+                updatedInput["questions"] = origQuestions
+            }
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
                     "hookEventName": "PermissionRequest",
                     "decision": [
                         "behavior": "allow",
-                        "updatedInput": [
-                            "answers": answersDict
-                        ]
+                        "updatedInput": updatedInput
                     ] as [String: Any]
                 ] as [String: Any]
             ]
