@@ -78,6 +78,23 @@ final class HookEventToolUseIdTests: XCTestCase {
         XCTAssertEqual(event.toolUseId, "flat_wins")
     }
 
+    func testBashToolDescriptionIncludesHumanSummaryAndFullCommand() throws {
+        let event = try decode([
+            "hook_event_name": "PermissionRequest",
+            "session_id": "s1",
+            "tool_name": "Bash",
+            "tool_input": [
+                "description": "Allow watch build before merge",
+                "command": "npm run build --filter watch -- --mode production"
+            ]
+        ])
+
+        XCTAssertEqual(
+            event.toolDescription,
+            "Allow watch build before merge\nCommand:\nnpm run build --filter watch -- --mode production"
+        )
+    }
+
     // MARK: - Helpers
 
     private func decode(_ payload: [String: Any]) throws -> HookEvent {

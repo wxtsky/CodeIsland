@@ -150,7 +150,7 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         XCTAssertEqual(appState.permissionQueue.count, 2)
         XCTAssertEqual(appState.currentTool, "Bash")
-        XCTAssertEqual(appState.toolDescription, "first approval")
+        XCTAssertEqual(appState.toolDescription, "first approval\nCommand:\necho 1")
 
         appState.approvePermission()
         let response1 = await r1.value
@@ -158,7 +158,7 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         await Task.yield()
         XCTAssertEqual(appState.permissionQueue.count, 1)
-        XCTAssertEqual(appState.toolDescription, "second approval")
+        XCTAssertEqual(appState.toolDescription, "second approval\nCommand:\necho 2")
 
         appState.denyPermission()
         let response2 = await r2.value

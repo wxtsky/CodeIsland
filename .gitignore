@@ -19,6 +19,11 @@ docs/superpowers/
 *.tmp
 dev.sh
 
+# Android watch app
+android-watch/.gradle/
+android-watch/local.properties
+android-watch/**/build/
+
 # Code agents config files
 .agents/
 .claude/

@@ -119,14 +119,99 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertEqual(appState.permissionQueue.count, 0)
     }
 
+    func testBuddyApproveCommandResolvesPendingPermission() async throws {
+        let appState = AppState()
+        let event = try makePermissionRequestEvent(sessionId: "s-buddy-approve", toolName: "Bash")
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+
+        appState.handleBuddyControlCommand(.approveCurrentPermission)
+
+        let response = await responseTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "allow")
+        XCTAssertEqual(appState.permissionQueue.count, 0)
+    }
+
+    func testBuddyDenyCommandResolvesPendingPermission() async throws {
+        let appState = AppState()
+        let event = try makePermissionRequestEvent(sessionId: "s-buddy-deny", toolName: "Bash")
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+
+        appState.handleBuddyControlCommand(.denyCurrentPermission)
+
+        let response = await responseTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "deny")
+        XCTAssertEqual(appState.permissionQueue.count, 0)
+    }
+
+    func testPendingApprovalPreviewSplitsLongDescriptionAcrossMultipleWatchFrames() async throws {
+        let appState = AppState()
+        let sessionId = "s-buddy-preview"
+        let description = "Allow npm run build --filter watch package and update generated artifacts before merge"
+        let command = "npm run build --filter watch -- --mode production"
+        let expectedDetail = "\(description)\nCommand:\n\(command)"
+        let event = try makePermissionRequestEvent(
+            sessionId: sessionId,
+            toolName: "Bash",
+            toolInput: [
+                "description": description,
+                "command": command
+            ]
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+
+        let previews = appState.esp32MessagePreviewPayloads()
+        XCTAssertGreaterThan(previews.count, 1)
+        XCTAssertTrue(previews.allSatisfy { ($0.text ?? "").utf8.count <= ESP32Protocol.maxMessagePreviewBytes })
+        XCTAssertEqual(previews.map(\.total).last, UInt8(previews.count))
+        XCTAssertEqual(previews.compactMap(\.text).joined(), expectedDetail)
+
+        appState.handlePeerDisconnect(sessionId: sessionId)
+        _ = await responseTask.value
+    }
+
+    func testInteractiveDeliveryKeyChangesWhenApprovalDescriptionChanges() {
+        let appState = AppState()
+        let first = appState.esp32MessagePreviewSegments(text: "Need approval for npm run build --filter watch")
+        let second = appState.esp32MessagePreviewSegments(text: "Need approval for npm run build --filter watch and package")
+
+        XCTAssertNotEqual(first.joined(separator: "|"), second.joined(separator: "|"))
+    }
+
     // MARK: - Helpers
 
-    private func makePermissionRequestEvent(sessionId: String, toolName: String) throws -> HookEvent {
+    private func makePermissionRequestEvent(
+        sessionId: String,
+        toolName: String,
+        toolInput: [String: Any] = ["command": "echo test"]
+    ) throws -> HookEvent {
         let payload: [String: Any] = [
             "hook_event_name": "PermissionRequest",
             "session_id": sessionId,
             "tool_name": toolName,
-            "tool_input": ["command": "echo test"]
+            "tool_input": toolInput
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {

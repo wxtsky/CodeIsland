@@ -324,8 +324,11 @@ private struct CompactLeftWing: View {
         return appState.sessions[sid]
     }
     private var displaySource: String {
+        // Honor user's configured default mascot whenever nothing is actively
+        // happening. Covers no-session and all-idle equally (#149) — without
+        // this, an idle session's source overrides the user preference.
+        if displayStatus == .idle { return settingsDefaultSource }
         if let s = displaySession?.source { return s }
-        if appState.totalSessionCount == 0 { return settingsDefaultSource }
         return appState.primarySource
     }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
@@ -693,14 +696,14 @@ private struct ApprovalToolDetailView: View {
                             Text(cmd)
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(maxLines ?? 3)
+                                .lineLimit(maxLines)
                         }
                     }
                     if let desc = toolInput?["description"] as? String, !desc.isEmpty {
                         Text(desc)
                             .font(.system(size: 9.5, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.55))
-                            .lineLimit(maxLines ?? 2)
+                            .lineLimit(maxLines)
                     }
                 }
 
@@ -1945,6 +1948,7 @@ private struct SessionCard: View {
                             HStack(spacing: 1) {
                                 ForEach(row, id: \.agentId) { sub in
                                     MiniAgentIcon(active: sub.status != .idle, size: 8)
+                                        .help(subagentTooltipText(sub))
                                 }
                             }
                         }
@@ -1971,6 +1975,9 @@ private struct SessionCard: View {
                     HStack(spacing: 4) {
                         if let remote = session.remoteDisplayName {
                             SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                        }
+                        if !session.subagents.isEmpty {
+                            SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
                         }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
@@ -2724,6 +2731,22 @@ private func shortSessionId(_ id: String) -> String {
         return String(clean.suffix(4))
     }
     return String(id.prefix(4))
+}
+
+/// Build the help-tooltip string for a subagent mini-icon. Lives outside
+/// the SwiftUI ViewBuilder so the body stays trivial — complex inline
+/// expressions in ForEach were measurably slowing the hover-expand
+/// animation per #141 review.
+private func subagentTooltipText(_ sub: SubagentState) -> String {
+    let typeLabel = sub.agentType.isEmpty ? "Subagent" : sub.agentType
+    var detail = ""
+    if let tool = sub.currentTool, !tool.isEmpty {
+        detail = tool
+        if let desc = sub.toolDescription, !desc.isEmpty {
+            detail += " " + desc
+        }
+    }
+    return detail.isEmpty ? typeLabel : "\(typeLabel) — \(detail)"
 }
 
 /// Strip internal directives (::code-comment{}, ::git-*{}, etc.) from message text

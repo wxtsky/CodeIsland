@@ -215,6 +215,12 @@ struct TerminalActivator {
         // The AppleScript's `focus t; activate` below will activate after focusing
         // the correct terminal window.
 
+        // The remaining work (tmux key resolution + AppleScript construction +
+        // osascript dispatch) is the last subprocess-bound path that wasn't
+        // already off-main — match the rest of the activator and run it on a
+        // userInitiated background queue so a stuck `tmux display-message`
+        // can't freeze the UI. See #139.
+        DispatchQueue.global(qos: .userInitiated).async {
         // Resolve tmux title prefix (most reliable for tmux sessions in Ghostty).
         // Example Ghostty title often contains: "<session>:<winIdx>:<winName> - ..."
         var tmuxKey = ""
@@ -412,7 +418,10 @@ struct TerminalActivator {
         """
         // Use /usr/bin/osascript to run AppleScript out-of-process (tmuxcc uses the same approach).
         // This avoids relying on NSAppleScript execution inside the app process.
-        runOsaScript(script)
+        // Already on a background queue (see DispatchQueue.global wrap above) — call the
+        // _Sync variant to skip an extra dispatch hop.
+        runOsaScriptSync(script)
+        } // end DispatchQueue.global async
     }
 
     // MARK: - iTerm2 (AppleScript: match by session ID, tty, or cwd)
@@ -861,13 +870,20 @@ struct TerminalActivator {
 
     private static func runOsaScript(_ source: String) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            proc.arguments = ["-e", source]
-            proc.standardOutput = FileHandle.nullDevice
-            proc.standardError = FileHandle.nullDevice
-            try? proc.run()
+            runOsaScriptSync(source)
         }
+    }
+
+    /// Run osascript on the current queue (no extra dispatch). Use from
+    /// callers that are already on a background queue to avoid the double
+    /// hop activateGhostty would otherwise pay (#139 review).
+    private static func runOsaScriptSync(_ source: String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", source]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        try? proc.run()
     }
 
     /// Escape special characters for AppleScript string interpolation
@@ -887,29 +903,12 @@ struct TerminalActivator {
         return paths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    /// Run a process and return stdout. Returns nil on failure.
+    /// Run a process and return stdout. Returns nil on failure or timeout.
+    /// 10s cap on each call so a stuck osascript / tmux invocation can't
+    /// freeze the UI when activate() is dispatched on the main thread (#139).
     @discardableResult
     private static func runProcess(_ path: String, args: [String], env: [String: String]? = nil) -> Data? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = args
-        if let env {
-            var merged = ProcessInfo.processInfo.environment
-            for (k, v) in env { merged[k] = v }
-            proc.environment = merged
-        }
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            // Read BEFORE wait to avoid deadlock (pipe buffer full blocks the process)
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0 ? data : nil
-        } catch {
-            return nil
-        }
+        ProcessRunner.run(path: path, args: args, env: env, timeout: 10)
     }
 
     private static func tmuxProcessEnv(_ tmuxEnv: String?) -> [String: String]? {

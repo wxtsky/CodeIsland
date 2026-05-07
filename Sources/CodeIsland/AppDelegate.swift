@@ -5,7 +5,7 @@ import CodeIslandCore
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let log = Logger(subsystem: "com.codeisland", category: "AppDelegate")
+    nonisolated private static let log = Logger(subsystem: "com.codeisland", category: "AppDelegate")
 
     var panelController: PanelWindowController?
     private var hookServer: HookServer?
@@ -31,10 +31,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appState?.removeRemoteSessions(hostId: hostId)
         }
 
-        if ConfigInstaller.install() {
-            Self.log.info("Hooks installed")
-        } else {
-            Self.log.warning("Failed to install hooks")
+        // Hook installation does subprocess version detection plus disk I/O —
+        // keep it off the main thread so app launch isn't blocked even when a
+        // CLI binary hangs. See #139.
+        Task.detached(priority: .userInitiated) {
+            if ConfigInstaller.install() {
+                Self.log.info("Hooks installed")
+            } else {
+                Self.log.warning("Failed to install hooks")
+            }
         }
 
         panelController = PanelWindowController(appState: appState)
@@ -50,6 +55,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ESP32BridgeManager.shared.onFocusRequest = { [weak appState] mascot in
             guard let appState else { return }
             ESP32FocusCoordinator.handle(mascot: mascot, appState: appState)
+        }
+        ESP32BridgeManager.shared.onControlCommand = { [weak appState] command in
+            guard let appState else { return }
+            appState.handleBuddyControlCommand(command)
         }
         let buddyEnabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
         let buddySyncInterval = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
@@ -203,9 +212,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func checkAndRepairHooks() {
         guard Date().timeIntervalSince(lastHookCheck) > 60 else { return }
         lastHookCheck = Date()
-        let repaired = ConfigInstaller.verifyAndRepair()
-        if !repaired.isEmpty {
-            Self.log.info("Auto-repaired hooks for: \(repaired.joined(separator: ", "))")
+        // verifyAndRepair walks every enabled CLI and rewrites settings on
+        // disk — keep it off the main thread so the activation observer (fires
+        // on every app switch) can't stutter the UI. See #139.
+        Task.detached(priority: .background) {
+            let repaired = ConfigInstaller.verifyAndRepair()
+            if !repaired.isEmpty {
+                Self.log.info("Auto-repaired hooks for: \(repaired.joined(separator: ", "))")
+            }
         }
     }
 

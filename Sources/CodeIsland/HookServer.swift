@@ -193,6 +193,26 @@ class HookServer {
         }.resume()
     }
 
+    private static func hiddenPluginResponse(for raw: [String: Any]) -> Data {
+        // Hidden PermissionRequest must allow so the plugin's tool execution
+        // doesn't block waiting on a UI prompt the user said to suppress.
+        let eventName = (raw["hook_event_name"] as? String
+            ?? raw["hookEventName"] as? String
+            ?? raw["event_name"] as? String
+            ?? "").lowercased()
+        if eventName.contains("permission") {
+            return Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8)
+        }
+        return Data("{}".utf8)
+    }
+
+    private static func pluginPpid(from raw: [String: Any]) -> Int? {
+        if let p = raw["_ppid"] as? Int { return p }
+        if let p = raw["_ppid"] as? Int32 { return Int(p) }
+        if let p = raw["_ppid"] as? NSNumber { return p.intValue }
+        return nil
+    }
+
     static func routeKind(for event: HookEvent) -> RouteKind {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
         if normalizedEventName == "PermissionRequest" {
@@ -204,11 +224,78 @@ class HookServer {
         return .event
     }
 
+    private static let pluginMarkerBytes = Data("_via_plugin".utf8)
+
     private func processRequest(data: Data, connection: NWConnection) {
-        guard let event = HookEvent(from: data) else {
+        // Plugin session mode pre-filter (#123): events that arrived through a
+        // plugin proxy (bridge marks them with `_via_plugin`) can be merged
+        // into the matching main session, hidden, or kept separate per the
+        // user's setting. "separate" preserves prior behavior.
+        //
+        // Cheap byte probe first — most events don't carry `_via_plugin`,
+        // and JSONSerialization on every PostToolUse on the main thread is
+        // not free.
+        var processedData = data
+        if data.range(of: Self.pluginMarkerBytes) != nil,
+           let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           (raw["_via_plugin"] as? Bool) == true {
+            let mode = UserDefaults.standard.string(forKey: SettingsKey.pluginSessionMode)
+                ?? SettingsDefaults.pluginSessionMode
+            switch mode {
+            case "hide":
+                sendResponse(connection: connection, data: Self.hiddenPluginResponse(for: raw))
+                return
+            case "merge":
+                if let source = raw["_source"] as? String,
+                   let ppid = Self.pluginPpid(from: raw),
+                   let mainSessionId = appState.findSessionId(forSource: source, ppid: ppid) {
+                    var rewritten = raw
+                    rewritten["session_id"] = mainSessionId
+                    if let newData = try? JSONSerialization.data(withJSONObject: rewritten) {
+                        processedData = newData
+                    }
+                }
+                // No matching main session → fall through with original data
+                // (acts like "separate" in that case).
+            default:
+                break // "separate": no-op
+            }
+        }
+
+        guard let event = HookEvent(from: processedData) else {
             sendResponse(connection: connection, data: Data("{\"error\":\"parse_failed\"}".utf8))
             return
         }
+
+        // Diagnostics ring buffer (#103): record the post-merge view of the
+        // event so the export reflects what was actually dispatched. Also
+        // capture the field names the hook arrived with and a prompt preview
+        // so future "prompt not showing" reports can be diagnosed without
+        // round-tripping for more data.
+        let payloadKeys = event.rawJSON.keys
+            .filter { !$0.hasPrefix("_") }  // drop bridge-injected metadata fields
+            .sorted()
+        let promptPreview: String? = {
+            let candidates = ["prompt", "user_prompt", "userPrompt", "message", "input", "content", "text"]
+            for key in candidates {
+                if let s = event.rawJSON[key] as? String {
+                    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        return String(trimmed.prefix(80))
+                    }
+                }
+            }
+            return nil
+        }()
+        appState.recordHookEvent(
+            source: event.rawJSON["_source"] as? String,
+            sessionId: event.sessionId,
+            eventName: event.eventName,
+            toolName: event.toolName,
+            viaPlugin: (event.rawJSON["_via_plugin"] as? Bool) == true,
+            payloadKeys: payloadKeys,
+            promptPreview: promptPreview
+        )
 
         if let rawSource = event.rawJSON["_source"] as? String,
            SessionSnapshot.normalizedSupportedSource(rawSource) == nil {

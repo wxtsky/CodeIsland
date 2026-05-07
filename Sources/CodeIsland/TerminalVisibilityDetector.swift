@@ -289,19 +289,8 @@ struct TerminalVisibilityDetector {
 
     @discardableResult
     private static func runProcess(_ path: String, args: [String]) -> Data? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = args
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0 ? data : nil
-        } catch {
-            return nil
-        }
+        // 5s cap — visibility checks fire from the main thread (NotchPanelView,
+        // PanelWindowController) and a stuck osascript would stutter the UI.
+        ProcessRunner.run(path: path, args: args, timeout: 5)
     }
 }

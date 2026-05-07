@@ -74,6 +74,7 @@ final class ESP32BridgeManager: NSObject {
     private var peripheral: CBPeripheral?
     private var writeChar: CBCharacteristic?
     private var notifyChar: CBCharacteristic?
+    private var notifySubscriptionReady = false
     private var reconnectAttempt = 0
     private var reconnectTimer: Timer?
     private var discoveryActive = false
@@ -83,6 +84,10 @@ final class ESP32BridgeManager: NSObject {
     /// mascot `sourceId` byte. Nonisolated to allow CoreBluetooth delegate
     /// callbacks to forward to `@MainActor` consumers.
     var onFocusRequest: ((MascotID) -> Void)?
+
+    /// Callback fired when Buddy sends a control opcode from a watch
+    /// notification action.
+    var onControlCommand: ((BuddyControlCommand) -> Void)?
 
     /// Callback fired right after `.connected` is reached, so the publisher
     /// can push the current frame immediately (don't wait for the next
@@ -120,6 +125,7 @@ final class ESP32BridgeManager: NSObject {
         peripheral = nil
         writeChar = nil
         notifyChar = nil
+        notifySubscriptionReady = false
         connectedPeripheralName = nil
         status = .off
     }
@@ -199,8 +205,21 @@ final class ESP32BridgeManager: NSObject {
 
     /// Write a single frame to Buddy. No-op when not connected.
     func send(_ frame: MascotFramePayload) {
+        send(frame.encode())
+    }
+
+    /// Write a workspace update frame to Buddy. No-op when not connected.
+    func sendWorkspace(_ workspace: BuddyWorkspacePayload) {
+        send(workspace.encode())
+    }
+
+    /// Write a message preview frame to Buddy. No-op when not connected.
+    func sendMessagePreview(_ preview: BuddyMessagePreviewPayload) {
+        send(preview.encode())
+    }
+
+    private func send(_ data: Data) {
         guard let peripheral, let writeChar, status == .connected else { return }
-        let data = frame.encode()
         peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
     }
 
@@ -455,6 +474,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
             self.peripheral = nil
             self.writeChar = nil
             self.notifyChar = nil
+            self.notifySubscriptionReady = false
             self.connectedPeripheralName = nil
             self.scheduleReconnect()
         }
@@ -468,6 +488,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
             self.peripheral = nil
             self.writeChar = nil
             self.notifyChar = nil
+            self.notifySubscriptionReady = false
             self.connectedPeripheralName = nil
             if self.status != .off {
                 self.scheduleReconnect()
@@ -514,7 +535,13 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 if ch.uuid == writeUUID {
                     self.writeChar = ch
                 } else if ch.uuid == notifyUUID {
+                    guard ch.properties.contains(.notify) || ch.properties.contains(.indicate) else {
+                        Self.log.error("Buddy uplink characteristic missing notify/indicate property")
+                        self.lastError = "Buddy uplink characteristic is not subscribable"
+                        return
+                    }
                     self.notifyChar = ch
+                    self.notifySubscriptionReady = false
                     peripheral.setNotifyValue(true, for: ch)
                 }
             }
@@ -523,10 +550,38 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 self.lastError = "Device missing expected characteristics"
                 return
             }
-            Self.log.info("Buddy ready")
+            Self.log.info("Buddy characteristics discovered; waiting for uplink subscription")
+            self.lastError = nil
+            self.status = .connecting
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral,
+                                didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                                error: Error?) {
+        Task { @MainActor in
+            guard characteristic.uuid == CBUUID(string: ESP32Protocol.notifyCharacteristicUUID) else {
+                return
+            }
+            if let error {
+                Self.log.error("didUpdateNotificationState error: \(error.localizedDescription)")
+                self.lastError = error.localizedDescription
+                self.notifySubscriptionReady = false
+                return
+            }
+            guard characteristic.isNotifying else {
+                Self.log.error("Buddy uplink subscription is not active")
+                self.lastError = "Buddy uplink subscription is not active"
+                self.notifySubscriptionReady = false
+                return
+            }
+            guard !self.notifySubscriptionReady else { return }
+
+            Self.log.info("Buddy uplink subscription enabled")
+            self.notifySubscriptionReady = true
             self.reconnectAttempt = 0
+            self.lastError = nil
             self.status = .connected
-            // Persist the live name in case it changed since selection.
             if let live = peripheral.name, !live.isEmpty {
                 self.connectedPeripheralName = live
                 self.selectedBuddyName = live
@@ -546,12 +601,17 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
             }
             guard characteristic.uuid == CBUUID(string: ESP32Protocol.notifyCharacteristicUUID),
                   let data = characteristic.value,
-                  let sourceId = data.first,
-                  let mascot = MascotID(rawValue: sourceId) else {
+                  let event = BuddyUplinkEvent(payload: data) else {
                 return
             }
-            Self.log.info("Button event: mascot=\(mascot.sourceName)")
-            self.onFocusRequest?(mascot)
+            switch event {
+            case .focus(let mascot):
+                Self.log.info("Button event: mascot=\(mascot.sourceName)")
+                self.onFocusRequest?(mascot)
+            case .command(let command):
+                Self.log.info("Buddy control event: command=\(String(describing: command)) raw=\(command.rawValue)")
+                self.onControlCommand?(command)
+            }
         }
     }
 }

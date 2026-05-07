@@ -22,9 +22,45 @@ public enum CLIProcessResolver {
                 || lowercasedPath.contains("/qwen-code ")
         case "gemini":
             return lowercasedPath.hasSuffix("/gemini") || lowercasedPath.contains("/gemini ")
+        case "cursor-cli":
+            // Cursor's CLI agent installs to ~/.local/share/cursor-agent/versions/<v>/cursor-agent
+            // and is also referenced by /cursor-agent/index.js when invoked via Node.
+            return lowercasedPath.contains("/cursor-agent")
+        case "qoder-cli":
+            // npm @qoder-ai/qodercli installs as `qodercli` in PATH (Homebrew/npm-global)
+            return lowercasedPath.hasSuffix("/qodercli")
+                || lowercasedPath.contains("/qodercli ")
+                || lowercasedPath.contains("/@qoder-ai/qodercli")
         default:
             return lowercasedPath.contains("/\(normalizedSource)")
         }
+    }
+
+    /// When the caller passed `--source cursor` or `--source qoder` but the
+    /// process ancestry actually came from the CLI agent rather than the
+    /// desktop IDE (both write to the same hooks file — see issue #134),
+    /// promote the source to its `-cli` variant so CodeIsland renders it
+    /// as "Cursor CLI" / "Qoder CLI" and routes terminal jumps correctly.
+    public static func cliVariantOverride(
+        declaredSource: String?,
+        ancestry: [(pid: Int32, executablePath: String?)]
+    ) -> String? {
+        guard let normalized = SessionSnapshot.normalizedSupportedSource(declaredSource) else {
+            return nil
+        }
+        switch normalized {
+        case "cursor":
+            if ancestry.contains(where: { sourceMatchesExecutablePath($0.executablePath ?? "", source: "cursor-cli") }) {
+                return "cursor-cli"
+            }
+        case "qoder":
+            if ancestry.contains(where: { sourceMatchesExecutablePath($0.executablePath ?? "", source: "qoder-cli") }) {
+                return "qoder-cli"
+            }
+        default:
+            break
+        }
+        return nil
     }
 
     public static func resolvedTrackedPID(
@@ -43,15 +79,44 @@ public enum CLIProcessResolver {
         return immediateParentPID
     }
 
+    /// Stable per-session PID for fallback session_id generation. Walks the
+    /// ancestry from root downward and picks the *highest* binary matching
+    /// the source, so sub-agent processes spawned by the same parent CLI
+    /// (e.g. Cursor IDE running multiple parallel agent subprocesses, #148)
+    /// collapse onto a single session card instead of fanning out into one
+    /// card per sub-agent ppid.
+    ///
+    /// Falls back to `immediateParentPID` when no source-matching binary is
+    /// in the ancestry — preserves prior behavior for everything else.
+    public static func resolvedSessionPID(
+        immediateParentPID: Int32,
+        source: String?,
+        ancestry: [(pid: Int32, executablePath: String?)]
+    ) -> Int32 {
+        guard immediateParentPID > 0 else { return immediateParentPID }
+
+        if let rootMatch = ancestry.last(where: {
+            sourceMatchesExecutablePath($0.executablePath ?? "", source: source)
+        }) {
+            return rootMatch.pid
+        }
+
+        return immediateParentPID
+    }
+
     /// Walk the process ancestry and return the first known CLI source whose binary
     /// appears along the chain. Used when a hook event reaches the bridge without a
     /// `--source` tag (e.g. omo plugin firing Claude hooks from inside OpenCode), so
     /// we can recover the real source instead of letting the event default to Claude.
     public static func inferSource(ancestry: [(pid: Int32, executablePath: String?)]) -> String? {
-        let candidates = SessionSnapshot.supportedSources.sorted()
+        // Try `-cli` variants first so `cursor-agent` doesn't get mis-attributed
+        // to the desktop `cursor` source (see issue #134).
+        let all = SessionSnapshot.supportedSources
+        let cliFirst = all.filter { $0.hasSuffix("-cli") }.sorted()
+            + all.filter { !$0.hasSuffix("-cli") }.sorted()
         for entry in ancestry {
             guard let path = entry.executablePath, !path.isEmpty else { continue }
-            for source in candidates {
+            for source in cliFirst {
                 if sourceMatchesExecutablePath(path, source: source) {
                     return source
                 }
@@ -106,13 +171,16 @@ public struct HookEvent {
         if let input = toolInput {
             switch toolName {
             case "Bash":
-                // Prefer the human-readable description over raw command
-                if let desc = input["description"] as? String, !desc.isEmpty { return desc }
-                if let cmd = input["command"] as? String {
-                    // Show first meaningful line, trimmed
-                    let line = cmd.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? cmd
-                    return String(line.prefix(60))
+                let desc = HookEvent.normalizedMultilineString(input["description"])
+                let cmd = HookEvent.normalizedMultilineString(input["command"])
+                if let desc, let cmd {
+                    if desc == cmd || desc.contains(cmd) {
+                        return desc
+                    }
+                    return "\(desc)\nCommand:\n\(cmd)"
                 }
+                if let desc { return desc }
+                if let cmd { return cmd }
             case "Read":
                 if let fp = input["file_path"] as? String {
                     let name = (fp as NSString).lastPathComponent
@@ -167,6 +235,12 @@ public struct HookEvent {
         if let agentType = rawJSON["agent_type"] as? String { return agentType }
         if let prompt = rawJSON["prompt"] as? String { return String(prompt.prefix(40)) }
         return nil
+    }
+
+    private static func normalizedMultilineString(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func firstString(in dict: [String: Any], keys: [String]) -> String? {

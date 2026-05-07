@@ -174,6 +174,11 @@ struct ConfigInstaller {
                 ("UserPromptSubmit", 5, false),
                 ("PreToolUse", 5, false),
                 ("PostToolUse", 5, false),
+                // Codex fires PermissionRequest before shell escalation /
+                // managed-network approvals. Without this hook the panel
+                // stays in "running" and the approval sound never plays —
+                // see issue #145 and developers.openai.com/codex/hooks.
+                ("PermissionRequest", 86400, false),
                 ("Stop", 5, false),
             ],
             rootOverride: { ConfigInstaller.codexHome() },
@@ -549,6 +554,10 @@ struct ConfigInstaller {
     private static let opencodePluginPath = NSHomeDirectory() + "/.config/opencode/plugins/codeisland.js"
     private static let opencodeConfigPath = NSHomeDirectory() + "/.config/opencode/config.json"
     private static let opencodeConfigPathNew = NSHomeDirectory() + "/.config/opencode/opencode.json"
+    // OpenCode recommends opencode.jsonc (with-comments). When the user already
+    // has it we should merge our plugin entry there instead of resurrecting
+    // opencode.json. See issue #132.
+    private static let opencodeConfigPathJsonc = NSHomeDirectory() + "/.config/opencode/opencode.jsonc"
 
     // MARK: - Install / Uninstall
 
@@ -795,10 +804,19 @@ struct ConfigInstaller {
 
     // MARK: - CLI Version Detection
 
-    /// Detect installed Claude Code version by running `claude --version`
+    /// Detect installed Claude Code version by running `claude --version`.
+    /// Cache is guarded by a lock because `install()` and `verifyAndRepair()`
+    /// can both call this from `Task.detached` since #139 (#103 review).
     private static var cachedClaudeVersion: String?
+    private static let cachedClaudeVersionLock = NSLock()
     private static func detectClaudeVersion() -> String? {
-        if let cached = cachedClaudeVersion { return cached }
+        cachedClaudeVersionLock.lock()
+        if let cached = cachedClaudeVersion {
+            cachedClaudeVersionLock.unlock()
+            return cached
+        }
+        cachedClaudeVersionLock.unlock()
+
         // Find claude binary — GUI apps don't inherit user's shell PATH
         let candidates = [
             NSHomeDirectory() + "/.local/bin/claude",
@@ -807,25 +825,19 @@ struct ConfigInstaller {
         guard let claudePath = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             return nil
         }
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: claudePath)
-        proc.arguments = ["--version"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                // Parse "2.1.92 (Claude Code)" → "2.1.92"
-                let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .components(separatedBy: " ").first ?? ""
-                if !version.isEmpty { cachedClaudeVersion = version }
-                return cachedClaudeVersion
-            }
-        } catch {}
-        return nil
+        // 5s timeout: a stuck `claude --version` used to freeze app launch (#139).
+        guard let data = ProcessRunner.run(path: claudePath, args: ["--version"], timeout: 5),
+              let output = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        // Parse "2.1.92 (Claude Code)" → "2.1.92"
+        let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: " ").first ?? ""
+        guard !version.isEmpty else { return nil }
+        cachedClaudeVersionLock.lock()
+        cachedClaudeVersion = version
+        cachedClaudeVersionLock.unlock()
+        return version
     }
 
     /// Compare semver strings: returns true if `installed` >= `required`
@@ -1992,9 +2004,14 @@ struct ConfigInstaller {
         try? fm.createDirectory(atPath: opencodePluginDir, withIntermediateDirectories: true)
         guard fm.createFile(atPath: opencodePluginPath, contents: Data(source.utf8)) else { return false }
 
-        // Register in opencode.json only (v1.4+ reads this; config.json causes double-load)
+        // Pick the registration target. Order: .jsonc (OpenCode-recommended)
+        // when present, else .json. We never create .json when the user
+        // already has .jsonc — see issue #132.
         let pluginRef = "file://\(opencodePluginPath)"
-        let originalContents: String? = fm.contents(atPath: opencodeConfigPathNew)
+        let targetPath: String = fm.fileExists(atPath: opencodeConfigPathJsonc)
+            ? opencodeConfigPathJsonc
+            : opencodeConfigPathNew
+        let originalContents: String? = fm.contents(atPath: targetPath)
             .flatMap { String(data: $0, encoding: .utf8) }
 
         guard let merged = mergeOpencodePluginRef(
@@ -2003,14 +2020,14 @@ struct ConfigInstaller {
             identifier: HookId.current
         ) else {
             // Existing config is unparseable — refuse to overwrite user data.
-            // Plugin JS is staged; opencode.json stays untouched until the user fixes it.
+            // Plugin JS is staged; the config file stays untouched until the user fixes it.
             return false
         }
 
         if let original = originalContents, !original.isEmpty {
-            backupOpencodeConfig(at: opencodeConfigPathNew, original: original, fm: fm)
+            backupOpencodeConfig(at: targetPath, original: original, fm: fm)
         }
-        fm.createFile(atPath: opencodeConfigPathNew, contents: Data(merged.utf8))
+        fm.createFile(atPath: targetPath, contents: Data(merged.utf8))
 
         // Clean up legacy config.json registration to prevent double-load.
         if let legacyContents = fm.contents(atPath: opencodeConfigPath)
@@ -2024,7 +2041,7 @@ struct ConfigInstaller {
 
     private static func uninstallOpencodePlugin(fm: FileManager) {
         try? fm.removeItem(atPath: opencodePluginPath)
-        for configPath in [opencodeConfigPathNew, opencodeConfigPath] {
+        for configPath in [opencodeConfigPathJsonc, opencodeConfigPathNew, opencodeConfigPath] {
             guard let contents = fm.contents(atPath: configPath)
                 .flatMap({ String(data: $0, encoding: .utf8) }),
                   let cleaned = removeOpencodePluginRef(originalContents: contents, identifier: HookId.current)
@@ -2059,7 +2076,7 @@ struct ConfigInstaller {
         guard fm.fileExists(atPath: opencodePluginPath) else { return false }
         // If any config file exists but is unparseable, treat plugin as installed
         // to avoid a repair loop that would clobber the user's JSON (#89).
-        for configPath in [opencodeConfigPathNew, opencodeConfigPath] {
+        for configPath in [opencodeConfigPathJsonc, opencodeConfigPathNew, opencodeConfigPath] {
             guard fm.fileExists(atPath: configPath) else { continue }
             guard let data = fm.contents(atPath: configPath),
                   let stripped = String(data: data, encoding: .utf8).map(stripJSONComments),

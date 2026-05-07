@@ -201,6 +201,17 @@ create-dmg \
     "$OUTPUT_DMG" \
     "$STAGING_DIR/"
 
+# Codesign the DMG container itself. Without this `spctl --assess` reports
+# "no usable signature" on the dmg even when the inner .app is properly
+# signed and the dmg is notarized + stapled — Sparkle's update flow can
+# fail with "An error occurred while running the updater" in that state.
+# Stapler still works without this step, but Sparkle's helper handoff is
+# happier when the container is signed.
+if [ "${SKIP_SIGN:-0}" != "1" ] && [[ "$SIGN_IDENTITY" != "-" ]]; then
+    echo "==> Code-signing the DMG container"
+    codesign --force --sign "$SIGN_IDENTITY" --timestamp "$OUTPUT_DMG"
+fi
+
 # ---------------------------------------------------------------------------
 # Notarize + staple. Uses the "CodeIsland" keychain profile by default
 # (xcrun notarytool store-credentials CodeIsland ...). Skippable via

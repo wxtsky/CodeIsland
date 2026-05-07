@@ -14,11 +14,13 @@ public struct SessionSnapshot: Sendable {
         "codex",
         "gemini",
         "cursor",
+        "cursor-cli",
         "trae",
         "traecn",
         "traecli",
         "copilot",
         "qoder",
+        "qoder-cli",
         "droid",
         "codebuddy",
         "codybuddycn",
@@ -98,6 +100,10 @@ public struct SessionSnapshot: Sendable {
             "hermes agents": "hermes",
             "qwen-code": "qwen",
             "qwencode": "qwen",
+            "cursor-agent": "cursor-cli",
+            "cursoragent": "cursor-cli",
+            "cursorcli": "cursor-cli",
+            "qodercli": "qoder-cli",
             "kimi-cli": "kimi",
             "kimicli": "kimi",
             "kiro-cli": "kiro",
@@ -258,10 +264,12 @@ public struct SessionSnapshot: Sendable {
         case "codex": return "Codex"
         case "gemini": return "Gemini"
         case "cursor": return "Cursor"
+        case "cursor-cli": return "Cursor CLI"
         case "trae": return "Trae"
         case "traecn": return "Trae CN"
         case "traecli": return "Traecli"
         case "qoder": return "Qoder"
+        case "qoder-cli": return "Qoder CLI"
         case "droid": return "Factory"
         case "codebuddy": return "CodeBuddy"
         case "codybuddycn": return "CodyBuddyCN"
@@ -537,12 +545,17 @@ public func reduceEvent(
         sessions[sessionId]?.status = .processing
         sessions[sessionId]?.currentTool = nil
         sessions[sessionId]?.toolDescription = nil
-        // Try multiple possible field names for user prompt
-        let prompt = event.rawJSON["prompt"] as? String
-            ?? event.rawJSON["user_prompt"] as? String
-            ?? event.rawJSON["message"] as? String
-            ?? event.rawJSON["input"] as? String
-            ?? event.rawJSON["content"] as? String
+        // Probe a wider set of field names + nested containers. Qwen Code (#103),
+        // Hermes (#117), and most Claude forks put the prompt at "prompt" top-level,
+        // but some forks nest it inside `input` / `data` / `payload` / `params`,
+        // and Cursor's `beforeSubmitPrompt` uses a different shape. Empty strings
+        // are skipped so we don't insert blank chat rows when a hook fires with
+        // a placeholder.
+        let prompt = firstStringFromEvent(
+            event,
+            keys: ["prompt", "user_prompt", "userPrompt", "message", "input", "content", "text"],
+            includeNested: true
+        )
         if let prompt {
             sessions[sessionId]?.lastUserPrompt = prompt
             if sessions[sessionId]?.recentMessages.last?.isUser == true {
@@ -847,8 +860,12 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
 private func firstStringFromDict(_ dict: [String: Any], keys: [String]) -> String? {
     for key in keys {
         if let value = dict[key] as? String {
-            let trimmed = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
+            // Trim only to detect empty / whitespace-only payloads; return the
+            // original value so callers preserve any leading/trailing
+            // whitespace inside code-snippet prompts and multi-line content.
+            if !value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+                return value
+            }
         }
     }
     return nil

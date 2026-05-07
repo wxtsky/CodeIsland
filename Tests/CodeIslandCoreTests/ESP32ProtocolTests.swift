@@ -96,6 +96,32 @@ final class ESP32ProtocolTests: XCTestCase {
         )
     }
 
+    func testEncodeWorkspaceFrame() {
+        let frame = BuddyWorkspacePayload(workspaceName: "CodeIsland")
+        let data = frame.encode()
+        XCTAssertEqual(data[0], ESP32Protocol.workspaceFrameMarker)
+        XCTAssertEqual(data[1], 10)
+        XCTAssertEqual(String(data: data.subdata(in: 2..<data.count), encoding: .utf8), "CodeIsland")
+    }
+
+    func testEncodeMessagePreviewFrame() {
+        let frame = BuddyMessagePreviewPayload(index: 1, total: 3, isUser: true, text: "Need help")
+        let data = frame.encode()
+        XCTAssertEqual(data[0], ESP32Protocol.messagePreviewFrameMarker)
+        XCTAssertEqual(data[1], 1)
+        XCTAssertEqual(data[2], 3)
+        XCTAssertEqual(data[3] & 0x80, 0x80)
+        XCTAssertEqual(data[3] & 0x7F, 9)
+        XCTAssertEqual(String(data: data.subdata(in: 4..<data.count), encoding: .utf8), "Need help")
+    }
+
+    func testMessagePreviewPayloadPreservesBoundarySpacesInsideSegment() {
+        let frame = BuddyMessagePreviewPayload(index: 0, total: 2, isUser: false, text: "generated ")
+
+        XCTAssertEqual(frame.text, "generated ")
+        XCTAssertEqual(String(data: frame.encode().subdata(in: 4..<frame.encode().count), encoding: .utf8), "generated ")
+    }
+
     func testScreenOrientationDefaultsToUpForUnknownValues() {
         XCTAssertEqual(BuddyScreenOrientation(settingsValue: "down"), .down)
         XCTAssertEqual(BuddyScreenOrientation(settingsValue: "sideways"), .up)
@@ -112,6 +138,12 @@ final class ESP32ProtocolTests: XCTestCase {
 
     func testConvenienceInitReturnsNilForUnknownSource() {
         XCTAssertNil(MascotFramePayload(source: "bogus", status: .idle))
+    }
+
+    func testBuddyUplinkEventParsesControlCommands() {
+        XCTAssertEqual(BuddyUplinkEvent(payload: Data([0xF0])), .command(.approveCurrentPermission))
+        XCTAssertEqual(BuddyUplinkEvent(payload: Data([0xF1])), .command(.denyCurrentPermission))
+        XCTAssertEqual(BuddyUplinkEvent(payload: Data([0xF2])), .command(.skipCurrentQuestion))
     }
 
     // MARK: - All 16 × 5 round-trip sanity

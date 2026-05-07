@@ -44,6 +44,12 @@ struct DiagnosticsExporter {
         let sessionsJSON = DispatchQueue.main.sync { sessionSnapshots() }
         writeJSON(sessionsJSON, to: root.appendingPathComponent("state/sessions.json"))
 
+        // 2b. Recent hook events ring buffer (#103). Helps reproduce
+        // session-routing / source-inference issues that only show up at
+        // runtime — bug reports can ship with the actual event stream.
+        let hookEventsJSON = DispatchQueue.main.sync { recentHookEvents() }
+        writeJSON(hookEventsJSON, to: root.appendingPathComponent("state/hook-events.json"))
+
         // 3. CLI config files
         let home = fm.homeDirectoryForCurrentUser.path
         let configs: [(source: String, dest: String)] = [
@@ -120,6 +126,26 @@ struct DiagnosticsExporter {
                 "displayChoice": UserDefaults.standard.string(forKey: SettingsKey.displayChoice) ?? "auto",
             ],
         ]
+    }
+
+    @MainActor
+    private static func recentHookEvents() -> [[String: Any]] {
+        guard let appState = (NSApp.delegate as? AppDelegate)?.appState else { return [] }
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return appState.recentHookEvents.map { event in
+            var dict: [String: Any] = [
+                "timestamp": isoFormatter.string(from: event.timestamp),
+                "eventName": event.eventName,
+                "viaPlugin": event.viaPlugin,
+                "payloadKeys": event.payloadKeys,
+            ]
+            if let source = event.source { dict["source"] = source }
+            if let sessionId = event.sessionId { dict["sessionId"] = String(sessionId.prefix(12)) }
+            if let toolName = event.toolName { dict["toolName"] = toolName }
+            if let preview = event.promptPreview { dict["promptPreview"] = preview }
+            return dict
+        }
     }
 
     @MainActor
