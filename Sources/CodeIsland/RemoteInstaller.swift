@@ -440,16 +440,16 @@ def install_claude():
 
 def ensure_toml_codex_hooks(path):
     content = path.read_text() if path.exists() else ""
-    if "codex_hooks = true" in content:
+    if "hooks = true" in content:
         return
     lines = content.splitlines()
     try:
         idx = next(i for i, line in enumerate(lines) if line.strip() == "[features]")
-        lines.insert(idx + 1, "codex_hooks = true")
+        lines.insert(idx + 1, "hooks = true")
     except StopIteration:
         if lines and lines[-1].strip():
             lines.append("")
-        lines.extend(["[features]", "codex_hooks = true"])
+        lines.extend(["[features]", "hooks = true"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\\n".join(lines).rstrip() + "\\n")
 

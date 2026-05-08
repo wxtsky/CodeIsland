@@ -11,6 +11,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case mascots
     case sound
     case shortcuts
+    case collaboration
     case remote
     case hooks
     case buddy
@@ -29,6 +30,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
         case .buddy: return "dot.radiowaves.left.and.right"
+        case .collaboration: return "arrow.triangle.2.circlepath.circle.fill"
         case .about: return "info.circle.fill"
         }
     }
@@ -41,6 +43,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return .pink
         case .sound: return .green
         case .shortcuts: return .indigo
+        case .collaboration: return .teal
         case .remote: return .mint
         case .hooks: return .purple
         case .buddy: return .red
@@ -55,7 +58,7 @@ private struct SidebarGroup: Hashable {
 }
 
 private let sidebarGroups: [SidebarGroup] = [
-    SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
+    SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts, .collaboration]),
     SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
 ]
 
@@ -92,6 +95,7 @@ struct SettingsView: View {
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
                 case .shortcuts: ShortcutsPage()
+                case .collaboration: CollaborationPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage()
                 case .buddy: BuddyPage()
@@ -511,6 +515,250 @@ private struct BehaviorPage: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Collaboration Page
+
+private struct CollaborationPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var manager = CollaborationManager.shared
+    @AppStorage(SettingsKey.collaborationEnabled) private var enabled = SettingsDefaults.collaborationEnabled
+    @State private var editingRule: CollaborationRule?
+    @State private var showAddSheet = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(l10n["collab_enable"], isOn: $enabled)
+                Text(l10n["collab_enable_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if enabled {
+                Section(l10n["collab_rules"]) {
+                    if manager.rules.isEmpty {
+                        Text(l10n["collab_no_rules"])
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(manager.rules) { rule in
+                            CollaborationRuleRow(rule: rule) {
+                                editingRule = rule
+                            }
+                        }
+                        .onDelete { offsets in
+                            for i in offsets {
+                                manager.deleteRule(manager.rules[i].id)
+                            }
+                        }
+                    }
+
+                    Button {
+                        showAddSheet = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text(l10n["collab_add_rule"])
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .sheet(item: $editingRule) { rule in
+            CollaborationRuleEditor(rule: rule, isNew: false) { updated in
+                manager.updateRule(updated)
+                editingRule = nil
+            } onCancel: {
+                editingRule = nil
+            }
+        }
+        .sheet(isPresented: $showAddSheet) {
+            CollaborationRuleEditor(rule: CollaborationRule(), isNew: true) { newRule in
+                manager.addRule(newRule)
+                showAddSheet = false
+            } onCancel: {
+                showAddSheet = false
+            }
+        }
+    }
+}
+
+private struct CollaborationRuleRow: View {
+    let rule: CollaborationRule
+    let onEdit: () -> Void
+    @ObservedObject private var manager = CollaborationManager.shared
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    if let icon = cliIcon(source: rule.triggerSource, size: 14) {
+                        Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                    }
+                    Text(AgentTargetType(rawValue: rule.triggerSource)?.displayName ?? rule.triggerSource)
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    if let icon = cliIcon(source: rule.targetAgent.rawValue, size: 14) {
+                        Image(nsImage: icon).resizable().frame(width: 14, height: 14)
+                    }
+                    Text(rule.targetAgent.displayName)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                HStack(spacing: 4) {
+                    Text(PromptTemplateManager.templateName(for: rule.templateType, language: L10n.shared.effectiveLanguage))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    if rule.requireConfirmation {
+                        Text(L10n.shared["collab_confirm_badge"])
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                }
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { rule.enabled },
+                set: { newVal in
+                    var updated = rule
+                    updated.enabled = newVal
+                    manager.updateRule(updated)
+                }
+            ))
+            .labelsHidden()
+            Button(action: onEdit) {
+                Image(systemName: "pencil.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct CollaborationRuleEditor: View {
+    @State var rule: CollaborationRule
+    let isNew: Bool
+    let onSave: (CollaborationRule) -> Void
+    let onCancel: () -> Void
+    @ObservedObject private var l10n = L10n.shared
+    @State private var templateText: String = ""
+
+    private let sources: [(String, String)] = [
+        ("claude", "Claude Code"),
+        ("codex", "Codex CLI"),
+        ("cursor", "Cursor"),
+        ("gemini", "Gemini"),
+        ("copilot", "Copilot"),
+        ("codebuddy", "CodeBuddy"),
+    ]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(isNew ? l10n["collab_new_rule"] : l10n["collab_edit_rule"])
+                .font(.headline)
+
+            Form {
+                TextField(l10n["collab_rule_name"], text: $rule.name)
+
+                Picker(l10n["collab_trigger_source"], selection: $rule.triggerSource) {
+                    ForEach(sources, id: \.0) { source, name in
+                        Text(name).tag(source)
+                    }
+                }
+
+                Picker(l10n["collab_target_agent"], selection: $rule.targetAgent) {
+                    ForEach(AgentTargetType.allCases) { target in
+                        Text(target.displayName).tag(target)
+                    }
+                }
+
+                Picker(l10n["collab_template"], selection: $rule.templateType) {
+                    ForEach(PromptTemplateType.allCases) { t in
+                        Text(PromptTemplateManager.templateName(for: t, language: l10n.effectiveLanguage)).tag(t)
+                    }
+                }
+
+                if rule.templateType == .custom {
+                    TextEditor(text: $rule.customPrompt)
+                        .frame(minHeight: 80)
+                        .font(.system(size: 12, design: .monospaced))
+                    Text(l10n["collab_custom_hint"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(l10n["collab_template_content"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if PromptTemplateManager.isCustomized(for: rule.templateType, language: l10n.effectiveLanguage) {
+                                Button(l10n["collab_reset_template"]) {
+                                    PromptTemplateManager.resetTemplate(for: rule.templateType, language: l10n.effectiveLanguage)
+                                    templateText = PromptTemplateManager.template(for: rule.templateType, language: l10n.effectiveLanguage)
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        TextEditor(text: $templateText)
+                            .frame(minHeight: 80)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+                    Text(l10n["collab_custom_hint"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Toggle(l10n["collab_require_confirm"], isOn: $rule.requireConfirmation)
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button(l10n["collab_cancel"], action: onCancel)
+                    .buttonStyle(.bordered)
+                Spacer()
+                Button(l10n["collab_save"]) {
+                    if rule.name.isEmpty {
+                        let src = AgentTargetType(rawValue: rule.triggerSource)?.displayName ?? rule.triggerSource
+                        let tgt = rule.targetAgent.displayName
+                        rule.name = "\(src) -> \(tgt)"
+                    }
+                    if rule.templateType != .custom {
+                        PromptTemplateManager.setUserTemplate(
+                            for: rule.templateType,
+                            language: l10n.effectiveLanguage,
+                            text: templateText
+                        )
+                    }
+                    onSave(rule)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+        }
+        .padding()
+        .frame(width: 480, height: 560)
+        .onAppear {
+            loadTemplateText()
+        }
+        .onChange(of: rule.templateType) { _, _ in
+            loadTemplateText()
+        }
+    }
+
+    private func loadTemplateText() {
+        if rule.templateType != .custom {
+            templateText = PromptTemplateManager.template(for: rule.templateType, language: l10n.effectiveLanguage)
+        }
     }
 }
 

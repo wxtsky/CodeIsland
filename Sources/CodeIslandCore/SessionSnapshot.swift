@@ -35,6 +35,9 @@ public struct SessionSnapshot: Sendable {
         "kiro",
     ]
 
+    // IDE-based agents complete via AfterAgentResponse, not Stop
+    public static let ideSources: Set<String> = ["cursor", "trae", "traecn", "codebuddy", "codybuddycn"]
+
     public var status: AgentStatus = .idle
     public var currentTool: String?
     public var toolDescription: String?
@@ -608,7 +611,9 @@ public func reduceEvent(
             sessions[sessionId]?.toolDescription = nil
         }
     case "AfterAgentResponse":
-        // Cursor-specific: AI reply arrives here (in "text" field), not in Stop
+        // Cursor/Trae IDE: AI reply arrives here (in "text" field), not in Stop.
+        // For IDE-based agents, AfterAgentResponse IS the completion signal —
+        // they don't fire a separate Stop event after normal responses.
         let responseText = firstStringFromEvent(
             event,
             keys: ["text", "message"],
@@ -618,7 +623,15 @@ public func reduceEvent(
             sessions[sessionId]?.lastAssistantMessage = text
             sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: text))
         }
-        sessions[sessionId]?.status = .processing
+        let source = sessions[sessionId]?.source ?? (event.rawJSON["_source"] as? String ?? "")
+        if SessionSnapshot.ideSources.contains(source) {
+            sessions[sessionId]?.status = .idle
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+            effects.append(.enqueueCompletion(sessionId: sessionId))
+        } else {
+            sessions[sessionId]?.status = .processing
+        }
     case "Stop":
         // Detect ESC/Ctrl+C interruption
         let stopReason = event.rawJSON["stop_reason"] as? String ?? ""

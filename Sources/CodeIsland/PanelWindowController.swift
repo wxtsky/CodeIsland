@@ -259,7 +259,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                 guard let self = self, self.appState.surface.isExpanded else { return }
                 // Don't close during approval/question
                 switch self.appState.surface {
-                case .approvalCard, .questionCard: return
+                case .approvalCard, .questionCard, .collaborationCard: return
                 default: break
                 }
                 // Don't collapse if click is within the panel frame (event leaked on external display)

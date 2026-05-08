@@ -160,8 +160,29 @@ struct NotchPanelView: View {
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
                     case .completionCard:
-                        SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
+                        VStack(spacing: 0) {
+                            SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
+                            if let collab = appState.pendingCollaboration {
+                                Divider().background(Color.white.opacity(0.1))
+                                CollaborationBar(
+                                    collaboration: collab,
+                                    queueTotal: 1,
+                                    onExecute: { appState.executeCollaboration(collab) },
+                                    onDismiss: { appState.dismissCollaboration() }
+                                )
+                            }
+                        }
+                        .transition(.blurFade.combined(with: .move(edge: .top)))
+                    case .collaborationCard:
+                        if let collab = appState.pendingCollaboration {
+                            CollaborationBar(
+                                collaboration: collab,
+                                queueTotal: appState.collaborationQueue.count + 1,
+                                onExecute: { appState.executeCollaboration(collab) },
+                                onDismiss: { appState.dismissCollaboration() }
+                            )
+                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        }
                     case .sessionList:
                         SessionListView(appState: appState, onlySessionId: nil)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
@@ -221,7 +242,7 @@ struct NotchPanelView: View {
                     return
                 }
                 switch appState.surface {
-                case .approvalCard, .questionCard: return
+                case .approvalCard, .questionCard, .collaborationCard: return
                 case .completionCard:
                     // Completion card: mark entered on hover-in, block collapse until entered
                     if hovering {
@@ -1524,6 +1545,128 @@ private struct PixelButton: View {
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+    }
+}
+
+// MARK: - Collaboration Bar (multi-agent cooperation)
+
+private struct CollaborationBar: View {
+    let collaboration: PendingCollaboration
+    let queueTotal: Int
+    let onExecute: () -> Void
+    let onDismiss: () -> Void
+    @State private var showDetail = false
+
+    private let accentColor = Color(red: 0.4, green: 0.7, blue: 1.0)
+
+    private var sourceDisplayName: String {
+        AgentTargetType(rawValue: collaboration.sourceAgent)?.displayName ?? collaboration.sourceAgent.capitalized
+    }
+
+    private var targetDisplayName: String {
+        collaboration.rule.targetAgent.displayName
+    }
+
+    private var templateName: String {
+        PromptTemplateManager.templateName(for: collaboration.rule.templateType, language: L10n.shared.effectiveLanguage)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                if let icon = cliIcon(source: collaboration.sourceAgent, size: 16) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                }
+                Text(L10n.shared["collab_trigger"])
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(accentColor)
+                Text(sourceDisplayName)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(accentColor.opacity(0.6))
+                if let icon = cliIcon(source: collaboration.rule.targetAgent.rawValue, size: 16) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                }
+                Text(targetDisplayName)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                if queueTotal > 1 {
+                    Text("1/\(queueTotal)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(accentColor.opacity(0.7))
+                Text(templateName)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.7))
+                if let cwd = collaboration.cwd {
+                    Text("(\((cwd as NSString).lastPathComponent))")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+
+            if showDetail {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.shared["collab_context"])
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text(collaboration.context.prefix(300))
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(5)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.04))
+            }
+
+            HStack(spacing: 6) {
+                PixelButton(
+                    label: showDetail ? L10n.shared["collab_hide_detail"] : L10n.shared["collab_show_detail"],
+                    fg: .white.opacity(0.6),
+                    bg: Color.white.opacity(0.06),
+                    border: Color.white.opacity(0.12),
+                    action: { withAnimation(.easeInOut(duration: 0.2)) { showDetail.toggle() } }
+                )
+                PixelButton(
+                    label: L10n.shared["collab_dismiss"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.45, green: 0.12, blue: 0.12),
+                    border: Color(red: 0.7, green: 0.25, blue: 0.25),
+                    action: onDismiss
+                )
+                PixelButton(
+                    label: L10n.shared["collab_execute"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: onExecute
+                )
+            }
+            .padding(.horizontal, 14)
+        }
+        .padding(.vertical, 10)
     }
 }
 

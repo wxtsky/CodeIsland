@@ -12,6 +12,19 @@ struct ProcessIdentity: Equatable {
     let startTime: Date?
 }
 
+/// Collaboration request data for multi-agent handoff
+struct PendingCollaboration: Equatable {
+    let rule: CollaborationRule
+    let sessionId: String
+    let sourceAgent: String
+    let context: String
+    let cwd: String?
+
+    static func == (lhs: PendingCollaboration, rhs: PendingCollaboration) -> Bool {
+        lhs.rule.id == rhs.rule.id && lhs.sessionId == rhs.sessionId
+    }
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -99,6 +112,10 @@ final class AppState {
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
     var surface: IslandSurface = .collapsed
+
+    // Multi-agent collaboration state
+    var pendingCollaboration: PendingCollaboration?
+    var collaborationQueue: [PendingCollaboration] = []
 
     var justCompletedSessionId: String? {
         if case .completionCard(let id) = surface { return id }
@@ -717,6 +734,11 @@ final class AppState {
         // Don't queue duplicates
         if completionQueue.contains(sessionId) || justCompletedSessionId == sessionId { return }
 
+        // Prepare collaboration inline with completion card
+        if UserDefaults.standard.bool(forKey: SettingsKey.collaborationEnabled) {
+            prepareCollaborationForCompletion(sessionId: sessionId)
+        }
+
         if isShowingCompletion || isShowingInteractive {
             // Already showing one — queue this for later
             completionQueue.append(sessionId)
@@ -792,6 +814,7 @@ final class AppState {
         }
         // showNextPending handles: interactive items first, then completionQueue, then collapse
         if showNextPending() { return }
+        pendingCollaboration = nil
         withAnimation(NotchAnimation.close) {
             surface = .collapsed
         }
@@ -3331,6 +3354,13 @@ final class AppState {
                    args.contains(where: { $0.contains("@openai/codex") || $0.contains("openai-codex") }) {
                     codexPids.append(pid)
                 }
+                continue
+            }
+
+            // Match 3: Homebrew native binary spawned by node launcher.
+            // Path like: .../node_modules/@openai/codex/.../codex
+            if pathLower.contains("@openai/codex") && pathLower.hasSuffix("/codex") {
+                codexPids.append(pid)
             }
         }
         return codexPids
@@ -3922,6 +3952,189 @@ final class AppState {
         let recent = Array(combined.suffix(3).map { $0.1 })
 
         return (model, recent)
+    }
+
+    // MARK: - Multi-Agent Collaboration
+
+    func checkCollaborationTrigger(sessionId: String) {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.collaborationEnabled) else { return }
+        guard let session = sessions[sessionId] else { return }
+
+        let rules = CollaborationManager.shared.matchingRules(forSource: session.source)
+        guard !rules.isEmpty else { return }
+
+        let context = session.lastAssistantMessage ?? session.recentMessages.last(where: { !$0.isUser })?.text ?? ""
+
+        for rule in rules {
+            guard rule.targetAgent.findBinary() != nil else { continue }
+
+            let pending = PendingCollaboration(
+                rule: rule,
+                sessionId: sessionId,
+                sourceAgent: session.source,
+                context: context,
+                cwd: session.cwd
+            )
+
+            if rule.requireConfirmation {
+                enqueueCollaboration(pending)
+            } else {
+                executeCollaboration(pending)
+            }
+        }
+    }
+
+    private func enqueueCollaboration(_ collab: PendingCollaboration) {
+        if case .collaborationCard = surface {
+            collaborationQueue.append(collab)
+        } else if case .approvalCard = surface {
+            collaborationQueue.append(collab)
+        } else if case .questionCard = surface {
+            collaborationQueue.append(collab)
+        } else {
+            pendingCollaboration = collab
+            activeSessionId = collab.sessionId
+            withAnimation(NotchAnimation.pop) {
+                surface = .collaborationCard(sessionId: collab.sessionId)
+            }
+        }
+    }
+
+    func executeCollaboration(_ collab: PendingCollaboration) {
+        let targetSources = collab.rule.targetAgent.matchingSources
+        let normalizedCwd = collab.cwd.map { Self.normalizeCwd($0) } ?? ""
+        let candidates = sessions.filter { (sid, s) in
+            targetSources.contains(s.source)
+                && sid != collab.sessionId
+                && !normalizedCwd.isEmpty
+                && Self.cwdMatches(s.cwd, normalizedCwd)
+        }.values
+        let targetSession = candidates
+            .sorted { a, b in
+                if a.status == .idle && b.status != .idle { return true }
+                if a.status != .idle && b.status == .idle { return false }
+                return a.lastActivity > b.lastActivity
+            }
+            .first
+
+        AgentLauncher.shared.launch(
+            rule: collab.rule,
+            sourceAgent: collab.sourceAgent,
+            context: collab.context,
+            cwd: collab.cwd,
+            targetSession: targetSession
+        )
+        pendingCollaboration = nil
+    }
+
+    func dismissCollaboration() {
+        withAnimation(NotchAnimation.micro) {
+            pendingCollaboration = nil
+        }
+    }
+
+    // Build PendingCollaboration for a completing session (shown inline in completion card)
+    private func prepareCollaborationForCompletion(sessionId: String) {
+        guard let session = sessions[sessionId] else { return }
+        guard let sessionCwd = session.cwd, !sessionCwd.isEmpty else { return }
+        let rules = CollaborationManager.shared.matchingRules(forSource: session.source)
+        guard !rules.isEmpty else { return }
+
+        let normalizedCwd = Self.normalizeCwd(sessionCwd)
+
+        for rule in rules {
+            guard rule.targetAgent.findBinary() != nil else { continue }
+            let targetSources = rule.targetAgent.matchingSources
+            let hasTarget = sessions.contains { (sid, s) in
+                sid != sessionId
+                    && targetSources.contains(s.source)
+                    && s.source != session.source
+                    && Self.cwdMatches(s.cwd, normalizedCwd)
+            }
+            guard hasTarget else { continue }
+
+            let context = session.lastAssistantMessage
+                ?? session.recentMessages.last(where: { !$0.isUser })?.text ?? ""
+            pendingCollaboration = PendingCollaboration(
+                rule: rule,
+                sessionId: sessionId,
+                sourceAgent: session.source,
+                context: context,
+                cwd: sessionCwd
+            )
+            return
+        }
+    }
+
+    // Normalize a CWD path: resolve symlinks, strip trailing slash
+    private static func normalizeCwd(_ path: String) -> String {
+        var p = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        while p.count > 1 && p.hasSuffix("/") { p.removeLast() }
+        return p
+    }
+
+    // Extract project directory name from a CWD path
+    private static func projectName(_ path: String) -> String {
+        (normalizeCwd(path) as NSString).lastPathComponent
+    }
+
+    // Compare two CWD paths with multiple strategies:
+    // 1. Exact normalized path match
+    // 2. Project name (last component) match
+    // 3. Cursor encoded path match (Cursor uses path-encoded dir names under ~/.cursor/projects/)
+    private static func cwdMatches(_ a: String?, _ normalizedB: String) -> Bool {
+        guard let a, !a.isEmpty else { return false }
+        let normalizedA = normalizeCwd(a)
+        if normalizedA == normalizedB { return true }
+
+        // Strategy 2: last path component
+        let nameA = (normalizedA as NSString).lastPathComponent
+        let nameB = (normalizedB as NSString).lastPathComponent
+        if !nameA.isEmpty && nameA == nameB { return true }
+
+        // Strategy 3: Cursor path encoding ("/" -> "-", non-ASCII -> "-")
+        let encodedA = cursorEncoded(normalizedA)
+        let encodedB = cursorEncoded(normalizedB)
+        if encodedA == encodedB { return true }
+
+        let cursorNameA = cursorProjectName(normalizedA)
+        let cursorNameB = cursorProjectName(normalizedB)
+        if let cn = cursorNameA, cn == encodedB.replacingOccurrences(of: "/", with: "-") { return true }
+        if let cn = cursorNameB, cn == encodedA.replacingOccurrences(of: "/", with: "-") { return true }
+
+        if let cn = cursorNameA, encodedB.hasPrefix(cn) || cn.hasPrefix(encodedB) { return true }
+        if let cn = cursorNameB, encodedA.hasPrefix(cn) || cn.hasPrefix(encodedA) { return true }
+
+        return false
+    }
+
+    // Encode a path like Cursor does: "/" -> "-", non-ASCII -> "-"
+    private static func cursorEncoded(_ path: String) -> String {
+        var result = ""
+        for c in path.unicodeScalars {
+            if c == "/" || c == " " || c.value > 127 {
+                result.append("-")
+            } else {
+                result.append(Character(c))
+            }
+        }
+        while result.hasPrefix("-") { result.removeFirst() }
+        return result
+    }
+
+    // Extract the project name from a ~/.cursor/projects/<name> path
+    private static func cursorProjectName(_ path: String) -> String? {
+        let parts = path.split(separator: "/")
+        guard let idx = parts.firstIndex(of: "projects"),
+              path.contains(".cursor"),
+              idx + 1 < parts.count else { return nil }
+        return String(parts[idx + 1])
+    }
+
+    func collaborationGroup(for sessionId: String) -> [String: SessionSnapshot] {
+        guard let session = sessions[sessionId], let cwd = session.cwd, !cwd.isEmpty else { return [:] }
+        let normalized = Self.normalizeCwd(cwd)
+        return sessions.filter { $0.key != sessionId && Self.cwdMatches($0.value.cwd, normalized) }
     }
 }
 

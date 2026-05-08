@@ -104,6 +104,10 @@ enum SettingsKey {
     static let webhookEnabled = "webhookEnabled"
     static let webhookURL = "webhookURL"
     static let webhookEventFilter = "webhookEventFilter"  // comma-separated allow-list; empty = forward all
+
+    // Collaboration
+    static let collaborationEnabled = "collaborationEnabled"
+    static let codeBuddyAddToChatKey = "codeBuddyAddToChatKey"  // default: "ctrl_cmd_i"
 }
 
 struct SettingsDefaults {
@@ -170,6 +174,8 @@ struct SettingsDefaults {
     static let webhookEnabled = false
     static let webhookURL = ""
     static let webhookEventFilter = ""
+
+    static let collaborationEnabled = false
 }
 
 @MainActor

@@ -92,7 +92,7 @@
 - Add shimmer animation when AI is thinking
 - Extend animation speed slider to 0% to freeze mascot animations
 - Add Codex PreToolUse/PostToolUse hook events for tool status display
-- Auto-configure codex_hooks=true in ~/.codex/config.toml
+- Auto-configure hooks=true in ~/.codex/config.toml
 - Add IDE terminal detection for smarter notification suppress
 - Add cmux terminal support
 - Fix user messages rendered as markdown instead of plain text
@@ -105,7 +105,7 @@
 - AI 思考时显示闪烁动画效果
 - 动画速度滑块可调至 0% 以冻结吉祥物动画
 - 新增 Codex PreToolUse/PostToolUse hook 事件，显示工具状态
-- 自动配置 ~/.codex/config.toml 中的 codex_hooks=true
+- 自动配置 ~/.codex/config.toml 中的 hooks=true
 - 新增 IDE 终端检测，更智能的通知抑制
 - 新增 cmux 终端支持
 - 修复用户消息被渲染为 markdown 而非纯文本

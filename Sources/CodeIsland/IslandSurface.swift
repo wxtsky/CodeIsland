@@ -10,6 +10,8 @@ enum IslandSurface: Equatable {
     case questionCard(sessionId: String)
     /// 自动展开显示完成通知
     case completionCard(sessionId: String)
+    /// 显示多 Agent 协作卡片
+    case collaborationCard(sessionId: String)
 
     var isExpanded: Bool { self != .collapsed }
 
@@ -17,7 +19,7 @@ enum IslandSurface: Equatable {
     var sessionId: String? {
         switch self {
         case .collapsed, .sessionList: return nil
-        case .approvalCard(let id), .questionCard(let id), .completionCard(let id): return id
+        case .approvalCard(let id), .questionCard(let id), .completionCard(let id), .collaborationCard(let id): return id
         }
     }
 }
