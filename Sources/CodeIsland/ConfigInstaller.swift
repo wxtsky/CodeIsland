@@ -2002,6 +2002,12 @@ struct ConfigInstaller {
         // Write plugin JS
         guard let source = opencodePluginSource() else { return false }
         try? fm.createDirectory(atPath: opencodePluginDir, withIntermediateDirectories: true)
+        // Ensure package.json exists to specify ES module type for OpenCode plugin loading
+        let packageJsonPath = opencodePluginDir + "/package.json"
+        if !fm.fileExists(atPath: packageJsonPath) {
+            let packageJsonContent = "{\"type\":\"module\"}"
+            fm.createFile(atPath: packageJsonPath, contents: Data(packageJsonContent.utf8))
+        }
         guard fm.createFile(atPath: opencodePluginPath, contents: Data(source.utf8)) else { return false }
 
         // Pick the registration target. Order: .jsonc (OpenCode-recommended)
