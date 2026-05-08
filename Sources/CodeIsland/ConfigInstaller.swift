@@ -2002,13 +2002,25 @@ struct ConfigInstaller {
         // Write plugin JS
         guard let source = opencodePluginSource() else { return false }
         try? fm.createDirectory(atPath: opencodePluginDir, withIntermediateDirectories: true)
-        // Ensure package.json exists to specify ES module type for OpenCode plugin loading
-        let packageJsonPath = opencodePluginDir + "/package.json"
-        if !fm.fileExists(atPath: packageJsonPath) {
-            let packageJsonContent = "{\"type\":\"module\"}"
-            fm.createFile(atPath: packageJsonPath, contents: Data(packageJsonContent.utf8))
-        }
         guard fm.createFile(atPath: opencodePluginPath, contents: Data(source.utf8)) else { return false }
+        // Ensure package.json exists in OpenCode config root to specify ES module type.
+        // OpenCode's error message explicitly says: "add type:module to ~/.config/opencode/package.json"
+        let configDir = (opencodeConfigPath as NSString).deletingLastPathComponent
+        let configPackageJson = configDir + "/package.json"
+        if fm.fileExists(atPath: configPackageJson) {
+            // Merge "type":"module" into existing package.json
+            if let data = fm.contents(atPath: configPackageJson),
+               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                json["type"] = "module"
+                if let newData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .withoutEscapingSlashes]),
+                   let newStr = String(data: newData, encoding: .utf8) {
+                    fm.createFile(atPath: configPackageJson, contents: Data(newStr.utf8))
+                }
+            }
+        } else {
+            let packageJsonContent = "{\"dependencies\":{\"@opencode-ai/plugin\":\"1.4.6\"},\"type\":\"module\"}"
+            fm.createFile(atPath: configPackageJson, contents: Data(packageJsonContent.utf8))
+        }
 
         // Pick the registration target. Order: .jsonc (OpenCode-recommended)
         // when present, else .json. We never create .json when the user
