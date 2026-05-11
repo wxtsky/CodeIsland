@@ -43,6 +43,11 @@ public enum EventNormalizer {
         case "pre_compact":           return "PreCompact"
         case "post_compact":          return "PostCompact"
         case "notification":          return "Notification"
+        // Cline (VSCode extension)
+        case "TaskStart":             return "SessionStart"
+        case "TaskResume":            return "UserPromptSubmit"
+        case "TaskComplete":          return "TaskRoundComplete"
+        case "TaskCancel":            return "TaskRoundComplete"
         default:                      return name
         }
     }

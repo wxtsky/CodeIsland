@@ -579,12 +579,6 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             }
         }
 
-        // Fallback: menu bar disappeared on this screen (no Screen Recording permission needed)
-        let menuBarGap = screen.frame.maxY - screen.visibleFrame.maxY
-        if menuBarGap < 1 {
-            return true
-        }
-
         return false
     }
 

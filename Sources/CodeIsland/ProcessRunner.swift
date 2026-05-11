@@ -7,6 +7,18 @@ import Foundation
 /// Drains stdout on a background queue so a full pipe buffer cannot wedge the
 /// child between writes and our wait().
 enum ProcessRunner {
+    /// Resolve a process' controlling TTY via `ps -o tty=`.
+    static func ttyForPid(_ pid: pid_t) -> String? {
+        guard pid > 0 else { return nil }
+        guard let data = run(path: "/bin/ps", args: ["-o", "tty=", "-p", "\(pid)"], timeout: 5),
+              let raw = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        let tty = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tty.isEmpty, tty != "?" else { return nil }
+        return tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+    }
+
     /// Reference cell for the pipe drain so the closure and the calling thread
     /// share storage cleanly. Synchronization is provided by the `drained`
     /// semaphore (signal happens-before wait), so `@unchecked Sendable` is

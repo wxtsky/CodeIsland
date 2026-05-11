@@ -281,6 +281,31 @@ if sourceTag == "copilot" {
     }
 }
 
+// Cline adaptation: sends hookName and taskId instead of hook_event_name and session_id.
+if sourceTag == "cline" {
+    if json["hook_event_name"] == nil, let name = nonEmptyString(json["hookName"]) {
+        json["hook_event_name"] = name
+    }
+    if json["session_id"] == nil, let taskId = nonEmptyString(json["taskId"]) {
+        json["session_id"] = taskId
+    }
+    // Cline structures tool info as flat fields inside preToolUse/postToolUse objects:
+    // PreToolUse:  { preToolUse:  { toolName: "execute_command", parameters: { ... } } }
+    // PostToolUse: { postToolUse: { toolName: "execute_command", parameters: { ... }, result: ..., success: bool } }
+    if json["tool_name"] == nil {
+        if let preToolUse = json["preToolUse"] as? [String: Any],
+           let toolName = nonEmptyString(preToolUse["toolName"] as? String) {
+            json["tool_name"] = toolName
+            if json["tool_input"] == nil, let parameters = preToolUse["parameters"] as? [String: Any] {
+                json["tool_input"] = parameters
+            }
+        } else if let postToolUse = json["postToolUse"] as? [String: Any],
+                  let toolName = nonEmptyString(postToolUse["toolName"] as? String) {
+            json["tool_name"] = toolName
+        }
+    }
+}
+
 // Resolve process ancestry once — used for both session_id fallback (#148) and
 // _ppid resolution downstream. Some CLIs execute hooks through `sh -c`, so
 // `getppid()` is a transient shell rather than the long-lived CLI process.
@@ -321,6 +346,13 @@ let resolvedTrackedPID = CLIProcessResolver.resolvedTrackedPID(
 json["_ppid"] = resolvedTrackedPID
 if resolvedTrackedPID != immediateParentPID {
     json["_hook_ppid"] = Int32(immediateParentPID)
+}
+// Cline hooks are shell scripts spawned by a VSCode extension — the immediate
+// parent is a transient shell, not a persistent agent process. Tracking this
+// short-lived PID as cliPid causes cleanupIdleSessions to detect it as dead
+// within seconds and remove the session. Clear it so no PID is tracked.
+if effectiveSource == "cline" {
+    json["_ppid"] = 0
 }
 
 // Validate: must have non-empty session_id
@@ -409,6 +441,22 @@ if let cmuxSurface = env["CMUX_SURFACE_ID"], !cmuxSurface.isEmpty {
 }
 if let cmuxWorkspace = env["CMUX_WORKSPACE_ID"], !cmuxWorkspace.isEmpty {
     json["_cmux_workspace_id"] = cmuxWorkspace
+}
+
+// Zellij multiplexer detection — pane id + optional session name for precise tab focus
+if let zellij = env["ZELLIJ"], !zellij.isEmpty {
+    json["_zellij"] = zellij
+    if let pane = env["ZELLIJ_PANE_ID"], !pane.isEmpty {
+        json["_zellij_pane_id"] = pane
+    }
+    if let session = env["ZELLIJ_SESSION_NAME"], !session.isEmpty {
+        json["_zellij_session_name"] = session
+    }
+}
+
+// WezTerm / Kaku pane id — both forks set WEZTERM_PANE; Kaku is a WezTerm fork (bundle id fun.tw93.kaku)
+if let weztermPane = env["WEZTERM_PANE"], !weztermPane.isEmpty {
+    json["_wezterm_pane"] = weztermPane
 }
 
 // --- Serialize enriched JSON ---

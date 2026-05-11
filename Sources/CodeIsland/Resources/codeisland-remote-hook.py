@@ -5,7 +5,7 @@ import socket
 import subprocess
 import sys
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 SOCKET_PATH = os.environ.get("CODEISLAND_SOCKET_PATH", "/tmp/codeisland.sock")
 REMOTE_HOST_ID = os.environ.get("CODEISLAND_REMOTE_HOST_ID", "")
 REMOTE_HOST_NAME = os.environ.get("CODEISLAND_REMOTE_HOST_NAME", "")
@@ -235,8 +235,8 @@ def main():
     payload["session_id"] = session_id
     payload["cwd"] = cwd
     payload["_source"] = payload.get("_source") or SOURCE
-    payload["_remote_host_id"] = REMOTE_HOST_ID
-    payload["_remote_host_name"] = REMOTE_HOST_NAME
+    payload["_remote_host_id"] = payload.get("_remote_host_id") or REMOTE_HOST_ID
+    payload["_remote_host_name"] = payload.get("_remote_host_name") or REMOTE_HOST_NAME
     payload["_tty"] = payload.get("_tty") or _get_tty()
 
     if SOURCE == "claude":

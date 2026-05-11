@@ -58,4 +58,51 @@ final class CodexHomeTests: XCTestCase {
         unsetenv("CODEX_HOME")
         XCTAssertEqual(ConfigInstaller.displayCodexPath(filename: "hooks.json"), "~/.codex/hooks.json")
     }
+
+    func testEnableCodexHooksConfigWritesCurrentFeatureName() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+
+        XCTAssertTrue(ConfigInstaller.enableCodexHooksConfig(fm: .default))
+
+        let contents = try String(contentsOf: codexHome.appendingPathComponent("config.toml"), encoding: .utf8)
+        XCTAssertTrue(contents.contains("[features]"))
+        XCTAssertTrue(contents.contains("hooks = true"))
+        XCTAssertFalse(contents.contains("codex_hooks"))
+    }
+
+    func testEnableCodexHooksConfigFlipsCurrentFeatureFalse() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let config = codexHome.appendingPathComponent("config.toml")
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try "[features]\nhooks = false\n".write(to: config, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(ConfigInstaller.enableCodexHooksConfig(fm: .default))
+
+        let contents = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(contents.contains("hooks = true"))
+        XCTAssertFalse(contents.contains("hooks = false"))
+    }
+
+    func testEnableCodexHooksConfigMigratesLegacyFeatureName() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let config = codexHome.appendingPathComponent("config.toml")
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try "[features]\ncodex_hooks = true\n".write(to: config, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(ConfigInstaller.enableCodexHooksConfig(fm: .default))
+
+        let contents = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(contents.contains("hooks = true"))
+        XCTAssertFalse(contents.contains("codex_hooks"))
+    }
+
+    private func makeTemporaryCodexHome() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-home-\(UUID().uuidString)", isDirectory: true)
+        setenv("CODEX_HOME", url.path, 1)
+        return url
+    }
 }

@@ -273,6 +273,70 @@ final class AppStateToolUseCacheTests: XCTestCase {
         XCTAssertEqual(try behavior(response), "allow")
     }
 
+    // MARK: - Cline task lifecycle
+
+    func testClineTaskCompleteEndsSessionImmediately() throws {
+        let appState = AppState()
+        appState.handleEvent(try makeHookEvent(
+            name: "TaskResume",
+            sessionId: "cline-1",
+            toolName: nil,
+            toolUseId: nil,
+            source: "cline"
+        ))
+        XCTAssertEqual(appState.sessions["cline-1"]?.status, .processing)
+        XCTAssertEqual(appState.activeSessionCount, 1)
+
+        appState.handleEvent(try makeHookEvent(
+            name: "TaskComplete",
+            sessionId: "cline-1",
+            toolName: nil,
+            toolUseId: nil,
+            source: "cline"
+        ))
+
+        XCTAssertEqual(appState.sessions["cline-1"]?.status, .idle)
+        XCTAssertEqual(appState.sessions["cline-1"]?.taskRoundEnded, true)
+        XCTAssertEqual(appState.activeSessionCount, 0)
+    }
+
+    func testClineDropsStaleToolEventsAfterTaskComplete() throws {
+        let appState = AppState()
+        appState.handleEvent(try makeHookEvent(
+            name: "TaskResume",
+            sessionId: "cline-1",
+            toolName: nil,
+            toolUseId: nil,
+            source: "cline"
+        ))
+        appState.handleEvent(try makeHookEvent(
+            name: "PreToolUse",
+            sessionId: "cline-1",
+            toolName: "execute_command",
+            toolUseId: "toolu_cline",
+            source: "cline"
+        ))
+        appState.handleEvent(try makeHookEvent(
+            name: "TaskComplete",
+            sessionId: "cline-1",
+            toolName: nil,
+            toolUseId: nil,
+            source: "cline"
+        ))
+
+        appState.handleEvent(try makeHookEvent(
+            name: "PostToolUse",
+            sessionId: "cline-1",
+            toolName: "execute_command",
+            toolUseId: "toolu_cline",
+            source: "cline"
+        ))
+
+        XCTAssertEqual(appState.sessions["cline-1"]?.status, .idle)
+        XCTAssertNil(appState.sessions["cline-1"]?.currentTool)
+        XCTAssertEqual(appState.activeSessionCount, 0)
+    }
+
     // MARK: - Backfill from cache
 
     func testEnrichBackfillsMissingToolNameFromCache() throws {

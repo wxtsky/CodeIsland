@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# Ensure Xcode.app toolchain is used even if xcode-select points at CLT
+if [ -d /Applications/Xcode.app/Contents/Developer ]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
 APP_NAME="CodeIsland"
 BUILD_DIR=".build/release"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -114,6 +119,7 @@ build_mac() {
         --compile "$APP_BUNDLE/Contents/Resources" \
         "$ICON_CATALOG" \
         "$ICON_SOURCE"
+    cp "Sources/CodeIsland/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
     # Copy SPM resource bundles into Contents/Resources/ (required for code signing)
     for bundle in .build/*/release/*.bundle; do

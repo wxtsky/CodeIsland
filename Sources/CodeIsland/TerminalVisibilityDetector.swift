@@ -15,6 +15,8 @@ import CodeIslandCore
 /// - Ghostty: CWD match via System Events window title
 /// - Terminal.app: TTY match on selected tab
 /// - WezTerm: CLI pane query by TTY/CWD
+/// - Kaku: same shape as WezTerm (it's a fork)
+/// - Zellij: active pane id via `zellij action list-panes --json`
 /// - kitty: CLI window query by ID/CWD
 /// - tmux: active pane match
 /// - Others: falls back to app-level only
@@ -26,6 +28,10 @@ struct TerminalVisibilityDetector {
     /// Safe to call from the main thread — no AppleScript or subprocess calls.
     static func isTerminalFrontmostForSession(_ session: SessionSnapshot) -> Bool {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return false }
+
+        if isGhosttySessionVisibleInAnyWindow(session) {
+            return true
+        }
 
         if let termBundleId = session.termBundleId?.lowercased(),
            !termBundleId.isEmpty {
@@ -72,6 +78,12 @@ struct TerminalVisibilityDetector {
             return true
         }
 
+        // Zellij multiplexer takes priority: it nests inside another terminal, so its pane
+        // identity is what determines visibility regardless of the outer terminal app.
+        if let zellijPane = session.zellijPaneId, !zellijPane.isEmpty {
+            return isZellijPaneActive(paneId: zellijPane, sessionName: session.zellijSessionName)
+        }
+
         // tmux takes priority: if session runs in a tmux pane, check that pane
         // regardless of which terminal app wraps tmux (iTerm2, Ghostty, etc.)
         if let pane = session.tmuxPane, !pane.isEmpty {
@@ -90,6 +102,9 @@ struct TerminalVisibilityDetector {
         if bid == "com.apple.terminal" {
             return isTerminalAppTabActive(session)
         }
+        if bid == "fun.tw93.kaku" {
+            return isKakuTabActive(session)
+        }
         if bid.contains("wezterm") {
             return isWezTermTabActive(session)
         }
@@ -104,6 +119,7 @@ struct TerminalVisibilityDetector {
                 .replacingOccurrences(of: "apple_", with: "")
             if lower.contains("iterm") { return isITermSessionActive(session) }
             if lower == "ghostty" { return isGhosttyTabActive(session) }
+            if lower == "kaku" { return isKakuTabActive(session) }
             if lower.contains("wezterm") || lower.contains("wez") { return isWezTermTabActive(session) }
             if lower.contains("kitty") { return isKittyWindowActive(session) }
             // Don't match "terminal" here — Warp sets TERM_PROGRAM=Apple_Terminal
@@ -111,6 +127,59 @@ struct TerminalVisibilityDetector {
 
         // Unknown terminal — can't determine tab, prefer showing notification
         return false
+    }
+
+    /// Ghostty Quick Terminal can be visible while macOS still reports another app
+    /// as frontmost. Treat a visible matching Ghostty window as "already in view"
+    /// so smart-suppress does not pop approval/completion UI over the user's terminal.
+    private static func isGhosttySessionVisibleInAnyWindow(_ session: SessionSnapshot) -> Bool {
+        let bid = session.termBundleId?.lowercased() ?? ""
+        let term = session.termApp?.lowercased() ?? ""
+        guard bid.contains("ghostty") || term == "ghostty" || term == "xterm-ghostty" else {
+            return false
+        }
+
+        guard let cwd = session.cwd, !cwd.isEmpty else { return false }
+        let dirName = (cwd as NSString).lastPathComponent
+        let sourceKeyword = session.source
+        var cwdVariants = [cwd]
+        let home = NSHomeDirectory()
+        if cwd == home {
+            cwdVariants.append("~")
+        } else if cwd.hasPrefix(home + "/") {
+            cwdVariants.append("~" + String(cwd.dropFirst(home.count)))
+        }
+
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return false
+        }
+
+        return windowList.contains { window in
+            guard let owner = window[kCGWindowOwnerName as String] as? String,
+                  owner.lowercased().contains("ghostty"),
+                  let layer = window[kCGWindowLayer as String] as? Int,
+                  layer == 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+                  rect.width > 20,
+                  rect.height > 20 else {
+                return false
+            }
+            let title = (window[kCGWindowName as String] as? String ?? "").lowercased()
+            guard !title.isEmpty else { return false }
+            let lowerDir = dirName.lowercased()
+            let lowerSource = sourceKeyword.lowercased()
+            if !lowerSource.isEmpty, !title.contains(lowerSource) {
+                return false
+            }
+            if title.contains(lowerDir) {
+                return true
+            }
+            return cwdVariants.contains { title.contains($0.lowercased()) }
+        }
     }
 
     // MARK: - iTerm2
@@ -180,30 +249,110 @@ struct TerminalVisibilityDetector {
         return false
     }
 
-    // MARK: - WezTerm
+    // MARK: - WezTerm-family (WezTerm + Kaku)
 
-    /// Check if WezTerm's active pane matches by TTY or CWD.
+    /// Check if WezTerm's active pane matches by pane id, TTY, or CWD.
     private static func isWezTermTabActive(_ session: SessionSnapshot) -> Bool {
-        guard let bin = findBinary("wezterm") else { return false }
+        isWeztermFamilyTabActive(
+            session: session,
+            cliName: "wezterm",
+            extraBinaryPaths: [
+                "/Applications/WezTerm.app/Contents/MacOS/wezterm",
+                NSHomeDirectory() + "/Applications/WezTerm.app/Contents/MacOS/wezterm",
+            ]
+        )
+    }
+
+    /// Check if Kaku's active pane matches. Kaku is a WezTerm fork (bundle id `fun.tw93.kaku`)
+    /// that exposes the same `cli list --format json` shape.
+    private static func isKakuTabActive(_ session: SessionSnapshot) -> Bool {
+        isWeztermFamilyTabActive(
+            session: session,
+            cliName: "kaku",
+            extraBinaryPaths: [
+                "/Applications/Kaku.app/Contents/MacOS/kaku",
+                NSHomeDirectory() + "/Applications/Kaku.app/Contents/MacOS/kaku",
+            ]
+        )
+    }
+
+    /// Shared WezTerm-family active-pane detection. Match precedence:
+    ///   1. `weztermPaneId` (captured by bridge from `WEZTERM_PANE` env) — exact id match
+    ///   2. cliPid-resolved/session TTY → pane tty_name
+    ///   3. session CWD → pane cwd (with `file://` prefix tolerance)
+    private static func isWeztermFamilyTabActive(
+        session: SessionSnapshot,
+        cliName: String,
+        extraBinaryPaths: [String]
+    ) -> Bool {
+        guard let bin = findBinary(cliName, extraPaths: extraBinaryPaths) else { return false }
         guard let json = runProcess(bin, args: ["cli", "list", "--format", "json"]),
               let panes = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return false }
 
-        // Find which pane is active
         guard let activePane = panes.first(where: { ($0["is_active"] as? Bool) == true }) else { return false }
 
-        // Match by TTY (precise — if available, trust it exclusively)
-        if let tty = session.ttyPath, !tty.isEmpty {
-            if let paneTty = activePane["tty_name"] as? String {
-                return paneTty == tty
-            }
+        // 1) Exact pane id match (most precise — survives multi-tab renames)
+        if let pid = session.weztermPaneId,
+           let paneIdInt = Int(pid),
+           let activePaneId = activePane["pane_id"] as? Int {
+            return paneIdInt == activePaneId
         }
 
-        // No TTY — fallback to CWD
+        // 2) TTY match. Prefer ps-resolved TTY when hook capture only saw /dev/tty.
+        let processTty = session.cliPid.flatMap(ProcessRunner.ttyForPid)
+        let candidateTtys = [processTty, session.ttyPath]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty && $0 != "/dev/tty" }
+        if let paneTty = activePane["tty_name"] as? String,
+           candidateTtys.contains(paneTty) {
+            return true
+        }
+
+        // 3) CWD match (file:// tolerant)
         if let cwd = session.cwd,
            let paneCwd = activePane["cwd"] as? String {
             if paneCwd == cwd || paneCwd == "file://" + cwd { return true }
         }
 
+        return false
+    }
+
+    // MARK: - Zellij
+
+    /// Check if the given Zellij pane is the currently focused pane in its tab.
+    /// Strategy: query `zellij action list-panes --json --tab` for the pane's tab,
+    /// then match against the pane that has `is_focused == true`.
+    private static func isZellijPaneActive(paneId: String, sessionName: String?) -> Bool {
+        guard let bin = findBinary("zellij", extraPaths: [
+            NSHomeDirectory() + "/.local/bin/zellij",
+        ]) else { return false }
+
+        // ZELLIJ_PANE_ID may be "N" or "terminal_N" — see TerminalActivator.parseZellijPaneId.
+        guard let paneIdInt = TerminalActivator.parseZellijPaneId(paneId) else { return false }
+
+        var args: [String] = []
+        if let sessionName, !sessionName.isEmpty {
+            args += ["--session", sessionName]
+        }
+        args += ["action", "list-panes", "--json", "--tab"]
+
+        guard let listJSON = runProcess(bin, args: args) else { return false }
+
+        // Zellij prints either `[ {pane}, ... ]` or `{tabIndex: [ {pane}, ... ]}` depending
+        // on version; flatten to a single pane list.
+        let parsed = try? JSONSerialization.jsonObject(with: listJSON)
+        let panes: [[String: Any]] = {
+            if let arr = parsed as? [[String: Any]] { return arr }
+            if let dict = parsed as? [String: [[String: Any]]] {
+                return dict.values.flatMap { $0 }
+            }
+            return []
+        }()
+
+        // Locate our pane by id, check its is_focused (or fallback to active).
+        guard let pane = panes.first(where: { ($0["id"] as? Int) == paneIdInt }) else { return false }
+        if let focused = pane["is_focused"] as? Bool { return focused }
+        if let active = pane["is_active"] as? Bool { return active }
         return false
     }
 
@@ -278,8 +427,8 @@ struct TerminalVisibilityDetector {
         return result.stringValue
     }
 
-    private static func findBinary(_ name: String) -> String? {
-        let paths = [
+    private static func findBinary(_ name: String, extraPaths: [String] = []) -> String? {
+        let paths = extraPaths + [
             "/opt/homebrew/bin/\(name)",
             "/usr/local/bin/\(name)",
             "/usr/bin/\(name)",

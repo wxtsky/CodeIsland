@@ -5,6 +5,7 @@ import SwiftUI
 class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+    weak var appState: AppState?
 
     private var closeObserver: NSObjectProtocol?
 
@@ -27,7 +28,7 @@ class SettingsWindowController {
             return
         }
 
-        let settingsView = SettingsView()
+        let settingsView = SettingsView(appState: appState)
         let hostingView = NSHostingView(rootView: settingsView)
 
         let screen = NSScreen.main ?? NSScreen.screens.first

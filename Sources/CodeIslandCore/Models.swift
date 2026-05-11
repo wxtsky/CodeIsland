@@ -170,7 +170,7 @@ public struct HookEvent {
     public var toolDescription: String? {
         if let input = toolInput {
             switch toolName {
-            case "Bash":
+            case "Bash", "execute_command":
                 let desc = HookEvent.normalizedMultilineString(input["description"])
                 let cmd = HookEvent.normalizedMultilineString(input["command"])
                 if let desc, let cmd {
@@ -181,7 +181,7 @@ public struct HookEvent {
                 }
                 if let desc { return desc }
                 if let cmd { return cmd }
-            case "Read":
+            case "Read", "read_file":
                 if let fp = input["file_path"] as? String {
                     let name = (fp as NSString).lastPathComponent
                     if let offset = input["offset"] as? Int {
@@ -189,15 +189,15 @@ public struct HookEvent {
                     }
                     return name
                 }
-            case "Edit":
+            case "Edit", "apply_diff":
                 if let fp = input["file_path"] as? String {
                     return (fp as NSString).lastPathComponent
                 }
-            case "Write":
+            case "Write", "write_to_file":
                 if let fp = input["file_path"] as? String {
                     return (fp as NSString).lastPathComponent
                 }
-            case "Grep":
+            case "Grep", "search_files":
                 if let pattern = input["pattern"] as? String {
                     let path = (input["path"] as? String).map { " in \(($0 as NSString).lastPathComponent)" } ?? ""
                     return "\(pattern)\(path)"

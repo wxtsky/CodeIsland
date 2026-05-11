@@ -33,6 +33,15 @@ public struct SessionSnapshot: Sendable {
         "kimi",
         "pi",
         "kiro",
+        "cline",
+    ]
+
+    public static let ideCompletionSources: Set<String> = [
+        "cursor",
+        "trae",
+        "traecn",
+        "codebuddy",
+        "codybuddycn",
     ]
 
     public var status: AgentStatus = .idle
@@ -65,10 +74,17 @@ public struct SessionSnapshot: Sendable {
     public var termBundleId: String?    // __CFBundleIdentifier for precise terminal ID
     public var cmuxSurfaceId: String?   // cmux surface UUID (from CMUX_SURFACE_ID env var)
     public var cmuxWorkspaceId: String? // cmux workspace UUID (from CMUX_WORKSPACE_ID env var)
+    public var zellijPaneId: String?    // Zellij pane id (numeric string) from ZELLIJ_PANE_ID env var
+    public var zellijSessionName: String? // Zellij session name from ZELLIJ_SESSION_NAME env var
+    public var weztermPaneId: String?   // WezTerm / Kaku pane id (numeric string) from WEZTERM_PANE env var
     public var cliPid: pid_t?            // CLI process PID (from bridge _ppid)
     public var cliStartTime: Date?       // Start time of the tracked CLI PID (guards PID reuse)
     public var source: String = "claude" // "claude" or "codex"
     public var interrupted: Bool = false
+    /// Cline-specific: true after TaskComplete/TaskCancel until the next TaskStart/TaskResume.
+    /// Cline runs hooks asynchronously (background bridge), so events from prior tools can
+    /// arrive after a TaskCancel and revive the session. This flag drops those stale events.
+    public var taskRoundEnded: Bool = false
     public var sessionTitle: String?
     public var sessionTitleSource: SessionTitleSource?
     public var providerSessionId: String?
@@ -284,6 +300,7 @@ public struct SessionSnapshot: Sendable {
         case "kimi": return "Kimi Code CLI"
         case "pi": return "pi"
         case "kiro": return "Kiro"
+        case "cline": return "Cline"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {
                 return customName
@@ -518,9 +535,25 @@ public func reduceEvent(
         sessions[sessionId] = SessionSnapshot()
     }
 
-    // Always update metadata from every event
-    extractMetadata(into: &sessions, sessionId: sessionId, event: event)
+    // Always update metadata from parent events. Subagent events are routed
+    // through the parent session ID, so applying their metadata here would
+    // overwrite the parent's model/transcript/title with child-session values.
+    if event.agentId == nil {
+        extractMetadata(into: &sessions, sessionId: sessionId, event: event)
+    }
     let isRemote = sessions[sessionId]?.isRemote == true
+
+    // Cline ships hooks via shell scripts that spawn the bridge in the background,
+    // so events for the same session can arrive out of order. Once a task round
+    // ends (TaskComplete/TaskCancel), drop any in-flight tool events that race in
+    // afterwards — they would otherwise revive the session into .processing/.running.
+    // The next TaskStart (SessionStart) or TaskResume (UserPromptSubmit) clears the flag.
+    if sessions[sessionId]?.source == "cline",
+       sessions[sessionId]?.taskRoundEnded == true,
+       eventName != "SessionStart",
+       eventName != "UserPromptSubmit" {
+        return effects
+    }
 
     // Route subagent-specific events
     if let agentId = event.agentId {
@@ -544,6 +577,7 @@ public func reduceEvent(
     switch eventName {
     case "UserPromptSubmit":
         sessions[sessionId]?.interrupted = false
+        sessions[sessionId]?.taskRoundEnded = false
         sessions[sessionId]?.status = .processing
         sessions[sessionId]?.currentTool = nil
         sessions[sessionId]?.toolDescription = nil
@@ -620,7 +654,39 @@ public func reduceEvent(
             sessions[sessionId]?.lastAssistantMessage = text
             sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: text))
         }
+        if let source = sessions[sessionId]?.source,
+           SessionSnapshot.ideCompletionSources.contains(source) {
+            sessions[sessionId]?.status = .idle
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+            effects.append(.enqueueCompletion(sessionId: sessionId))
+        } else {
+            sessions[sessionId]?.status = .processing
+        }
+    case "TaskRoundComplete":
+        sessions[sessionId]?.interrupted = (event.eventName == "TaskCancel")
         sessions[sessionId]?.status = .processing
+        sessions[sessionId]?.currentTool = nil
+        sessions[sessionId]?.toolDescription = nil
+        let assistantMsg = firstStringFromEvent(
+            event,
+            keys: ["last_assistant_message", "text", "message", "summary"],
+            includeNested: true
+        )
+        if let msg = assistantMsg {
+            sessions[sessionId]?.lastAssistantMessage = msg
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
+        } else if sessions[sessionId]?.lastAssistantMessage == nil,
+                  sessions[sessionId]?.recentMessages.last?.isUser == true {
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: "[回复完成]"))
+        }
+        // Cline tasks are single-round — treat completion/cancellation as session end,
+        // and latch a flag so out-of-order in-flight tool events don't revive it.
+        if sessions[sessionId]?.source == "cline" {
+            sessions[sessionId]?.status = .idle
+            sessions[sessionId]?.taskRoundEnded = true
+        }
+        effects.append(.enqueueCompletion(sessionId: sessionId))
     case "Stop":
         // Detect ESC/Ctrl+C interruption
         let stopReason = event.rawJSON["stop_reason"] as? String ?? ""
@@ -681,6 +747,15 @@ public func reduceEvent(
         }
         if let workspace = event.rawJSON["_cmux_workspace_id"] as? String, !workspace.isEmpty {
             sessions[sessionId]?.cmuxWorkspaceId = workspace
+        }
+        if let zellijPane = event.rawJSON["_zellij_pane_id"] as? String, !zellijPane.isEmpty {
+            sessions[sessionId]?.zellijPaneId = zellijPane
+        }
+        if let zellijSession = event.rawJSON["_zellij_session_name"] as? String, !zellijSession.isEmpty {
+            sessions[sessionId]?.zellijSessionName = zellijSession
+        }
+        if let weztermPane = event.rawJSON["_wezterm_pane"] as? String, !weztermPane.isEmpty {
+            sessions[sessionId]?.weztermPaneId = weztermPane
         }
         if let remoteHostId = event.rawJSON["_remote_host_id"] as? String, !remoteHostId.isEmpty {
             sessions[sessionId]?.remoteHostId = remoteHostId
@@ -842,6 +917,17 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     if let workspace = event.rawJSON["_cmux_workspace_id"] as? String, !workspace.isEmpty {
         sessions[sessionId]?.cmuxWorkspaceId = workspace
     }
+    // Zellij multiplexer pane / session (injected by bridge from ZELLIJ_* env vars)
+    if let zellijPane = event.rawJSON["_zellij_pane_id"] as? String, !zellijPane.isEmpty {
+        sessions[sessionId]?.zellijPaneId = zellijPane
+    }
+    if let zellijSession = event.rawJSON["_zellij_session_name"] as? String, !zellijSession.isEmpty {
+        sessions[sessionId]?.zellijSessionName = zellijSession
+    }
+    // WezTerm / Kaku pane id (injected by bridge from WEZTERM_PANE env var)
+    if let weztermPane = event.rawJSON["_wezterm_pane"] as? String, !weztermPane.isEmpty {
+        sessions[sessionId]?.weztermPaneId = weztermPane
+    }
     if let remoteHostId = event.rawJSON["_remote_host_id"] as? String, !remoteHostId.isEmpty {
         sessions[sessionId]?.remoteHostId = remoteHostId
     }
@@ -888,6 +974,24 @@ private func firstStringFromEvent(_ event: HookEvent, keys: [String], includeNes
     return nil
 }
 
+private func subagentType(from event: HookEvent) -> String {
+    firstStringFromEvent(event, keys: ["agent_type", "agentType"], includeNested: false) ?? "Agent"
+}
+
+private func ensureSubagent(
+    sessions: inout [String: SessionSnapshot],
+    sessionId: String,
+    agentId: String,
+    event: HookEvent
+) {
+    if sessions[sessionId]?.subagents[agentId] == nil {
+        sessions[sessionId]?.subagents[agentId] = SubagentState(
+            agentId: agentId,
+            agentType: subagentType(from: event)
+        )
+    }
+}
+
 /// Handle subagent events. Returns true if the event was consumed.
 private func handleSubagentEvent(
     sessions: inout [String: SessionSnapshot],
@@ -899,8 +1003,8 @@ private func handleSubagentEvent(
     effects: inout [SideEffect]
 ) -> Bool {
     switch eventName {
-    case "SubagentStart":
-        let agentType = event.rawJSON["agent_type"] as? String ?? "Agent"
+    case "SubagentStart", "SessionStart":
+        let agentType = subagentType(from: event)
         sessions[sessionId]?.subagents[agentId] = SubagentState(
             agentId: agentId,
             agentType: agentType
@@ -915,7 +1019,21 @@ private func handleSubagentEvent(
         effects.append(.setActiveSession(sessionId: sessionId))
         return true
 
-    case "SubagentStop":
+    case "UserPromptSubmit":
+        ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event)
+        sessions[sessionId]?.subagents[agentId]?.status = .processing
+        sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
+        if sessions[sessionId]?.status != .waitingApproval && sessions[sessionId]?.status != .waitingQuestion {
+            let agentType = sessions[sessionId]?.subagents[agentId]?.agentType
+            sessions[sessionId]?.status = .running
+            sessions[sessionId]?.currentTool = "Agent"
+            sessions[sessionId]?.toolDescription = agentType
+        }
+        sessions[sessionId]?.lastActivity = Date()
+        effects.append(.setActiveSession(sessionId: sessionId))
+        return true
+
+    case "SubagentStop", "Stop", "SessionEnd":
         sessions[sessionId]?.subagents.removeValue(forKey: agentId)
         // If no more subagents, revert parent to processing (waiting for main thread to continue)
         if sessions[sessionId]?.subagents.isEmpty == true {
@@ -929,6 +1047,7 @@ private func handleSubagentEvent(
         return true
 
     case "PreToolUse":
+        ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event)
         sessions[sessionId]?.subagents[agentId]?.status = .running
         sessions[sessionId]?.subagents[agentId]?.currentTool = event.toolName
         sessions[sessionId]?.subagents[agentId]?.toolDescription = event.toolDescription
@@ -941,6 +1060,7 @@ private func handleSubagentEvent(
         return true
 
     case "PostToolUse":
+        ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event)
         if let tool = sessions[sessionId]?.subagents[agentId]?.currentTool {
             let agentType = sessions[sessionId]?.subagents[agentId]?.agentType
             let desc = sessions[sessionId]?.subagents[agentId]?.toolDescription
@@ -954,6 +1074,7 @@ private func handleSubagentEvent(
         return true
 
     case "PostToolUseFailure":
+        ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event)
         if let tool = sessions[sessionId]?.subagents[agentId]?.currentTool {
             let agentType = sessions[sessionId]?.subagents[agentId]?.agentType
             let desc = sessions[sessionId]?.subagents[agentId]?.toolDescription

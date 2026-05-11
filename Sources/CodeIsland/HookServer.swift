@@ -213,6 +213,23 @@ class HookServer {
         return nil
     }
 
+    private static func nonEmptyString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : string
+    }
+
+    private static func rawSessionId(from raw: [String: Any]) -> String? {
+        nonEmptyString(raw["session_id"]) ?? nonEmptyString(raw["sessionId"])
+    }
+
+    private static func rawEventName(from raw: [String: Any]) -> String? {
+        nonEmptyString(raw["hook_event_name"])
+            ?? nonEmptyString(raw["hookEventName"])
+            ?? nonEmptyString(raw["event_name"])
+            ?? nonEmptyString(raw["eventName"])
+    }
+
     static func routeKind(for event: HookEvent) -> RouteKind {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
         if normalizedEventName == "PermissionRequest" {
@@ -224,27 +241,68 @@ class HookServer {
         return .event
     }
 
-    private static let pluginMarkerBytes = Data("_via_plugin".utf8)
+    nonisolated static func shouldDeferPermissionRequestToProvider(_ event: HookEvent) -> Bool {
+        guard EventNormalizer.normalize(event.eventName) == "PermissionRequest",
+              event.toolName != "AskUserQuestion" else {
+            return false
+        }
+        return CodexPermissionRules.shouldDeferToCodexAutoReview(for: event)
+    }
 
-    private func processRequest(data: Data, connection: NWConnection) {
-        // Plugin session mode pre-filter (#123): events that arrived through a
-        // plugin proxy (bridge marks them with `_via_plugin`) can be merged
-        // into the matching main session, hidden, or kept separate per the
-        // user's setting. "separate" preserves prior behavior.
-        //
-        // Cheap byte probe first — most events don't carry `_via_plugin`,
-        // and JSONSerialization on every PostToolUse on the main thread is
-        // not free.
-        var processedData = data
-        if data.range(of: Self.pluginMarkerBytes) != nil,
-           let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           (raw["_via_plugin"] as? Bool) == true {
-            let mode = UserDefaults.standard.string(forKey: SettingsKey.pluginSessionMode)
-                ?? SettingsDefaults.pluginSessionMode
+    private static let pluginMarkerBytes = Data("_via_plugin".utf8)
+    private static let sourceMarkerBytes = Data(#""_source""#.utf8)
+    private static let codexMarkerBytes = Data("codex".utf8)
+
+    private static func codexSubagentMetadata(from raw: [String: Any]) -> CodexSubagentMetadata? {
+        guard let path = nonEmptyString(raw["transcript_path"]) else { return nil }
+        return AppState.codexSubagentMetadata(inTranscriptPath: path)
+    }
+
+    private func codexNativeSubsessionParentId(from raw: [String: Any]) -> String? {
+        guard (raw["_via_plugin"] as? Bool) != true,
+              SessionSnapshot.normalizedSupportedSource(raw["_source"] as? String) == "codex",
+              let childSessionId = Self.rawSessionId(from: raw) else {
+            return nil
+        }
+
+        if let metadata = Self.codexSubagentMetadata(from: raw),
+           let parentSessionId = appState.findSessionId(providerSessionId: metadata.parentThreadId) {
+            return parentSessionId
+        }
+
+        guard let ppid = Self.pluginPpid(from: raw) else { return nil }
+
+        // Current Codex hook payloads do not expose parent session metadata for
+        // native subagents, but child sessions run inside the same Codex CLI
+        // process as their parent. Require an already-active same-PID Codex
+        // session so a normal follow-up thread in an idle process stays separate.
+        let hasExplicitSubagentMarker = Self.nonEmptyString(raw["agent_id"]) != nil
+        return appState.findSessionId(
+            forSource: "codex",
+            ppid: ppid,
+            excluding: childSessionId,
+            requireActive: !hasExplicitSubagentMarker
+        )
+    }
+
+    private func routeSubsessionPayloadIfNeeded(data: Data) -> (processedData: Data, responseData: Data?) {
+        let mayNeedRouting = data.range(of: Self.pluginMarkerBytes) != nil
+            || (data.range(of: Self.sourceMarkerBytes) != nil && data.range(of: Self.codexMarkerBytes) != nil)
+        guard mayNeedRouting,
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return (data, nil)
+        }
+
+        let mode = UserDefaults.standard.string(forKey: SettingsKey.pluginSessionMode)
+            ?? SettingsDefaults.pluginSessionMode
+        guard mode == "hide" || mode == "merge" else {
+            return (data, nil)
+        }
+
+        if (raw["_via_plugin"] as? Bool) == true {
             switch mode {
             case "hide":
-                sendResponse(connection: connection, data: Self.hiddenPluginResponse(for: raw))
-                return
+                return (data, Self.hiddenPluginResponse(for: raw))
             case "merge":
                 if let source = raw["_source"] as? String,
                    let ppid = Self.pluginPpid(from: raw),
@@ -252,15 +310,63 @@ class HookServer {
                     var rewritten = raw
                     rewritten["session_id"] = mainSessionId
                     if let newData = try? JSONSerialization.data(withJSONObject: rewritten) {
-                        processedData = newData
+                        return (newData, nil)
                     }
                 }
-                // No matching main session → fall through with original data
-                // (acts like "separate" in that case).
             default:
-                break // "separate": no-op
+                break
             }
+            return (data, nil)
         }
+
+        guard let childSessionId = Self.rawSessionId(from: raw) else {
+            return (data, nil)
+        }
+        let codexMetadata = Self.codexSubagentMetadata(from: raw)
+        let parentSessionId = codexNativeSubsessionParentId(from: raw)
+        guard codexMetadata != nil || parentSessionId != nil else {
+            return (data, nil)
+        }
+
+        switch mode {
+        case "hide":
+            return (data, Self.hiddenPluginResponse(for: raw))
+        case "merge":
+            guard let parentSessionId else { return (data, nil) }
+            var rewritten = raw
+            rewritten["session_id"] = parentSessionId
+            rewritten["agent_id"] = Self.nonEmptyString(raw["agent_id"]) ?? childSessionId
+            rewritten["agent_type"] = Self.nonEmptyString(raw["agent_type"])
+                ?? codexMetadata?.agentType
+                ?? "default"
+            rewritten["_codex_subagent"] = true
+            rewritten["_codex_subagent_session_id"] = childSessionId
+            if let eventName = Self.rawEventName(from: raw) {
+                rewritten["_codex_subagent_event"] = EventNormalizer.normalize(eventName)
+            }
+            if let newData = try? JSONSerialization.data(withJSONObject: rewritten) {
+                return (newData, nil)
+            }
+        default:
+            break
+        }
+        return (data, nil)
+    }
+
+    private func processRequest(data: Data, connection: NWConnection) {
+        // Sub-session mode pre-filter (#123, #151): events that arrived through a
+        // plugin proxy (`_via_plugin`) or from a Codex native subagent can be
+        // merged into the matching main session, hidden, or kept separate per
+        // the user's setting. "separate" preserves prior behavior.
+        //
+        // Cheap byte probes first — JSONSerialization on every PostToolUse on
+        // the main thread is not free.
+        let routed = routeSubsessionPayloadIfNeeded(data: data)
+        if let responseData = routed.responseData {
+            sendResponse(connection: connection, data: responseData)
+            return
+        }
+        let processedData = routed.processedData
 
         guard let event = HookEvent(from: processedData) else {
             sendResponse(connection: connection, data: Data("{\"error\":\"parse_failed\"}".utf8))
@@ -340,6 +446,12 @@ class HookServer {
                 }
                 return
             }
+
+            if Self.shouldDeferPermissionRequestToProvider(event) {
+                sendResponse(connection: connection, data: Data("{}".utf8))
+                return
+            }
+
             monitorPeerDisconnect(connection: connection, sessionId: sessionId)
             Task {
                 let responseBody = await withCheckedContinuation { continuation in

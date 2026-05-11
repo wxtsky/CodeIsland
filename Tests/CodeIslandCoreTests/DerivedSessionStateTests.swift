@@ -40,6 +40,58 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(EventNormalizer.normalize("post_compact"), "PostCompact")
     }
 
+    func testNormalizesClineTaskTerminalEvents() {
+        XCTAssertEqual(EventNormalizer.normalize("TaskComplete"), "TaskRoundComplete")
+        XCTAssertEqual(EventNormalizer.normalize("TaskCancel"), "TaskRoundComplete")
+    }
+
+    func testAfterAgentResponseCompletesIDESource() throws {
+        var session = SessionSnapshot()
+        session.source = "cursor"
+        session.status = .running
+        session.currentTool = "Agent"
+        session.toolDescription = "planning"
+
+        var sessions = ["cursor-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "cursor-session",
+            "_source": "cursor",
+            "text": "Done",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["cursor-session"]?.status, .idle)
+        XCTAssertNil(sessions["cursor-session"]?.currentTool)
+        XCTAssertNil(sessions["cursor-session"]?.toolDescription)
+        XCTAssertEqual(sessions["cursor-session"]?.lastAssistantMessage, "Done")
+        XCTAssertEqual(sessions["cursor-session"]?.recentMessages.last?.text, "Done")
+        XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "cursor-session")))
+    }
+
+    func testAfterAgentResponseKeepsCLISourceProcessing() throws {
+        var session = SessionSnapshot()
+        session.source = "claude"
+        session.status = .running
+        session.currentTool = "Agent"
+
+        var sessions = ["cli-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "cli-session",
+            "_source": "claude",
+            "text": "Still thinking",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["cli-session"]?.status, .processing)
+        XCTAssertEqual(sessions["cli-session"]?.currentTool, "Agent")
+        XCTAssertEqual(sessions["cli-session"]?.lastAssistantMessage, "Still thinking")
+        XCTAssertFalse(effects.contains(.enqueueCompletion(sessionId: "cli-session")))
+    }
+
     func testCLIProcessResolverPrefersTraecliBinaryOverShellParent() {
         let pid = CLIProcessResolver.resolvedTrackedPID(
             immediateParentPID: 100,
@@ -98,5 +150,14 @@ final class DerivedSessionStateTests: XCTestCase {
         ])
 
         XCTAssertEqual(source, "codex")
+    }
+
+    private func decode(_ payload: [String: Any]) throws -> HookEvent {
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        guard let event = HookEvent(from: data) else {
+            XCTFail("HookEvent should decode payload: \(payload)")
+            throw NSError(domain: "DerivedSessionStateTests", code: 1)
+        }
+        return event
     }
 }

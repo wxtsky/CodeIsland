@@ -70,6 +70,60 @@ final class ConfigInstallerTests: XCTestCase {
         XCTAssertEqual(remainingHooks.first?["command"] as? String, "~/.claude/hooks/bark-notify.sh")
     }
 
+    func testFlatExternalHooksPassEventFlagToBridge() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("hooks.json").path
+        let cli = CLIConfig(
+            name: "Cursor",
+            source: "cursor",
+            configPath: configPath,
+            configKey: "hooks",
+            format: .flat,
+            events: [("afterAgentResponse", 5, false)]
+        )
+
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+
+        let data = try XCTUnwrap(fm.contents(atPath: configPath))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(root["hooks"] as? [String: Any])
+        let entries = try XCTUnwrap(hooks["afterAgentResponse"] as? [[String: Any]])
+        let command = try XCTUnwrap(entries.first?["command"] as? String)
+        XCTAssertTrue(command.contains("codeisland-bridge --source cursor"))
+        XCTAssertTrue(command.contains("--event afterAgentResponse"))
+    }
+
+    func testTraecliJsonExternalHooksPassEventFlagToBridge() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("hooks.json").path
+        let cli = CLIConfig(
+            name: "Custom TraeCli",
+            source: "traecli",
+            configPath: configPath,
+            configKey: "hooks",
+            format: .traecli,
+            events: [("stop", 5, false)]
+        )
+
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+
+        let data = try XCTUnwrap(fm.contents(atPath: configPath))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try XCTUnwrap(root["hooks"] as? [String: Any])
+        let entries = try XCTUnwrap(hooks["stop"] as? [[String: Any]])
+        let command = try XCTUnwrap(entries.first?["command"] as? String)
+        XCTAssertTrue(command.contains("codeisland-bridge --source traecli"))
+        XCTAssertTrue(command.contains("--event stop"))
+    }
+
     // MARK: - Kimi Code CLI TOML hooks
 
     func testRemoveKimiHooksPreservesNonCodeIslandBlocks() {
@@ -416,8 +470,38 @@ hooks:
         XCTAssertTrue(script.contains("TRAECLI_EVENTS"))
         XCTAssertTrue(script.contains("\"session_start\""))
         XCTAssertTrue(script.contains("\"session_end\""))
+        // Codex renamed the feature flag from codex_hooks to hooks.
+        XCTAssertTrue(script.contains("\"hooks = true\""))
+        XCTAssertFalse(script.contains("\"codex_hooks = true\""))
         // Ensure remote TraeCli YAML merge has indentation repair to avoid invalid YAML.
         XCTAssertTrue(script.contains("def _normalize_traecli_hooks_list_indentation"))
+    }
+
+    func testRemoteInstallerConfigureScriptInstallsOpencodePlugin() {
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host)
+
+        XCTAssertTrue(script.contains("def install_opencode():"))
+        XCTAssertTrue(script.contains("codeisland-opencode-remote.js"))
+        XCTAssertTrue(script.contains(#""OpenCode ok""#))
+        XCTAssertTrue(script.contains("install_opencode()"))
+        XCTAssertTrue(script.contains(#""file://" + str(plugin_path)"#))
+    }
+
+    func testRemoteOpencodePluginCarriesRemoteHostIdentity() throws {
+        let host = RemoteHost(id: #"host-"quoted""#, name: "devbox\nwest", host: "example.com")
+        let source = """
+        const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";
+        const REMOTE_HOST_ID = process.env.CODEISLAND_REMOTE_HOST_ID || "";
+        const REMOTE_HOST_NAME = process.env.CODEISLAND_REMOTE_HOST_NAME || "";
+        """
+
+        let plugin = RemoteInstaller.remoteOpencodePluginForInstall(source: source, host: host)
+
+        XCTAssertTrue(plugin.contains(#"const SOCKET_PATH = "/tmp/codeisland.sock";"#))
+        XCTAssertTrue(plugin.contains(#"const REMOTE_HOST_ID = "host-\"quoted\"";"#))
+        XCTAssertTrue(plugin.contains(#"const REMOTE_HOST_NAME = "devbox\nwest";"#))
     }
 
     func testRemoteTraecliPermissionRequestRoutesAsPermissionAndUsesRemoteSessionNamespace() async throws {
@@ -437,6 +521,27 @@ hooks:
         let event = try XCTUnwrap(HookEvent(from: data))
 
         XCTAssertEqual(event.sessionId, "remote:host-1:sess-123")
+        let kind = await MainActor.run { HookServer.routeKind(for: event) }
+        XCTAssertEqual(kind, .permission)
+    }
+
+    func testRemoteOpencodePermissionRequestRoutesWithRemoteNamespace() async throws {
+        let payload: [String: Any] = [
+            "hook_event_name": "PermissionRequest",
+            "session_id": "opencode-sess-123",
+            "_source": "opencode",
+            "_remote_host_id": "host-1",
+            "_remote_host_name": "devbox",
+            "tool_name": "Bash",
+            "tool_input": [
+                "command": "ls"
+            ],
+            "_opencode_request_id": "req-1",
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        XCTAssertEqual(event.sessionId, "remote:host-1:opencode-sess-123")
         let kind = await MainActor.run { HookServer.routeKind(for: event) }
         XCTAssertEqual(kind, .permission)
     }

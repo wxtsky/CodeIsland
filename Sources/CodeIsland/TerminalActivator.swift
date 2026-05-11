@@ -10,10 +10,25 @@ struct TerminalActivator {
         ("Ghostty", "com.mitchellh.ghostty"),
         ("iTerm2", "com.googlecode.iterm2"),
         ("WezTerm", "com.github.wez.wezterm"),
+        ("Kaku", "fun.tw93.kaku"),
         ("kitty", "net.kovidgoyal.kitty"),
         ("Alacritty", "org.alacritty"),
         ("Warp", "dev.warp.Warp-Stable"),
         ("Terminal", "com.apple.Terminal"),
+    ]
+
+    /// Bundle IDs that commonly host Zellij as a child multiplexer process.
+    /// When we detect a Zellij session, we activate the parent terminal first,
+    /// then drive `zellij action go-to-tab` inside it to focus the right pane.
+    private static let zellijParentBundleIDs: [String] = [
+        "com.mitchellh.ghostty",
+        "com.googlecode.iterm2",
+        "com.github.wez.wezterm",
+        "fun.tw93.kaku",
+        "net.kovidgoyal.kitty",
+        "dev.warp.Warp-Stable",
+        "com.apple.Terminal",
+        "com.cmuxterm.app",
     ]
 
     /// Fallback: source-based app jump for CLIs with NO terminal mode.
@@ -109,6 +124,19 @@ struct TerminalActivator {
         }
         let lower = termApp.lowercased()
 
+        // --- Zellij multiplexer: precise pane → tab focus, then activate parent terminal ---
+        // Must come before tmux/cmux/iTerm/Ghostty branches: Zellij runs *inside* one of
+        // those terminals, so termApp/termBundleId points to the host shell. The presence
+        // of zellijPaneId is what disambiguates "running inside Zellij" from "plain shell".
+        if let zellijPane = session.zellijPaneId, !zellijPane.isEmpty {
+            activateZellij(
+                paneId: zellijPane,
+                sessionName: session.zellijSessionName,
+                preferredParentBundleId: session.termBundleId
+            )
+            return
+        }
+
         // --- tmux: switch pane first, then fall through to terminal-specific activation ---
         if let pane = session.tmuxPane, !pane.isEmpty {
             activateTmux(pane: pane, tmuxEnv: session.tmuxEnv)
@@ -166,8 +194,15 @@ struct TerminalActivator {
             return
         }
 
+        // Kaku is a WezTerm fork: same `cli list` JSON shape, different binary + bundle id.
+        // Match by bundle id (most reliable) or termApp string fallback.
+        if session.termBundleId == "fun.tw93.kaku" || lower == "kaku" {
+            activateKaku(ttyPath: effectiveTty, cwd: session.cwd, paneId: session.weztermPaneId, cliPid: session.cliPid)
+            return
+        }
+
         if lower.contains("wezterm") || lower.contains("wez") {
-            activateWezTerm(ttyPath: effectiveTty, cwd: session.cwd)
+            activateWezTerm(ttyPath: effectiveTty, cwd: session.cwd, paneId: session.weztermPaneId, cliPid: session.cliPid)
             return
         }
 
@@ -644,28 +679,95 @@ struct TerminalActivator {
 
     // MARK: - WezTerm (CLI: wezterm cli list + activate-tab)
 
-    private static func activateWezTerm(ttyPath: String?, cwd: String?) {
-        bringToFront("WezTerm")
-        guard let bin = findBinary("wezterm") else { return }
+    private static func activateWezTerm(ttyPath: String?, cwd: String?, paneId: String? = nil, cliPid: pid_t? = nil) {
+        activateWeztermFamily(
+            displayName: "WezTerm",
+            cliName: "wezterm",
+            bundleCandidates: [
+                "/Applications/WezTerm.app/Contents/MacOS/wezterm",
+                NSHomeDirectory() + "/Applications/WezTerm.app/Contents/MacOS/wezterm",
+            ],
+            ttyPath: ttyPath,
+            cwd: cwd,
+            paneId: paneId,
+            cliPid: cliPid
+        )
+    }
+
+    // MARK: - Kaku (WezTerm fork, bundle id fun.tw93.kaku, CLI: `kaku cli ...`)
+
+    private static func activateKaku(ttyPath: String?, cwd: String?, paneId: String? = nil, cliPid: pid_t? = nil) {
+        activateWeztermFamily(
+            displayName: "Kaku",
+            cliName: "kaku",
+            bundleCandidates: [
+                "/Applications/Kaku.app/Contents/MacOS/kaku",
+                NSHomeDirectory() + "/Applications/Kaku.app/Contents/MacOS/kaku",
+            ],
+            ttyPath: ttyPath,
+            cwd: cwd,
+            paneId: paneId,
+            cliPid: cliPid
+        )
+    }
+
+    /// Shared WezTerm-family pane activation: bring app to front, then ask its CLI
+    /// to focus the matching pane. Match precedence: explicit paneId → TTY → CWD.
+    private static func activateWeztermFamily(
+        displayName: String,
+        cliName: String,
+        bundleCandidates: [String],
+        ttyPath: String?,
+        cwd: String?,
+        paneId: String?,
+        cliPid: pid_t?
+    ) {
+        bringToFront(displayName)
+        guard let bin = findBinary(cliName, extraPaths: bundleCandidates) else { return }
         DispatchQueue.global(qos: .userInitiated).async {
+            // Fast path: bridge captured WEZTERM_PANE — activate that pane directly without listing.
+            if let pid = paneId,
+               !pid.isEmpty,
+               Int(pid) != nil {
+                if runProcess(bin, args: ["cli", "activate-pane", "--pane-id", pid]) != nil {
+                    return
+                }
+                // Fall through to list-based matching if activate-pane failed (older CLI etc.)
+            }
+
             guard let json = runProcess(bin, args: ["cli", "list", "--format", "json"]),
                   let panes = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return }
 
-            // Find tab: prefer TTY match, fallback to CWD
-            var tabId: Int?
-            if let tty = ttyPath {
-                tabId = panes.first(where: { ($0["tty_name"] as? String) == tty })?["tab_id"] as? Int
+            // Find pane: prefer process-resolved TTY, then captured TTY, then CWD.
+            var matchedPaneId: Int?
+            var matchedTabId: Int?
+            let processTty = cliPid.flatMap(ProcessRunner.ttyForPid)
+            let candidateTtys = [processTty, ttyPath]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty && $0 != "/dev/tty" }
+            for tty in candidateTtys where matchedPaneId == nil && matchedTabId == nil {
+                if let pane = panes.first(where: { ($0["tty_name"] as? String) == tty }) {
+                    matchedPaneId = pane["pane_id"] as? Int
+                    matchedTabId = pane["tab_id"] as? Int
+                }
             }
-            if tabId == nil, let cwd = cwd {
+            if matchedPaneId == nil, matchedTabId == nil, let cwd = cwd {
                 let cwdUrl = "file://" + cwd
-                tabId = panes.first(where: {
+                if let pane = panes.first(where: {
                     guard let paneCwd = $0["cwd"] as? String else { return false }
                     return paneCwd == cwdUrl || paneCwd == cwd
-                })?["tab_id"] as? Int
+                }) {
+                    matchedPaneId = pane["pane_id"] as? Int
+                    matchedTabId = pane["tab_id"] as? Int
+                }
             }
 
-            if let id = tabId {
-                _ = runProcess(bin, args: ["cli", "activate-tab", "--tab-id", "\(id)"])
+            // Prefer pane-level activation (more precise — picks the right pane within a split tab),
+            // fall back to tab-level if pane id wasn't reported.
+            if let pid = matchedPaneId {
+                _ = runProcess(bin, args: ["cli", "activate-pane", "--pane-id", "\(pid)"])
+            } else if let tid = matchedTabId {
+                _ = runProcess(bin, args: ["cli", "activate-tab", "--tab-id", "\(tid)"])
             }
         }
     }
@@ -693,14 +795,119 @@ struct TerminalActivator {
         }
     }
 
-    // MARK: - tmux (CLI: tmux select-window/select-pane)
+    // MARK: - tmux (CLI: tmux switch-client + select-window/select-pane)
 
     private static func activateTmux(pane: String, tmuxEnv: String? = nil) {
         guard let bin = findBinary("tmux") else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            // Switch to the window containing the pane, then select the pane
+            // 1) Switch the attached client to the target session — needed when the user is
+            //    currently attached to session A but the agent runs in session B. tmux derives
+            //    the session from the pane target, so "switch-client -t <pane>" is sufficient.
+            //    Failure is fine (e.g. no client attached, or pane belongs to current session).
+            _ = runProcess(bin, args: ["switch-client", "-t", pane], env: tmuxProcessEnv(tmuxEnv))
+            // 2) Within that session, switch to the window containing the pane, then select the pane
             _ = runProcess(bin, args: ["select-window", "-t", pane], env: tmuxProcessEnv(tmuxEnv))
             _ = runProcess(bin, args: ["select-pane", "-t", pane], env: tmuxProcessEnv(tmuxEnv))
+        }
+    }
+
+    // MARK: - Zellij (CLI: zellij action list-panes → go-to-tab + activate parent terminal)
+
+    /// Zellij is a terminal multiplexer (no .app bundle of its own); it lives inside a parent
+    /// terminal emulator. Activation strategy:
+    ///   1. Look up the tab position for the given pane id via `zellij action list-panes`
+    ///   2. Drive `zellij action go-to-tab <position>` (1-indexed in Zellij)
+    ///   3. Bring the parent terminal forward so the user actually sees the focus change
+    private static func activateZellij(
+        paneId: String,
+        sessionName: String?,
+        preferredParentBundleId: String?
+    ) {
+        // Fire-and-forget: subprocess + parent activation can take a couple hundred ms,
+        // we don't want to block the click handler thread.
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Activate the parent terminal as soon as we know which one — even if zellij CLI
+            // is missing or list-panes fails, the user at least gets the right window forward.
+            // Use the non-activating raise path: `app.activate()` triggers Ghostty's quick
+            // terminal pop-up (issue same shape as #84 / activateGhostty's note), which is
+            // worse UX than just bringing the existing window forward via openApplication.
+            let parentBundleId = resolveZellijParentBundleId(preferred: preferredParentBundleId)
+            if let parent = parentBundleId {
+                DispatchQueue.main.async { raiseAppWithoutQuickTerminal(bundleId: parent) }
+            }
+
+            guard let zellijBin = findBinary("zellij", extraPaths: [
+                NSHomeDirectory() + "/.local/bin/zellij",
+            ]) else {
+                return
+            }
+
+            // ZELLIJ_PANE_ID may be a bare integer "N" or prefixed "terminal_N"
+            // depending on Zellij version. list-panes JSON returns numeric `id`,
+            // so we have to normalise the env-derived value back to Int.
+            guard let paneIDInt = parseZellijPaneId(paneId) else { return }
+
+            // List panes (optionally scoped to a specific session) and find the tab position.
+            var listArgs: [String] = []
+            if let sessionName, !sessionName.isEmpty {
+                listArgs += ["--session", sessionName]
+            }
+            listArgs += ["action", "list-panes", "--json", "--tab"]
+
+            guard let listJSON = runProcess(zellijBin, args: listArgs) else { return }
+
+            // Zellij prints either `[ {pane}, ... ]` or `{tabIndex: [ {pane}, ... ]}` depending
+            // on version; handle both shapes by flattening.
+            let parsed = try? JSONSerialization.jsonObject(with: listJSON)
+            let panes: [[String: Any]] = {
+                if let arr = parsed as? [[String: Any]] { return arr }
+                if let dict = parsed as? [String: [[String: Any]]] {
+                    return dict.values.flatMap { $0 }
+                }
+                return []
+            }()
+
+            let tabPosition = panes.first(where: {
+                ($0["id"] as? Int) == paneIDInt
+            })?["tab_position"] as? Int
+
+            guard let tabPosition else { return }
+
+            // Zellij `go-to-tab` is 1-indexed
+            var goArgs: [String] = []
+            if let sessionName, !sessionName.isEmpty {
+                goArgs += ["--session", sessionName]
+            }
+            goArgs += ["action", "go-to-tab", "\(tabPosition + 1)"]
+            _ = runProcess(zellijBin, args: goArgs)
+        }
+    }
+
+    /// Parse Zellij's `ZELLIJ_PANE_ID` env value into a numeric pane id.
+    /// Zellij's `PaneId` enum Display impl formats as `"terminal_N"` / `"plugin_N"`, so
+    /// recent versions may inject the prefixed form; older versions / docs suggest a
+    /// bare integer N (documented as equivalent to terminal_N). Plugin panes are not
+    /// terminal panes — agents don't run there, so we return nil and skip activation.
+    static func parseZellijPaneId(_ raw: String) -> Int? {
+        if let n = Int(raw) { return n }
+        if raw.hasPrefix("terminal_"), let n = Int(raw.dropFirst("terminal_".count)) { return n }
+        return nil
+    }
+
+    /// Pick the parent terminal app to raise for a Zellij session. Prefer the bundle id the
+    /// hook captured (`__CFBundleIdentifier`); fall back to the first running app from the
+    /// known-host list so we always raise *something* and don't leave the user staring at
+    /// the previous app.
+    private static func resolveZellijParentBundleId(preferred: String?) -> String? {
+        let running = NSWorkspace.shared.runningApplications
+        if let preferred,
+           !preferred.isEmpty,
+           zellijParentBundleIDs.contains(preferred),
+           running.contains(where: { $0.bundleIdentifier == preferred }) {
+            return preferred
+        }
+        return zellijParentBundleIDs.first { id in
+            running.contains(where: { $0.bundleIdentifier == id })
         }
     }
 
@@ -812,6 +1019,22 @@ struct TerminalActivator {
         }
     }
 
+    /// Bring an app forward without calling `NSRunningApplication.activate()`.
+    /// `activate()` triggers Ghostty's quick-terminal pop-up when Ghostty has no visible
+    /// window — that's why activateGhostty avoids it too. Using only unhide +
+    /// `NSWorkspace.openApplication` is safe across all parent terminals (Ghostty, iTerm2,
+    /// WezTerm, Kaku, kitty, Warp, Terminal.app, cmux) and still handles Space switching.
+    private static func raiseAppWithoutQuickTerminal(bundleId: String) {
+        if let app = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == bundleId
+        }) {
+            if app.isHidden { app.unhide() }
+        }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
     // MARK: - Generic (bring app to front)
 
     private static func bringToFront(_ termApp: String) {
@@ -821,6 +1044,7 @@ struct TerminalActivator {
         else if lower == "ghostty" { name = "Ghostty" }
         else if lower.contains("iterm") { name = "iTerm2" }
         else if lower.contains("terminal") || lower.contains("apple_terminal") { name = "Terminal" }
+        else if lower == "kaku" { name = "Kaku" }
         else if lower.contains("wezterm") || lower.contains("wez") { name = "WezTerm" }
         else if lower.contains("alacritty") || lower.contains("lacritty") { name = "Alacritty" }
         else if lower.contains("kitty") { name = "kitty" }

@@ -14,11 +14,15 @@ private struct RemoteCommandResult: Sendable {
 }
 
 enum RemoteInstaller {
-    private static let remoteHookVersion = "0.1.1"
+    private static let remoteHookVersion = "0.1.2"
+    private static let remoteOpencodePluginVersion = "v2"
 
     static func installAll(host: RemoteHost) async -> RemoteInstallResult {
         guard let source = remoteHookSource() else {
             return RemoteInstallResult(ok: false, message: "Missing remote hook resource")
+        }
+        guard let opencodePlugin = remoteOpencodePluginSource() else {
+            return RemoteInstallResult(ok: false, message: "Missing remote OpenCode plugin resource")
         }
 
         let upload = await uploadRemoteHook(source: source, host: host)
@@ -26,12 +30,17 @@ enum RemoteInstaller {
             return RemoteInstallResult(ok: false, message: "Upload failed: \(upload.stderrSummary)")
         }
 
+        let uploadOpencode = await uploadRemoteOpencodePlugin(source: opencodePlugin, host: host)
+        guard uploadOpencode.ok else {
+            return RemoteInstallResult(ok: false, message: "OpenCode plugin upload failed: \(uploadOpencode.stderrSummary)")
+        }
+
         let configure = await configureRemoteHooks(host: host)
         guard configure.ok else {
             return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
         }
 
-        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex/CodeBuddy/Traecli remote hooks installed" : configure.stdoutSummary
+        let summary = configure.stdoutSummary.isEmpty ? "Claude/Codex/CodeBuddy/Traecli/OpenCode remote hooks installed" : configure.stdoutSummary
         return RemoteInstallResult(ok: true, message: summary)
     }
 
@@ -45,6 +54,18 @@ enum RemoteInstaller {
             return src
         }
         if let url = Bundle.appModule.url(forResource: "codeisland-remote-hook", withExtension: "py"),
+           let src = try? String(contentsOf: url) {
+            return src
+        }
+        return nil
+    }
+
+    private static func remoteOpencodePluginSource() -> String? {
+        if let url = Bundle.appModule.url(forResource: "codeisland-opencode-remote", withExtension: "js", subdirectory: "Resources"),
+           let src = try? String(contentsOf: url) {
+            return src
+        }
+        if let url = Bundle.appModule.url(forResource: "codeisland-opencode-remote", withExtension: "js"),
            let src = try? String(contentsOf: url) {
             return src
         }
@@ -65,6 +86,21 @@ print(target)
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
     }
 
+    private static func uploadRemoteOpencodePlugin(source: String, host: RemoteHost) async -> RemoteCommandResult {
+        let configuredSource = remoteOpencodePluginForInstall(source: source, host: host)
+        let encoded = Data(configuredSource.utf8).base64EncodedString()
+        let py = """
+import base64, os, pathlib
+
+target = pathlib.Path.home() / ".codeisland" / "codeisland-opencode-remote.js"
+target.parent.mkdir(parents=True, exist_ok=True)
+target.write_bytes(base64.b64decode('''\(encoded)'''))
+os.chmod(target, 0o644)
+print(target)
+"""
+        return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
+    }
+
     private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
         let py = configureRemoteHooksScript(host: host)
         // Run via the remote user's login shell so ~/.zprofile / ~/.bash_profile etc. are
@@ -80,17 +116,20 @@ print(target)
         let hostId = pythonStringLiteral(host.id)
         let hostName = pythonStringLiteral(host.name)
         let version = pythonStringLiteral(remoteHookVersion)
+        let opencodePluginVersion = pythonStringLiteral(remoteOpencodePluginVersion)
         return """
 import json
 import pathlib
 import shutil
 import os
+import re
 
 home = pathlib.Path.home()
 hook_path = home / ".codeisland" / "codeisland-remote-hook.py"
 host_id = \(hostId)
 host_name = \(hostName)
 version = \(version)
+opencode_plugin_version = \(opencodePluginVersion)
 
 def _codex_home():
     raw = (os.environ.get("CODEX_HOME") or "").strip()
@@ -107,6 +146,53 @@ def ensure_json(path):
             return {}
     return {}
 
+def strip_json_comments(text):
+    out = []
+    i = 0
+    in_string = False
+    escaped = False
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "/":
+            i += 2
+            while i < len(text) and text[i] != "\\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < len(text) and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+def ensure_jsonc_object(path):
+    if path.exists():
+        try:
+            data = json.loads(strip_json_comments(path.read_text()))
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+    return {}
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")
@@ -116,6 +202,9 @@ def write_text_atomic(path, text):
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
+
+def write_opencode_config(path, data):
+    write_json(path, data)
 
 def command_for(source):
     return f"CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
@@ -440,16 +529,26 @@ def install_claude():
 
 def ensure_toml_codex_hooks(path):
     content = path.read_text() if path.exists() else ""
-    if "codex_hooks = true" in content:
+    if re.search(r"(?m)^\\s*hooks\\s*=\\s*true\\s*$", content):
+        return
+    if re.search(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", content):
+        content = re.sub(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", "hooks = true", content)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.rstrip() + "\\n")
+        return
+    if re.search(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", content):
+        content = re.sub(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", "hooks = true", content)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.rstrip() + "\\n")
         return
     lines = content.splitlines()
     try:
         idx = next(i for i, line in enumerate(lines) if line.strip() == "[features]")
-        lines.insert(idx + 1, "codex_hooks = true")
+        lines.insert(idx + 1, "hooks = true")
     except StopIteration:
         if lines and lines[-1].strip():
             lines.append("")
-        lines.extend(["[features]", "codex_hooks = true"])
+        lines.extend(["[features]", "hooks = true"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\\n".join(lines).rstrip() + "\\n")
 
@@ -517,7 +616,49 @@ def install_traecli():
     write_text_atomic(config_path, merged)
     return "Traecli ok"
 
-parts = [install_claude(), install_codex(), install_codebuddy(), install_traecli()]
+def install_opencode():
+    opencode_root = home / ".config" / "opencode"
+    if not opencode_root.exists() and shutil.which("opencode") is None:
+        return "OpenCode skipped"
+
+    plugin_path = home / ".codeisland" / "codeisland-opencode-remote.js"
+    if not plugin_path.exists():
+        return "OpenCode plugin missing"
+
+    target_path = opencode_root / "opencode.jsonc"
+    if not target_path.exists():
+        target_path = opencode_root / "opencode.json"
+    data = ensure_jsonc_object(target_path)
+    if data is None:
+        return "OpenCode config unreadable"
+
+    plugin_ref = "file://" + str(plugin_path)
+    plugins = data.get("plugin")
+    if not isinstance(plugins, list):
+        plugins = []
+    plugins = [
+        p for p in plugins
+        if not (isinstance(p, str) and ("vibe-island" in p or "codeisland" in p))
+    ]
+    plugins.append(plugin_ref)
+    data["plugin"] = plugins
+    data.setdefault("$schema", "https://opencode.ai/config.json")
+    write_opencode_config(target_path, data)
+
+    legacy_path = opencode_root / "config.json"
+    if legacy_path.exists():
+        legacy = ensure_jsonc_object(legacy_path)
+        if isinstance(legacy, dict) and isinstance(legacy.get("plugin"), list):
+            cleaned = [p for p in legacy["plugin"] if not (isinstance(p, str) and ("vibe-island" in p or "codeisland" in p))]
+            if cleaned != legacy["plugin"]:
+                if cleaned:
+                    legacy["plugin"] = cleaned
+                else:
+                    legacy.pop("plugin", None)
+                write_opencode_config(legacy_path, legacy)
+    return "OpenCode ok"
+
+parts = [install_claude(), install_codex(), install_codebuddy(), install_traecli(), install_opencode()]
 print(" · ".join(parts))
 """
     }
@@ -587,6 +728,42 @@ print(" · ".join(parts))
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
+        return "\"\(escaped)\""
+    }
+
+    static func remoteOpencodePluginForInstall(source: String, host: RemoteHost) -> String {
+        source
+            .replacingOccurrences(
+                of: #"const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";"#,
+                with: #"const SOCKET_PATH = \#(jsonStringLiteral(host.remoteSocketPath));"#
+            )
+            .replacingOccurrences(
+                of: #"const REMOTE_HOST_ID = process.env.CODEISLAND_REMOTE_HOST_ID || "";"#,
+                with: #"const REMOTE_HOST_ID = \#(jsonStringLiteral(host.id));"#
+            )
+            .replacingOccurrences(
+                of: #"const REMOTE_HOST_NAME = process.env.CODEISLAND_REMOTE_HOST_NAME || "";"#,
+                with: #"const REMOTE_HOST_NAME = \#(jsonStringLiteral(host.name));"#
+            )
+    }
+
+    private static func jsonStringLiteral(_ value: String) -> String {
+        let escaped = value.reduce(into: "") { result, ch in
+            switch ch {
+            case "\\":
+                result += "\\\\"
+            case "\"":
+                result += "\\\""
+            case "\n":
+                result += "\\n"
+            case "\r":
+                result += "\\r"
+            case "\t":
+                result += "\\t"
+            default:
+                result.append(ch)
+            }
+        }
         return "\"\(escaped)\""
     }
 

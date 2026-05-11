@@ -4,6 +4,21 @@ import CodeIslandCore
 
 @MainActor
 final class AppStatePermissionFlowTests: XCTestCase {
+    private var savedCodexHome: String?
+
+    override func setUp() {
+        super.setUp()
+        savedCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
+    }
+
+    override func tearDown() {
+        if let savedCodexHome {
+            setenv("CODEX_HOME", savedCodexHome, 1)
+        } else {
+            unsetenv("CODEX_HOME")
+        }
+        super.tearDown()
+    }
 
     func testDismissPermissionSkipsAlreadyDismissedSessions() async throws {
         let appState = AppState()
@@ -200,19 +215,147 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertNotEqual(first.joined(separator: "|"), second.joined(separator: "|"))
     }
 
+    func testCodexAlwaysAllowPersistsRuleWithoutUnsupportedUpdatedPermissions() async throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+
+        let appState = AppState()
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-always-allow",
+            toolName: "Bash",
+            toolInput: [
+                "command": "php vendor/bin/phpstan analyse $(git diff --name-only origin/master...HEAD | rg '\\.php$' | tr '\\n' ' ' )"
+            ],
+            source: "codex"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.approvePermission(always: true)
+
+        let decision = try extractPermissionDecision(from: await responseTask.value)
+        XCTAssertEqual(decision["behavior"] as? String, "allow")
+        XCTAssertNil(decision["updatedPermissions"])
+
+        let rules = try readCodeIslandRules(in: codexHome)
+        XCTAssertTrue(rules.contains(#"pattern = ["php", "vendor/bin/phpstan", "analyse"]"#))
+        XCTAssertTrue(rules.contains(#"decision = "allow""#))
+    }
+
+    func testCodexAlwaysAllowDoesNotDuplicateExistingCodeIslandRule() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-dedupe",
+            toolName: "Bash",
+            toolInput: ["command": "npm run build -- --mode production"],
+            source: "codex"
+        )
+
+        let rules = CodexPermissionRules()
+        XCTAssertTrue(rules.persistAlwaysAllowRule(for: event))
+        XCTAssertTrue(rules.persistAlwaysAllowRule(for: event))
+
+        let contents = try readCodeIslandRules(in: codexHome)
+        XCTAssertEqual(contents.components(separatedBy: #"pattern = ["npm", "run", "build"]"#).count - 1, 1)
+    }
+
+    func testCodexAutoReviewConfigDefersPermissionRequestToCodex() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try #"approvals_reviewer = "auto_review""#
+            .write(to: codexHome.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-auto-review",
+            toolName: "Bash",
+            source: "codex"
+        )
+
+        XCTAssertTrue(HookServer.shouldDeferPermissionRequestToProvider(event))
+    }
+
+    func testCodexAutoReviewConfigDoesNotDeferAskUserQuestion() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try #"approvals_reviewer = "guardian_subagent""#
+            .write(to: codexHome.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-question",
+            toolName: "AskUserQuestion",
+            toolInput: ["question": "Continue?", "options": ["Yes", "No"]],
+            source: "codex"
+        )
+
+        XCTAssertFalse(HookServer.shouldDeferPermissionRequestToProvider(event))
+    }
+
+    func testCodexProfileAutoReviewConfigIsDetected() throws {
+        let config = """
+        profile = "work"
+        approvals_reviewer = "user"
+
+        [profiles.work]
+        approvals_reviewer = "auto_review"
+        """
+
+        XCTAssertTrue(CodexPermissionRules.configEnablesAutoReview(config))
+    }
+
+    func testCodexUserReviewerConfigDoesNotDefer() throws {
+        let config = """
+        approvals_reviewer = "user"
+
+        [profiles.work]
+        approvals_reviewer = "auto_review"
+        """
+
+        XCTAssertFalse(CodexPermissionRules.configEnablesAutoReview(config))
+    }
+
     // MARK: - Helpers
+
+    private func makeTemporaryCodexHome() -> URL {
+        let codexHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        setenv("CODEX_HOME", codexHome.path, 1)
+        return codexHome
+    }
+
+    private func codeIslandRulesPath(in codexHome: URL) -> URL {
+        codexHome
+            .appendingPathComponent("rules", isDirectory: true)
+            .appendingPathComponent("codeisland.rules")
+    }
+
+    private func readCodeIslandRules(in codexHome: URL) throws -> String {
+        try String(contentsOf: codeIslandRulesPath(in: codexHome), encoding: .utf8)
+    }
 
     private func makePermissionRequestEvent(
         sessionId: String,
         toolName: String,
-        toolInput: [String: Any] = ["command": "echo test"]
+        toolInput: [String: Any] = ["command": "echo test"],
+        source: String? = nil
     ) throws -> HookEvent {
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "hook_event_name": "PermissionRequest",
             "session_id": sessionId,
             "tool_name": toolName,
             "tool_input": toolInput
         ]
+        if let source {
+            payload["_source"] = source
+        }
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
             XCTFail("Failed to parse HookEvent")
@@ -222,10 +365,14 @@ final class AppStatePermissionFlowTests: XCTestCase {
     }
 
     private func extractPermissionBehavior(from responseData: Data) throws -> String {
+        let decision = try extractPermissionDecision(from: responseData)
+        return try XCTUnwrap(decision["behavior"] as? String)
+    }
+
+    private func extractPermissionDecision(from responseData: Data) throws -> [String: Any] {
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: responseData) as? [String: Any])
         let hookSpecificOutput = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
-        let decision = try XCTUnwrap(hookSpecificOutput["decision"] as? [String: Any])
-        return try XCTUnwrap(decision["behavior"] as? String)
+        return try XCTUnwrap(hookSpecificOutput["decision"] as? [String: Any])
     }
 
     private func assertTaskNotResolved(_ task: Task<Data, Never>, timeout: TimeInterval = 0.05) async {

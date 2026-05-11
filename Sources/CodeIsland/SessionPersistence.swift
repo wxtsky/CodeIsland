@@ -19,6 +19,14 @@ struct PersistedSession: Codable {
     let tmuxClientTty: String?
     let tmuxEnv: String?
     let termBundleId: String?
+    // Multiplexer / fork pane hints — preserved across launches so precise jump-back
+    // (cmux focus-panel / zellij go-to-tab / wezterm activate-pane) keeps working
+    // after an app restart instead of degrading to cwd/tty fallback.
+    let cmuxSurfaceId: String?
+    let cmuxWorkspaceId: String?
+    let zellijPaneId: String?
+    let zellijSessionName: String?
+    let weztermPaneId: String?
     let cliPid: Int32?
     let cliStartTime: Date?
     let startTime: Date
@@ -50,6 +58,11 @@ enum SessionPersistence {
                 tmuxClientTty: s.tmuxClientTty,
                 tmuxEnv: s.tmuxEnv,
                 termBundleId: s.termBundleId,
+                cmuxSurfaceId: s.cmuxSurfaceId,
+                cmuxWorkspaceId: s.cmuxWorkspaceId,
+                zellijPaneId: s.zellijPaneId,
+                zellijSessionName: s.zellijSessionName,
+                weztermPaneId: s.weztermPaneId,
                 cliPid: s.cliPid,
                 cliStartTime: s.cliStartTime,
                 startTime: s.startTime,
