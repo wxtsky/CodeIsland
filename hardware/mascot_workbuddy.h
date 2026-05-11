@@ -74,3 +74,9 @@ void workbuddyAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, 1.0f, jumpY, jumpY, WB_ALERT);
 }
+
+void workbuddyQuestion(float t) {
+  _questionMode = true;
+  workbuddyAlert(t);
+  _questionMode = false;
+}

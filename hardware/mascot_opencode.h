@@ -86,3 +86,9 @@ void opencodeAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, OPC_ALERT);
 }
+
+void opencodeQuestion(float t) {
+  _questionMode = true;
+  opencodeAlert(t);
+  _questionMode = false;
+}

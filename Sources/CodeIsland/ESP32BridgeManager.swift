@@ -12,6 +12,9 @@ enum ESP32BridgeStatus: Equatable {
     case scanning             // discovery mode: enumerating nearby Buddies for the user
     case searchingSelected    // looking for the previously-selected Buddy
     case connecting           // found the selected one, connecting / discovering characteristics
+    case pairing              // BLE connected, pair request sent, waiting for Buddy response
+    case pairWaitingConfirm   // Buddy shows confirmation screen, waiting for user button press
+    case pairRejected         // Buddy is paired with another host
     case connected            // ready to write + receiving notifications
     case reconnecting(Int)    // seconds until next attempt to find the selected Buddy
 
@@ -23,6 +26,9 @@ enum ESP32BridgeStatus: Equatable {
         case .scanning:           return "scanning"
         case .searchingSelected:  return "searching selected"
         case .connecting:         return "connecting"
+        case .pairing:            return "pairing"
+        case .pairWaitingConfirm: return "confirm on Buddy"
+        case .pairRejected:       return "pair rejected"
         case .connected:          return "connected"
         case .reconnecting(let s): return "reconnecting in \(s)s"
         }
@@ -79,6 +85,15 @@ final class ESP32BridgeManager: NSObject {
     private var reconnectTimer: Timer?
     private var discoveryActive = false
     private var discoveryPruneTimer: Timer?
+    /// Stable 6-byte identifier for this Mac, used in the application-layer
+    /// pairing handshake so Buddy can distinguish paired hosts.
+    @ObservationIgnored
+    private var hostIdentifier: Data = loadOrCreateHostId()
+    /// Set to `true` inside `forgetSelection()` so the disconnect callback
+    /// knows not to schedule a reconnect.
+    private var forgetting = false
+    /// Fires after `pairConfirmTimeoutSeconds` if no pair response arrives.
+    private var pairTimeoutTimer: Timer?
 
     /// Callback fired when Buddy notifies a button press with a
     /// mascot `sourceId` byte. Nonisolated to allow CoreBluetooth delegate
@@ -117,6 +132,7 @@ final class ESP32BridgeManager: NSObject {
     /// Disable the bridge, tear down peripheral + scan + discovery.
     func stop() {
         cancelReconnectTimer()
+        cancelPairTimeout()
         stopDiscoveryInternal(updateStatus: false)
         if let central, central.isScanning { central.stopScan() }
         if let peripheral, let central {
@@ -181,16 +197,33 @@ final class ESP32BridgeManager: NSObject {
         attemptReconnectToSelected()
     }
 
-    /// Forget the selected Buddy: disconnect, clear persisted identifier,
-    /// and stop reconnecting.
+    /// Forget the selected Buddy: send an unpair command so the Buddy clears
+    /// its NVS, then disconnect and clear all persisted state.
     func forgetSelection() {
         cancelReconnectTimer()
+        cancelPairTimeout()
+        forgetting = true
+
+        // Tell Buddy to clear its paired-host record before we drop the link.
+        // Use .withResponse so we wait for the write ACK before disconnecting.
+        if let peripheral, let writeChar,
+           status == .connected || status == .pairing || status == .pairWaitingConfirm {
+            let unpair = BuddyUnpairPayload(hostId: hostIdentifier)
+            peripheral.writeValue(unpair.encode(), for: writeChar, type: .withResponse)
+            Self.log.info("Sent unpair frame (withResponse), will disconnect on ACK")
+            return
+        }
+        completeForget()
+    }
+
+    private func completeForget() {
         if let peripheral, let central {
             central.cancelPeripheralConnection(peripheral)
         }
         peripheral = nil
         writeChar = nil
         notifyChar = nil
+        notifySubscriptionReady = false
         connectedPeripheralName = nil
         selectedBuddyIdentifier = nil
         selectedBuddyName = nil
@@ -199,6 +232,7 @@ final class ESP32BridgeManager: NSObject {
         if status != .off {
             status = .noSelection
         }
+        forgetting = false
     }
 
     // MARK: - Public writes
@@ -216,6 +250,36 @@ final class ESP32BridgeManager: NSObject {
     /// Write a message preview frame to Buddy. No-op when not connected.
     func sendMessagePreview(_ preview: BuddyMessagePreviewPayload) {
         send(preview.encode())
+    }
+
+    /// Write model info frame to Buddy. No-op when not connected.
+    func sendModel(_ model: BuddyModelPayload) {
+        send(model.encode())
+    }
+
+    /// Write session stats frame to Buddy. No-op when not connected.
+    func sendStats(_ stats: BuddyStatsPayload) {
+        send(stats.encode())
+    }
+
+    /// Write subagent count frame to Buddy. No-op when not connected.
+    func sendSubagent(_ subagent: BuddySubagentPayload) {
+        send(subagent.encode())
+    }
+
+    /// Write event frame to Buddy. No-op when not connected.
+    func sendEvent(_ event: BuddyEventPayload) {
+        send(event.encode())
+    }
+
+    /// Write time hint frame to Buddy. No-op when not connected.
+    func sendTimeHint(_ timeHint: BuddyTimeHintPayload) {
+        send(timeHint.encode())
+    }
+
+    /// Write tool history entry frame to Buddy. No-op when not connected.
+    func sendToolHistory(_ entry: BuddyToolHistoryPayload) {
+        send(entry.encode())
     }
 
     private func send(_ data: Data) {
@@ -241,9 +305,66 @@ final class ESP32BridgeManager: NSObject {
 
     private func ensureCentral() {
         if central == nil {
-            // `queue: nil` = main queue, so delegate callbacks land on main.
             central = CBCentralManager(delegate: self, queue: nil,
                                        options: [CBCentralManagerOptionShowPowerAlertKey: true])
+        }
+    }
+
+    private static let hostIdDefaultsKey = "buddyHostIdentifier"
+
+    /// Load or generate a stable 6-byte host identifier persisted in UserDefaults.
+    private static func loadOrCreateHostId() -> Data {
+        let defaults = UserDefaults.standard
+        if let existing = defaults.data(forKey: hostIdDefaultsKey),
+           existing.count == ESP32Protocol.hostIdLength {
+            return existing
+        }
+        var bytes = [UInt8](repeating: 0, count: ESP32Protocol.hostIdLength)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        if status != errSecSuccess {
+            let uuid = UUID()
+            let uuidBytes = withUnsafeBytes(of: uuid.uuid) { Array($0) }
+            bytes = Array(uuidBytes.prefix(ESP32Protocol.hostIdLength))
+        }
+        let data = Data(bytes)
+        defaults.set(data, forKey: hostIdDefaultsKey)
+        return data
+    }
+
+    /// Send a pair request frame using the raw write characteristic.
+    /// Called before `.connected` is reached, so we bypass the `send()` guard.
+    private func sendPairRequest() {
+        guard let peripheral, let writeChar else { return }
+        let payload = BuddyPairRequestPayload(hostId: hostIdentifier)
+        peripheral.writeValue(payload.encode(), for: writeChar, type: .withoutResponse)
+        Self.log.info("Pair request sent")
+        schedulePairTimeout()
+    }
+
+    private func schedulePairTimeout() {
+        pairTimeoutTimer?.invalidate()
+        pairTimeoutTimer = Timer.scheduledTimer(
+            withTimeInterval: TimeInterval(ESP32Protocol.pairConfirmTimeoutSeconds),
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handlePairTimeout()
+            }
+        }
+    }
+
+    private func cancelPairTimeout() {
+        pairTimeoutTimer?.invalidate()
+        pairTimeoutTimer = nil
+    }
+
+    private func handlePairTimeout() {
+        guard status == .pairing || status == .pairWaitingConfirm else { return }
+        Self.log.error("Pair handshake timed out after \(ESP32Protocol.pairConfirmTimeoutSeconds)s")
+        lastError = "Pairing timed out. Buddy did not respond."
+        status = .pairRejected
+        if let peripheral, let central {
+            central.cancelPeripheralConnection(peripheral)
         }
     }
 
@@ -343,8 +464,9 @@ final class ESP32BridgeManager: NSObject {
         }
         if updateStatus {
             // After leaving discovery, return to the appropriate state.
-            if peripheral != nil, status == .connected {
-                // already connected — keep status
+            if peripheral != nil,
+               status == .connected || status == .pairing || status == .pairWaitingConfirm || status == .connecting {
+                // actively connected or mid-handshake — keep status
             } else if selectedBuddyIdentifier != nil {
                 attemptReconnectToSelected()
             } else if status != .off, status != .poweredOff {
@@ -490,7 +612,18 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
             self.notifyChar = nil
             self.notifySubscriptionReady = false
             self.connectedPeripheralName = nil
-            if self.status != .off {
+            if self.forgetting {
+                // Link dropped during forget flow (write ACK may never arrive).
+                // completeForget() is idempotent — safe even though peripheral
+                // is already nil; it clears persisted selection + resets forgetting.
+                self.completeForget()
+            } else if self.selectedBuddyIdentifier == nil {
+                if self.status != .off {
+                    self.status = .noSelection
+                }
+            } else if self.status == .pairRejected {
+                // Don't auto-reconnect after rejection; user must act.
+            } else if self.status != .off {
                 self.scheduleReconnect()
             }
         }
@@ -577,17 +710,30 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
             }
             guard !self.notifySubscriptionReady else { return }
 
-            Self.log.info("Buddy uplink subscription enabled")
+            Self.log.info("Buddy uplink subscription enabled — initiating pair handshake")
             self.notifySubscriptionReady = true
             self.reconnectAttempt = 0
             self.lastError = nil
-            self.status = .connected
             if let live = peripheral.name, !live.isEmpty {
                 self.connectedPeripheralName = live
                 self.selectedBuddyName = live
                 self.defaults.set(live, forKey: SettingsKey.selectedBuddyName)
             }
-            self.onConnected?()
+            self.status = .pairing
+            self.sendPairRequest()
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral,
+                                didWriteValueFor characteristic: CBCharacteristic,
+                                error: Error?) {
+        Task { @MainActor in
+            if self.forgetting {
+                if let error {
+                    Self.log.error("Unpair write ACK error (proceeding anyway): \(error.localizedDescription)")
+                }
+                self.completeForget()
+            }
         }
     }
 
@@ -605,6 +751,8 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 return
             }
             switch event {
+            case .pairResponse(let response):
+                self.handlePairResponse(response)
             case .focus(let mascot):
                 Self.log.info("Button event: mascot=\(mascot.sourceName)")
                 self.onFocusRequest?(mascot)
@@ -612,6 +760,29 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 Self.log.info("Buddy control event: command=\(String(describing: command)) raw=\(command.rawValue)")
                 self.onControlCommand?(command)
             }
+        }
+    }
+
+    @MainActor
+    private func handlePairResponse(_ response: BuddyPairResponse) {
+        cancelPairTimeout()
+        switch response {
+        case .accepted:
+            Self.log.info("Pair accepted by Buddy")
+            lastError = nil
+            status = .connected
+            onConnected?()
+        case .rejected:
+            Self.log.error("Pair rejected — Buddy is paired with another host")
+            lastError = "Buddy is paired with another device. Hold BOOT for 3s on Buddy to reset pairing."
+            status = .pairRejected
+            if let peripheral, let central {
+                central.cancelPeripheralConnection(peripheral)
+            }
+        case .pending:
+            Self.log.info("Pair pending — waiting for user confirmation on Buddy")
+            lastError = nil
+            status = .pairWaitingConfirm
         }
     }
 }

@@ -91,3 +91,9 @@ void copilotAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, COP_ALERT);
 }
+
+void copilotQuestion(float t) {
+  _questionMode = true;
+  copilotAlert(t);
+  _questionMode = false;
+}

@@ -113,9 +113,11 @@ ESP32-C6 需要 **Arduino-ESP32 v3.0 或更高**。
 | USB CDC On Boot | **Enabled**（必须，否则串口不工作） |
 | CPU Frequency | 160 MHz |
 | Flash Size | 4 MB (32 Mb) |
-| Partition Scheme | Default 4MB with spiffs（保持默认） |
+| Partition Scheme | **Huge APP (3MB No OTA/1MB SPIFFS)** |
 | Upload Speed | 921600（失败时降到 460800） |
 | Port | `/dev/cu.usbmodem*` |
+
+> **关于分区方案与 OTA**：选择 "Huge APP (3MB No OTA)" 是因为固件体积较大，需要完整的 3MB APP 分区。固件中的 `ArduinoOTA` 功能是实验性的 WiFi network OTA，通过单分区直接覆写实现（非 ESP32 原生双分区 OTA），仅在通过 BLE 下发 WiFi 凭据后才会激活。生产环境建议仍通过 USB 烧录。
 
 > 在 Port 列表里看不到 `/dev/cu.usbmodem*`？大概率是数据线只能充电。ESP32-C6 走原生 USB，macOS 免驱，换一根能传数据的线即可。
 

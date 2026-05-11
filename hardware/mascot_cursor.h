@@ -90,3 +90,9 @@ void cursorAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, CUR_ALERT);
 }
+
+void cursorQuestion(float t) {
+  _questionMode = true;
+  cursorAlert(t);
+  _questionMode = false;
+}

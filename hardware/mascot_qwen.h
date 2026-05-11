@@ -90,3 +90,9 @@ void qwenAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, QWN_ALERT);
 }
+
+void qwenQuestion(float t) {
+  _questionMode = true;
+  qwenAlert(t);
+  _questionMode = false;
+}

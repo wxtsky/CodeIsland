@@ -72,3 +72,9 @@ void kimiAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, KIM_ALERT);
 }
+
+void kimiQuestion(float t) {
+  _questionMode = true;
+  kimiAlert(t);
+  _questionMode = false;
+}

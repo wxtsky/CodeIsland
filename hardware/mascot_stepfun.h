@@ -70,3 +70,9 @@ void stepfunAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, 1.0f, jumpY, jumpY, STP_ALERT);
 }
+
+void stepfunQuestion(float t) {
+  _questionMode = true;
+  stepfunAlert(t);
+  _questionMode = false;
+}
