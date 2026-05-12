@@ -142,6 +142,11 @@ build_mac() {
     if [ -z "$SIGN_ID" ]; then
         echo "No developer certificate found, using ad-hoc signing..."
         SIGN_ID="-"
+        ADHOC_ENTITLEMENTS=".build/CodeIsland.adhoc.entitlements"
+        cp "$ENTITLEMENTS" "$ADHOC_ENTITLEMENTS"
+        /usr/libexec/PlistBuddy -c "Set :com.apple.security.cs.disable-library-validation true" "$ADHOC_ENTITLEMENTS" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ADHOC_ENTITLEMENTS"
+        ENTITLEMENTS="$ADHOC_ENTITLEMENTS"
     fi
 
     echo "Code signing ($SIGN_ID)..."
