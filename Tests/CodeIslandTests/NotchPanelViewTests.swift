@@ -2,6 +2,32 @@ import XCTest
 @testable import CodeIsland
 
 final class NotchPanelViewTests: XCTestCase {
+    func testEffectiveNotchWidthAppliesCollapsedWidthScale() {
+        XCTAssertEqual(
+            NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 50),
+            100,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 150),
+            300,
+            accuracy: 0.001
+        )
+    }
+
+    func testEffectiveNotchWidthClampsOutOfRangeScale() {
+        XCTAssertEqual(
+            NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 10),
+            100,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 250),
+            300,
+            accuracy: 0.001
+        )
+    }
+
     func testShouldTriggerJumpFailureFeedbackWhenAllAttemptsFail() {
         XCTAssertTrue(shouldTriggerJumpFailureFeedback([false, false, false]))
     }

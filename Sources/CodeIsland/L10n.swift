@@ -456,7 +456,7 @@ final class L10n: ObservableObject {
         "max_visible_sessions": "最大显示会话数",
         "max_visible_sessions_desc": "超出数量的会话将通过滚动查看",
         "collapsed_width_scale": "灵动岛宽度",
-        "collapsed_width_scale_desc": "调整非刘海屏幕上灵动岛的收起宽度",
+        "collapsed_width_scale_desc": "调整灵动岛的收起宽度",
         "notch_height_mode": "顶部高度对齐",
         "notch_height_mode_desc": "让面板与真实 notch 高度、菜单栏高度或自定义值对齐",
         "notch_height_match_notch": "对齐 notch 高度",
