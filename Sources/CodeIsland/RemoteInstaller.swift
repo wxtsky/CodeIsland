@@ -529,15 +529,22 @@ def install_claude():
 
 def ensure_toml_codex_hooks(path):
     content = path.read_text() if path.exists() else ""
-    if re.search(r"(?m)^\\s*hooks\\s*=\\s*true\\s*$", content):
+    current_hooks_pattern = r"(?m)^\\s*hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
+    hooks_true_pattern = r"(?m)^\\s*hooks\\s*=\\s*true\\s*(#.*)?$"
+    hooks_false_pattern = r"(?m)^\\s*hooks\\s*=\\s*false\\s*(#.*)?$"
+    legacy_hooks_pattern = r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
+    has_current_hooks = re.search(current_hooks_pattern, content) is not None
+    had_legacy_hooks = re.search(legacy_hooks_pattern, content) is not None
+    if re.search(legacy_hooks_pattern, content):
+        replacement = "" if has_current_hooks else "hooks = true"
+        content = re.sub(legacy_hooks_pattern, replacement, content)
+    if re.search(hooks_true_pattern, content):
+        if had_legacy_hooks:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content.rstrip() + "\\n")
         return
-    if re.search(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", content):
-        content = re.sub(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", "hooks = true", content)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.rstrip() + "\\n")
-        return
-    if re.search(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", content):
-        content = re.sub(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", "hooks = true", content)
+    if re.search(hooks_false_pattern, content):
+        content = re.sub(hooks_false_pattern, "hooks = true", content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content.rstrip() + "\\n")
         return

@@ -1627,25 +1627,35 @@ struct ConfigInstaller {
             contents = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
         }
 
-        // Already set to true (non-commented) — don't touch
-        if contents.range(of: #"(?m)^\s*hooks\s*=\s*true"#, options: .regularExpression) != nil {
+        let currentHooksPattern = #"(?m)^\s*hooks\s*=\s*(true|false)\s*(#.*)?$"#
+        let hooksTruePattern = #"(?m)^\s*hooks\s*=\s*true\s*(#.*)?$"#
+        let hooksFalsePattern = #"(?m)^\s*hooks\s*=\s*false\s*(#.*)?$"#
+        let legacyHooksPattern = #"(?m)^\s*codex_hooks\s*=\s*(true|false)\s*(#.*)?$"#
+        let hasCurrentHooks = contents.range(of: currentHooksPattern, options: .regularExpression) != nil
+        let hasLegacyHooks = contents.range(of: legacyHooksPattern, options: .regularExpression) != nil
+
+        // Remove the retired feature name used by older Codex releases. If the
+        // current flag is absent, turn the legacy flag into the current one.
+        if hasLegacyHooks {
+            contents = contents.replacingOccurrences(
+                of: legacyHooksPattern,
+                with: hasCurrentHooks ? "" : "hooks = true",
+                options: .regularExpression
+            )
+        }
+
+        // Already set to true (non-commented) — don't touch beyond legacy cleanup.
+        if contents.range(of: hooksTruePattern, options: .regularExpression) != nil {
+            if hasLegacyHooks {
+                return fm.createFile(atPath: configPath, contents: contents.data(using: .utf8))
+            }
             return true
         }
 
-        // Set to false (non-commented) — flip it to true in place
-        if contents.range(of: #"(?m)^\s*hooks\s*=\s*false"#, options: .regularExpression) != nil {
+        // Set to false (non-commented) — flip it to true in place.
+        if contents.range(of: hooksFalsePattern, options: .regularExpression) != nil {
             contents = contents.replacingOccurrences(
-                of: #"(?m)^\s*hooks\s*=\s*false"#,
-                with: "hooks = true",
-                options: .regularExpression
-            )
-            return fm.createFile(atPath: configPath, contents: contents.data(using: .utf8))
-        }
-
-        // Migrate the retired feature name used by older Codex releases.
-        if contents.range(of: #"(?m)^\s*codex_hooks\s*=\s*(true|false)"#, options: .regularExpression) != nil {
-            contents = contents.replacingOccurrences(
-                of: #"(?m)^\s*codex_hooks\s*=\s*(true|false)"#,
+                of: hooksFalsePattern,
                 with: "hooks = true",
                 options: .regularExpression
             )
