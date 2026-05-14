@@ -172,6 +172,7 @@ uint8_t toolHistCount = 0;
 uint8_t heatmap[24] = {0};
 uint8_t heatmapSlot = 0;
 uint8_t bleCurrentHour = 255;
+bool heatmapStatsBaselineReady = false;
 
 // --- Global bored flag (checked by mascot sleep functions) ---
 bool globalBored = false;
@@ -183,7 +184,7 @@ float globalWorkTimeScale = 1.0f;
 // --- NVS persistence ---
 Preferences prefs;
 unsigned long lastNvsSave = 0;
-bool nvsDirty = false;
+volatile bool nvsDirty = false;
 #define NVS_DEBOUNCE_MS 5000
 
 #ifdef BUDDY_OTA_ENABLED
@@ -550,9 +551,9 @@ class CharCallbacks : public BLECharacteristicCallbacks {
       uint8_t percent = clampBuddyBrightness(data[1]);
       portENTER_CRITICAL(&bleMux);
       buddyBrightnessPercent = percent;
+      nvsDirty = true;
       portEXIT_CRITICAL(&bleMux);
       lastInteraction = millis();
-      nvsDirty = true;
       Serial.printf("[BLE] Brightness config: %d%%\n", percent);
       return;
     }
@@ -604,11 +605,17 @@ class CharCallbacks : public BLECharacteristicCallbacks {
 
     // Session stats frame (0xFA)
     if (len >= 6 && data[0] == 0xFA) {
+      uint8_t loggedActiveSessions;
+      uint8_t loggedTotalSessions;
+      uint16_t loggedToolCount;
+      uint8_t loggedDuration;
       portENTER_CRITICAL(&bleMux);
       bleActiveSessionCount = data[1];
       bleTotalSessionCount = data[2];
       uint16_t newToolCount = ((uint16_t)data[3] << 8) | data[4];
-      if (newToolCount > bleToolCallCount) {
+      if (!heatmapStatsBaselineReady || bleCurrentHour == 255 || newToolCount < bleToolCallCount) {
+        heatmapStatsBaselineReady = true;
+      } else if (newToolCount > bleToolCallCount) {
         uint16_t delta = newToolCount - bleToolCallCount;
         uint16_t newVal = heatmap[heatmapSlot] + delta;
         heatmap[heatmapSlot] = (newVal > 255) ? 255 : (uint8_t)newVal;
@@ -616,9 +623,13 @@ class CharCallbacks : public BLECharacteristicCallbacks {
       bleToolCallCount = newToolCount;
       bleSessionDurationMin = data[5];
       lastBleData = millis();
+      loggedActiveSessions = bleActiveSessionCount;
+      loggedTotalSessions = bleTotalSessionCount;
+      loggedToolCount = bleToolCallCount;
+      loggedDuration = bleSessionDurationMin;
       portEXIT_CRITICAL(&bleMux);
       Serial.printf("[BLE] Stats: sessions=%d/%d tools=%d duration=%dm\n",
-        bleActiveSessionCount, bleTotalSessionCount, bleToolCallCount, bleSessionDurationMin);
+        loggedActiveSessions, loggedTotalSessions, loggedToolCount, loggedDuration);
       return;
     }
 
@@ -647,13 +658,19 @@ class CharCallbacks : public BLECharacteristicCallbacks {
     // Time hint frame (0xF6)
     if (len >= 2 && data[0] == 0xF6) {
       uint8_t newHour = data[1];
+      uint8_t loggedHour;
+      portENTER_CRITICAL(&bleMux);
       if (bleCurrentHour != 255 && newHour != bleCurrentHour) {
         heatmapSlot = newHour % 24;
         heatmap[heatmapSlot] = 0;
+      } else if (bleCurrentHour == 255) {
+        heatmapSlot = newHour % 24;
       }
       bleCurrentHour = newHour;
       lastBleData = millis();
-      Serial.printf("[BLE] Hour: %d\n", bleCurrentHour);
+      loggedHour = bleCurrentHour;
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Hour: %d\n", loggedHour);
       return;
     }
 
@@ -909,14 +926,21 @@ void drawToolTimeline() {
 
 // --- Draw heatmap bar (24h activity, bottom of idle screen) ---
 void drawHeatmapBar() {
+  uint8_t localHeatmap[24];
+  uint8_t localSlot;
+  portENTER_CRITICAL(&bleMux);
+  memcpy(localHeatmap, heatmap, sizeof(localHeatmap));
+  localSlot = heatmapSlot;
+  portEXIT_CRITICAL(&bleMux);
+
   bool hasData = false;
-  for (int i = 0; i < 24; i++) { if (heatmap[i] > 0) { hasData = true; break; } }
+  for (int i = 0; i < 24; i++) { if (localHeatmap[i] > 0) { hasData = true; break; } }
   if (!hasData) return;
 
   int barY = LCD_H - 24;
   int slotW = (LCD_W - 4) / 24;
   for (int i = 0; i < 24; i++) {
-    uint8_t val = heatmap[(heatmapSlot + 1 + i) % 24];
+    uint8_t val = localHeatmap[(localSlot + 1 + i) % 24];
     float intensity = val / 255.0f;
     uint8_t r = (uint8_t)(20 + intensity * 30);
     uint8_t g = (uint8_t)(40 + intensity * 200);
@@ -926,8 +950,8 @@ void drawHeatmapBar() {
 }
 
 // --- Draw celebration animation ---
-void drawCelebration(float t, uint8_t mascotIdx) {
-  float elapsed = (millis() - animStartTime) / 1000.0f;
+void drawCelebration(float t, uint8_t mascotIdx, unsigned long animationStartTime) {
+  float elapsed = (millis() - animationStartTime) / 1000.0f;
   mascots[mascotIdx].work(t);
   for (int i = 0; i < 5; i++) {
     float px = 3.0f + i * 2.5f + sinf(elapsed * 3 + i) * 1.5f;
@@ -939,8 +963,8 @@ void drawCelebration(float t, uint8_t mascotIdx) {
 }
 
 // --- Draw frustrated animation ---
-void drawFrustrated(float t, uint8_t mascotIdx) {
-  float elapsed = (millis() - animStartTime) / 1000.0f;
+void drawFrustrated(float t, uint8_t mascotIdx, unsigned long animationStartTime) {
+  float elapsed = (millis() - animationStartTime) / 1000.0f;
   float shakeX = sinf(elapsed * 30.0f) * (1.0f - elapsed * 0.5f) * 2.0f;
   setViewportShiftX(shakeX);
   mascots[mascotIdx].work(t);
@@ -1391,15 +1415,27 @@ void loop() {
 
     // Check transient animations
     bool playingTransient = false;
-    if (pendingAnim != ANIM_NONE && (millis() - animStartTime) < ANIM_DURATION_MS) {
+    TransientAnim localPendingAnim;
+    unsigned long localAnimStartTime;
+    portENTER_CRITICAL(&bleMux);
+    localPendingAnim = pendingAnim;
+    localAnimStartTime = animStartTime;
+    portEXIT_CRITICAL(&bleMux);
+    if (localPendingAnim != ANIM_NONE && (now - localAnimStartTime) < ANIM_DURATION_MS) {
       playingTransient = true;
-      if (pendingAnim == ANIM_CELEBRATE) {
-        drawCelebration(t, drawIdx);
-      } else if (pendingAnim == ANIM_FRUSTRATED) {
-        drawFrustrated(t, drawIdx);
+      if (localPendingAnim == ANIM_CELEBRATE) {
+        drawCelebration(t, drawIdx, localAnimStartTime);
+      } else if (localPendingAnim == ANIM_FRUSTRATED) {
+        drawFrustrated(t, drawIdx, localAnimStartTime);
       }
     } else {
-      if (pendingAnim != ANIM_NONE) pendingAnim = ANIM_NONE;
+      if (localPendingAnim != ANIM_NONE) {
+        portENTER_CRITICAL(&bleMux);
+        if (pendingAnim == localPendingAnim && animStartTime == localAnimStartTime) {
+          pendingAnim = ANIM_NONE;
+        }
+        portEXIT_CRITICAL(&bleMux);
+      }
 
       // Bored detection for idle mascots
       if (drawScene == SCENE_SLEEP) {
@@ -1460,13 +1496,25 @@ void loop() {
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), LCD_W, LCD_H);
 
   // NVS debounce write
-  if (nvsDirty && (now - lastNvsSave) > NVS_DEBOUNCE_MS) {
-    prefs.putUChar("bright", buddyBrightnessPercent);
-    prefs.putUChar("orient", buddyScreenOrientation);
-    nvsDirty = false;
-    lastNvsSave = now;
-    Serial.printf("[NVS]  Saved brightness=%d%% orientation=%s\n",
-      buddyBrightnessPercent, buddyOrientationStr(buddyScreenOrientation));
+  if ((now - lastNvsSave) > NVS_DEBOUNCE_MS) {
+    bool shouldSaveNvs = false;
+    uint8_t nvsBrightness = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
+    uint8_t nvsOrientation = BUDDY_SCREEN_UP;
+    portENTER_CRITICAL(&bleMux);
+    if (nvsDirty) {
+      nvsBrightness = buddyBrightnessPercent;
+      nvsOrientation = buddyScreenOrientation;
+      nvsDirty = false;
+      shouldSaveNvs = true;
+    }
+    portEXIT_CRITICAL(&bleMux);
+    if (shouldSaveNvs) {
+      prefs.putUChar("bright", nvsBrightness);
+      prefs.putUChar("orient", nvsOrientation);
+      lastNvsSave = now;
+      Serial.printf("[NVS]  Saved brightness=%d%% orientation=%s\n",
+        nvsBrightness, buddyOrientationStr(nvsOrientation));
+    }
   }
 
 #ifdef BUDDY_OTA_ENABLED

@@ -95,9 +95,9 @@ final class ESP32StatePublisher {
         bridge.sendWorkspace(appState.esp32WorkspacePayload(session: session))
         appState.esp32MessagePreviewPayloads(session: session).forEach { bridge.sendMessagePreview($0) }
         bridge.sendModel(appState.esp32ModelPayload(session: session))
+        bridge.sendTimeHint(BuddyTimeHintPayload(hour: Calendar.current.component(.hour, from: Date())))
         bridge.sendStats(appState.esp32StatsPayload(session: session))
         bridge.sendSubagent(appState.esp32SubagentPayload(session: session))
-        bridge.sendTimeHint(BuddyTimeHintPayload(hour: Calendar.current.component(.hour, from: Date())))
         let toolHistory = appState.esp32ToolHistoryPayloads(session: session)
         if toolHistory.isEmpty {
             bridge.sendToolHistoryClear()

@@ -87,6 +87,8 @@ final class ESP32BridgeManager: NSObject {
     private var reconnectTimer: Timer?
     private var discoveryActive = false
     private var discoveryPruneTimer: Timer?
+    private static let maxPendingWriteFrames = 64
+    private var pendingWriteQueue: [Data] = []
     /// Stable 6-byte identifier for this Mac, used in the application-layer
     /// pairing handshake so Buddy can distinguish paired hosts.
     @ObservationIgnored
@@ -147,6 +149,7 @@ final class ESP32BridgeManager: NSObject {
         writeChar = nil
         notifyChar = nil
         notifySubscriptionReady = false
+        resetPendingWrites()
         connectedPeripheralName = nil
         usesLegacyPairingFallback = false
         status = .off
@@ -202,6 +205,7 @@ final class ESP32BridgeManager: NSObject {
             peripheral = nil
             writeChar = nil
             notifyChar = nil
+            resetPendingWrites()
             connectedPeripheralName = nil
         }
         reconnectAttempt = 0
@@ -213,6 +217,7 @@ final class ESP32BridgeManager: NSObject {
     func forgetSelection() {
         cancelReconnectTimer()
         cancelPairingTimers()
+        resetPendingWrites()
         forgetting = true
 
         // Tell Buddy to clear its paired-host record before we drop the link.
@@ -235,6 +240,7 @@ final class ESP32BridgeManager: NSObject {
         writeChar = nil
         notifyChar = nil
         notifySubscriptionReady = false
+        resetPendingWrites()
         connectedPeripheralName = nil
         usesLegacyPairingFallback = false
         selectedBuddyIdentifier = nil
@@ -300,22 +306,18 @@ final class ESP32BridgeManager: NSObject {
     }
 
     private func send(_ data: Data) {
-        guard let peripheral, let writeChar, status == .connected else { return }
-        peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+        guard peripheral != nil, writeChar != nil, status == .connected else { return }
+        enqueueWrite(data)
     }
 
     /// Write Buddy screen brightness. No-op when not connected.
     func sendBrightness(percent: Double) {
-        guard let peripheral, let writeChar, status == .connected else { return }
-        let data = BuddyBrightnessPayload(percent: percent).encode()
-        peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+        send(BuddyBrightnessPayload(percent: percent).encode())
     }
 
     /// Write Buddy screen orientation. No-op when not connected.
     func sendScreenOrientation(_ orientation: BuddyScreenOrientation) {
-        guard let peripheral, let writeChar, status == .connected else { return }
-        let data = BuddyScreenOrientationPayload(orientation: orientation).encode()
-        peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+        send(BuddyScreenOrientationPayload(orientation: orientation).encode())
     }
 
     // MARK: - Internals
@@ -325,6 +327,28 @@ final class ESP32BridgeManager: NSObject {
             central = CBCentralManager(delegate: self, queue: nil,
                                        options: [CBCentralManagerOptionShowPowerAlertKey: true])
         }
+    }
+
+    private func enqueueWrite(_ data: Data) {
+        pendingWriteQueue.append(data)
+        if pendingWriteQueue.count > Self.maxPendingWriteFrames {
+            let overflow = pendingWriteQueue.count - Self.maxPendingWriteFrames
+            pendingWriteQueue.removeFirst(overflow)
+            Self.log.debug("Dropped \(overflow) queued Buddy BLE frames under write backpressure")
+        }
+        drainPendingWrites()
+    }
+
+    private func drainPendingWrites() {
+        guard let peripheral, let writeChar, status == .connected else { return }
+        while !pendingWriteQueue.isEmpty, peripheral.canSendWriteWithoutResponse {
+            let data = pendingWriteQueue.removeFirst()
+            peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+        }
+    }
+
+    private func resetPendingWrites() {
+        pendingWriteQueue.removeAll(keepingCapacity: false)
     }
 
     private static let hostIdDefaultsKey = "buddyHostIdentifier"
@@ -649,6 +673,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
             self.writeChar = nil
             self.notifyChar = nil
             self.notifySubscriptionReady = false
+            self.resetPendingWrites()
             self.connectedPeripheralName = nil
             self.scheduleReconnect()
         }
@@ -664,6 +689,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
             self.writeChar = nil
             self.notifyChar = nil
             self.notifySubscriptionReady = false
+            self.resetPendingWrites()
             self.connectedPeripheralName = nil
             if self.forgetting {
                 // Link dropped during forget flow (write ACK may never arrive).
@@ -787,6 +813,13 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                 }
                 self.completeForget()
             }
+        }
+    }
+
+    nonisolated func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        Task { @MainActor in
+            guard self.peripheral?.identifier == peripheral.identifier else { return }
+            self.drainPendingWrites()
         }
     }
 
