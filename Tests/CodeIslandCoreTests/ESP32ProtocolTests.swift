@@ -261,7 +261,14 @@ final class ESP32ProtocolTests: XCTestCase {
         let frame = BuddyToolHistoryPayload(index: 0, success: true, toolName: long)
         let data = frame.encode()
         let nameLen = data[2] & 0x7F
-        XCTAssertEqual(nameLen, 11)
+        XCTAssertEqual(nameLen, UInt8(ESP32Protocol.maxToolHistoryNameBytes))
+    }
+
+    func testEncodeToolHistoryClearFrame() {
+        XCTAssertEqual(
+            Array(BuddyToolHistoryClearPayload().encode()),
+            [ESP32Protocol.toolHistoryFrameMarker, 0, 0]
+        )
     }
 
     // MARK: - Pair request frame encoding

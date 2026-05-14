@@ -6,7 +6,8 @@ Buddy 是 [CodeIsland](https://github.com/wxtsky/CodeIsland) 的硬件外设功�
 
 - **空闲（idle）→ Sleep 场景**：吉祥物闭眼休眠
 - **处理中（processing / running）→ Work 场景**：吉祥物在敲代码
-- **等待批准 / 等待回答（waitApproval / waitQuestion）→ Alert 场景**：吉祥物呼叫你
+- **等待批准（waitApproval）→ Alert 场景**：吉祥物呼叫你
+- **等待回答（waitQuestion）→ Question 场景**：吉祥物提示你打开问题
 
 未连接 BLE 时，Buddy 会显示引导页（含项目 GitHub 二维码与设备名）；长按按键即可切到 Demo 模式，自动轮播全部 16 只吉祥物。
 
@@ -141,8 +142,9 @@ ESP32-C6 需要 **Arduino-ESP32 v3.0 或更高**。
 1. 启动 [CodeIsland](https://github.com/wxtsky/CodeIsland) 主程序（需为支持 ESP32 桥接的版本）。
 2. 打开 **Preferences → ESP32 / Buddy** 面板，启用桥接开关。
 3. 首次连接时 macOS 会请求蓝牙权限，授权后等待扫描到 `Buddy-XXXXXX`，点击连接。
-4. 触发任意 AI Coding Agent（例如让 Claude Code 跑一条命令），Buddy 屏幕会立即切到对应吉祥物的 **Work** 场景。
-5. 在 macOS 端可远程调节屏幕亮度（10%–100%）与翻转方向（朝上 / 朝下），无需重新烧录。
+4. Buddy 屏幕出现 `Pair?` 后，短按 **BOOT** 确认配对；如果不想配对，长按 **BOOT** 拒绝。
+5. 触发任意 AI Coding Agent（例如让 Claude Code 跑一条命令），Buddy 屏幕会立即切到对应吉祥物的 **Work** 场景。
+6. 在 macOS 端可远程调节屏幕亮度（10%–100%）与翻转方向（朝上 / 朝下），无需重新烧录。
 
 > 一直扫不到设备？请到 **系统设置 → 隐私与安全性 → 蓝牙** 确认 CodeIsland 已被授权，然后关掉再打开 Buddy 桥接开关重新触发扫描。
 
@@ -154,6 +156,8 @@ ESP32-C6 需要 **Arduino-ESP32 v3.0 或更高**。
 | --- | --- |
 | 短按 BOOT | 切换到下一只吉祥物（Onboard / Demo 模式生效；BLE 已连上时由 Mac 决定显示哪只） |
 | 长按 ≥ 0.6 秒 | 切换 Demo 模式（自动轮播全部吉祥物） |
+| 配对页短按 BOOT | 确认当前 Mac 的配对请求 |
+| 配对页长按 BOOT | 拒绝当前 Mac 的配对请求 |
 
 ---
 

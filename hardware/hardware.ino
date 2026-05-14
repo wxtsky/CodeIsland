@@ -717,6 +717,12 @@ class CharCallbacks : public BLECharacteristicCallbacks {
       if (nameLen > 11) nameLen = 11;
       portENTER_CRITICAL(&bleMux);
       if (entryIdx == 0) toolHistCount = 0;
+      if (entryIdx == 0 && nameLen == 0) {
+        lastBleData = millis();
+        portEXIT_CRITICAL(&bleMux);
+        Serial.println("[BLE] Tool history cleared");
+        return;
+      }
       if (toolHistCount < MAX_TOOL_HISTORY) {
         ToolHistEntry& entry = toolHistory[toolHistCount];
         memset(entry.name, 0, sizeof(entry.name));

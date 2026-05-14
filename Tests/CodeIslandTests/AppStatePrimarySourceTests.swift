@@ -133,4 +133,21 @@ final class AppStatePrimarySourceTests: XCTestCase {
             "No-session state must show user-configured default mascot on Buddy")
         XCTAssertEqual(frame.status, .idle)
     }
+
+    func testESP32StatsUseGlobalToolCountAcrossSessions() {
+        let appState = AppState()
+
+        var first = SessionSnapshot()
+        first.recordTool("Read", description: nil, success: true, agentType: nil, maxHistory: 20)
+        first.recordTool("Edit", description: nil, success: true, agentType: nil, maxHistory: 20)
+        appState.sessions["s1"] = first
+
+        var second = SessionSnapshot()
+        second.recordTool("Bash", description: nil, success: false, agentType: nil, maxHistory: 20)
+        appState.sessions["s2"] = second
+        appState.refreshDerivedState()
+
+        let stats = appState.esp32StatsPayload(session: second)
+        XCTAssertEqual(stats.toolCallCount, 3)
+    }
 }

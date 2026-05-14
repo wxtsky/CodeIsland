@@ -85,13 +85,25 @@ final class ESP32StatePublisher {
         let session = appState.esp32DisplaySession()
         let frame = appState.esp32DisplayFrame(session: session)
         bridge.send(frame)
+
+        if bridge.usesLegacyPairingFallback {
+            lastSentStatus = frame.status
+            Self.log.debug("push(\(reason), legacy): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
+            return
+        }
+
         bridge.sendWorkspace(appState.esp32WorkspacePayload(session: session))
         appState.esp32MessagePreviewPayloads(session: session).forEach { bridge.sendMessagePreview($0) }
         bridge.sendModel(appState.esp32ModelPayload(session: session))
         bridge.sendStats(appState.esp32StatsPayload(session: session))
         bridge.sendSubagent(appState.esp32SubagentPayload(session: session))
         bridge.sendTimeHint(BuddyTimeHintPayload(hour: Calendar.current.component(.hour, from: Date())))
-        appState.esp32ToolHistoryPayloads(session: session).forEach { bridge.sendToolHistory($0) }
+        let toolHistory = appState.esp32ToolHistoryPayloads(session: session)
+        if toolHistory.isEmpty {
+            bridge.sendToolHistoryClear()
+        } else {
+            toolHistory.forEach { bridge.sendToolHistory($0) }
+        }
 
         // Detect status transitions for event animations
         let currentStatus = frame.status
@@ -266,7 +278,7 @@ extension AppState {
     }
 
     func esp32StatsPayload(session: SessionSnapshot? = nil) -> BuddyStatsPayload {
-        let toolCount = session?.totalToolCallCount ?? 0
+        let toolCount = esp32TotalToolCallCount()
         let durationMin: Int
         if let start = session?.startTime {
             durationMin = Int(Date().timeIntervalSince(start) / 60.0)
@@ -279,6 +291,10 @@ extension AppState {
             toolCallCount: toolCount,
             sessionDurationMinutes: durationMin
         )
+    }
+
+    func esp32TotalToolCallCount() -> Int {
+        sessions.values.reduce(0) { $0 + $1.totalToolCallCount }
     }
 
     func esp32SubagentPayload(session: SessionSnapshot? = nil) -> BuddySubagentPayload {

@@ -1332,9 +1332,19 @@ private struct BuddyPage: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
-                        Text(bridge.lastError ?? l10n["buddy_pair_rejected_hint"])
+                        Text(l10n["buddy_pair_rejected_hint"])
                             .font(.caption)
                             .foregroundStyle(.red)
+                    }
+                }
+
+                if bridge.usesLegacyPairingFallback {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                        Text(l10n["buddy_legacy_firmware_hint"])
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 

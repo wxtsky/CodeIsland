@@ -82,6 +82,7 @@ public enum ESP32Protocol {
     public static let eventFrameMarker: UInt8 = 0xF7
     public static let timeHintFrameMarker: UInt8 = 0xF6
     public static let toolHistoryFrameMarker: UInt8 = 0xF5
+    public static let maxToolHistoryNameBytes = 11
     public static let approveCurrentPermissionMarker: UInt8 = 0xF0
     public static let denyCurrentPermissionMarker: UInt8 = 0xF1
     public static let skipCurrentQuestionMarker: UInt8 = 0xF2
@@ -99,6 +100,7 @@ public enum ESP32Protocol {
     public static let pairAcceptedMarker: UInt8 = 0xE0
     public static let pairRejectedMarker: UInt8 = 0xE1
     public static let pairPendingMarker: UInt8 = 0xE2
+    public static let pairLegacyFallbackSeconds: Double = 2.5
     public static let pairConfirmTimeoutSeconds: Int = 30
 
     public static let minBrightnessPercent: UInt8 = 10
@@ -521,11 +523,20 @@ public struct BuddyToolHistoryPayload: Equatable, Sendable {
         var data = Data()
         data.append(ESP32Protocol.toolHistoryFrameMarker)
         data.append(index)
-        let nameBytes = Array(toolName.utf8.prefix(11))
+        let nameBytes = Array(toolName.utf8.prefix(ESP32Protocol.maxToolHistoryNameBytes))
         let flags = (success ? 0x80 : 0x00) | UInt8(nameBytes.count)
         data.append(flags)
         data.append(contentsOf: nameBytes)
         return data
+    }
+}
+
+/// Tool history clear frame for Buddy (0xF5, index 0, len 0).
+public struct BuddyToolHistoryClearPayload: Equatable, Sendable {
+    public init() {}
+
+    public func encode() -> Data {
+        Data([ESP32Protocol.toolHistoryFrameMarker, 0, 0])
     }
 }
 
