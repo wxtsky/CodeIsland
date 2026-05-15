@@ -1282,6 +1282,11 @@ final class AppState {
         tryMonitorSession(sessionId)
 
         let originalQuestions = event.toolInput?["questions"] as? [[String: Any]]
+        if originalQuestions == nil, let raw = event.toolInput?["questions"] {
+            log.warning("handleAskUserQuestion: questions cast to [[String: Any]] failed — raw type: \(type(of: raw))")
+        } else if event.toolInput == nil {
+            log.warning("handleAskUserQuestion: event.toolInput is nil")
+        }
         var askItems: [AskUserQuestionItem] = []
         if let questions = originalQuestions {
             var usedAnswerKeys = Set<String>()
@@ -1395,7 +1400,8 @@ final class AppState {
                 event: pending.event,
                 answers: [answerKey: answer],
                 answer: answer,
-                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]]
+                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]],
+                askState: pending.askUserQuestionState
             )
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
@@ -1445,7 +1451,8 @@ final class AppState {
                 event: pending.event,
                 answers: answersDict,
                 answer: answers.first?.answer,
-                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]]
+                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]],
+                askState: pending.askUserQuestionState
             )
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
@@ -1478,11 +1485,33 @@ final class AppState {
         event: HookEvent,
         answers: [String: String],
         answer: String?,
-        originalQuestions: [[String: Any]]?
+        originalQuestions: [[String: Any]]?,
+        askState: AskUserQuestionState? = nil
     ) -> [String: Any] {
         var updatedInput = event.toolInput ?? [:]
         if let originalQuestions {
             updatedInput["questions"] = originalQuestions
+        } else if !(updatedInput["questions"] is [[String: Any]]), let askState, !askState.items.isEmpty {
+            updatedInput["questions"] = askState.items.map { item -> [String: Any] in
+                var q: [String: Any] = ["question": item.payload.question]
+                if let header = item.payload.header {
+                    q["header"] = header
+                }
+                if let opts = item.payload.options {
+                    q["options"] = opts.enumerated().map { idx, label -> [String: Any] in
+                        var o: [String: Any] = ["label": label]
+                        if let descs = item.payload.descriptions, descs.indices.contains(idx) {
+                            o["description"] = descs[idx]
+                        } else {
+                            o["description"] = ""
+                        }
+                        return o
+                    }
+                }
+                q["multiSelect"] = item.multiSelect
+                return q
+            }
+            log.warning("askUserQuestionUpdatedInput: reconstructed questions from askState (originalQuestions cast failed or toolInput missing)")
         }
         updatedInput["answers"] = answers
         if let answer {

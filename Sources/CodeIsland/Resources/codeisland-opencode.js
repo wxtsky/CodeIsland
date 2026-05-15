@@ -304,16 +304,21 @@ export default {
       if (!response) return;
       const decision = response?.hookSpecificOutput?.decision;
       if (!decision) return;
-      // Skip denied questions (user clicked Skip)
       if (decision.behavior === "deny") {
         await rejectQuestion(requestId);
         return;
       }
       const answers = decision?.updatedInput?.answers;
       if (!answers) return;
-      // Convert answers dict to array of string arrays (OpenCode expects Answer = string[])
-      // Use Object.values for positional matching — answerKeys may have dedup suffixes
-      const answerArray = Object.values(answers).map(v => [v]);
+      const questions = decision?.updatedInput?.questions || [];
+      const answerValues = Object.values(answers);
+      const answerArray = answerValues.map((v, i) => {
+        const isMulti = questions[i]?.multiSelect === true;
+        if (isMulti && typeof v === "string" && v.includes(", ")) {
+          return v.split(", ");
+        }
+        return [v];
+      });
       await replyQuestion(requestId, answerArray);
     }
 

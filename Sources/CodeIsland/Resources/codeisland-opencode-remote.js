@@ -276,7 +276,16 @@ export default {
       }
       const answers = decision?.updatedInput?.answers;
       if (!answers) return;
-      await replyQuestion(requestId, Object.values(answers).map(v => [v]));
+      const questions = decision?.updatedInput?.questions || [];
+      const answerValues = Object.values(answers);
+      const answerArray = answerValues.map((v, i) => {
+        const isMulti = questions[i]?.multiSelect === true;
+        if (isMulti && typeof v === "string" && v.includes(", ")) {
+          return v.split(", ");
+        }
+        return [v];
+      });
+      await replyQuestion(requestId, answerArray);
     }
 
     return {
