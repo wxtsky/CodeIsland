@@ -2547,21 +2547,6 @@ final class AppState {
         for key in Array(processMonitors.keys) { stopMonitor(key) }
     }
 
-    isolated deinit {
-        rotationTimer?.invalidate()
-        cleanupTimer?.invalidate()
-        saveTimer?.invalidate()
-        if let stream = fsEventStream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-        }
-        discoveryScanTask?.cancel()
-        for (_, monitor) in processMonitors {
-            monitor.source.cancel()
-        }
-    }
-
     private struct DiscoveredSession {
         let sessionId: String
         let cwd: String
