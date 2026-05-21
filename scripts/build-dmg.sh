@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure Xcode.app toolchain is used even if xcode-select points at CLT.
+if [ -d /Applications/Xcode.app/Contents/Developer ]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
 # Usage: [BUILD_ARCH=universal|arm64] ./scripts/build-dmg.sh <version>
 # Example: ./scripts/build-dmg.sh 1.0.7
 # Example: BUILD_ARCH=arm64 SKIP_SIGN=1 SKIP_NOTARIZE=1 ./scripts/build-dmg.sh 1.0.7
@@ -138,8 +143,37 @@ echo "==> App bundle assembled at $APP_DIR"
 # Override the identity with SIGN_IDENTITY=... if you have a different cert.
 # ---------------------------------------------------------------------------
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: xuteng wang (K46MBL36P8)}"
+APP_SIGNED=false
+
+adhoc_sign_app_for_local_permissions() {
+    echo "==> Ad-hoc signing app with local entitlements"
+    SPARKLE_FW="$CONTENTS_DIR/Frameworks/Sparkle.framework"
+    SPARKLE_B="$SPARKLE_FW/Versions/B"
+
+    for xpc in "$SPARKLE_B"/XPCServices/*.xpc; do
+        [ -e "$xpc" ] || continue
+        codesign --force --options runtime --sign - "$xpc"
+    done
+    [ -e "$SPARKLE_B/Autoupdate" ] && \
+        codesign --force --options runtime --sign - "$SPARKLE_B/Autoupdate"
+    [ -d "$SPARKLE_B/Updater.app" ] && \
+        codesign --force --options runtime --sign - "$SPARKLE_B/Updater.app"
+    codesign --force --options runtime --sign - "$SPARKLE_FW"
+
+    for helper in "$CONTENTS_DIR"/Helpers/*; do
+        [ -f "$helper" ] || continue
+        codesign --force --options runtime --sign - "$helper"
+    done
+
+    codesign --force --options runtime \
+        --entitlements "$REPO_ROOT/CodeIsland.entitlements" \
+        --sign - \
+        "$APP_DIR"
+}
+
 if [ "${SKIP_SIGN:-0}" = "1" ]; then
-    echo "==> SKIP_SIGN=1 — leaving adhoc signature"
+    echo "==> SKIP_SIGN=1 — skipping Developer ID signing"
+    adhoc_sign_app_for_local_permissions
 elif security find-identity -v -p codesigning | grep -q "$(printf '%s' "$SIGN_IDENTITY" | sed 's/[][\\.^$*/]/\\&/g')"; then
     echo "==> Signing with '$SIGN_IDENTITY' (inside-out for Sparkle, then outer bundle)"
     SPARKLE_FW="$CONTENTS_DIR/Frameworks/Sparkle.framework"
@@ -178,9 +212,11 @@ elif security find-identity -v -p codesigning | grep -q "$(printf '%s' "$SIGN_ID
 
     echo "==> Verifying nested signatures"
     codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+    APP_SIGNED=true
 else
-    echo "==> Developer ID identity '$SIGN_IDENTITY' not in keychain — leaving adhoc signature"
+    echo "==> Developer ID identity '$SIGN_IDENTITY' not in keychain — using ad-hoc signing"
     echo "    (install your Developer ID cert or set SIGN_IDENTITY=...)"
+    adhoc_sign_app_for_local_permissions
 fi
 
 echo "==> Creating DMG"
@@ -207,7 +243,7 @@ create-dmg \
 # fail with "An error occurred while running the updater" in that state.
 # Stapler still works without this step, but Sparkle's helper handoff is
 # happier when the container is signed.
-if [ "${SKIP_SIGN:-0}" != "1" ] && [[ "$SIGN_IDENTITY" != "-" ]]; then
+if [ "$APP_SIGNED" = true ]; then
     echo "==> Code-signing the DMG container"
     codesign --force --sign "$SIGN_IDENTITY" --timestamp "$OUTPUT_DMG"
 fi
@@ -220,7 +256,7 @@ fi
 NOTARY_PROFILE="${NOTARY_PROFILE:-CodeIsland}"
 if [ "${SKIP_NOTARIZE:-0}" = "1" ]; then
     echo "==> SKIP_NOTARIZE=1 — release DMG is not notarized"
-elif [ "${SKIP_SIGN:-0}" = "1" ]; then
+elif [ "$APP_SIGNED" != true ]; then
     echo "==> Skipping notarization (app was not Developer-ID signed)"
 else
     echo "==> Submitting to Apple notary service (profile '$NOTARY_PROFILE')"

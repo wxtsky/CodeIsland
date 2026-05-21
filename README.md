@@ -81,7 +81,7 @@ Requires **macOS 14+** and **Swift 5.9+**.
 git clone https://github.com/wxtsky/CodeIsland.git
 cd CodeIsland
 
-# Development (debug build + launch)
+# Development (debug build + launch; Buddy Bluetooth needs the .app below)
 swift build && ./.build/debug/CodeIsland
 
 # Release (universal binary: Apple Silicon + Intel)

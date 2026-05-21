@@ -100,6 +100,10 @@ final class ESP32BridgeManager: NSObject {
     private var pairTimeoutTimer: Timer?
     /// Fires when no pair response arrives at all, which indicates pre-pairing firmware.
     private var pairLegacyFallbackTimer: Timer?
+    /// CoreBluetooth can keep an existing manager in `.unauthorized` after the
+    /// user flips macOS Bluetooth permission back to allowed. Recreate it once
+    /// in that case so the app can recover without a full relaunch.
+    private var authorizationRecoveryResetAttempted = false
 
     /// Callback fired when Buddy notifies a button press with a
     /// mascot `sourceId` byte. Nonisolated to allow CoreBluetooth delegate
@@ -152,6 +156,9 @@ final class ESP32BridgeManager: NSObject {
         resetPendingWrites()
         connectedPeripheralName = nil
         usesLegacyPairingFallback = false
+        central?.delegate = nil
+        central = nil
+        authorizationRecoveryResetAttempted = false
         status = .off
     }
 
@@ -326,6 +333,37 @@ final class ESP32BridgeManager: NSObject {
         if central == nil {
             central = CBCentralManager(delegate: self, queue: nil,
                                        options: [CBCentralManagerOptionShowPowerAlertKey: true])
+        }
+    }
+
+    private func recreateCentralAfterAuthorizationRecovery() {
+        cancelReconnectTimer()
+        cancelPairingTimers()
+        if let central {
+            if central.isScanning { central.stopScan() }
+            if let peripheral {
+                central.cancelPeripheralConnection(peripheral)
+            }
+            central.delegate = nil
+        }
+        central = nil
+        peripheral = nil
+        writeChar = nil
+        notifyChar = nil
+        notifySubscriptionReady = false
+        resetPendingWrites()
+        connectedPeripheralName = nil
+        usesLegacyPairingFallback = false
+        ensureCentral()
+    }
+
+    private static var bluetoothAuthorizationDescription: String {
+        switch CBManager.authorization {
+        case .allowedAlways: return "allowedAlways"
+        case .denied: return "denied"
+        case .notDetermined: return "notDetermined"
+        case .restricted: return "restricted"
+        @unknown default: return "unknown(\(CBManager.authorization.rawValue))"
         }
     }
 
@@ -612,6 +650,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
         Task { @MainActor in
             switch central.state {
             case .poweredOn:
+                self.authorizationRecoveryResetAttempted = false
                 self.lastError = nil
                 if self.discoveryActive {
                     self.startDiscovery()
@@ -622,6 +661,17 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
                 self.status = .poweredOff
                 self.lastError = "Bluetooth is off"
             case .unauthorized:
+                let authorization = Self.bluetoothAuthorizationDescription
+                let bundleId = Bundle.main.bundleIdentifier ?? "nil"
+                let bundlePath = Bundle.main.bundlePath
+                Self.log.error("Bluetooth unauthorized: authorization=\(authorization, privacy: .public) bundle=\(bundleId, privacy: .public) path=\(bundlePath, privacy: .public)")
+                if CBManager.authorization == .allowedAlways,
+                   !self.authorizationRecoveryResetAttempted {
+                    self.authorizationRecoveryResetAttempted = true
+                    Self.log.info("Bluetooth authorization is allowed again; recreating CBCentralManager")
+                    self.recreateCentralAfterAuthorizationRecovery()
+                    return
+                }
                 self.status = .poweredOff
                 self.lastError = "Bluetooth permission denied"
             case .unsupported:
