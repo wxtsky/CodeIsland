@@ -5,6 +5,62 @@ import os
 import Security
 import CodeIslandCore
 
+enum BuddyWritePriority: Int, Comparable {
+    case auxiliary = 0
+    case normal = 1
+    case primary = 2
+    case control = 3
+
+    static func < (lhs: BuddyWritePriority, rhs: BuddyWritePriority) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+struct BuddyQueuedWrite: Equatable {
+    let data: Data
+    let priority: BuddyWritePriority
+}
+
+struct BuddyWriteQueue {
+    private let capacity: Int
+    private var frames: [BuddyQueuedWrite] = []
+
+    init(capacity: Int) {
+        self.capacity = max(1, capacity)
+    }
+
+    var count: Int { frames.count }
+    var isEmpty: Bool { frames.isEmpty }
+    var contents: [BuddyQueuedWrite] { frames }
+
+    mutating func append(_ data: Data, priority: BuddyWritePriority) -> Int {
+        frames.append(BuddyQueuedWrite(data: data, priority: priority))
+        var dropped = 0
+        while frames.count > capacity {
+            frames.remove(at: lowestPriorityOldestIndex())
+            dropped += 1
+        }
+        return dropped
+    }
+
+    mutating func popFirst() -> BuddyQueuedWrite? {
+        guard !frames.isEmpty else { return nil }
+        return frames.removeFirst()
+    }
+
+    mutating func removeAll(keepingCapacity keepCapacity: Bool = false) {
+        frames.removeAll(keepingCapacity: keepCapacity)
+    }
+
+    private func lowestPriorityOldestIndex() -> Int {
+        var result = frames.startIndex
+        for index in frames.indices.dropFirst() where frames[index].priority < frames[result].priority {
+            result = index
+        }
+        return result
+    }
+}
+
 /// Connection lifecycle state for the Buddy Bluetooth bridge.
 enum ESP32BridgeStatus: Equatable {
     case off                  // user has disabled the bridge
@@ -52,7 +108,8 @@ struct DiscoveredBuddy: Identifiable, Equatable {
 /// bridge auto-reconnects to it on next launch (and ignores other Buddies
 /// in range).
 ///
-/// Writes use `.withoutResponse` to match the firmware's `WRITE_NR` property.
+/// Streaming writes use `.withoutResponse`; pairing uses `.withResponse` when
+/// the firmware advertises `WRITE`, so delivery failures don't look like legacy firmware.
 /// The notify characteristic delivers 1-byte button events carrying the
 /// currently displayed mascot's `sourceId` – dispatched to
 /// `ESP32FocusCoordinator`.
@@ -88,7 +145,7 @@ final class ESP32BridgeManager: NSObject {
     private var discoveryActive = false
     private var discoveryPruneTimer: Timer?
     private static let maxPendingWriteFrames = 64
-    private var pendingWriteQueue: [Data] = []
+    private var pendingWriteQueue = BuddyWriteQueue(capacity: ESP32BridgeManager.maxPendingWriteFrames)
     /// Stable 6-byte identifier for this Mac, used in the application-layer
     /// pairing handshake so Buddy can distinguish paired hosts.
     @ObservationIgnored
@@ -98,8 +155,14 @@ final class ESP32BridgeManager: NSObject {
     private var forgetting = false
     /// Fires after `pairConfirmTimeoutSeconds` while Buddy is waiting for BOOT confirmation.
     private var pairTimeoutTimer: Timer?
-    /// Fires when no pair response arrives at all, which indicates pre-pairing firmware.
-    private var pairLegacyFallbackTimer: Timer?
+    /// Fires when no pair response arrives after the request write is delivered.
+    private var pairResponseTimer: Timer?
+    private var pairResponseAllowsLegacyFallback = false
+    private enum PendingResponseWrite {
+        case pairRequest
+        case unpair
+    }
+    private var pendingResponseWrite: PendingResponseWrite?
     /// CoreBluetooth can keep an existing manager in `.unauthorized` after the
     /// user flips macOS Bluetooth permission back to allowed. Recreate it once
     /// in that case so the app can recover without a full relaunch.
@@ -149,6 +212,7 @@ final class ESP32BridgeManager: NSObject {
         if let peripheral, let central {
             central.cancelPeripheralConnection(peripheral)
         }
+        pendingResponseWrite = nil
         peripheral = nil
         writeChar = nil
         notifyChar = nil
@@ -209,6 +273,7 @@ final class ESP32BridgeManager: NSObject {
             central.cancelPeripheralConnection(peripheral)
         }
         if peripheral?.identifier != buddyId {
+            pendingResponseWrite = nil
             peripheral = nil
             writeChar = nil
             notifyChar = nil
@@ -232,8 +297,18 @@ final class ESP32BridgeManager: NSObject {
         if let peripheral, let writeChar,
            status == .connected || status == .pairing || status == .pairWaitingConfirm {
             let unpair = BuddyUnpairPayload(hostId: hostIdentifier)
-            peripheral.writeValue(unpair.encode(), for: writeChar, type: .withResponse)
-            Self.log.info("Sent unpair frame (withResponse), will disconnect on ACK")
+            if writeChar.properties.contains(.write) {
+                pendingResponseWrite = .unpair
+                peripheral.writeValue(unpair.encode(), for: writeChar, type: .withResponse)
+                Self.log.info("Sent unpair frame (withResponse), will disconnect on ACK")
+            } else if writeChar.properties.contains(.writeWithoutResponse) {
+                peripheral.writeValue(unpair.encode(), for: writeChar, type: .withoutResponse)
+                Self.log.info("Sent unpair frame (withoutResponse), disconnecting without ACK")
+                completeForget()
+            } else {
+                Self.log.error("Buddy write characteristic does not support unpair writes; disconnecting")
+                completeForget()
+            }
             return
         }
         completeForget()
@@ -264,67 +339,67 @@ final class ESP32BridgeManager: NSObject {
 
     /// Write a single frame to Buddy. No-op when not connected.
     func send(_ frame: MascotFramePayload) {
-        send(frame.encode())
+        send(frame.encode(), priority: .primary)
     }
 
     /// Write a workspace update frame to Buddy. No-op when not connected.
     func sendWorkspace(_ workspace: BuddyWorkspacePayload) {
-        send(workspace.encode())
+        send(workspace.encode(), priority: .normal)
     }
 
     /// Write a message preview frame to Buddy. No-op when not connected.
     func sendMessagePreview(_ preview: BuddyMessagePreviewPayload) {
-        send(preview.encode())
+        send(preview.encode(), priority: .auxiliary)
     }
 
     /// Write model info frame to Buddy. No-op when not connected.
     func sendModel(_ model: BuddyModelPayload) {
-        send(model.encode())
+        send(model.encode(), priority: .normal)
     }
 
     /// Write session stats frame to Buddy. No-op when not connected.
     func sendStats(_ stats: BuddyStatsPayload) {
-        send(stats.encode())
+        send(stats.encode(), priority: .normal)
     }
 
     /// Write subagent count frame to Buddy. No-op when not connected.
     func sendSubagent(_ subagent: BuddySubagentPayload) {
-        send(subagent.encode())
+        send(subagent.encode(), priority: .normal)
     }
 
     /// Write event frame to Buddy. No-op when not connected.
     func sendEvent(_ event: BuddyEventPayload) {
-        send(event.encode())
+        send(event.encode(), priority: .control)
     }
 
     /// Write time hint frame to Buddy. No-op when not connected.
     func sendTimeHint(_ timeHint: BuddyTimeHintPayload) {
-        send(timeHint.encode())
+        send(timeHint.encode(), priority: .auxiliary)
     }
 
     /// Write tool history entry frame to Buddy. No-op when not connected.
     func sendToolHistory(_ entry: BuddyToolHistoryPayload) {
-        send(entry.encode())
+        send(entry.encode(), priority: .auxiliary)
     }
 
     /// Clear Buddy's tool history timeline. No-op when not connected.
     func sendToolHistoryClear() {
-        send(BuddyToolHistoryClearPayload().encode())
+        send(BuddyToolHistoryClearPayload().encode(), priority: .normal)
     }
 
-    private func send(_ data: Data) {
+    private func send(_ data: Data, priority: BuddyWritePriority) {
         guard peripheral != nil, writeChar != nil, status == .connected else { return }
-        enqueueWrite(data)
+        enqueueWrite(data, priority: priority)
     }
 
     /// Write Buddy screen brightness. No-op when not connected.
     func sendBrightness(percent: Double) {
-        send(BuddyBrightnessPayload(percent: percent).encode())
+        send(BuddyBrightnessPayload(percent: percent).encode(), priority: .control)
     }
 
     /// Write Buddy screen orientation. No-op when not connected.
     func sendScreenOrientation(_ orientation: BuddyScreenOrientation) {
-        send(BuddyScreenOrientationPayload(orientation: orientation).encode())
+        send(BuddyScreenOrientationPayload(orientation: orientation).encode(), priority: .control)
     }
 
     // MARK: - Internals
@@ -346,6 +421,7 @@ final class ESP32BridgeManager: NSObject {
             }
             central.delegate = nil
         }
+        pendingResponseWrite = nil
         central = nil
         peripheral = nil
         writeChar = nil
@@ -367,12 +443,10 @@ final class ESP32BridgeManager: NSObject {
         }
     }
 
-    private func enqueueWrite(_ data: Data) {
-        pendingWriteQueue.append(data)
-        if pendingWriteQueue.count > Self.maxPendingWriteFrames {
-            let overflow = pendingWriteQueue.count - Self.maxPendingWriteFrames
-            pendingWriteQueue.removeFirst(overflow)
-            Self.log.debug("Dropped \(overflow) queued Buddy BLE frames under write backpressure")
+    private func enqueueWrite(_ data: Data, priority: BuddyWritePriority) {
+        let dropped = pendingWriteQueue.append(data, priority: priority)
+        if dropped > 0 {
+            Self.log.debug("Dropped \(dropped) low-priority queued Buddy BLE frames under write backpressure")
         }
         drainPendingWrites()
     }
@@ -380,8 +454,8 @@ final class ESP32BridgeManager: NSObject {
     private func drainPendingWrites() {
         guard let peripheral, let writeChar, status == .connected else { return }
         while !pendingWriteQueue.isEmpty, peripheral.canSendWriteWithoutResponse {
-            let data = pendingWriteQueue.removeFirst()
-            peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+            guard let frame = pendingWriteQueue.popFirst() else { break }
+            peripheral.writeValue(frame.data, for: writeChar, type: .withoutResponse)
         }
     }
 
@@ -415,19 +489,32 @@ final class ESP32BridgeManager: NSObject {
     private func sendPairRequest() {
         guard let peripheral, let writeChar else { return }
         let payload = BuddyPairRequestPayload(hostId: hostIdentifier)
-        peripheral.writeValue(payload.encode(), for: writeChar, type: .withoutResponse)
-        Self.log.info("Pair request sent")
-        scheduleLegacyPairFallback()
+        let data = payload.encode()
+        if writeChar.properties.contains(.write) {
+            pendingResponseWrite = .pairRequest
+            peripheral.writeValue(data, for: writeChar, type: .withResponse)
+            Self.log.info("Pair request sent (withResponse)")
+        } else if writeChar.properties.contains(.writeWithoutResponse) {
+            peripheral.writeValue(data, for: writeChar, type: .withoutResponse)
+            Self.log.info("Pair request sent (withoutResponse)")
+            schedulePairResponseTimeout(allowsLegacyFallback: true)
+        } else {
+            Self.log.error("Buddy write characteristic does not support writes")
+            lastError = "Buddy write characteristic does not support writes"
+            status = .pairRejected
+            central?.cancelPeripheralConnection(peripheral)
+        }
     }
 
-    private func scheduleLegacyPairFallback() {
-        pairLegacyFallbackTimer?.invalidate()
-        pairLegacyFallbackTimer = Timer.scheduledTimer(
-            withTimeInterval: ESP32Protocol.pairLegacyFallbackSeconds,
+    private func schedulePairResponseTimeout(allowsLegacyFallback: Bool) {
+        pairResponseTimer?.invalidate()
+        pairResponseAllowsLegacyFallback = allowsLegacyFallback
+        pairResponseTimer = Timer.scheduledTimer(
+            withTimeInterval: ESP32Protocol.pairResponseTimeoutSeconds,
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.handleLegacyPairFallback()
+                self?.handlePairResponseTimeout()
             }
         }
     }
@@ -449,14 +536,15 @@ final class ESP32BridgeManager: NSObject {
         pairTimeoutTimer = nil
     }
 
-    private func cancelLegacyPairFallback() {
-        pairLegacyFallbackTimer?.invalidate()
-        pairLegacyFallbackTimer = nil
+    private func cancelPairResponseTimeout() {
+        pairResponseTimer?.invalidate()
+        pairResponseTimer = nil
+        pairResponseAllowsLegacyFallback = false
     }
 
     private func cancelPairingTimers() {
         cancelPairTimeout()
-        cancelLegacyPairFallback()
+        cancelPairResponseTimeout()
     }
 
     private func handlePairTimeout() {
@@ -470,14 +558,26 @@ final class ESP32BridgeManager: NSObject {
         }
     }
 
-    private func handleLegacyPairFallback() {
+    private func handlePairResponseTimeout() {
         guard status == .pairing else { return }
-        Self.log.info("No pair response received; continuing in legacy Buddy firmware compatibility mode")
-        pairLegacyFallbackTimer = nil
-        usesLegacyPairingFallback = true
-        lastError = nil
-        status = .connected
-        onConnected?()
+        pairResponseTimer = nil
+        if pairResponseAllowsLegacyFallback {
+            Self.log.info("No pair response received after no-response write; continuing in legacy Buddy firmware compatibility mode")
+            pairResponseAllowsLegacyFallback = false
+            usesLegacyPairingFallback = true
+            lastError = nil
+            status = .connected
+            onConnected?()
+        } else {
+            Self.log.error("No pair response received from Buddy after acknowledged pair request")
+            pairResponseAllowsLegacyFallback = false
+            usesLegacyPairingFallback = false
+            lastError = "Buddy did not respond to pairing. Reconnect or flash the latest Buddy firmware."
+            status = .pairRejected
+            if let peripheral, let central {
+                central.cancelPeripheralConnection(peripheral)
+            }
+        }
     }
 
     private func loadSelectionFromDefaults() {
@@ -703,6 +803,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
         Task { @MainActor in
             Self.log.info("Connected, discovering services")
             self.usesLegacyPairingFallback = false
+            self.pendingResponseWrite = nil
             // If discovery is still running we no longer need to scan once
             // we have the selected device hooked up.
             if !self.discoveryActive, central.isScanning {
@@ -718,6 +819,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
         Task { @MainActor in
             Self.log.error("Failed to connect: \(error?.localizedDescription ?? "unknown")")
             self.cancelPairingTimers()
+            self.pendingResponseWrite = nil
             self.lastError = error?.localizedDescription
             self.peripheral = nil
             self.writeChar = nil
@@ -735,6 +837,7 @@ extension ESP32BridgeManager: CBCentralManagerDelegate {
         Task { @MainActor in
             Self.log.info("Disconnected: \(error?.localizedDescription ?? "peer closed")")
             self.cancelPairingTimers()
+            self.pendingResponseWrite = nil
             self.peripheral = nil
             self.writeChar = nil
             self.notifyChar = nil
@@ -857,7 +960,37 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
                                 didWriteValueFor characteristic: CBCharacteristic,
                                 error: Error?) {
         Task { @MainActor in
-            if self.forgetting {
+            guard characteristic.uuid == CBUUID(string: ESP32Protocol.writeCharacteristicUUID) else {
+                return
+            }
+            guard let pending = self.pendingResponseWrite else {
+                if self.forgetting {
+                    if let error {
+                        Self.log.error("Unpair write ACK error (proceeding anyway): \(error.localizedDescription)")
+                    }
+                    self.completeForget()
+                }
+                return
+            }
+            self.pendingResponseWrite = nil
+            switch pending {
+            case .pairRequest:
+                if let error {
+                    Self.log.error("Pair request write ACK error: \(error.localizedDescription)")
+                    self.cancelPairingTimers()
+                    self.lastError = "Pair request could not be delivered: \(error.localizedDescription)"
+                    self.usesLegacyPairingFallback = false
+                    self.status = .pairRejected
+                    if let peripheral = self.peripheral, let central = self.central {
+                        central.cancelPeripheralConnection(peripheral)
+                    }
+                    return
+                }
+                Self.log.info("Pair request write ACK received; waiting for Buddy pair response")
+                if self.status == .pairing {
+                    self.schedulePairResponseTimeout(allowsLegacyFallback: false)
+                }
+            case .unpair:
                 if let error {
                     Self.log.error("Unpair write ACK error (proceeding anyway): \(error.localizedDescription)")
                 }
@@ -901,7 +1034,7 @@ extension ESP32BridgeManager: CBPeripheralDelegate {
 
     @MainActor
     private func handlePairResponse(_ response: BuddyPairResponse) {
-        cancelLegacyPairFallback()
+        cancelPairResponseTimeout()
         switch response {
         case .accepted:
             Self.log.info("Pair accepted by Buddy")

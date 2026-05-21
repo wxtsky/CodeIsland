@@ -150,4 +150,35 @@ final class AppStatePrimarySourceTests: XCTestCase {
         let stats = appState.esp32StatsPayload(session: second)
         XCTAssertEqual(stats.toolCallCount, 3)
     }
+
+    func testESP32DisplayIdentityStaysStableAcrossStatusAndDefaultMascotChanges() {
+        UserDefaults.standard.set("codex", forKey: SettingsKey.defaultSource)
+
+        let appState = AppState()
+        var session = SessionSnapshot()
+        session.source = "cursor"
+        session.status = .running
+        appState.sessions["s1"] = session
+        appState.activeSessionId = "s1"
+
+        XCTAssertEqual(appState.esp32DisplayIdentity(), "session:s1")
+
+        session.status = .idle
+        appState.sessions["s1"] = session
+
+        XCTAssertEqual(appState.esp32DisplayIdentity(), "session:s1",
+            "Completion/error animations should still be scoped to the same session even when idle display falls back to the default mascot")
+    }
+
+    func testESP32DisplayIdentityChangesWhenDisplayedSessionChanges() {
+        let appState = AppState()
+        appState.sessions["s1"] = SessionSnapshot()
+        appState.sessions["s2"] = SessionSnapshot()
+
+        appState.activeSessionId = "s1"
+        XCTAssertEqual(appState.esp32DisplayIdentity(), "session:s1")
+
+        appState.activeSessionId = "s2"
+        XCTAssertEqual(appState.esp32DisplayIdentity(), "session:s2")
+    }
 }

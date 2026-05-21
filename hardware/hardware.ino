@@ -130,6 +130,8 @@ static const char CODEISLAND_QR[CODEISLAND_QR_SIZE][CODEISLAND_QR_SIZE + 1] PROG
 volatile uint8_t  bleSourceId = 0;    // 0=claude, 1=codex, ...
 volatile uint8_t  bleStatusId = 0;    // 0=idle, 1=processing, 2=running, 3=waitApproval, 4=waitQuestion
 volatile bool     bleConnected = false;
+volatile uint16_t bleConnId = 0;
+volatile bool     bleConnIdValid = false;
 volatile unsigned long lastBleData = 0;
 volatile uint8_t  buddyBrightnessPercent = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
 volatile uint8_t  buddyScreenOrientation = BUDDY_SCREEN_UP;
@@ -414,15 +416,55 @@ int pollButton(unsigned long now) {
   return btnLongFired ? 0 : 1;
 }
 
+static void rememberBleConnection(uint16_t connId) {
+  portENTER_CRITICAL(&bleMux);
+  bleConnId = connId;
+  bleConnIdValid = true;
+  portEXIT_CRITICAL(&bleMux);
+}
+
+static void clearBleConnection() {
+  portENTER_CRITICAL(&bleMux);
+  bleConnIdValid = false;
+  portEXIT_CRITICAL(&bleMux);
+}
+
+static bool currentBleConnectionId(uint16_t* outConnId) {
+  portENTER_CRITICAL(&bleMux);
+  bool valid = bleConnIdValid;
+  uint16_t connId = bleConnId;
+  portEXIT_CRITICAL(&bleMux);
+  if (!valid) return false;
+  *outConnId = connId;
+  return true;
+}
+
+static void disconnectCurrentClient(const char* reason) {
+  uint16_t connId = 0;
+  if (!currentBleConnectionId(&connId)) {
+    Serial.printf("[BLE]  Cannot disconnect client (%s): no active connId\n", reason);
+    return;
+  }
+  BLEServer* server = BLEDevice::getServer();
+  if (!server) {
+    Serial.printf("[BLE]  Cannot disconnect client (%s): server unavailable\n", reason);
+    return;
+  }
+  server->disconnect(connId);
+  Serial.printf("[BLE]  Disconnecting client (%s, connId=%u)\n", reason, connId);
+}
+
 // --- BLE Callbacks ---
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
+    rememberBleConnection(pServer->getConnId());
     bleConnected = true;
     pairAuthenticated = false;
     Serial.println("[BLE] Connected, waiting for pair handshake...");
   }
   void onDisconnect(BLEServer* pServer) override {
     bleConnected = false;
+    clearBleConnection();
     pairAuthenticated = false;
     if (appMode == MODE_PAIR_CONFIRM) {
       appMode = MODE_ONBOARD;
@@ -431,6 +473,14 @@ class ServerCallbacks : public BLEServerCallbacks {
     Serial.println("[BLE] Disconnected, re-advertising...");
     BLEDevice::startAdvertising();
   }
+#if defined(CONFIG_BLUEDROID_ENABLED)
+  void onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
+    rememberBleConnection(param->connect.conn_id);
+  }
+  void onDisconnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
+    clearBleConnection();
+  }
+#endif
 };
 
 // --- Pairing helpers (called from BLE callback context) ---
@@ -1227,7 +1277,7 @@ void loop() {
       appMode = MODE_ONBOARD;
       portEXIT_CRITICAL(&bleMux);
       if (bleConnected) {
-        BLEDevice::getServer()->disconnect(0);
+        disconnectCurrentClient("factory reset pairing");
       }
     }
   }
@@ -1330,8 +1380,7 @@ void loop() {
   if (pairRejectPending && (now - pairRejectTime) > PAIR_REJECT_DELAY_MS) {
     pairRejectPending = false;
     if (bleConnected) {
-      BLEDevice::getServer()->disconnect(0);
-      Serial.println("[PAIR] Disconnecting rejected client");
+      disconnectCurrentClient("pair rejected");
     }
   }
 

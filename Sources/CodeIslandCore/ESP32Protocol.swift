@@ -4,7 +4,7 @@ import Foundation
 ///
 /// BLE service / characteristics:
 /// - Service:        `0000beef-0000-1000-8000-00805f9b34fb`
-/// - Write (host→Buddy, WRITE_NR): `0000beef-0001-1000-8000-00805f9b34fb`
+/// - Write (host→Buddy, WRITE + WRITE_NR): `0000beef-0001-1000-8000-00805f9b34fb`
 /// - Notify (Buddy→host):          `0000beef-0002-1000-8000-00805f9b34fb`
 ///
 /// Downlink agent frame (≤ 20 bytes):
@@ -100,7 +100,8 @@ public enum ESP32Protocol {
     public static let pairAcceptedMarker: UInt8 = 0xE0
     public static let pairRejectedMarker: UInt8 = 0xE1
     public static let pairPendingMarker: UInt8 = 0xE2
-    public static let pairLegacyFallbackSeconds: Double = 2.5
+    public static let pairResponseTimeoutSeconds: Double = 2.5
+    public static let pairLegacyFallbackSeconds: Double = pairResponseTimeoutSeconds
     public static let pairConfirmTimeoutSeconds: Int = 30
 
     public static let minBrightnessPercent: UInt8 = 10

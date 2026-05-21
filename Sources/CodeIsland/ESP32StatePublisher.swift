@@ -24,7 +24,12 @@ final class ESP32StatePublisher {
     private var screenOrientation: BuddyScreenOrientation = .up
     private var keepAliveActivity: NSObjectProtocol?
     private var interactiveRetryTask: Task<Void, Never>?
-    private var lastSentStatus: MascotStatusCode?
+    private var lastSentDisplay: SentDisplayState?
+
+    private struct SentDisplayState {
+        let identity: String
+        let status: MascotStatusCode
+    }
 
     private init() {
         self.bridge = ESP32BridgeManager.shared
@@ -34,6 +39,7 @@ final class ESP32StatePublisher {
     func attach(_ appState: AppState) {
         self.appState = appState
         bridge.onConnected = { [weak self] in
+            self?.resetEventState()
             self?.syncConfig()
             self?.flush(reason: "connected")
         }
@@ -67,7 +73,7 @@ final class ESP32StatePublisher {
             }
         } else {
             endKeepAliveActivity()
-            lastSentStatus = nil
+            resetEventState()
             bridge.stop()
         }
     }
@@ -83,11 +89,12 @@ final class ESP32StatePublisher {
         guard bridge.status == .connected else { return }
         guard bridge.selectedBuddyIdentifier != nil else { return }
         let session = appState.esp32DisplaySession()
+        let displayIdentity = appState.esp32DisplayIdentity()
         let frame = appState.esp32DisplayFrame(session: session)
         bridge.send(frame)
 
         if bridge.usesLegacyPairingFallback {
-            lastSentStatus = frame.status
+            lastSentDisplay = SentDisplayState(identity: displayIdentity, status: frame.status)
             Self.log.debug("push(\(reason), legacy): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
             return
         }
@@ -107,7 +114,10 @@ final class ESP32StatePublisher {
 
         // Detect status transitions for event animations
         let currentStatus = frame.status
-        if let prev = lastSentStatus, prev != currentStatus {
+        if let previous = lastSentDisplay,
+           previous.identity == displayIdentity,
+           previous.status != currentStatus {
+            let prev = previous.status
             if (prev == .processing || prev == .running) && currentStatus == .idle {
                 if let lastTool = session?.toolHistory.last, !lastTool.success {
                     bridge.sendEvent(.error)
@@ -120,9 +130,13 @@ final class ESP32StatePublisher {
                 bridge.sendEvent(.approval)
             }
         }
-        lastSentStatus = currentStatus
+        lastSentDisplay = SentDisplayState(identity: displayIdentity, status: currentStatus)
 
         Self.log.debug("push(\(reason)): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
+    }
+
+    private func resetEventState() {
+        lastSentDisplay = nil
     }
 
     private func syncConfig() {
@@ -172,9 +186,26 @@ extension AppState {
         let messages: [ChatMessage]
     }
 
-    func esp32DisplaySession() -> SessionSnapshot? {
+    func esp32DisplaySessionId() -> String? {
         let sid = rotatingSessionId ?? activeSessionId ?? sessions.keys.sorted().first
-        return sid.flatMap { sessions[$0] }
+        return sid
+    }
+
+    func esp32DisplaySession() -> SessionSnapshot? {
+        esp32DisplaySessionId().flatMap { sessions[$0] }
+    }
+
+    func esp32DisplayIdentity() -> String {
+        if let pending = pendingPermission {
+            return "session:\(pending.event.sessionId ?? activeSessionId ?? "default")"
+        }
+        if let pending = pendingQuestion {
+            return "session:\(pending.event.sessionId ?? activeSessionId ?? "default")"
+        }
+        if let sessionId = esp32DisplaySessionId() {
+            return "session:\(sessionId)"
+        }
+        return "fallback:\(SettingsManager.shared.defaultSource)"
     }
 
     private func esp32DisplayContext(session: SessionSnapshot? = nil) -> BuddyDisplayContext {
