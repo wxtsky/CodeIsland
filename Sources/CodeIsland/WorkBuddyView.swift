@@ -91,41 +91,17 @@ struct WorkBuddyView: View {
     }
 
     private var sleepScene: some View {
-        ZStack {
-            TimelineView(.periodic(from: .now, by: 0.06)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * speed
-                let phase = t.truncatingRemainder(dividingBy: 4.0) / 4.0
-                let float = sin(phase * .pi * 2) * 0.8
-                let blinkCycle = t.truncatingRemainder(dividingBy: 4.0)
-                let blink: CGFloat = (blinkCycle > 3.5 && blinkCycle < 3.7) ? 0.15 : 0.5
-                Canvas { c, sz in
-                    let v = V(sz, svgW: 15, svgH: 12, svgY0: 4)
-                    drawShadow(c, v: v, width: 6 + abs(float) * 0.3, opacity: 0.2)
-                    drawLegs(c, v: v, dy: float)
-                    drawBody(c, v: v, dy: float, scale: 0.9)
-                    drawFace(c, v: v, dy: float, blinkPhase: blink)
-                }
-            }
-            TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * speed
-                ZStack {
-                    ForEach(0..<3, id: \.self) { i in
-                        let ci = Double(i)
-                        let cycle = 2.8 + ci * 0.3; let delay = ci * 0.9
-                        let phase = max(0, ((t - delay).truncatingRemainder(dividingBy: cycle)) / cycle)
-                        let fontSize = max(6, size * CGFloat(0.18 + phase * 0.10))
-                        let opacity = phase < 0.8 ? (0.7 - ci * 0.1) : (1.0 - phase) * 3.5 * (0.7 - ci * 0.1)
-                        Text("z").font(.system(size: fontSize, weight: .black, design: .monospaced))
-                            .foregroundStyle(.white.opacity(opacity))
-                            .offset(x: size * CGFloat(0.15 + ci * 0.08), y: -size * CGFloat(0.15 + phase * 0.38))
-                    }
-                }
-            }
+        Canvas { c, sz in
+            let v = V(sz, svgW: 15, svgH: 12, svgY0: 4)
+            drawShadow(c, v: v, width: 6, opacity: 0.2)
+            drawLegs(c, v: v, dy: 0)
+            drawBody(c, v: v, dy: 0, scale: 0.9)
+            drawFace(c, v: v, dy: 0, blinkPhase: 0.5)
         }
     }
 
     private var workScene: some View {
-        TimelineView(.periodic(from: .now, by: 0.03)) { ctx in
+        TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate * speed
             let bounce = sin(t * 2 * .pi / 0.4) * 1.0
             let blinkCycle = t.truncatingRemainder(dividingBy: 2.5)

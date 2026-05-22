@@ -1,8 +1,16 @@
 import Foundation
 
+private final class BoxedAttributedString {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+}
+
 public enum ChatMessageTextFormatter {
-    private static var markdownCache: [String: AttributedString] = [:]
-    private static let markdownCacheLimit = 128
+    private static let markdownCache: NSCache<NSString, BoxedAttributedString> = {
+        let c = NSCache<NSString, BoxedAttributedString>()
+        c.countLimit = 128
+        return c
+    }()
 
     public static func displayText(for message: ChatMessage) -> AttributedString {
         message.isUser ? literalText(message.text) : inlineMarkdown(message.text)
@@ -13,16 +21,14 @@ public enum ChatMessageTextFormatter {
     }
 
     public static func inlineMarkdown(_ text: String) -> AttributedString {
-        if let cached = markdownCache[text] { return cached }
+        let key = text as NSString
+        if let cached = markdownCache.object(forKey: key) { return cached.value }
 
         let result: AttributedString = text.contains("```")
             ? renderWithFencedCodeBlocks(text)
             : renderInlineOnly(text)
 
-        if markdownCache.count >= markdownCacheLimit {
-            markdownCache.removeAll(keepingCapacity: true)
-        }
-        markdownCache[text] = result
+        markdownCache.setObject(BoxedAttributedString(result), forKey: key)
         return result
     }
 

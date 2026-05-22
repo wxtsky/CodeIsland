@@ -300,6 +300,7 @@ struct NotchPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(NotchAnimation.open, value: appState.surface)
+        .environment(\.panelOccluded, appState.panelOccluded)
     }
 }
 

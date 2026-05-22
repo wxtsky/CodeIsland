@@ -128,16 +128,7 @@ struct CopilotView: View {
     // SLEEP — gentle float, dim face, Z's
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private var sleepScene: some View {
-        ZStack {
-            TimelineView(.periodic(from: .now, by: 0.06)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * speed
-                sleepCanvas(t: t)
-            }
-            TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * speed
-                floatingZs(t: t)
-            }
-        }
+        sleepCanvas(t: 0)
     }
 
     private func floatingZs(t: Double) -> some View {
@@ -177,7 +168,7 @@ struct CopilotView: View {
     // WORK — bouncing, blinking, ear signals, keyboard
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private var workScene: some View {
-        TimelineView(.periodic(from: .now, by: 0.03)) { timeline in
+        TimelineView(.periodic(from: .now, by: 0.05)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate * speed
             workCanvas(t: t)
         }

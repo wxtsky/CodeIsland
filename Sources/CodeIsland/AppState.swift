@@ -45,6 +45,9 @@ final class AppState {
     var activeSessionId: String?
     var permissionQueue: [PermissionRequest] = []
     var questionQueue: [QuestionRequest] = []
+    /// True when the panel window is fully occluded or ordered out.
+    /// Mascot animations pause while this is set to save CPU.
+    var panelOccluded = false
 
     @ObservationIgnored
     private(set) var recentHookEvents: [DiagnosticHookEvent] = []

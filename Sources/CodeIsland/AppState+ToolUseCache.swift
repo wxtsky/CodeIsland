@@ -15,7 +15,6 @@ struct PreToolUseRecord {
     let sessionId: String
     let toolName: String?
     let toolDescription: String?
-    let toolInput: [String: Any]?
     let receivedAt: Date
 }
 
@@ -34,7 +33,6 @@ extension AppState {
             sessionId: event.sessionId ?? "default",
             toolName: event.toolName,
             toolDescription: event.toolDescription,
-            toolInput: event.toolInput,
             receivedAt: Date()
         )
     }

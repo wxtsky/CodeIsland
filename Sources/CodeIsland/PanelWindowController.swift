@@ -249,6 +249,17 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             }
         }
 
+        // Occlusion state: pause animations when panel is fully covered
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.syncOcclusionState()
+            }
+        }
+
         // Observe settings changes (display choice, panel height)
         observeSettingsChanges()
         configureAutoScreenPolling()
@@ -543,16 +554,28 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         let settings = SettingsManager.shared
         if settings.hideInFullscreen && fullscreenLatch {
             panel.orderOut(nil)
+            syncOcclusionState()
             return
         }
 
         if settings.hideWhenNoSession && appState.activeSessionCount == 0 {
             panel.orderOut(nil)
+            syncOcclusionState()
             return
         }
 
         if !panel.isVisible {
             panel.orderFrontRegardless()
+        }
+        syncOcclusionState()
+    }
+
+    /// Sync panelOccluded from the panel's actual occlusion + visibility state.
+    private func syncOcclusionState() {
+        guard let panel = panel else { return }
+        let occluded = !panel.isVisible || !panel.occlusionState.contains(.visible)
+        if appState.panelOccluded != occluded {
+            appState.panelOccluded = occluded
         }
     }
 

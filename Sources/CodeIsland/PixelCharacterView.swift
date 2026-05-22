@@ -108,18 +108,7 @@ struct ClawdView: View {
     // SLEEP — sploot pose, breathing, floating z's
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private var sleepScene: some View {
-        ZStack {
-            // Character body (behind)
-            TimelineView(.periodic(from: .now, by: 0.06)) { ctx in
-                sleepCanvas(t: ctx.date.timeIntervalSinceReferenceDate * speed)
-            }
-
-            // Z's — continuous float-up loop, staggered timing
-            TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate * speed
-                floatingZs(t: t)
-            }
-        }
+        sleepCanvas(t: 0)
     }
 
     private func floatingZs(t: Double) -> some View {
@@ -161,7 +150,7 @@ struct ClawdView: View {
     // WORK — typing: bounce + arm rotation + keyboard + squinted eyes
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     private var workScene: some View {
-        TimelineView(.periodic(from: .now, by: 0.03)) { timeline in
+        TimelineView(.periodic(from: .now, by: 0.05)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate * speed
             workCanvas(t: t)
         }

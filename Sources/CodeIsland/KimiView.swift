@@ -106,14 +106,7 @@ struct KimiView: View {
 
     // ━━━━━━ SLEEP ━━━━━━
     private var sleepScene: some View {
-        ZStack {
-            TimelineView(.periodic(from: .now, by: 0.06)) { ctx in
-                sleepCanvas(t: ctx.date.timeIntervalSinceReferenceDate * speed)
-            }
-            TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
-                floatingZs(t: ctx.date.timeIntervalSinceReferenceDate * speed)
-            }
-        }
+        sleepCanvas(t: 0)
     }
 
     private func floatingZs(t: Double) -> some View {
@@ -153,7 +146,7 @@ struct KimiView: View {
 
     // ━━━━━━ WORK ━━━━━━
     private var workScene: some View {
-        TimelineView(.periodic(from: .now, by: 0.03)) { ctx in
+        TimelineView(.periodic(from: .now, by: 0.05)) { ctx in
             workCanvas(t: ctx.date.timeIntervalSinceReferenceDate * speed)
         }
     }
