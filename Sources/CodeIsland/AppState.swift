@@ -1304,7 +1304,10 @@ final class AppState {
                     header: header
                 )
                 let trimmedHeader = header?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let baseKey = (trimmedHeader?.isEmpty == false ? trimmedHeader : nil) ?? "answer_\(index + 1)"
+                // Claude Code's mapToolResultToToolResultBlockParam looks up answers by
+                // question text: `answers[question.question]`. Using header as the key
+                // causes a mismatch and all answers arrive as empty strings.
+                let baseKey = questionText
                 var answerKey = baseKey
                 if usedAnswerKeys.contains(answerKey) {
                     var suffix = 2
@@ -1481,9 +1484,12 @@ final class AppState {
         originalQuestions: [[String: Any]]?
     ) -> [String: Any] {
         var updatedInput = event.toolInput ?? [:]
-        if let originalQuestions {
-            updatedInput["questions"] = originalQuestions
-        }
+        // `questions` must always be present in updatedInput. Claude Code's
+        // mapToolResultToToolResultBlockParam calls H.map() on it directly;
+        // if the key is absent H is undefined and the call crashes with
+        // "undefined is not an object (evaluating 'H.map')".
+        // Fall back to the raw toolInput value when the [[String:Any]] cast fails.
+        updatedInput["questions"] = originalQuestions ?? (event.toolInput?["questions"] ?? [] as [[String: Any]])
         updatedInput["answers"] = answers
         if let answer {
             updatedInput["answer"] = answer
