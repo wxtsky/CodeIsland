@@ -16,6 +16,7 @@ final class CompanionConnection: NSObject, ObservableObject {
     @Published private(set) var browsing = false
     @Published private(set) var bluetoothConnectedPeripheralName: String?
     @Published private(set) var lastStateReceivedAt: Date?
+    @Published private(set) var isDemoMode = false
 
     private static let serviceType = "codeisland"
     private static let refreshAfterSeconds: TimeInterval = 8
@@ -30,6 +31,7 @@ final class CompanionConnection: NSObject, ObservableObject {
     private var stateWatchdogTimer: Timer?
     private var connectedAt: Date?
     private var pendingReconnectPeer: MCPeerID?
+    private var demoSequence: UInt64 = 9000
     var onStateReceived: ((CompanionStatePayload) -> Void)?
 
     private let encoder: JSONEncoder = {
@@ -71,6 +73,7 @@ final class CompanionConnection: NSObject, ObservableObject {
     }
 
     func start() {
+        guard !isDemoMode else { return }
         bluetoothBridge.start()
         guard mockStatePayload == nil else { return }
         startStateWatchdog()
@@ -81,6 +84,10 @@ final class CompanionConnection: NSObject, ObservableObject {
     }
 
     func stop() {
+        if isDemoMode {
+            exitDemoMode()
+            return
+        }
         guard mockStatePayload == nil else { return }
         browsing = false
         stateWatchdogTimer?.invalidate()
@@ -94,7 +101,37 @@ final class CompanionConnection: NSObject, ObservableObject {
     }
 
     func connect(to peer: MCPeerID) {
+        exitDemoMode()
         browser.invitePeer(peer, to: session, withContext: nil, timeout: 12)
+    }
+
+    func enterDemoMode() {
+        guard mockStatePayload == nil else { return }
+        browser.stopBrowsingForPeers()
+        session.disconnect()
+        browsing = false
+        discoveredPeers = []
+        connectedAt = Date()
+        connectedPeer = MCPeerID(displayName: "Code Island Demo")
+        isDemoMode = true
+        receiveState(Self.mockState(named: "question", sequence: nextDemoSequence()))
+    }
+
+    func cycleDemoState() {
+        guard isDemoMode else { return }
+        let states = ["question", "long", "interrupted", "idle"]
+        let nextIndex = Int((demoSequence - 9000) % UInt64(states.count))
+        receiveState(Self.mockState(named: states[nextIndex], sequence: nextDemoSequence()))
+    }
+
+    func exitDemoMode() {
+        guard isDemoMode else { return }
+        isDemoMode = false
+        latestState = nil
+        connectedPeer = nil
+        connectedAt = nil
+        lastStateReceivedAt = nil
+        lastError = nil
     }
 
     func send(_ type: CompanionCommandType) {
@@ -150,6 +187,7 @@ final class CompanionConnection: NSObject, ObservableObject {
 
     private func checkStateFreshness() {
         guard mockStatePayload == nil else { return }
+        guard !isDemoMode else { return }
         guard let connectedPeer else { return }
 
         let now = Date()
@@ -177,11 +215,14 @@ final class CompanionConnection: NSObject, ObservableObject {
         }
     }
 
-#if DEBUG
     func injectMockState(named name: String) {
-        receiveState(Self.mockState(named: name))
+        receiveState(Self.mockState(named: name, sequence: nextDemoSequence()))
     }
-#endif
+
+    private func nextDemoSequence() -> UInt64 {
+        demoSequence += 1
+        return demoSequence
+    }
 
     private func receiveBluetoothSummary(_ summary: CompanionBluetoothSummary) {
         if let current = latestState, current.sequence > summary.sequence {
@@ -202,17 +243,18 @@ final class CompanionConnection: NSObject, ObservableObject {
         return mockState(named: arguments[flagIndex + 1])
     }
 
-    private static func mockState(named name: String) -> CompanionStatePayload {
+    private static func mockState(named name: String, sequence: UInt64? = nil) -> CompanionStatePayload {
         let baseMessages = [
             CompanionMessagePreview(role: .user, text: "帮我生成一篇长篇小说"),
             CompanionMessagePreview(role: .assistant, text: "好的，我先确认一下类型和篇幅，再开始组织结构。")
         ]
+        let resolvedSequence = sequence ?? 1000
 
         switch name.lowercased() {
         case "question":
             return CompanionStatePayload(
                 version: 1,
-                sequence: 1002,
+                sequence: resolvedSequence,
                 sessionId: "mock-question",
                 source: "claude",
                 status: .waitingQuestion,
@@ -239,7 +281,7 @@ final class CompanionConnection: NSObject, ObservableObject {
         case "interrupted":
             return CompanionStatePayload(
                 version: 1,
-                sequence: 1003,
+                sequence: resolvedSequence,
                 sessionId: "mock-interrupted",
                 source: "claude",
                 status: .idle,
@@ -256,7 +298,7 @@ final class CompanionConnection: NSObject, ObservableObject {
         case "long":
             return CompanionStatePayload(
                 version: 1,
-                sequence: 1004,
+                sequence: resolvedSequence,
                 sessionId: "mock-long",
                 source: "codex",
                 status: .processing,
@@ -274,7 +316,7 @@ final class CompanionConnection: NSObject, ObservableObject {
         default:
             return CompanionStatePayload(
                 version: 1,
-                sequence: 1001,
+                sequence: resolvedSequence,
                 sessionId: "mock-idle",
                 source: "codex",
                 status: .idle,

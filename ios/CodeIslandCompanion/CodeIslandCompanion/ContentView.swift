@@ -198,6 +198,8 @@ private struct QuestionOptionsView: View {
 }
 
 private struct DiscoveryFill: View {
+    @EnvironmentObject private var connection: CompanionConnection
+
     var body: some View {
         VStack(spacing: 12) {
             DividerLine()
@@ -208,6 +210,15 @@ private struct DiscoveryFill: View {
                 .foregroundStyle(.white.opacity(0.42))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 18)
+
+            IslandButton(
+                title: "进入演示模式",
+                icon: "play.rectangle.fill",
+                tint: Color(red: 0.25, green: 0.76, blue: 1.0)
+            ) {
+                connection.enterDemoMode()
+            }
+            .padding(.horizontal, 14)
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
@@ -485,6 +496,17 @@ private struct CommandRow: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            if connection.isDemoMode {
+                HStack(spacing: 8) {
+                    IslandButton(title: "切换演示状态", icon: "arrow.triangle.2.circlepath", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
+                        connection.cycleDemoState()
+                    }
+                    IslandButton(title: "退出演示", icon: "xmark", tint: .red) {
+                        connection.exitDemoMode()
+                    }
+                }
+            }
+
             if state.pendingAction == .question {
                 HStack(spacing: 8) {
                     IslandButton(title: "在 Mac 回答", icon: "arrow.up.forward.app.fill", tint: Color(red: 0.35, green: 0.85, blue: 0.45)) {

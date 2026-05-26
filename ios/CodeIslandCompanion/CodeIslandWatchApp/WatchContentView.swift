@@ -67,15 +67,16 @@ private struct WatchStatusPage: View {
     var body: some View {
         GeometryReader { proxy in
             let isCompact = proxy.size.height < 430
+            let mascotSize: CGFloat = isCompact ? 64 : 90
             VStack(spacing: isCompact ? 5 : 10) {
                 Spacer(minLength: 0)
 
                 SharedMascotView(
                     source: state.source,
                     status: MascotAgentStatus(state.status.rawValue),
-                    size: isCompact ? 42 : 76
+                    size: mascotSize
                 )
-                .frame(height: isCompact ? 46 : 80)
+                .frame(height: mascotSize + 4)
 
                 VStack(spacing: 2) {
                     Text(CompanionDisplayText.source(state.source))
@@ -100,8 +101,8 @@ private struct WatchStatusPage: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 8)
-            .padding(.top, isCompact ? 34 : 18)
-            .padding(.bottom, isCompact ? 10 : 12)
+            .padding(.top, isCompact ? 24 : 14)
+            .padding(.bottom, isCompact ? 8 : 10)
         }
     }
 }

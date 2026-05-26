@@ -23,6 +23,14 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 | `scripts/smoke-companion-ui.sh` | iPhone UI smoke 截图测试 |
 | `scripts/smoke-companion-watch-ui.sh` | Apple Watch UI smoke 截图测试 |
 
+## 发布资料
+
+| 路径 | 作用 |
+| --- | --- |
+| `apple-companion/APP_STORE_RELEASE.md` | App Store / TestFlight 发布清单 |
+| `apple-companion/APP_REVIEW_NOTES.md` | 可粘贴到 App Store Connect 的审核说明 |
+| `apple-companion/PRIVACY_POLICY.md` | 隐私政策草稿，发布前需要放到公开 URL |
+
 ## 当前能力
 
 - iPhone 通过本地网络发现 Mac 上的 CodeIsland。
@@ -42,6 +50,18 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 6. iPhone 首次启动时允许本地网络、蓝牙、通知权限。
 7. 在 iPhone 里选择发现到的 Mac，连接后状态会自动同步。
 8. 如果有配对 Apple Watch，iPhone app 安装后 Watch app 会作为随附 app 可安装；调试时也可以在 Xcode 选择 `CodeIslandWatchApp` scheme 直接跑到 Watch。
+
+## 演示模式
+
+iPhone app 首屏提供 `进入演示模式`。它用于 App Store 审核、截图和没有 Mac companion 时的快速预览：
+
+1. 打开 iPhone app。
+2. 点击 `进入演示模式`。
+3. 点击 `开启实时活动` 可以预览锁屏、灵动岛和 StandBy。
+4. 打开 Apple Watch app，会收到 iPhone 当前演示状态。
+5. 点击 `切换演示状态` 可以在提问、处理中、中断、空闲等状态之间切换。
+
+演示模式不会连接外部服务器，也不会发送任何真实会话数据。
 
 ## 产品截图
 
