@@ -1,6 +1,27 @@
 import Foundation
 
 enum CompanionDisplayText {
+    static func source(_ text: String?) -> String {
+        guard let trimmed = cleaned(text) else { return "CodeIsland" }
+
+        switch trimmed.lowercased() {
+        case "claude", "claudecode", "clawd":
+            return "CLAUDE"
+        case "codex", "openai":
+            return "CODEX"
+        case "gemini":
+            return "GEMINI"
+        case "cursor":
+            return "CURSOR"
+        case "opencode":
+            return "OPENCODE"
+        case "qwen":
+            return "QWEN"
+        default:
+            return trimmed.uppercased()
+        }
+    }
+
     static func message(_ text: String?) -> String? {
         guard let trimmed = cleaned(text) else { return nil }
 
