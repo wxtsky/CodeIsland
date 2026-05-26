@@ -32,13 +32,31 @@ final class WatchConnection: NSObject, ObservableObject {
             return
         }
 
+#if DEBUG && targetEnvironment(simulator)
+        let shouldRequestNotifications = false
+#elseif DEBUG
+        let isSmokeTest = ProcessInfo.processInfo.arguments.contains("-CodeIslandWatchSmokeState")
+        let shouldRequestNotifications = !isSmokeTest
+#else
+        let shouldRequestNotifications = true
+#endif
+        if shouldRequestNotifications {
         requestNotificationAuthorization()
+        }
         WCSession.default.delegate = self
         WCSession.default.activate()
 
+#if DEBUG
+        if let state = Self.mockStateFromLaunchArguments() {
+            receiveState(state)
+        } else if let data = WCSession.default.receivedApplicationContext["state"] as? Data {
+            decodeState(data)
+        }
+#else
         if let data = WCSession.default.receivedApplicationContext["state"] as? Data {
             decodeState(data)
         }
+#endif
     }
 
     func send(_ type: CompanionCommandType, answer: String? = nil) {
@@ -73,18 +91,22 @@ final class WatchConnection: NSObject, ObservableObject {
 
     private func decodeState(_ data: Data) {
         do {
-            let previousState = latestState
             let nextState = try decoder.decode(CompanionStatePayload.self, from: data)
-            latestState = nextState
-            lastError = nil
-            WatchStateStore.save(nextState)
-            WidgetCenter.shared.reloadAllTimelines()
-            playHapticIfNeeded(previous: previousState, next: nextState)
-            scheduleNotificationIfNeeded(previous: previousState, next: nextState)
+            receiveState(nextState)
         } catch {
             lastError = error.localizedDescription
             WKInterfaceDevice.current().play(.failure)
         }
+    }
+
+    private func receiveState(_ nextState: CompanionStatePayload) {
+        let previousState = latestState
+        latestState = nextState
+        lastError = nil
+        WatchStateStore.save(nextState)
+        WidgetCenter.shared.reloadAllTimelines()
+        playHapticIfNeeded(previous: previousState, next: nextState)
+        scheduleNotificationIfNeeded(previous: previousState, next: nextState)
     }
 
     private func requestNotificationAuthorization() {
@@ -125,6 +147,81 @@ final class WatchConnection: NSObject, ObservableObject {
         )
         UNUserNotificationCenter.current().add(request)
     }
+
+#if DEBUG
+    private static func mockStateFromLaunchArguments() -> CompanionStatePayload? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "-CodeIslandWatchSmokeState"),
+              arguments.indices.contains(flagIndex + 1)
+        else {
+            return nil
+        }
+
+        return mockState(named: arguments[flagIndex + 1])
+    }
+
+    private static func mockState(named name: String) -> CompanionStatePayload {
+        switch name.lowercased() {
+        case "question":
+            return CompanionStatePayload(
+                version: 1,
+                sequence: 9202,
+                sessionId: "watch-question",
+                source: "claude",
+                status: .waitingQuestion,
+                toolName: "AskUserQuestion",
+                workspaceName: "fengye",
+                messages: [
+                    CompanionMessagePreview(role: .user, text: "帮我写一篇长篇小说"),
+                    CompanionMessagePreview(role: .assistant, text: "我需要先确认小说类型和基调。")
+                ],
+                pendingAction: .question,
+                question: CompanionQuestionPayload(
+                    header: "小说类型",
+                    question: "你想写什么类型的小说？",
+                    options: ["科幻", "悬疑推理", "都市现实", "奇幻冒险"],
+                    descriptions: [],
+                    index: 0,
+                    total: 3,
+                    allowsMultipleSelection: false
+                ),
+                updatedAt: Date()
+            )
+        case "long":
+            return CompanionStatePayload(
+                version: 1,
+                sequence: 9203,
+                sessionId: "watch-long",
+                source: "codex",
+                status: .processing,
+                toolName: "WebSearch",
+                workspaceName: "workspace",
+                messages: [
+                    CompanionMessagePreview(role: .user, text: "重点测试退到后台之后灵动岛和手表还能不能收到新消息"),
+                    CompanionMessagePreview(role: .assistant, text: "我会先用模拟器验证 UI 和本地同步路径，再把真机 BLE 后台唤醒列成单独验收项。"),
+                    CompanionMessagePreview(role: .assistant, text: "这是一条较长的 watch 动态内容，用来确认滚动页面不会被底部按钮或系统区域裁掉。")
+                ],
+                pendingAction: nil,
+                question: nil,
+                updatedAt: Date()
+            )
+        default:
+            return CompanionStatePayload(
+                version: 1,
+                sequence: 9201,
+                sessionId: "watch-idle",
+                source: "codex",
+                status: .idle,
+                toolName: nil,
+                workspaceName: "workspace",
+                messages: [],
+                pendingAction: nil,
+                question: nil,
+                updatedAt: Date()
+            )
+        }
+    }
+#endif
 }
 
 extension WatchConnection: WCSessionDelegate {

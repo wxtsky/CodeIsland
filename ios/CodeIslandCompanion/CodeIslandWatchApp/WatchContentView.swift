@@ -3,7 +3,7 @@ import WatchKit
 
 struct WatchContentView: View {
     @EnvironmentObject private var connection: WatchConnection
-    @State private var selectedPage = WatchPage.status
+    @State private var selectedPage = WatchPage.initial
 
     var body: some View {
         Group {
@@ -35,44 +35,74 @@ private enum WatchPage: Hashable {
     case message
     case actions
     case activity
+
+    static var initial: WatchPage {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flagIndex = arguments.firstIndex(of: "-CodeIslandWatchSmokePage"),
+              arguments.indices.contains(flagIndex + 1)
+        else {
+            return .status
+        }
+
+        switch arguments[flagIndex + 1].lowercased() {
+        case "message":
+            return .message
+        case "actions":
+            return .actions
+        case "activity":
+            return .activity
+        default:
+            return .status
+        }
+#else
+        return .status
+#endif
+    }
 }
 
 private struct WatchStatusPage: View {
     let state: CompanionStatePayload
 
     var body: some View {
-        VStack(spacing: 10) {
-            WatchIslandHeader(state: state)
+        GeometryReader { proxy in
+            let isCompact = proxy.size.height < 430
+            VStack(spacing: isCompact ? 5 : 10) {
+                Spacer(minLength: 0)
 
-            Spacer(minLength: 0)
+                SharedMascotView(
+                    source: state.source,
+                    status: MascotAgentStatus(state.status.rawValue),
+                    size: isCompact ? 42 : 76
+                )
+                .frame(height: isCompact ? 46 : 80)
 
-            SharedMascotView(source: state.source, status: MascotAgentStatus(state.status.rawValue), size: 66)
-                .frame(height: 70)
+                VStack(spacing: 2) {
+                    Text(CompanionDisplayText.source(state.source))
+                        .font(.system(size: isCompact ? 18 : 25, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
 
-            VStack(spacing: 3) {
-                Text(CompanionDisplayText.source(state.source))
-                    .font(.system(size: 24, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+                    Text(CompanionDisplayText.subtitle(
+                        workspaceName: state.workspaceName,
+                        toolName: state.toolName,
+                        fallback: "Mac"
+                    ))
+                    .font(.system(size: isCompact ? 11 : 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.52))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                }
 
-                Text(CompanionDisplayText.subtitle(
-                    workspaceName: state.workspaceName,
-                    toolName: state.toolName,
-                    fallback: "Mac"
-                ))
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.52))
-                .lineLimit(1)
+                WatchStatusBadge(status: state.status)
+
+                Spacer(minLength: 0)
             }
-
-            WatchStatusBadge(status: state.status)
-
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 8)
+            .padding(.top, isCompact ? 34 : 18)
+            .padding(.bottom, isCompact ? 10 : 12)
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
     }
 }
 
