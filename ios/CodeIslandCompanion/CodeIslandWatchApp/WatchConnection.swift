@@ -1,4 +1,5 @@
 import Foundation
+import WatchKit
 import WatchConnectivity
 
 @MainActor
@@ -6,6 +7,7 @@ final class WatchConnection: NSObject, ObservableObject {
     @Published private(set) var latestState: CompanionStatePayload?
     @Published private(set) var lastError: String?
     @Published private(set) var activationState: WCSessionActivationState = .notActivated
+    private var lastHapticSequence: UInt64?
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -36,8 +38,11 @@ final class WatchConnection: NSObject, ObservableObject {
     }
 
     func send(_ type: CompanionCommandType, answer: String? = nil) {
+        WKInterfaceDevice.current().play(.click)
+
         guard WCSession.default.isReachable else {
             lastError = "iPhone 暂不可达"
+            WKInterfaceDevice.current().play(.failure)
             return
         }
 
@@ -53,19 +58,38 @@ final class WatchConnection: NSObject, ObservableObject {
             WCSession.default.sendMessage(["command": data], replyHandler: nil) { [weak self] error in
                 Task { @MainActor in
                     self?.lastError = error.localizedDescription
+                    WKInterfaceDevice.current().play(.failure)
                 }
             }
         } catch {
             lastError = error.localizedDescription
+            WKInterfaceDevice.current().play(.failure)
         }
     }
 
     private func decodeState(_ data: Data) {
         do {
-            latestState = try decoder.decode(CompanionStatePayload.self, from: data)
+            let previousState = latestState
+            let nextState = try decoder.decode(CompanionStatePayload.self, from: data)
+            latestState = nextState
             lastError = nil
+            playHapticIfNeeded(previous: previousState, next: nextState)
         } catch {
             lastError = error.localizedDescription
+            WKInterfaceDevice.current().play(.failure)
+        }
+    }
+
+    private func playHapticIfNeeded(previous: CompanionStatePayload?, next: CompanionStatePayload) {
+        guard lastHapticSequence != next.sequence else { return }
+        lastHapticSequence = next.sequence
+
+        guard let previous else { return }
+
+        if next.pendingAction == .approval || next.pendingAction == .question {
+            WKInterfaceDevice.current().play(.notification)
+        } else if previous.status != next.status || previous.messages.count != next.messages.count {
+            WKInterfaceDevice.current().play(.click)
         }
     }
 }

@@ -4,22 +4,165 @@ struct WatchContentView: View {
     @EnvironmentObject private var connection: WatchConnection
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                if let state = connection.latestState {
-                    WatchIslandHeader(state: state)
-                    WatchSessionCard(state: state)
-                    WatchActionStrip(state: state)
-                    WatchRecentView(messages: state.messages)
-                } else {
-                    WatchEmptyView(error: connection.lastError)
+        Group {
+            if let state = connection.latestState {
+                TabView {
+                    WatchStatusPage(state: state)
+                    WatchMessagePage(state: state)
+                    WatchActionsPage(state: state)
+                    WatchActivityPage(messages: state.messages)
                 }
+                .tabViewStyle(.verticalPage)
+            } else {
+                WatchEmptyView(error: connection.lastError)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
-            .padding(.bottom, 14)
         }
         .background(Color.black.ignoresSafeArea())
+    }
+}
+
+private struct WatchStatusPage: View {
+    let state: CompanionStatePayload
+
+    var body: some View {
+        VStack(spacing: 10) {
+            WatchIslandHeader(state: state)
+
+            Spacer(minLength: 0)
+
+            SharedMascotView(source: state.source, status: MascotAgentStatus(state.status.rawValue), size: 66)
+                .frame(height: 70)
+
+            VStack(spacing: 3) {
+                Text(CompanionDisplayText.source(state.source))
+                    .font(.system(size: 24, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+
+                Text(CompanionDisplayText.subtitle(
+                    workspaceName: state.workspaceName,
+                    toolName: state.toolName,
+                    fallback: "Mac"
+                ))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.52))
+                .lineLimit(1)
+            }
+
+            WatchStatusBadge(status: state.status)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct WatchMessagePage: View {
+    let state: CompanionStatePayload
+    @EnvironmentObject private var connection: WatchConnection
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                WatchPageTitle(title: messageTitle, systemImage: messageIcon, color: messageColor)
+
+                Text(primaryText)
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(5)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 5) {
+                    WatchChip(text: CompanionDisplayText.workspace(state.workspaceName) ?? "工作区", icon: "folder")
+                    if let toolText = CompanionDisplayText.tool(state.toolName) {
+                        WatchChip(text: toolText, icon: "hammer")
+                    }
+                }
+
+                if let question = state.question, !question.options.isEmpty {
+                    WatchQuestionOptions(question: question)
+                }
+            }
+            .padding(10)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+                .padding(.horizontal, 5)
+        )
+    }
+
+    private var primaryText: String {
+        if let question = state.question?.question {
+            return question
+        }
+        if let message = CompanionDisplayText.message(state.messages.last?.text) {
+            return message
+        }
+        return "当前没有新的消息"
+    }
+
+    private var messageTitle: String {
+        state.pendingAction == .question ? "需要回答" : "当前消息"
+    }
+
+    private var messageIcon: String {
+        state.pendingAction == .question ? "questionmark.bubble.fill" : "text.bubble.fill"
+    }
+
+    private var messageColor: Color {
+        state.pendingAction == .question ? .orange : .blue
+    }
+}
+
+private struct WatchActionsPage: View {
+    let state: CompanionStatePayload
+    @EnvironmentObject private var connection: WatchConnection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WatchPageTitle(title: "快捷操作", systemImage: "bolt.fill", color: .green)
+
+            Spacer(minLength: 0)
+
+            WatchActionStrip(state: state)
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+    }
+}
+
+private struct WatchActivityPage: View {
+    let messages: [CompanionMessagePreview]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                WatchPageTitle(title: "最近动态", systemImage: "waveform.path.ecg", color: .purple)
+                WatchRecentView(messages: messages)
+            }
+            .padding(10)
+        }
+    }
+}
+
+private struct WatchPageTitle: View {
+    let title: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.system(size: 13, weight: .black, design: .rounded))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(color.opacity(0.16), in: Capsule())
     }
 }
 
@@ -57,6 +200,58 @@ private struct WatchIslandHeader: View {
             Capsule()
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
         )
+    }
+}
+
+private struct WatchQuestionOptions: View {
+    let question: CompanionQuestionPayload
+    @EnvironmentObject private var connection: WatchConnection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                if let header = question.header, !header.isEmpty {
+                    Text(header)
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.blue.opacity(0.18), in: Capsule())
+                }
+
+                Text("\(question.index + 1)/\(question.total)")
+                    .font(.system(size: 11, weight: .black, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.10), in: Capsule())
+            }
+
+            ForEach(Array(question.options.prefix(4).enumerated()), id: \.offset) { index, option in
+                Button {
+                    connection.send(.answerQuestion, answer: option)
+                } label: {
+                    HStack(spacing: 7) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .foregroundStyle(.blue)
+                            .frame(width: 18, alignment: .leading)
+
+                        Text(option)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.90))
+                            .lineLimit(2)
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 
@@ -104,50 +299,7 @@ private struct WatchSessionCard: View {
             }
 
             if let question = state.question, !question.options.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 5) {
-                        if let header = question.header, !header.isEmpty {
-                            Text(header)
-                                .font(.system(size: 11, weight: .black, design: .rounded))
-                                .foregroundStyle(.blue)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Color.blue.opacity(0.18), in: Capsule())
-                        }
-
-                        Text("\(question.index + 1)/\(question.total)")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.10), in: Capsule())
-                    }
-
-                    ForEach(Array(question.options.prefix(4).enumerated()), id: \.offset) { index, option in
-                        Button {
-                            connection.send(.answerQuestion, answer: option)
-                        } label: {
-                            HStack(spacing: 7) {
-                                Text("\(index + 1)")
-                                    .font(.system(size: 12, weight: .black, design: .rounded))
-                                    .foregroundStyle(.blue)
-                                    .frame(width: 18, alignment: .leading)
-
-                                Text(option)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.90))
-                                    .lineLimit(2)
-
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 7)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                WatchQuestionOptions(question: question)
             }
         }
         .padding(10)
