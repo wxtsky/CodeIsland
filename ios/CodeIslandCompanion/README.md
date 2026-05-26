@@ -1,44 +1,24 @@
-# CodeIsland Companion Prototype
+# Code Island Apple Companion
 
-This folder contains the first iPhone-side prototype for the Apple ecosystem
-companion. It is intentionally source-first while the Apple Developer Program
-enrollment is still pending.
+This is the Xcode project for the Code Island iPhone, Live Activity, and Apple Watch companion.
 
-## Current prototype
+For the product overview, setup guide, protocol notes, and screenshots, see:
 
-- Discovers the Mac app over MultipeerConnectivity service `codeisland`
-- Connects to the Mac advertiser
-- Decodes `AppleCompanionStatePayload` JSON updates
-- Shows source, status, workspace, current tool, and message previews
-- Sends approve / deny / skip commands back to the Mac
+- [`../../apple-companion/README.md`](../../apple-companion/README.md)
 
-## Xcode setup
+## Project Contents
 
-Generate the project with XcodeGen:
+- `CodeIslandCompanion/` - iPhone app
+- `CodeIslandCompanionWidget/` - iPhone Live Activity, Dynamic Island, and StandBy UI
+- `CodeIslandWatchApp/` - Apple Watch app
+- `CodeIslandWatchWidget/` - watchOS widget
+- `Shared/` - shared models, display helpers, and mascot views
+- `project.yml` - XcodeGen project definition
+
+## Open in Xcode
 
 ```bash
 cd ios/CodeIslandCompanion
 xcodegen generate
 open CodeIslandCompanion.xcodeproj
 ```
-
-The generated project includes:
-
-- `CodeIslandCompanion` iPhone app
-- `CodeIslandCompanionWidget` WidgetKit extension
-- shared ActivityKit attributes in `Shared/`
-
-The app `Info.plist` includes local-network discovery and Live Activity support:
-
-```xml
-<key>NSLocalNetworkUsageDescription</key>
-<string>CodeIsland discovers your Mac on the local network to mirror agent status.</string>
-<key>NSBonjourServices</key>
-<array>
-  <string>_codeisland._tcp</string>
-</array>
-```
-
-When the paid Apple Developer Program account is active, set your team in Xcode
-for both targets. The watchOS target is the next milestone after the iPhone Live
-Activity path is stable.
