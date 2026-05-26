@@ -5,6 +5,7 @@ import Foundation
 final class LiveActivityController: ObservableObject {
     @Published private(set) var activityID: String?
     @Published private(set) var lastError: String?
+    @Published private(set) var existingActivityCount = 0
 
     private var activity: Activity<CodeIslandActivityAttributes>?
     private var lastContentState: CodeIslandActivityAttributes.ContentState?
@@ -18,6 +19,10 @@ final class LiveActivityController: ObservableObject {
         activityStateTask?.cancel()
     }
 
+    init() {
+        recoverExistingActivity()
+    }
+
     func startOrUpdate(with payload: CompanionStatePayload) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             lastError = "这台 iPhone 没有开启实时活动。"
@@ -28,13 +33,10 @@ final class LiveActivityController: ObservableObject {
             do {
                 let contentState = CodeIslandActivityAttributes.ContentState(payload: payload)
                 lastContentState = contentState
+                recoverExistingActivity()
 
                 if let activity {
-                    await activity.update(ActivityContent(
-                        state: contentState,
-                        staleDate: Date().addingTimeInterval(90),
-                        relevanceScore: relevanceScore(for: payload.status)
-                    ))
+                    await update(activity, with: contentState, status: payload.status)
                     lastError = nil
                     return
                 }
@@ -50,8 +52,10 @@ final class LiveActivityController: ObservableObject {
                 activityID = created.id
                 observeState(of: created)
                 lastError = nil
+                existingActivityCount = Activity<CodeIslandActivityAttributes>.activities.count
             } catch {
                 lastError = error.localizedDescription
+                recoverExistingActivity()
             }
         }
     }
@@ -67,6 +71,38 @@ final class LiveActivityController: ObservableObject {
         }
     }
 
+    func stopAll() {
+        Task {
+            for activity in Activity<CodeIslandActivityAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            clearActivity(id: activityID)
+            existingActivityCount = 0
+            lastError = nil
+        }
+    }
+
+    private func recoverExistingActivity() {
+        existingActivityCount = Activity<CodeIslandActivityAttributes>.activities.count
+        guard activity == nil, let existing = Activity<CodeIslandActivityAttributes>.activities.first else { return }
+        activity = existing
+        activityID = existing.id
+        lastContentState = existing.content.state
+        observeState(of: existing)
+    }
+
+    private func update(
+        _ activity: Activity<CodeIslandActivityAttributes>,
+        with contentState: CodeIslandActivityAttributes.ContentState,
+        status: CompanionStatus
+    ) async {
+        await activity.update(ActivityContent(
+            state: contentState,
+            staleDate: Date().addingTimeInterval(90),
+            relevanceScore: relevanceScore(for: status)
+        ))
+    }
+
     private func observeState(of activity: Activity<CodeIslandActivityAttributes>) {
         activityStateTask?.cancel()
         activityStateTask = Task { [weak self] in
@@ -78,11 +114,12 @@ final class LiveActivityController: ObservableObject {
         }
     }
 
-    private func clearActivity(id: String) {
+    private func clearActivity(id: String?) {
         guard activityID == nil || activityID == id else { return }
         activity = nil
         activityID = nil
         lastContentState = nil
+        existingActivityCount = Activity<CodeIslandActivityAttributes>.activities.count
         activityStateTask?.cancel()
         activityStateTask = nil
     }

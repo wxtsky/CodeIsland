@@ -76,6 +76,12 @@ private struct PortraitIslandView: View {
                         DiagnosticStrip(message: error)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
                     }
+
+                    if let error = liveActivity.lastError {
+                        LiveActivityDiagnosticStrip(message: error)
+                            .environmentObject(liveActivity)
+                            .transition(.blurFade.combined(with: .move(edge: .top)))
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, topPadding)
@@ -887,6 +893,33 @@ private struct DiagnosticStrip: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.orange.opacity(0.12)))
+    }
+}
+
+private struct LiveActivityDiagnosticStrip: View {
+    let message: String
+    @EnvironmentObject private var liveActivity: LiveActivityController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(message, systemImage: "bolt.horizontal.circle.fill")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Color(red: 0.35, green: 0.75, blue: 1.0))
+
+            Button {
+                liveActivity.stopAll()
+            } label: {
+                Label("清理已有实时活动后重试", systemImage: "trash")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.10, green: 0.18, blue: 0.24)))
     }
 }
 
