@@ -13,6 +13,9 @@ struct CodeIslandCompanionApp: App {
                 liveActivity?.updateIfRunning(with: state)
             }
         }
+#if DEBUG
+        Self.configureSmokeTestHooks(connection: connection, liveActivity: liveActivity)
+#endif
         _connection = StateObject(wrappedValue: connection)
         _liveActivity = StateObject(wrappedValue: liveActivity)
     }
@@ -24,4 +27,28 @@ struct CodeIslandCompanionApp: App {
                 .environmentObject(liveActivity)
         }
     }
+
+#if DEBUG
+    private static func configureSmokeTestHooks(
+        connection: CompanionConnection,
+        liveActivity: LiveActivityController
+    ) {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-CodeIslandCompanionSmokeLiveActivity") else { return }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            if let state = connection.latestState {
+                liveActivity.startOrUpdate(with: state)
+            }
+
+            guard let flagIndex = arguments.firstIndex(of: "-CodeIslandCompanionSmokeDelayedState"),
+                  arguments.indices.contains(flagIndex + 1)
+            else { return }
+
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            connection.injectMockState(named: arguments[flagIndex + 1])
+        }
+    }
+#endif
 }

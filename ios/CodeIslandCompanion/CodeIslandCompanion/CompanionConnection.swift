@@ -117,6 +117,12 @@ final class CompanionConnection: NSObject, ObservableObject {
         onStateReceived?(state)
     }
 
+#if DEBUG
+    func injectMockState(named name: String) {
+        receiveState(Self.mockState(named: name))
+    }
+#endif
+
     private func receiveBluetoothSummary(_ summary: CompanionBluetoothSummary) {
         if let current = latestState, current.sequence > summary.sequence {
             return
