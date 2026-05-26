@@ -15,8 +15,11 @@ final class CompanionConnection: NSObject, ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var browsing = false
     @Published private(set) var bluetoothConnectedPeripheralName: String?
+    @Published private(set) var lastStateReceivedAt: Date?
 
     private static let serviceType = "codeisland"
+    private static let refreshAfterSeconds: TimeInterval = 8
+    private static let reconnectAfterSeconds: TimeInterval = 24
 
     private let watchBridge = WatchBridge()
     private let bluetoothBridge = CompanionBluetoothCentral()
@@ -24,6 +27,9 @@ final class CompanionConnection: NSObject, ObservableObject {
     private let mockStatePayload = CompanionConnection.mockStateFromLaunchArguments()
     private lazy var session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
     private lazy var browser = MCNearbyServiceBrowser(peer: peerID, serviceType: Self.serviceType)
+    private var stateWatchdogTimer: Timer?
+    private var connectedAt: Date?
+    private var pendingReconnectPeer: MCPeerID?
     var onStateReceived: ((CompanionStatePayload) -> Void)?
 
     private let encoder: JSONEncoder = {
@@ -60,9 +66,14 @@ final class CompanionConnection: NSObject, ObservableObject {
         }
     }
 
+    deinit {
+        stateWatchdogTimer?.invalidate()
+    }
+
     func start() {
         bluetoothBridge.start()
         guard mockStatePayload == nil else { return }
+        startStateWatchdog()
         guard !browsing else { return }
         lastError = nil
         browsing = true
@@ -72,10 +83,14 @@ final class CompanionConnection: NSObject, ObservableObject {
     func stop() {
         guard mockStatePayload == nil else { return }
         browsing = false
+        stateWatchdogTimer?.invalidate()
+        stateWatchdogTimer = nil
         browser.stopBrowsingForPeers()
         session.disconnect()
         discoveredPeers = []
         connectedPeer = nil
+        connectedAt = nil
+        pendingReconnectPeer = nil
     }
 
     func connect(to peer: MCPeerID) {
@@ -112,9 +127,54 @@ final class CompanionConnection: NSObject, ObservableObject {
         send(command)
     }
 
+    private func requestCurrentState(reason: String) {
+        guard !session.connectedPeers.isEmpty else { return }
+        let command = CompanionCommandPayload(type: .requestCurrentState)
+        send(command)
+    }
+
     private func receiveState(_ state: CompanionStatePayload) {
+        lastStateReceivedAt = Date()
         latestState = state
         onStateReceived?(state)
+    }
+
+    private func startStateWatchdog() {
+        guard stateWatchdogTimer == nil else { return }
+        stateWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkStateFreshness()
+            }
+        }
+    }
+
+    private func checkStateFreshness() {
+        guard mockStatePayload == nil else { return }
+        guard let connectedPeer else { return }
+
+        let now = Date()
+        let reference = lastStateReceivedAt ?? connectedAt ?? now
+        let age = now.timeIntervalSince(reference)
+
+        if age >= Self.reconnectAfterSeconds {
+            lastError = "连接在线但长时间没有状态更新，正在重新连接 Mac"
+            pendingReconnectPeer = connectedPeer
+            session.disconnect()
+            self.connectedPeer = nil
+            connectedAt = nil
+            if !browsing {
+                browsing = true
+                browser.startBrowsingForPeers()
+            }
+            if discoveredPeers.contains(connectedPeer) {
+                browser.invitePeer(connectedPeer, to: session, withContext: nil, timeout: 12)
+            }
+            return
+        }
+
+        if age >= Self.refreshAfterSeconds {
+            requestCurrentState(reason: "stale-\(Int(age))s")
+        }
     }
 
 #if DEBUG
@@ -234,6 +294,10 @@ extension CompanionConnection: MCNearbyServiceBrowserDelegate {
         Task { @MainActor in
             guard !self.discoveredPeers.contains(peerID) else { return }
             self.discoveredPeers.append(peerID)
+            if self.pendingReconnectPeer == peerID {
+                self.pendingReconnectPeer = nil
+                self.connect(to: peerID)
+            }
         }
     }
 
@@ -260,10 +324,13 @@ extension CompanionConnection: MCSessionDelegate {
             switch state {
             case .connected:
                 self.connectedPeer = peerID
+                self.connectedAt = Date()
+                self.requestCurrentState(reason: "peer-connected")
             case .notConnected:
                 if self.connectedPeer == peerID {
                     self.connectedPeer = nil
                 }
+                self.connectedAt = nil
             case .connecting:
                 break
             @unknown default:

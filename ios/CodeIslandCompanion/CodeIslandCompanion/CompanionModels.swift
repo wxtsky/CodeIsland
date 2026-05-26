@@ -81,6 +81,7 @@ struct CompanionStatePayload: Codable {
 }
 
 enum CompanionCommandType: String, Codable {
+    case requestCurrentState
     case approveCurrentPermission
     case denyCurrentPermission
     case skipCurrentQuestion

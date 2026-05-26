@@ -107,6 +107,7 @@ public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
 }
 
 public enum AppleCompanionCommandType: String, Codable, Equatable, Sendable {
+    case requestCurrentState
     case approveCurrentPermission
     case denyCurrentPermission
     case skipCurrentQuestion

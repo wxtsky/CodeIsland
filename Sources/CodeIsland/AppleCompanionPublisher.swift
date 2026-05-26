@@ -122,6 +122,8 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
 
     private func handleCommand(_ command: AppleCompanionCommandPayload) {
         switch command.type {
+        case .requestCurrentState:
+            flush(reason: "requested")
         case .approveCurrentPermission:
             onControlCommand?(.approveCurrentPermission)
         case .denyCurrentPermission:

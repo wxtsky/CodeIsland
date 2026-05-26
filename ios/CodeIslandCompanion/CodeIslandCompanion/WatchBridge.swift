@@ -1,9 +1,15 @@
 import Foundation
 import WatchConnectivity
+import os
 
 @MainActor
 final class WatchBridge: NSObject {
     var commandHandler: ((CompanionCommandPayload) -> Void)?
+
+    private static let log = Logger(subsystem: "top.fengye.CodeIslandCompanion", category: "watch-bridge")
+
+    private var latestState: CompanionStatePayload?
+    private var activationState: WCSessionActivationState = .notActivated
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -26,7 +32,16 @@ final class WatchBridge: NSObject {
     }
 
     func publish(_ state: CompanionStatePayload?) {
-        guard let state, WCSession.isSupported() else { return }
+        latestState = state
+        flushLatestState(reason: "publish")
+    }
+
+    private func flushLatestState(reason: String) {
+        guard let state = latestState, WCSession.isSupported() else { return }
+        guard activationState == .activated else {
+            Self.log.debug("deferred watch sync before activation: \(reason)")
+            return
+        }
 
         do {
             let data = try encoder.encode(state)
@@ -37,8 +52,7 @@ final class WatchBridge: NSObject {
                 WCSession.default.sendMessage(message, replyHandler: nil)
             }
         } catch {
-            // Watch sync is best-effort; the iPhone app should keep running even
-            // when the watch is unavailable or the session is still activating.
+            Self.log.error("watch sync failed: \(error.localizedDescription)")
         }
     }
 }
@@ -48,12 +62,32 @@ extension WatchBridge: WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        Task { @MainActor in
+            self.activationState = activationState
+            if let error {
+                Self.log.error("watch session activation failed: \(error.localizedDescription)")
+            }
+            self.flushLatestState(reason: "activation")
+        }
+    }
 
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
         session.activate()
+    }
+
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            self.flushLatestState(reason: "reachability")
+        }
+    }
+
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            self.flushLatestState(reason: "watch-state")
+        }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

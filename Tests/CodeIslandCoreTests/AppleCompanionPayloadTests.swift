@@ -75,4 +75,16 @@ final class AppleCompanionPayloadTests: XCTestCase {
         XCTAssertEqual(decoded.source, "codex")
         XCTAssertEqual(decoded.answer, "科幻/未来")
     }
+
+    func testRequestCurrentStateCommandRoundTrips() throws {
+        let command = AppleCompanionCommandPayload(type: .requestCurrentState)
+
+        let data = try JSONEncoder().encode(command)
+        let decoded = try JSONDecoder().decode(AppleCompanionCommandPayload.self, from: data)
+
+        XCTAssertEqual(decoded.type, .requestCurrentState)
+        XCTAssertNil(decoded.sessionId)
+        XCTAssertNil(decoded.source)
+        XCTAssertNil(decoded.answer)
+    }
 }
