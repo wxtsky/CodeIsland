@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import MultipeerConnectivity
 import UIKit
@@ -13,14 +14,17 @@ final class CompanionConnection: NSObject, ObservableObject {
     }
     @Published private(set) var lastError: String?
     @Published private(set) var browsing = false
+    @Published private(set) var bluetoothConnectedPeripheralName: String?
 
     private static let serviceType = "codeisland"
 
     private let watchBridge = WatchBridge()
+    private let bluetoothBridge = CompanionBluetoothCentral()
     private let peerID = MCPeerID(displayName: UIDevice.current.name)
     private let mockStatePayload = CompanionConnection.mockStateFromLaunchArguments()
     private lazy var session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
     private lazy var browser = MCNearbyServiceBrowser(peer: peerID, serviceType: Self.serviceType)
+    var onStateReceived: ((CompanionStatePayload) -> Void)?
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -41,15 +45,23 @@ final class CompanionConnection: NSObject, ObservableObject {
         watchBridge.commandHandler = { [weak self] command in
             self?.send(command)
         }
+        bluetoothBridge.onSummary = { [weak self] summary in
+            self?.receiveBluetoothSummary(summary)
+        }
+        bluetoothBridge.$connectedPeripheralName
+            .assign(to: &$bluetoothConnectedPeripheralName)
+        bluetoothBridge.$lastError
+            .compactMap { $0 }
+            .assign(to: &$lastError)
 
         if let mockStatePayload {
             connectedPeer = MCPeerID(displayName: "CodeIsland Mock Mac")
-            latestState = mockStatePayload
-            watchBridge.publish(mockStatePayload)
+            receiveState(mockStatePayload)
         }
     }
 
     func start() {
+        bluetoothBridge.start()
         guard mockStatePayload == nil else { return }
         guard !browsing else { return }
         lastError = nil
@@ -98,6 +110,19 @@ final class CompanionConnection: NSObject, ObservableObject {
             answer: answer
         )
         send(command)
+    }
+
+    private func receiveState(_ state: CompanionStatePayload) {
+        latestState = state
+        onStateReceived?(state)
+    }
+
+    private func receiveBluetoothSummary(_ summary: CompanionBluetoothSummary) {
+        if let current = latestState, current.sequence > summary.sequence {
+            return
+        }
+
+        receiveState(summary.statePayload)
     }
 
     private static func mockStateFromLaunchArguments() -> CompanionStatePayload? {
@@ -244,7 +269,7 @@ extension CompanionConnection: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
         Task { @MainActor in
             do {
-                self.latestState = try self.decoder.decode(CompanionStatePayload.self, from: data)
+                self.receiveState(try self.decoder.decode(CompanionStatePayload.self, from: data))
             } catch {
                 self.lastError = error.localizedDescription
             }

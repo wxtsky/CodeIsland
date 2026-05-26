@@ -23,6 +23,12 @@ final class LiveActivityController: ObservableObject {
         recoverExistingActivity()
     }
 
+    func updateIfRunning(with payload: CompanionStatePayload) {
+        recoverExistingActivity()
+        guard activity != nil else { return }
+        startOrUpdate(with: payload)
+    }
+
     func startOrUpdate(with payload: CompanionStatePayload) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             lastError = "这台 iPhone 没有开启实时活动。"

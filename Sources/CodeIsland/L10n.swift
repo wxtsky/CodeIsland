@@ -283,7 +283,7 @@ final class L10n: ObservableObject {
         "apple_companion_no_devices": "No iPhone connected",
         "apple_companion_sync_interval": "Sync interval",
         "apple_companion_restart": "Restart advertising",
-        "apple_companion_desc": "Mirrors CodeIsland status to the iPhone app over the local network for Dynamic Island, Lock Screen, and StandBy.",
+        "apple_companion_desc": "Mirrors CodeIsland status to the iPhone app over the local network while foregrounded, and sends lightweight Bluetooth summaries for Live Activity and Apple Watch refreshes in the background.",
 
         // About
         "about_desc1": "Real-time AI coding agent status panel for macOS",
@@ -597,7 +597,7 @@ final class L10n: ObservableObject {
         "apple_companion_no_devices": "暂无 iPhone 连接",
         "apple_companion_sync_interval": "同步间隔",
         "apple_companion_restart": "重新广播",
-        "apple_companion_desc": "通过本地网络把 CodeIsland 状态同步到 iPhone App，用于灵动岛、锁屏和 StandBy。",
+        "apple_companion_desc": "前台通过本地网络把 CodeIsland 状态同步到 iPhone App；后台会通过蓝牙发送轻量状态摘要，用于刷新实时活动和 Apple Watch。",
 
         // About
         "about_desc1": "macOS 实时 AI 编码 Agent 状态面板",
@@ -902,6 +902,16 @@ final class L10n: ObservableObject {
         "buddy_screen_orientation_down": "下",
         "buddy_screen_orientation_desc": "Buddy の物理的な向きを選びます。下を選ぶと画面が 180° 回転します。",
         "buddy_desc": "Buddy は現在のアイランドのマスコットと状態を Bluetooth で同期し、本体ボタンで対応するエージェントのターミナルにフォーカスできます。",
+        "apple_companion": "iPhone Companion",
+        "apple_companion_enable": "iPhone がこの Mac を検出できるようにする",
+        "apple_companion_status": "接続状態",
+        "apple_companion_status_off": "オフ",
+        "apple_companion_status_waiting": "iPhone の接続待ち",
+        "apple_companion_status_connected": "接続済み",
+        "apple_companion_no_devices": "接続中の iPhone はありません",
+        "apple_companion_sync_interval": "同期間隔",
+        "apple_companion_restart": "広告を再開",
+        "apple_companion_desc": "フォアグラウンドではローカルネットワークで CodeIsland の状態を iPhone App に同期し、バックグラウンドでは Live Activity と Apple Watch の更新用に軽量な Bluetooth サマリーを送信します。",
 
         // About
         "about_desc1": "macOS 向けリアルタイム AI コーディングエージェント状態パネル",
@@ -1206,6 +1216,16 @@ final class L10n: ObservableObject {
         "buddy_screen_orientation_down": "아래",
         "buddy_screen_orientation_desc": "Buddy의 물리적 방향을 선택합니다. 아래를 선택하면 화면이 180° 회전합니다.",
         "buddy_desc": "Buddy는 현재 아일랜드의 마스코트와 상태를 Bluetooth로 동기화하며, 기기 버튼으로 해당 에이전트 터미널에 포커스할 수 있습니다.",
+        "apple_companion": "iPhone Companion",
+        "apple_companion_enable": "iPhone이 이 Mac을 발견하도록 허용",
+        "apple_companion_status": "연결 상태",
+        "apple_companion_status_off": "꺼짐",
+        "apple_companion_status_waiting": "iPhone 연결 대기 중",
+        "apple_companion_status_connected": "연결됨",
+        "apple_companion_no_devices": "연결된 iPhone 없음",
+        "apple_companion_sync_interval": "동기화 간격",
+        "apple_companion_restart": "광고 다시 시작",
+        "apple_companion_desc": "포그라운드에서는 로컬 네트워크로 CodeIsland 상태를 iPhone 앱에 동기화하고, 백그라운드에서는 Live Activity와 Apple Watch 갱신을 위해 가벼운 Bluetooth 요약을 보냅니다.",
 
         // About
         "about_desc1": "macOS용 실시간 AI 코딩 에이전트 상태 패널",
@@ -1510,6 +1530,16 @@ final class L10n: ObservableObject {
         "buddy_screen_orientation_down": "Aşağı",
         "buddy_screen_orientation_desc": "Buddy'nin fiziksel yönünü seçin. Aşağı seçeneği ekranı 180° döndürür.",
         "buddy_desc": "Buddy, geçerli ada maskotunu ve durumunu Bluetooth ile eşler; üzerindeki düğme de ilgili ajan terminaline odaklanabilir.",
+        "apple_companion": "iPhone Companion",
+        "apple_companion_enable": "iPhone'un bu Mac'i bulmasına izin ver",
+        "apple_companion_status": "Bağlantı durumu",
+        "apple_companion_status_off": "Kapalı",
+        "apple_companion_status_waiting": "iPhone bekleniyor",
+        "apple_companion_status_connected": "Bağlandı",
+        "apple_companion_no_devices": "Bağlı iPhone yok",
+        "apple_companion_sync_interval": "Senkronizasyon aralığı",
+        "apple_companion_restart": "Yayını yeniden başlat",
+        "apple_companion_desc": "Öndeyken CodeIsland durumunu yerel ağ üzerinden iPhone uygulamasına eşler; arka planda Live Activity ve Apple Watch yenilemeleri için hafif Bluetooth özetleri gönderir.",
 
         // About
         "about_desc1": "macOS için gerçek zamanlı AI kodlama ajanı durum paneli",

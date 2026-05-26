@@ -16,6 +16,10 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
     @Published private(set) var connectedPeerNames: [String] = []
     @Published private(set) var lastError: String?
 
+    var bluetoothPoweredOn: Bool { bluetooth.poweredOn }
+    var bluetoothAdvertising: Bool { bluetooth.advertising }
+    var bluetoothSubscribed: Bool { bluetooth.hasSubscribers }
+
     var onControlCommand: ((BuddyControlCommand) -> Void)?
     var onFocusRequest: ((MascotID) -> Void)?
     var onQuestionAnswer: ((String) -> Void)?
@@ -30,6 +34,7 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
     )
     private var heartbeatTimer: Timer?
     private var sequence: UInt64 = 0
+    private let bluetooth = AppleCompanionBluetoothPeripheral()
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -63,6 +68,7 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
 
         guard enabled else {
             advertiser.stopAdvertisingPeer()
+            bluetooth.configure(enabled: false)
             advertising = false
             connectedPeerNames = []
             session.disconnect()
@@ -71,6 +77,7 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
 
         lastError = nil
         advertiser.startAdvertisingPeer()
+        bluetooth.configure(enabled: true)
         advertising = true
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: max(1.0, heartbeatSeconds), repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -91,13 +98,18 @@ final class AppleCompanionPublisher: NSObject, ObservableObject {
         connectedPeerNames = []
         advertiser.startAdvertisingPeer()
         advertising = true
+        bluetooth.configure(enabled: true)
         flush(reason: "reconnect")
     }
 
     private func flush(reason: String) {
-        guard enabled, !session.connectedPeers.isEmpty, let appState else { return }
+        guard enabled, let appState else { return }
         sequence &+= 1
         let payload = appState.appleCompanionStatePayload(sequence: sequence)
+
+        bluetooth.publish(payload)
+
+        guard !session.connectedPeers.isEmpty else { return }
         do {
             let data = try encoder.encode(payload)
             try session.send(data, toPeers: session.connectedPeers, with: .reliable)
