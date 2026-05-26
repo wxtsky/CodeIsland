@@ -1239,6 +1239,9 @@ private struct BuddyPage: View {
     @AppStorage(SettingsKey.esp32HeartbeatSeconds) private var heartbeat: Double = SettingsDefaults.esp32HeartbeatSeconds
     @AppStorage(SettingsKey.buddyScreenBrightnessPercent) private var brightness: Double = SettingsDefaults.buddyScreenBrightnessPercent
     @AppStorage(SettingsKey.buddyScreenOrientation) private var screenOrientation: String = SettingsDefaults.buddyScreenOrientation
+    @AppStorage(SettingsKey.appleCompanionEnabled) private var appleCompanionEnabled: Bool = SettingsDefaults.appleCompanionEnabled
+    @AppStorage(SettingsKey.appleCompanionHeartbeatSeconds) private var appleCompanionHeartbeat: Double = SettingsDefaults.appleCompanionHeartbeatSeconds
+    @ObservedObject private var appleCompanion = AppleCompanionPublisher.shared
     @State private var refreshTick = 0
 
     private var bridge: ESP32BridgeManager { ESP32BridgeManager.shared }
@@ -1287,6 +1290,13 @@ private struct BuddyPage: View {
             heartbeatSeconds: heartbeat,
             brightnessPercent: brightness,
             screenOrientation: BuddyScreenOrientation(settingsValue: screenOrientation)
+        )
+    }
+
+    private func configureAppleCompanion() {
+        AppleCompanionPublisher.shared.configure(
+            enabled: appleCompanionEnabled,
+            heartbeatSeconds: appleCompanionHeartbeat
         )
     }
 
@@ -1443,6 +1453,67 @@ private struct BuddyPage: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section(l10n["apple_companion"]) {
+                Toggle(l10n["apple_companion_enable"], isOn: $appleCompanionEnabled)
+                    .onChange(of: appleCompanionEnabled) { _, _ in
+                        configureAppleCompanion()
+                    }
+
+                HStack {
+                    Text(l10n["apple_companion_status"])
+                    Spacer()
+                    Circle()
+                        .fill(appleCompanionStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(appleCompanionStatusText)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+
+                if appleCompanion.connectedPeerNames.isEmpty {
+                    Label(l10n["apple_companion_no_devices"], systemImage: "iphone")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appleCompanion.connectedPeerNames, id: \.self) { name in
+                        Label(name, systemImage: "iphone")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                HStack {
+                    Text(l10n["apple_companion_sync_interval"])
+                    Spacer()
+                    Text(String(format: l10n["buddy_seconds_format"], appleCompanionHeartbeat))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(value: $appleCompanionHeartbeat, in: 1...30, step: 1)
+                    .onChange(of: appleCompanionHeartbeat) { _, _ in
+                        configureAppleCompanion()
+                    }
+                    .disabled(!appleCompanionEnabled)
+
+                Button {
+                    appleCompanion.reconnect()
+                } label: {
+                    Label(l10n["apple_companion_restart"], systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!appleCompanionEnabled)
+
+                if let error = appleCompanion.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Text(l10n["apple_companion_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Text(l10n["buddy_desc"])
                     .font(.caption)
@@ -1477,6 +1548,20 @@ private struct BuddyPage: View {
         case ..<(-70): return "wifi"
         default:       return "wifi"
         }
+    }
+
+    private var appleCompanionStatusText: String {
+        guard appleCompanion.enabled else {
+            return l10n["apple_companion_status_off"]
+        }
+        return appleCompanion.connectedPeerNames.isEmpty
+            ? l10n["apple_companion_status_waiting"]
+            : l10n["apple_companion_status_connected"]
+    }
+
+    private var appleCompanionStatusColor: Color {
+        guard appleCompanion.enabled else { return .secondary }
+        return appleCompanion.connectedPeerNames.isEmpty ? .orange : .green
     }
 }
 

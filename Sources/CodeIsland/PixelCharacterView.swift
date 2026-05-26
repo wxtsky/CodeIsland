@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// Clawd — Claude mascot, adapted from clawd-on-desk SVG pixel art.
 /// Renders SVG rects proportionally via Canvas + TimelineView animations.
 struct ClawdView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

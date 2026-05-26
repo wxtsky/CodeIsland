@@ -94,6 +94,10 @@ enum SettingsKey {
     static let selectedBuddyIdentifier = "selectedBuddyIdentifier"
     static let selectedBuddyName = "selectedBuddyName"
 
+    // Apple companion (iPhone / StandBy / Apple Watch prototype)
+    static let appleCompanionEnabled = "appleCompanionEnabled"
+    static let appleCompanionHeartbeatSeconds = "appleCompanionHeartbeatSeconds"
+
     // Auto-approve tools (comma-separated tool names)
     static let autoApproveTools = "autoApproveTools"
 
@@ -159,6 +163,9 @@ struct SettingsDefaults {
     static let selectedBuddyIdentifier = ""
     static let selectedBuddyName = ""
 
+    static let appleCompanionEnabled = false
+    static let appleCompanionHeartbeatSeconds = 5.0
+
     // Default to no auto-approval — every tool call goes through the
     // approval flow and the user opts in per tool. The previous default
     // silently approved 9 internal agent tools (TaskCreate, TodoWrite,
@@ -220,6 +227,8 @@ class SettingsManager {
             SettingsKey.buddyScreenOrientation: SettingsDefaults.buddyScreenOrientation,
             SettingsKey.selectedBuddyIdentifier: SettingsDefaults.selectedBuddyIdentifier,
             SettingsKey.selectedBuddyName: SettingsDefaults.selectedBuddyName,
+            SettingsKey.appleCompanionEnabled: SettingsDefaults.appleCompanionEnabled,
+            SettingsKey.appleCompanionHeartbeatSeconds: SettingsDefaults.appleCompanionHeartbeatSeconds,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
             SettingsKey.autoApproveTools: SettingsDefaults.autoApproveTools,
             SettingsKey.excludedHookCwdSubstrings: SettingsDefaults.excludedHookCwdSubstrings,

@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// OpBot — OpenCode mascot, pixel-art dark terminal block with `{ }` face.
 /// Minimalist geometric style matching OpenCode's monochrome branding.
 struct OpenCodeView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

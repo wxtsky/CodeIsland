@@ -274,6 +274,16 @@ final class L10n: ObservableObject {
         "buddy_screen_orientation_down": "Down",
         "buddy_screen_orientation_desc": "Choose Buddy's physical direction. Down flips the screen 180°.",
         "buddy_desc": "Buddy mirrors the current island mascot and status over Bluetooth, and its button can focus the matching agent terminal.",
+        "apple_companion": "iPhone Companion",
+        "apple_companion_enable": "Allow iPhone to discover this Mac",
+        "apple_companion_status": "Connection",
+        "apple_companion_status_off": "Off",
+        "apple_companion_status_waiting": "Waiting for iPhone",
+        "apple_companion_status_connected": "Connected",
+        "apple_companion_no_devices": "No iPhone connected",
+        "apple_companion_sync_interval": "Sync interval",
+        "apple_companion_restart": "Restart advertising",
+        "apple_companion_desc": "Mirrors CodeIsland status to the iPhone app over the local network for Dynamic Island, Lock Screen, and StandBy.",
 
         // About
         "about_desc1": "Real-time AI coding agent status panel for macOS",
@@ -578,6 +588,16 @@ final class L10n: ObservableObject {
         "buddy_screen_orientation_down": "下",
         "buddy_screen_orientation_desc": "选择 Buddy 的物理朝向。选择“下”会将屏幕旋转 180°。",
         "buddy_desc": "Buddy 会通过蓝牙同步当前灵动岛的角色和状态，也可以用机身按钮切换到对应 Agent 的终端。",
+        "apple_companion": "iPhone 伴侣",
+        "apple_companion_enable": "允许 iPhone 发现这台 Mac",
+        "apple_companion_status": "连接状态",
+        "apple_companion_status_off": "已关闭",
+        "apple_companion_status_waiting": "等待 iPhone 连接",
+        "apple_companion_status_connected": "已连接",
+        "apple_companion_no_devices": "暂无 iPhone 连接",
+        "apple_companion_sync_interval": "同步间隔",
+        "apple_companion_restart": "重新广播",
+        "apple_companion_desc": "通过本地网络把 CodeIsland 状态同步到 iPhone App，用于灵动岛、锁屏和 StandBy。",
 
         // About
         "about_desc1": "macOS 实时 AI 编码 Agent 状态面板",

@@ -13,6 +13,8 @@ docs/superpowers/
 # IDE vscode/cursor
 .vscode/
 .cursor/
+xcuserdata/
+*.xcuserstate
 
 # Tmp files
 *.log
@@ -25,7 +27,45 @@ android-watch/local.properties
 android-watch/**/build/
 
 # Code agents config files
+.adal/
+.aider-desk/
 .agents/
+.augment/
+.bob/
 .claude/
+.codeartsdoer/
+.codebuddy/
+.codemaker/
+.codestudio/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.devin/
+.factory/
+.forge/
+.goose/
+.hermes/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.rovodev/
+.tabnine/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+skills/
 skills-lock.json
 CLAUDE.md

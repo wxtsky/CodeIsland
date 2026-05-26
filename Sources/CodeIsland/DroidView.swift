@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// DroidBot — Factory/Droid mascot, pixel-art industrial robot.
 /// Rust orange #D56A26 on warm brown-black #161413. Mechanical/factory aesthetic.
 struct DroidView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

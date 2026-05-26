@@ -299,6 +299,86 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue.count, 1, "Queue should not be drained by direct answerQuestion")
     }
 
+    // MARK: - Apple Companion question mirror
+
+    func testAppleCompanionPayloadMirrorsPendingAskUserQuestion() async throws {
+        let appState = AppState()
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-companion-payload",
+            questions: [
+                question(
+                    header: "小说类型",
+                    text: "你想看什么类型的小说？",
+                    options: ["都市/现实", "科幻/未来"],
+                    descriptions: ["现代都市背景、职场、情感、生活故事", "未来世界、人工智能、太空探索、时间旅行"]
+                ),
+                question(header: "篇幅长度", text: "你希望多长？", options: ["短篇", "长篇"]),
+            ]
+        )
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+
+        let payload = appState.appleCompanionStatePayload(sequence: 42)
+        XCTAssertEqual(payload.sequence, 42)
+        XCTAssertEqual(payload.sessionId, "s-companion-payload")
+        XCTAssertEqual(payload.status, .waitingQuestion)
+        XCTAssertEqual(payload.pendingAction, .question)
+        XCTAssertEqual(payload.toolName, "AskUserQuestion")
+
+        let question = try XCTUnwrap(payload.question)
+        XCTAssertEqual(question.header, "小说类型")
+        XCTAssertEqual(question.question, "你想看什么类型的小说？")
+        XCTAssertEqual(question.options, ["都市/现实", "科幻/未来"])
+        XCTAssertEqual(question.descriptions, ["现代都市背景、职场、情感、生活故事", "未来世界、人工智能、太空探索、时间旅行"])
+        XCTAssertEqual(question.index, 1)
+        XCTAssertEqual(question.total, 2)
+        XCTAssertFalse(question.allowsMultipleSelection)
+    }
+
+    func testCompanionAnswerAdvancesAskUserQuestionAndCompletes() async throws {
+        let appState = AppState()
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-companion-answer",
+            questions: [
+                question(header: "工作模式", text: "你希望我接下来以哪种方式协作？", options: ["直接执行", "先给方案"]),
+                question(header: "输出风格", text: "你更喜欢我用哪种回答风格？", options: ["极简", "平衡"]),
+            ]
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+
+        appState.answerCompanionQuestion("直接执行")
+        let secondPayload = appState.appleCompanionStatePayload(sequence: 43)
+        let secondQuestion = try XCTUnwrap(secondPayload.question)
+        XCTAssertEqual(secondQuestion.header, "输出风格")
+        XCTAssertEqual(secondQuestion.index, 2)
+        XCTAssertEqual(secondQuestion.total, 2)
+        XCTAssertEqual(appState.questionQueue.count, 1)
+
+        appState.answerCompanionQuestion("平衡")
+        let responseData = await responseTask.value
+        let answers = try extractAnswers(from: responseData)
+        XCTAssertEqual(answers["工作模式"] as? String, "直接执行")
+        XCTAssertEqual(answers["输出风格"] as? String, "平衡")
+        XCTAssertEqual(appState.questionQueue.count, 0)
+
+        let completedPayload = appState.appleCompanionStatePayload(sequence: 44)
+        XCTAssertNil(completedPayload.question)
+        XCTAssertNil(completedPayload.pendingAction)
+    }
+
     // MARK: - Helpers
 
     private func makeAskUserQuestionEvent(sessionId: String, questions: [[String: Any]]) throws -> HookEvent {
@@ -336,10 +416,12 @@ final class AppStateQuestionFlowTests: XCTestCase {
         return event
     }
 
-    private func question(header: String?, text: String, options: [String]) -> [String: Any] {
+    private func question(header: String?, text: String, options: [String], descriptions: [String]? = nil) -> [String: Any] {
         var result: [String: Any] = [
             "question": text,
-            "options": options.map { ["label": $0, "description": ""] }
+            "options": options.enumerated().map { index, option in
+                ["label": option, "description": descriptions?[safe: index] ?? ""]
+            }
         ]
         if let header {
             result["header"] = header
@@ -364,5 +446,11 @@ final class AppStateQuestionFlowTests: XCTestCase {
         let hookSpecificOutput = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
         let decision = try XCTUnwrap(hookSpecificOutput["decision"] as? [String: Any])
         return try XCTUnwrap(decision["behavior"] as? String)
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

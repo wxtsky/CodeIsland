@@ -227,6 +227,81 @@ extension AppState {
         ].joined(separator: "|")
     }
 
+    func appleCompanionStatePayload(sequence: UInt64, session: SessionSnapshot? = nil) -> AppleCompanionStatePayload {
+        let displaySession = session ?? esp32DisplaySession()
+        let context = esp32DisplayContext(session: displaySession)
+        let displaySessionId = rotatingSessionId ?? activeSessionId ?? sessions.keys.sorted().first
+        let sessionId = pendingPermission?.event.sessionId
+            ?? pendingQuestion?.event.sessionId
+            ?? displaySessionId
+        let pendingAction: AppleCompanionPendingAction?
+        switch context.status {
+        case .waitingApproval:
+            pendingAction = .approval
+        case .waitingQuestion:
+            pendingAction = .question
+        default:
+            pendingAction = nil
+        }
+        let messages = context.messages.suffix(3).compactMap { message -> AppleCompanionMessagePreview? in
+            let text = Self.appleCompanionPreviewText(message.text)
+            guard !text.isEmpty else { return nil }
+            return AppleCompanionMessagePreview(
+                role: message.isUser ? .user : .assistant,
+                text: text
+            )
+        }
+        let questionPayload = appleCompanionQuestionPayload()
+        return AppleCompanionStatePayload(
+            sequence: sequence,
+            sessionId: sessionId,
+            source: context.source,
+            status: AppleCompanionStatus(context.status),
+            toolName: context.tool,
+            workspaceName: context.workspace,
+            messages: messages,
+            pendingAction: pendingAction,
+            question: questionPayload
+        )
+    }
+
+    private func appleCompanionQuestionPayload() -> AppleCompanionQuestionPayload? {
+        guard let pending = pendingQuestion else { return nil }
+
+        if let askState = pending.askUserQuestionState, !askState.items.isEmpty {
+            let index = askState.items.firstIndex { askState.answers[$0.answerKey] == nil } ?? 0
+            let item = askState.items[index]
+            return AppleCompanionQuestionPayload(
+                header: item.payload.header,
+                question: item.payload.question,
+                options: item.payload.options ?? [],
+                descriptions: item.payload.descriptions ?? [],
+                index: index + 1,
+                total: askState.items.count,
+                allowsMultipleSelection: item.multiSelect
+            )
+        }
+
+        return AppleCompanionQuestionPayload(
+            header: pending.question.header,
+            question: pending.question.question,
+            options: pending.question.options ?? [],
+            descriptions: pending.question.descriptions ?? [],
+            index: 1,
+            total: 1,
+            allowsMultipleSelection: false
+        )
+    }
+
+    private static func appleCompanionPreviewText(_ text: String?) -> String {
+        guard let text else { return "" }
+        let collapsed = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > 240 else { return collapsed }
+        return String(collapsed.prefix(237)) + "..."
+    }
+
     func esp32MessagePreviewSegments(text: String?) -> [String] {
         guard let text else { return [] }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

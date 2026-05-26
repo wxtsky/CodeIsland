@@ -1,0 +1,131 @@
+import Foundation
+
+public enum AppleCompanionStatus: String, Codable, Equatable, Sendable {
+    case idle
+    case processing
+    case running
+    case waitingApproval
+    case waitingQuestion
+
+    public init(_ status: AgentStatus) {
+        switch status {
+        case .idle: self = .idle
+        case .processing: self = .processing
+        case .running: self = .running
+        case .waitingApproval: self = .waitingApproval
+        case .waitingQuestion: self = .waitingQuestion
+        }
+    }
+}
+
+public enum AppleCompanionPendingAction: String, Codable, Equatable, Sendable {
+    case approval
+    case question
+}
+
+public enum AppleCompanionMessageRole: String, Codable, Equatable, Sendable {
+    case user
+    case assistant
+}
+
+public struct AppleCompanionMessagePreview: Codable, Equatable, Sendable {
+    public let role: AppleCompanionMessageRole
+    public let text: String
+
+    public init(role: AppleCompanionMessageRole, text: String) {
+        self.role = role
+        self.text = text
+    }
+}
+
+public struct AppleCompanionQuestionPayload: Codable, Equatable, Sendable {
+    public let header: String?
+    public let question: String
+    public let options: [String]
+    public let descriptions: [String]
+    public let index: Int
+    public let total: Int
+    public let allowsMultipleSelection: Bool
+
+    public init(
+        header: String?,
+        question: String,
+        options: [String],
+        descriptions: [String],
+        index: Int,
+        total: Int,
+        allowsMultipleSelection: Bool
+    ) {
+        self.header = header
+        self.question = question
+        self.options = options
+        self.descriptions = descriptions
+        self.index = index
+        self.total = total
+        self.allowsMultipleSelection = allowsMultipleSelection
+    }
+}
+
+public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
+    public let version: Int
+    public let sequence: UInt64
+    public let sessionId: String?
+    public let source: String
+    public let status: AppleCompanionStatus
+    public let toolName: String?
+    public let workspaceName: String?
+    public let messages: [AppleCompanionMessagePreview]
+    public let pendingAction: AppleCompanionPendingAction?
+    public let question: AppleCompanionQuestionPayload?
+    public let updatedAt: Date
+
+    public init(
+        version: Int = 1,
+        sequence: UInt64,
+        sessionId: String?,
+        source: String,
+        status: AppleCompanionStatus,
+        toolName: String?,
+        workspaceName: String?,
+        messages: [AppleCompanionMessagePreview],
+        pendingAction: AppleCompanionPendingAction?,
+        question: AppleCompanionQuestionPayload? = nil,
+        updatedAt: Date = Date()
+    ) {
+        self.version = version
+        self.sequence = sequence
+        self.sessionId = sessionId
+        self.source = source
+        self.status = status
+        self.toolName = toolName
+        self.workspaceName = workspaceName
+        self.messages = messages
+        self.pendingAction = pendingAction
+        self.question = question
+        self.updatedAt = updatedAt
+    }
+}
+
+public enum AppleCompanionCommandType: String, Codable, Equatable, Sendable {
+    case approveCurrentPermission
+    case denyCurrentPermission
+    case skipCurrentQuestion
+    case answerQuestion
+    case focus
+}
+
+public struct AppleCompanionCommandPayload: Codable, Equatable, Sendable {
+    public let version: Int
+    public let type: AppleCompanionCommandType
+    public let sessionId: String?
+    public let source: String?
+    public let answer: String?
+
+    public init(version: Int = 1, type: AppleCompanionCommandType, sessionId: String? = nil, source: String? = nil, answer: String? = nil) {
+        self.version = version
+        self.type = type
+        self.sessionId = sessionId
+        self.source = source
+        self.answer = answer
+    }
+}

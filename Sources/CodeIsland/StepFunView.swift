@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// StepFunBot — StepFun mascot, pixel-block staircase character.
 /// Dark teal #0D9488 with blocky pixel aesthetic matching the step-pattern logo.
 struct StepFunView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

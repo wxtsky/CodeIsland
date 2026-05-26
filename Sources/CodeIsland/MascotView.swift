@@ -1,5 +1,4 @@
 import SwiftUI
-import CodeIslandCore
 
 // MARK: - Mascot Animation Speed Environment
 
@@ -17,7 +16,7 @@ extension EnvironmentValues {
 /// Routes a CLI source identifier to the correct pixel mascot view.
 struct MascotView: View {
     let source: String
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @AppStorage(SettingsKey.mascotSpeed) private var speedPct = SettingsDefaults.mascotSpeed
 

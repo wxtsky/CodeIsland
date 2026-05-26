@@ -625,6 +625,7 @@ final class AppState {
             rotatingSessionId = cachedActiveIds.first
         }
         ESP32StatePublisher.shared.notifyDirty()
+        AppleCompanionPublisher.shared.notifyDirty()
     }
 
     /// Start monitoring the CLI process for a session.
@@ -875,6 +876,7 @@ final class AppState {
         if activeSessionCount != summary.activeSessionCount { activeSessionCount = summary.activeSessionCount }
         if totalSessionCount != summary.totalSessionCount { totalSessionCount = summary.totalSessionCount }
         ESP32StatePublisher.shared.notifyDirty()
+        AppleCompanionPublisher.shared.notifyDirty()
     }
 
     private func refreshProviderTitle(for trackedSessionId: String, providerSessionId: String? = nil) {
@@ -1151,6 +1153,38 @@ final class AppState {
                 log.info("Ignored Buddy skip command because question queue is empty")
             }
         }
+    }
+
+    func answerCompanionQuestion(_ answer: String) {
+        guard !questionQueue.isEmpty else {
+            log.info("Ignored companion question answer because question queue is empty")
+            return
+        }
+
+        if questionQueue[0].isFromPermission,
+           var askState = questionQueue[0].askUserQuestionState {
+            guard let index = askState.items.firstIndex(where: { askState.answers[$0.answerKey] == nil }) else {
+                answerQuestionMulti(askState.items.map {
+                    (question: $0.payload.question, answer: askState.answers[$0.answerKey] ?? "")
+                })
+                return
+            }
+
+            let item = askState.items[index]
+            askState.answers[item.answerKey] = answer
+            questionQueue[0].askUserQuestionState = askState
+
+            if askState.canConfirm {
+                answerQuestionMulti(askState.items.map {
+                    (question: $0.payload.question, answer: askState.answers[$0.answerKey] ?? "")
+                })
+            } else {
+                refreshDerivedState()
+            }
+            return
+        }
+
+        answerQuestion(answer)
     }
 
     /// Find an existing session whose source matches and whose CLI PID equals

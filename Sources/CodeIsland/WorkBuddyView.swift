@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// WorkBuddyBot — WorkBuddy mascot, teal rounded robot character.
 /// Teal-cyan #32E6B9 with rounded friendly aesthetic.
 struct WorkBuddyView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

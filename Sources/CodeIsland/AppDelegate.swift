@@ -61,6 +61,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let appState else { return }
             appState.handleBuddyControlCommand(command)
         }
+        AppleCompanionPublisher.shared.attach(appState)
+        AppleCompanionPublisher.shared.onFocusRequest = { [weak appState] mascot in
+            guard let appState else { return }
+            ESP32FocusCoordinator.handle(mascot: mascot, appState: appState)
+        }
+        AppleCompanionPublisher.shared.onControlCommand = { [weak appState] command in
+            guard let appState else { return }
+            appState.handleBuddyControlCommand(command)
+        }
+        AppleCompanionPublisher.shared.onQuestionAnswer = { [weak appState] answer in
+            guard let appState else { return }
+            appState.answerCompanionQuestion(answer)
+        }
         let buddyEnabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
         let buddySyncInterval = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
         let buddyBrightness = UserDefaults.standard.double(forKey: SettingsKey.buddyScreenBrightnessPercent)
@@ -72,6 +85,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             heartbeatSeconds: buddySyncInterval > 0 ? buddySyncInterval : SettingsDefaults.esp32HeartbeatSeconds,
             brightnessPercent: buddyBrightness > 0 ? buddyBrightness : SettingsDefaults.buddyScreenBrightnessPercent,
             screenOrientation: buddyScreenOrientation
+        )
+        let appleCompanionEnabled = UserDefaults.standard.bool(forKey: SettingsKey.appleCompanionEnabled)
+        let appleCompanionHeartbeat = UserDefaults.standard.double(forKey: SettingsKey.appleCompanionHeartbeatSeconds)
+        AppleCompanionPublisher.shared.configure(
+            enabled: appleCompanionEnabled,
+            heartbeatSeconds: appleCompanionHeartbeat > 0 ? appleCompanionHeartbeat : SettingsDefaults.appleCompanionHeartbeatSeconds
         )
 
         // Hooks auto-recovery: periodic + app activation trigger

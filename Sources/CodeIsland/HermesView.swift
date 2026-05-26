@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// HermesBot — Hermes mascot, dark hooded figure with glowing eyes.
 /// Noir purple #2D1B4E with white highlights, mysterious aesthetic.
 struct HermesView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

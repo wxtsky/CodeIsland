@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// KimiBot — Kimi Code CLI mascot.
 /// Soft rounded cube with a small antenna, in Kimi blue.
 struct KimiView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed
@@ -126,7 +125,9 @@ struct KimiView: View {
                 let fontSize = max(6, size * CGFloat(0.18 + phase * 0.10))
                 let baseOp = 0.7 - ci * 0.1
                 let opacity = phase < 0.8 ? baseOp : (1.0 - phase) * 3.5 * baseOp
-                let xOff = size * CGFloat(0.15 + ci * 0.08 + sin(phase * .pi * 2) * 0.03)
+                let wave = sin(phase * Double.pi * 2.0) * 0.03
+                let xOffsetRatio = 0.15 + ci * 0.08 + wave
+                let xOff = size * CGFloat(xOffsetRatio)
                 let yOff = -size * CGFloat(0.15 + phase * 0.38)
                 Text("z")
                     .font(.system(size: fontSize, weight: .black, design: .monospaced))

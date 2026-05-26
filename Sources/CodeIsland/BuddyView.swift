@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// Buddy — CodeBuddy mascot, pixel-art cat astronaut.
 /// Purple #6C4DFF body with cyan-green #32E6B9 accents. Tencent Cloud style.
 struct BuddyView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed

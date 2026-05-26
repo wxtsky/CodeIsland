@@ -1,10 +1,9 @@
 import SwiftUI
-import CodeIslandCore
 
 /// QoderBot — Qoder mascot, pixel-art chat bubble with "Q" face.
 /// Brand lime green #2ADB5C on dark background.
 struct QoderView: View {
-    let status: AgentStatus
+    let status: MascotAgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed
