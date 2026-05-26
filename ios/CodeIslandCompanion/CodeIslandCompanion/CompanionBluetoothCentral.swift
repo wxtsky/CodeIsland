@@ -15,14 +15,7 @@ final class CompanionBluetoothCentral: NSObject, ObservableObject {
 
     var onSummary: ((CompanionBluetoothSummary) -> Void)?
 
-    private lazy var centralManager = CBCentralManager(
-        delegate: self,
-        queue: nil,
-        options: [
-            CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier,
-            CBCentralManagerOptionShowPowerAlertKey: true
-        ]
-    )
+    private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var notifyCharacteristic: CBCharacteristic?
     private var incoming: IncomingSequence?
@@ -33,8 +26,19 @@ final class CompanionBluetoothCentral: NSObject, ObservableObject {
         return decoder
     }()
 
+    override init() {
+        super.init()
+        centralManager = CBCentralManager(
+            delegate: self,
+            queue: nil,
+            options: [
+                CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier,
+                CBCentralManagerOptionShowPowerAlertKey: true
+            ]
+        )
+    }
+
     func start() {
-        _ = centralManager
         guard centralManager.state == .poweredOn else { return }
         startScanning()
     }

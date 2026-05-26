@@ -138,6 +138,16 @@ expect_present \
   'func answerCompanionQuestion(_ answer: String)' \
   "Sources/CodeIsland/AppState.swift"
 
+expect_absent \
+  "iPhone BLE central must not be lazy because background restoration needs early registration" \
+  'lazy var centralManager' \
+  "ios/CodeIslandCompanion/CodeIslandCompanion/CompanionBluetoothCentral.swift"
+
+expect_present \
+  "iPhone BLE central uses a restoration identifier" \
+  'CBCentralManagerOptionRestoreIdentifierKey' \
+  "ios/CodeIslandCompanion/CodeIslandCompanion/CompanionBluetoothCentral.swift"
+
 if (( failures > 0 )); then
   printf '\n%d companion UI/protocol regression check(s) failed.\n' "$failures" >&2
   exit 1

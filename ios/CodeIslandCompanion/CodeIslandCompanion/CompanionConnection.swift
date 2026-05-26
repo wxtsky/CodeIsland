@@ -225,6 +225,8 @@ final class CompanionConnection: NSObject, ObservableObject {
     }
 
     private func receiveBluetoothSummary(_ summary: CompanionBluetoothSummary) {
+        guard !isDemoMode else { return }
+
         if let current = latestState, current.sequence > summary.sequence {
             return
         }
