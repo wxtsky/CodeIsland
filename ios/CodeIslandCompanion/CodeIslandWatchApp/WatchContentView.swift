@@ -1,24 +1,40 @@
 import SwiftUI
+import WatchKit
 
 struct WatchContentView: View {
     @EnvironmentObject private var connection: WatchConnection
+    @State private var selectedPage = WatchPage.status
 
     var body: some View {
         Group {
             if let state = connection.latestState {
-                TabView {
+                TabView(selection: $selectedPage) {
                     WatchStatusPage(state: state)
+                        .tag(WatchPage.status)
                     WatchMessagePage(state: state)
+                        .tag(WatchPage.message)
                     WatchActionsPage(state: state)
+                        .tag(WatchPage.actions)
                     WatchActivityPage(messages: state.messages)
+                        .tag(WatchPage.activity)
                 }
                 .tabViewStyle(.verticalPage)
+                .onChange(of: selectedPage) { _ in
+                    WKInterfaceDevice.current().play(.click)
+                }
             } else {
                 WatchEmptyView(error: connection.lastError)
             }
         }
         .background(Color.black.ignoresSafeArea())
     }
+}
+
+private enum WatchPage: Hashable {
+    case status
+    case message
+    case actions
+    case activity
 }
 
 private struct WatchStatusPage: View {

@@ -87,6 +87,7 @@ targets:
       - path: CodeIslandCompanion/CompanionModels.swift
       - path: Shared/CompanionDisplayText.swift
       - path: Shared/SharedMascotView.swift
+      - path: Shared/WatchStateStore.swift
       - path: ../../Sources/CodeIsland/AntiGravityView.swift
       - path: ../../Sources/CodeIsland/BuddyView.swift
       - path: ../../Sources/CodeIsland/ClineView.swift
@@ -108,10 +109,47 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.watchkitapp
         INFOPLIST_FILE: CodeIslandWatchApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: CodeIslandWatchApp/CodeIslandWatchApp.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
     dependencies:
+      - target: CodeIslandWatchWidget
+        embed: true
       - sdk: WatchConnectivity.framework
+  CodeIslandWatchWidget:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: CodeIslandWatchWidget
+      - path: CodeIslandCompanion/CompanionModels.swift
+      - path: Shared/CompanionDisplayText.swift
+      - path: Shared/SharedMascotView.swift
+      - path: Shared/WatchStateStore.swift
+      - path: ../../Sources/CodeIsland/AntiGravityView.swift
+      - path: ../../Sources/CodeIsland/BuddyView.swift
+      - path: ../../Sources/CodeIsland/ClineView.swift
+      - path: ../../Sources/CodeIsland/CopilotView.swift
+      - path: ../../Sources/CodeIsland/CursorView.swift
+      - path: ../../Sources/CodeIsland/DexView.swift
+      - path: ../../Sources/CodeIsland/DroidView.swift
+      - path: ../../Sources/CodeIsland/GeminiView.swift
+      - path: ../../Sources/CodeIsland/HermesView.swift
+      - path: ../../Sources/CodeIsland/KimiView.swift
+      - path: ../../Sources/CodeIsland/OpenCodeView.swift
+      - path: ../../Sources/CodeIsland/PixelCharacterView.swift
+      - path: ../../Sources/CodeIsland/QoderView.swift
+      - path: ../../Sources/CodeIsland/QwenView.swift
+      - path: ../../Sources/CodeIsland/StepFunView.swift
+      - path: ../../Sources/CodeIsland/TraeView.swift
+      - path: ../../Sources/CodeIsland/WorkBuddyView.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.watchkitapp.Widget
+        INFOPLIST_FILE: CodeIslandWatchWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: CodeIslandWatchWidget/CodeIslandWatchWidget.entitlements
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+        SKIP_INSTALL: YES
 schemes:
   CodeIslandCompanion:
     build:
@@ -119,5 +157,6 @@ schemes:
         CodeIslandCompanion: all
         CodeIslandCompanionWidget: all
         CodeIslandWatchApp: all
+        CodeIslandWatchWidget: all
     run:
       config: Debug

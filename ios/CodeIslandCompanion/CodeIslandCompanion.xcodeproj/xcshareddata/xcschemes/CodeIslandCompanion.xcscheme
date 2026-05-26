@@ -49,6 +49,20 @@
                ReferencedContainer = "container:CodeIslandCompanion.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4BABFBE7E8161A80EA5F2EF8"
+               BuildableName = "CodeIslandWatchWidget.appex"
+               BlueprintName = "CodeIslandWatchWidget"
+               ReferencedContainer = "container:CodeIslandCompanion.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

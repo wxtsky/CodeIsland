@@ -1,6 +1,8 @@
 import Foundation
+import UserNotifications
 import WatchKit
 import WatchConnectivity
+import WidgetKit
 
 @MainActor
 final class WatchConnection: NSObject, ObservableObject {
@@ -8,6 +10,7 @@ final class WatchConnection: NSObject, ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var activationState: WCSessionActivationState = .notActivated
     private var lastHapticSequence: UInt64?
+    private var lastNotificationSequence: UInt64?
 
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -29,6 +32,7 @@ final class WatchConnection: NSObject, ObservableObject {
             return
         }
 
+        requestNotificationAuthorization()
         WCSession.default.delegate = self
         WCSession.default.activate()
 
@@ -73,11 +77,18 @@ final class WatchConnection: NSObject, ObservableObject {
             let nextState = try decoder.decode(CompanionStatePayload.self, from: data)
             latestState = nextState
             lastError = nil
+            WatchStateStore.save(nextState)
+            WidgetCenter.shared.reloadAllTimelines()
             playHapticIfNeeded(previous: previousState, next: nextState)
+            scheduleNotificationIfNeeded(previous: previousState, next: nextState)
         } catch {
             lastError = error.localizedDescription
             WKInterfaceDevice.current().play(.failure)
         }
+    }
+
+    private func requestNotificationAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     private func playHapticIfNeeded(previous: CompanionStatePayload?, next: CompanionStatePayload) {
@@ -91,6 +102,28 @@ final class WatchConnection: NSObject, ObservableObject {
         } else if previous.status != next.status || previous.messages.count != next.messages.count {
             WKInterfaceDevice.current().play(.click)
         }
+    }
+
+    private func scheduleNotificationIfNeeded(previous: CompanionStatePayload?, next: CompanionStatePayload) {
+        guard previous != nil else { return }
+        guard lastNotificationSequence != next.sequence else { return }
+        guard next.pendingAction == .approval || next.pendingAction == .question else { return }
+
+        lastNotificationSequence = next.sequence
+
+        let content = UNMutableNotificationContent()
+        content.title = "\(CompanionDisplayText.source(next.source)) 需要处理"
+        content.body = next.question?.question
+            ?? CompanionDisplayText.message(next.messages.last?.text)
+            ?? next.status.label
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "code-island-\(next.sequence)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }
 
