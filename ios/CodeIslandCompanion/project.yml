@@ -47,6 +47,7 @@ targets:
         embed: true
       - target: CodeIslandWatchApp
         embed: true
+      - sdk: AppIntents.framework
       - sdk: WatchConnectivity.framework
   CodeIslandCompanionWidget:
     type: app-extension
@@ -150,6 +151,19 @@ targets:
         CODE_SIGN_ENTITLEMENTS: CodeIslandWatchWidget/CodeIslandWatchWidget.entitlements
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         SKIP_INSTALL: YES
+  CodeIslandCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: CodeIslandCompanionUITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanionUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: CodeIslandCompanion
+    dependencies:
+      - target: CodeIslandCompanion
 schemes:
   CodeIslandCompanion:
     build:
@@ -158,5 +172,10 @@ schemes:
         CodeIslandCompanionWidget: all
         CodeIslandWatchApp: all
         CodeIslandWatchWidget: all
+        CodeIslandCompanionUITests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - CodeIslandCompanionUITests

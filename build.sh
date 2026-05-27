@@ -182,15 +182,30 @@ build_mac() {
         echo "Creating DMG..."
         DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
         rm -f "$DMG_PATH"
-        create-dmg \
-            --volname "$APP_NAME" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "$APP_NAME.app" 150 185 \
-            --app-drop-link 450 185 \
-            --no-internet-enable \
-            "$DMG_PATH" "$APP_BUNDLE"
+        if command -v create-dmg >/dev/null 2>&1; then
+            create-dmg \
+                --volname "$APP_NAME" \
+                --window-pos 200 120 \
+                --window-size 600 400 \
+                --icon-size 100 \
+                --icon "$APP_NAME.app" 150 185 \
+                --app-drop-link 450 185 \
+                --no-internet-enable \
+                "$DMG_PATH" "$APP_BUNDLE"
+        else
+            echo "create-dmg not found, using hdiutil fallback..."
+            DMG_STAGING="$BUILD_DIR/dmg-staging"
+            rm -rf "$DMG_STAGING"
+            mkdir -p "$DMG_STAGING"
+            ditto "$APP_BUNDLE" "$DMG_STAGING/$APP_NAME.app"
+            ln -s /Applications "$DMG_STAGING/Applications"
+            hdiutil create \
+                -volname "$APP_NAME" \
+                -srcfolder "$DMG_STAGING" \
+                -format UDZO \
+                -ov \
+                "$DMG_PATH"
+        fi
 
         codesign --force --sign "$SIGN_ID" "$DMG_PATH"
         echo "Notarizing DMG..."

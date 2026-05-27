@@ -188,18 +188,29 @@ echo "==> Creating DMG"
 # Remove previous DMG if exists
 rm -f "$OUTPUT_DMG"
 
-create-dmg \
-    --volname "CodeIsland ${VERSION}" \
-    --window-pos 200 120 \
-    --window-size 600 400 \
-    --icon-size 100 \
-    --icon "CodeIsland.app" 175 190 \
-    --hide-extension "CodeIsland.app" \
-    --app-drop-link 425 190 \
-    --no-internet-enable \
-    --sandbox-safe \
-    "$OUTPUT_DMG" \
-    "$STAGING_DIR/"
+if command -v create-dmg >/dev/null 2>&1; then
+    create-dmg \
+        --volname "CodeIsland ${VERSION}" \
+        --window-pos 200 120 \
+        --window-size 600 400 \
+        --icon-size 100 \
+        --icon "CodeIsland.app" 175 190 \
+        --hide-extension "CodeIsland.app" \
+        --app-drop-link 425 190 \
+        --no-internet-enable \
+        --sandbox-safe \
+        "$OUTPUT_DMG" \
+        "$STAGING_DIR/"
+else
+    echo "==> create-dmg not found — using hdiutil fallback"
+    ln -sfn /Applications "$STAGING_DIR/Applications"
+    hdiutil create \
+        -volname "CodeIsland ${VERSION}" \
+        -srcfolder "$STAGING_DIR" \
+        -format UDZO \
+        -ov \
+        "$OUTPUT_DMG"
+fi
 
 # Codesign the DMG container itself. Without this `spctl --assess` reports
 # "no usable signature" on the dmg even when the inner .app is properly

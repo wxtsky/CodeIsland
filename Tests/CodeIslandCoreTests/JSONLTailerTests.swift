@@ -103,12 +103,12 @@ final class JSONLTailerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let expectation = self.expectation(description: "delta delivered")
-        var captured: ConversationTailDelta?
+        let captured = LockedValue<ConversationTailDelta?>(nil)
 
         let tailer = JSONLTailer(
             queue: DispatchQueue(label: "tailer-test"),
             onDelta: { delta in
-                captured = delta
+                captured.set(delta)
                 expectation.fulfill()
             }
         )
@@ -122,8 +122,8 @@ final class JSONLTailerTests: XCTestCase {
 
         wait(for: [expectation], timeout: 2)
 
-        XCTAssertEqual(captured?.sessionId, "s1")
-        XCTAssertEqual(captured?.lastAssistantMessage, "ping")
+        XCTAssertEqual(captured.value?.sessionId, "s1")
+        XCTAssertEqual(captured.value?.lastAssistantMessage, "ping")
 
         tailer.detach(sessionId: "s1")
     }
@@ -156,10 +156,10 @@ final class JSONLTailerTests: XCTestCase {
         try Data("".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        var callCount = 0
+        let callCount = LockedValue(0)
         let tailer = JSONLTailer(
             queue: DispatchQueue(label: "tailer-test"),
-            onDelta: { _ in callCount += 1 }
+            onDelta: { _ in callCount.update { $0 += 1 } }
         )
         tailer.attach(sessionId: "s1", filePath: url.path)
         Thread.sleep(forTimeInterval: 0.15)
@@ -175,7 +175,7 @@ final class JSONLTailerTests: XCTestCase {
         try appendToFile(url: url, content: assistantLine(text: "ignored") + "\n")
         Thread.sleep(forTimeInterval: 0.2)
 
-        XCTAssertEqual(callCount, 1)
+        XCTAssertEqual(callCount.value, 1)
     }
 
     // MARK: - Fixtures
@@ -217,5 +217,32 @@ final class JSONLTailerTests: XCTestCase {
         try handle.seekToEnd()
         try handle.write(contentsOf: Data(content.utf8))
         try handle.close()
+    }
+}
+
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ value: Value) {
+        self.storage = value
+    }
+
+    var value: Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        storage = value
+        lock.unlock()
+    }
+
+    func update(_ body: (inout Value) -> Void) {
+        lock.lock()
+        body(&storage)
+        lock.unlock()
     }
 }

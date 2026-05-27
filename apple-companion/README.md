@@ -30,6 +30,7 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 | `apple-companion/APP_STORE_RELEASE.md` | App Store / TestFlight 发布清单 |
 | `apple-companion/APP_REVIEW_NOTES.md` | 可粘贴到 App Store Connect 的审核说明 |
 | `apple-companion/PRIVACY_POLICY.md` | 隐私政策草稿，发布前需要放到公开 URL |
+| `apple-companion/DEVICE_TESTING.md` | iPhone / Apple Watch 真机测试流程 |
 
 ## 当前能力
 

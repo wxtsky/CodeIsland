@@ -42,6 +42,7 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.container, edges: .vertical)
         .preferredColorScheme(.dark)
+        .accessibilityIdentifier("companion.root")
     }
 }
 
@@ -91,6 +92,7 @@ private struct PortraitIslandView: View {
             .scrollIndicators(.automatic)
             .scrollBounceBehavior(.basedOnSize)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .accessibilityIdentifier("companion.scroll")
         }
     }
 }
@@ -214,7 +216,8 @@ private struct DiscoveryFill: View {
             IslandButton(
                 title: "进入演示模式",
                 icon: "play.rectangle.fill",
-                tint: Color(red: 0.25, green: 0.76, blue: 1.0)
+                tint: Color(red: 0.25, green: 0.76, blue: 1.0),
+                accessibilityIdentifier: "companion.enterDemoMode"
             ) {
                 connection.enterDemoMode()
             }
@@ -262,6 +265,7 @@ private struct CompactIslandBar: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(connection.browsing ? "停止搜索 Mac" : "搜索 Mac")
+            .accessibilityIdentifier("companion.search.toggle")
         }
         .padding(.leading, 8)
         .padding(.trailing, 6)
@@ -356,6 +360,7 @@ private struct LiveIslandCard: View {
         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("CodeIsland 状态")
+        .accessibilityIdentifier("companion.statusCard")
     }
 }
 
@@ -399,6 +404,7 @@ private struct QuestionPromptCard: View {
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.04, green: 0.05, blue: 0.06)))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.orange.opacity(0.24)))
+        .accessibilityIdentifier("companion.questionCard")
     }
 }
 
@@ -476,6 +482,7 @@ private struct DiscoveryIsland: View {
         .background(IslandShellShape().fill(.black))
         .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+        .accessibilityIdentifier("companion.discoveryCard")
     }
 
     private var subtitle: String {
@@ -498,10 +505,20 @@ private struct CommandRow: View {
         VStack(spacing: 8) {
             if connection.isDemoMode {
                 HStack(spacing: 8) {
-                    IslandButton(title: "切换演示状态", icon: "arrow.triangle.2.circlepath", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
+                    IslandButton(
+                        title: "切换演示状态",
+                        icon: "arrow.triangle.2.circlepath",
+                        tint: Color(red: 0.25, green: 0.76, blue: 1.0),
+                        accessibilityIdentifier: "companion.demo.nextState"
+                    ) {
                         connection.cycleDemoState()
                     }
-                    IslandButton(title: "退出演示", icon: "xmark", tint: .red) {
+                    IslandButton(
+                        title: "退出演示",
+                        icon: "xmark",
+                        tint: .red,
+                        accessibilityIdentifier: "companion.demo.exit"
+                    ) {
                         connection.exitDemoMode()
                     }
                 }
@@ -509,10 +526,20 @@ private struct CommandRow: View {
 
             if state.pendingAction == .question {
                 HStack(spacing: 8) {
-                    IslandButton(title: "在 Mac 回答", icon: "arrow.up.forward.app.fill", tint: Color(red: 0.35, green: 0.85, blue: 0.45)) {
+                    IslandButton(
+                        title: "在 Mac 回答",
+                        icon: "arrow.up.forward.app.fill",
+                        tint: Color(red: 0.35, green: 0.85, blue: 0.45),
+                        accessibilityIdentifier: "companion.command.focus"
+                    ) {
                         connection.send(.focus)
                     }
-                    IslandButton(title: "跳过", icon: "forward.fill", tint: .orange) {
+                    IslandButton(
+                        title: "跳过",
+                        icon: "forward.fill",
+                        tint: .orange,
+                        accessibilityIdentifier: "companion.command.skip"
+                    ) {
                         connection.send(.skipCurrentQuestion)
                     }
                 }
@@ -524,7 +551,8 @@ private struct CommandRow: View {
                     IslandButton(
                         title: "打开 Mac 会话",
                         icon: "arrow.up.forward.app.fill",
-                        tint: Color(red: 0.35, green: 0.85, blue: 0.45)
+                        tint: Color(red: 0.35, green: 0.85, blue: 0.45),
+                        accessibilityIdentifier: "companion.command.focus"
                     ) {
                         connection.send(.focus)
                     }
@@ -532,7 +560,8 @@ private struct CommandRow: View {
                     IslandButton(
                         title: liveActivity.isRunning ? "更新实时活动" : "开启实时活动",
                         icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill",
-                        tint: Color(red: 0.25, green: 0.76, blue: 1.0)
+                        tint: Color(red: 0.25, green: 0.76, blue: 1.0),
+                        accessibilityIdentifier: "companion.liveActivity.primaryButton"
                     ) {
                         liveActivity.startOrUpdate(with: state)
                     }
@@ -540,10 +569,10 @@ private struct CommandRow: View {
 
                 if state.pendingAction == .approval {
                     HStack(spacing: 8) {
-                        IslandButton(title: "批准", icon: "checkmark", tint: .orange) {
+                        IslandButton(title: "批准", icon: "checkmark", tint: .orange, accessibilityIdentifier: "companion.command.approve") {
                             connection.send(.approveCurrentPermission)
                         }
-                        IslandButton(title: "拒绝", icon: "xmark", tint: .red) {
+                        IslandButton(title: "拒绝", icon: "xmark", tint: .red, accessibilityIdentifier: "companion.command.deny") {
                             connection.send(.denyCurrentPermission)
                         }
                     }
@@ -579,6 +608,7 @@ private struct LiveActivityInlineButton: View {
             .frame(maxWidth: .infinity, minHeight: 34)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("companion.liveActivity.inlineButton")
     }
 }
 
@@ -633,6 +663,7 @@ private struct MessageStrip: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.045)))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.06)))
+        .accessibilityIdentifier("companion.messages")
     }
 }
 
@@ -866,6 +897,7 @@ private struct IslandButton: View {
     let title: String
     let icon: String
     let tint: Color
+    var accessibilityIdentifier: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -880,10 +912,22 @@ private struct IslandButton: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(tint.opacity(0.42)))
         }
         .buttonStyle(.plain)
+        .optionalAccessibilityIdentifier(accessibilityIdentifier)
     }
 
     private var buttonBackground: Color {
         tint == .orange ? .orange : tint.opacity(0.20)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalAccessibilityIdentifier(_ identifier: String?) -> some View {
+        if let identifier {
+            accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
     }
 }
 

@@ -33,16 +33,15 @@ final class WatchConnection: NSObject, ObservableObject {
         }
 
 #if DEBUG && targetEnvironment(simulator)
-        let shouldRequestNotifications = false
+        // The smoke-test simulator does not need local notification permission.
 #elseif DEBUG
         let isSmokeTest = ProcessInfo.processInfo.arguments.contains("-CodeIslandWatchSmokeState")
-        let shouldRequestNotifications = !isSmokeTest
-#else
-        let shouldRequestNotifications = true
-#endif
-        if shouldRequestNotifications {
-        requestNotificationAuthorization()
+        if !isSmokeTest {
+            requestNotificationAuthorization()
         }
+#else
+        requestNotificationAuthorization()
+#endif
         WCSession.default.delegate = self
         WCSession.default.activate()
 

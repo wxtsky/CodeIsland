@@ -65,6 +65,7 @@
 		977FDE1B19E4DF1F5985EC0D /* QoderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5393F6AABCBEEDA6A832553 /* QoderView.swift */; };
 		98F5D1DDE415B3BAFA0A74F1 /* DroidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1D4BD6D6F35284006F9354 /* DroidView.swift */; };
 		9ABC3282EABFDAE28BE3F6C3 /* CursorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A637A87231D2C2493FF97990 /* CursorView.swift */; };
+		9C43FBF323733C72F963E4EE /* CodeIslandCompanionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78FA9B17D5BB160C8E714F6 /* CodeIslandCompanionUITests.swift */; };
 		9C5B16C59B32BABAAB34FF08 /* DexView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6470A3909D478701A3B07E5 /* DexView.swift */; };
 		9D46FD32389C4AEC2A839727 /* TraeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7D0B4EC41F3FEC24838746 /* TraeView.swift */; };
 		9F7CB1CDE599F3DF71E5738C /* CompanionDisplayText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4708FC8D74184A554015C647 /* CompanionDisplayText.swift */; };
@@ -93,6 +94,7 @@
 		D5F811823EDFED9541402681 /* QwenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4978BAC1D31033F1CFFA542C /* QwenView.swift */; };
 		D6346705BBF85F63A3C032D8 /* CodeIslandCompanionWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 014DEC37F3B34948F2B630E4 /* CodeIslandCompanionWidgetBundle.swift */; };
 		D9069411705F24ADDA7C573F /* WorkBuddyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F91D3F784C8F89A31E63158 /* WorkBuddyView.swift */; };
+		D91E181A929AA9ED8ABEE03E /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D6BFE9B5287EE06D2FB3938 /* AppIntents.framework */; };
 		DEACE91A83CD52B2B6394CC9 /* DroidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1D4BD6D6F35284006F9354 /* DroidView.swift */; };
 		DECE043D8EAE0EEEA3417557 /* PixelCharacterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6345881A14A90FBB79C7453 /* PixelCharacterView.swift */; };
 		DF8181D3224DFA462CB9E0FA /* TraeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A7D0B4EC41F3FEC24838746 /* TraeView.swift */; };
@@ -131,6 +133,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = F17F6C4FF2B113739CD23B46;
 			remoteInfo = CodeIslandWatchApp;
+		};
+		BB58FA90F24E52E7796C4B5E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C86DC231658B41C7E38FF15A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F3973306BF558558774D5BD7;
+			remoteInfo = CodeIslandCompanion;
 		};
 		CC09B6A7376464EE68BAEABC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -186,6 +195,7 @@
 		0E1D4BD6D6F35284006F9354 /* DroidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DroidView.swift; sourceTree = "<group>"; };
 		18FD5E698E776728E6018927 /* SharedMascotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedMascotView.swift; sourceTree = "<group>"; };
 		1CD9F5E97A2CDBC4E3F54478 /* CodeIslandCompanionWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodeIslandCompanionWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D6BFE9B5287EE06D2FB3938 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 		23F0ECA53BBAD64BA8C9771F /* OpenCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeView.swift; sourceTree = "<group>"; };
 		312741CE7E44499956C35C45 /* AntiGravityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntiGravityView.swift; sourceTree = "<group>"; };
 		333CBB203CC901B5FFE12BFD /* WatchConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnection.swift; sourceTree = "<group>"; };
@@ -197,6 +207,7 @@
 		4F91D3F784C8F89A31E63158 /* WorkBuddyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkBuddyView.swift; sourceTree = "<group>"; };
 		53EE587DE1B0740F9A5B0B19 /* KimiView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KimiView.swift; sourceTree = "<group>"; };
 		5F8B728EC484A892286E9460 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6516178F733B86DDF5CD26E0 /* CodeIslandCompanionUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CodeIslandCompanionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BFECA3B58A8F5B7D80676BF /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
 		734B6802145F7FAF30E9548F /* CodeIslandWatchStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeIslandWatchStatusWidget.swift; sourceTree = "<group>"; };
 		75853758A7901DF914ACEB33 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -219,6 +230,7 @@
 		CABFFE00C7B98F6A46DB0ECA /* CodeIslandWatchWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeIslandWatchWidgetBundle.swift; sourceTree = "<group>"; };
 		CCDD1EEEF11FA911FA8E42BF /* WatchStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchStateStore.swift; sourceTree = "<group>"; };
 		D2A2C29C635BC87419FDED7F /* CompanionMascotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionMascotView.swift; sourceTree = "<group>"; };
+		D78FA9B17D5BB160C8E714F6 /* CodeIslandCompanionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeIslandCompanionUITests.swift; sourceTree = "<group>"; };
 		D85F2D481FDAD5D904A0F3E5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DE41181FECB15FC695E14CCA /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		E05B0003068A33631114C79F /* CompanionConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionConnection.swift; sourceTree = "<group>"; };
@@ -244,6 +256,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D91E181A929AA9ED8ABEE03E /* AppIntents.framework in Frameworks */,
 				79A66F8039924CB94EEC67AD /* WatchConnectivity.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -275,6 +288,7 @@
 		591F9D78369A6A5807FCBD6A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				1D6BFE9B5287EE06D2FB3938 /* AppIntents.framework */,
 				3FB3EF0A4912EE483D702CF6 /* WatchConnectivity.framework */,
 			);
 			name = Frameworks;
@@ -328,6 +342,7 @@
 			isa = PBXGroup;
 			children = (
 				9A2B84F4F96272BE5A760B08 /* CodeIslandCompanion.app */,
+				6516178F733B86DDF5CD26E0 /* CodeIslandCompanionUITests.xctest */,
 				1CD9F5E97A2CDBC4E3F54478 /* CodeIslandCompanionWidget.appex */,
 				F40F9340746E45E572758656 /* CodeIslandWatchApp.app */,
 				AB36FBACC9BA81390F2EC8BE /* CodeIslandWatchWidget.appex */,
@@ -359,11 +374,20 @@
 			path = CodeIslandWatchApp;
 			sourceTree = "<group>";
 		};
+		D46B227CDC7966021E3773E0 /* CodeIslandCompanionUITests */ = {
+			isa = PBXGroup;
+			children = (
+				D78FA9B17D5BB160C8E714F6 /* CodeIslandCompanionUITests.swift */,
+			);
+			path = CodeIslandCompanionUITests;
+			sourceTree = "<group>";
+		};
 		D4F4B4DFF32FD06A20C575CA = {
 			isa = PBXGroup;
 			children = (
 				8CBE327D4E5991FEA8BFCA41 /* CodeIsland */,
 				8190E5C61FF4340B8909CD4F /* CodeIslandCompanion */,
+				D46B227CDC7966021E3773E0 /* CodeIslandCompanionUITests */,
 				0A19C73F7436290AB43A0733 /* CodeIslandCompanionWidget */,
 				D1C2C4106702CD8D64FF8467 /* CodeIslandWatchApp */,
 				BBFFC1A4861C007150572AB1 /* CodeIslandWatchWidget */,
@@ -409,6 +433,24 @@
 			productName = CodeIslandCompanionWidget;
 			productReference = 1CD9F5E97A2CDBC4E3F54478 /* CodeIslandCompanionWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		B4BEC668A900808C83219452 /* CodeIslandCompanionUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A4CCE8D20BB83E3C61AE9D46 /* Build configuration list for PBXNativeTarget "CodeIslandCompanionUITests" */;
+			buildPhases = (
+				81C079406B4905958C6BCFAA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				40E50F3A6C92EA7E62C7AF56 /* PBXTargetDependency */,
+			);
+			name = CodeIslandCompanionUITests;
+			packageProductDependencies = (
+			);
+			productName = CodeIslandCompanionUITests;
+			productReference = 6516178F733B86DDF5CD26E0 /* CodeIslandCompanionUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		F17F6C4FF2B113739CD23B46 /* CodeIslandWatchApp */ = {
 			isa = PBXNativeTarget;
@@ -471,6 +513,11 @@
 						DevelopmentTeam = 6SLN844AVD;
 						ProvisioningStyle = Automatic;
 					};
+					B4BEC668A900808C83219452 = {
+						DevelopmentTeam = 6SLN844AVD;
+						ProvisioningStyle = Automatic;
+						TestTargetID = F3973306BF558558774D5BD7;
+					};
 					F17F6C4FF2B113739CD23B46 = {
 						DevelopmentTeam = 6SLN844AVD;
 						ProvisioningStyle = Automatic;
@@ -496,6 +543,7 @@
 			projectRoot = "";
 			targets = (
 				F3973306BF558558774D5BD7 /* CodeIslandCompanion */,
+				B4BEC668A900808C83219452 /* CodeIslandCompanionUITests */,
 				98B3A00FDF4C8093790E92A5 /* CodeIslandCompanionWidget */,
 				F17F6C4FF2B113739CD23B46 /* CodeIslandWatchApp */,
 				4BABFBE7E8161A80EA5F2EF8 /* CodeIslandWatchWidget */,
@@ -621,6 +669,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		81C079406B4905958C6BCFAA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C43FBF323733C72F963E4EE /* CodeIslandCompanionUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FC0EB1D4F9723FF36FD94260 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -655,6 +711,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		40E50F3A6C92EA7E62C7AF56 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F3973306BF558558774D5BD7 /* CodeIslandCompanion */;
+			targetProxy = BB58FA90F24E52E7796C4B5E /* PBXContainerItemProxy */;
+		};
 		52309DAC5B9D99045DD350BC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F17F6C4FF2B113739CD23B46 /* CodeIslandWatchApp */;
@@ -852,6 +913,42 @@
 			};
 			name = Debug;
 		};
+		5CF993E2112406641DF63393 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanionUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CodeIslandCompanion;
+			};
+			name = Release;
+		};
+		610D461328F4CA8DEE857634 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanionUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CodeIslandCompanion;
+			};
+			name = Debug;
+		};
 		74603115470E26336E6FEFCB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -975,6 +1072,15 @@
 			buildConfigurations = (
 				50DD7B81379051DB778216CF /* Debug */,
 				A502926522AD1379473E3AAC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A4CCE8D20BB83E3C61AE9D46 /* Build configuration list for PBXNativeTarget "CodeIslandCompanionUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				610D461328F4CA8DEE857634 /* Debug */,
+				5CF993E2112406641DF63393 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

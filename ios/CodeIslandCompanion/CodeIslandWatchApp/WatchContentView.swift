@@ -19,7 +19,7 @@ struct WatchContentView: View {
                         .tag(WatchPage.activity)
                 }
                 .tabViewStyle(.verticalPage)
-                .onChange(of: selectedPage) { _ in
+                .onChange(of: selectedPage) { _, _ in
                     WKInterfaceDevice.current().play(.click)
                 }
             } else {
@@ -448,35 +448,47 @@ private struct WatchEmptyView: View {
     let error: String?
 
     var body: some View {
-        VStack(alignment: .center, spacing: 12) {
-            HStack(spacing: 8) {
-                SharedMascotView(source: "codex", status: .idle, size: 34)
-                Text("Code Island")
-                    .font(.system(size: 16, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
+        GeometryReader { proxy in
+            let isCompact = proxy.size.height < 220
+            ScrollView {
+                VStack(alignment: .center, spacing: isCompact ? 8 : 11) {
+                    HStack(spacing: 7) {
+                        SharedMascotView(source: "codex", status: .idle, size: isCompact ? 26 : 30)
+                        Text("Code Island")
+                            .font(.system(size: isCompact ? 14 : 15, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.055), in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+
+                    SharedMascotView(source: "codex", status: .idle, size: isCompact ? 48 : 56)
+
+                    Text("等待 iPhone 同步")
+                        .font(.system(size: isCompact ? 15 : 16, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text(error ?? "打开 iPhone 上的 Code Island，并连接 Mac")
+                        .font(.system(size: isCompact ? 10 : 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.76)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.vertical, isCompact ? 4 : 8)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.055), in: Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
-            )
-
-            SharedMascotView(source: "codex", status: .idle, size: 60)
-
-            Text("等待 iPhone 同步")
-                .font(.system(size: 16, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-
-            Text(error ?? "先打开 iPhone 上的 Code Island，并连接 Mac。")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.58))
-                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
     }
 }
 
