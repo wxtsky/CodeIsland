@@ -41,6 +41,34 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 - Apple Watch 通过 WatchConnectivity 同步 iPhone 当前状态。
 - Apple Watch 可查看状态、问题、最近动态，并提供回到 Mac 的入口。
 
+## 通信方案
+
+当前方案刻意保持轻量，不依赖 APNs，也不需要部署后端。
+
+```text
+Mac CodeIsland
+  ├─ MultipeerConnectivity：前台完整状态、最近动态、操作命令
+  └─ CoreBluetooth BLE：后台轻量状态摘要
+
+iPhone Code Island
+  ├─ Live Activity / Dynamic Island / StandBy：展示当前状态
+  └─ WatchConnectivity：把 iPhone 当前状态同步到 Apple Watch
+
+Apple Watch
+  ├─ Watch app：查看当前 agent、问题、最近动态和操作入口
+  └─ Smart Stack widget：展示轻量状态
+```
+
+### 为什么同时有 Multipeer 和 BLE
+
+MultipeerConnectivity 适合局域网内传完整状态，连接快、实现简单，也方便从 iPhone 给 Mac 发送操作命令。但 iOS app 进入后台后，MultipeerConnectivity 不能作为可靠的长期后台通道：系统可能暂停浏览、广播和会话收发。
+
+BLE 通道只传轻量摘要，例如 agent、状态、当前消息、工作区和少量最近动态。它的目标是让 iPhone 在后台或锁屏时仍有机会被系统唤醒，刷新 Live Activity，并继续把最新状态交给 Apple Watch。它不是一个常驻后台进程，也不保证每一条事件都实时抵达，但比只依赖 Multipeer 更符合 iOS 的后台调度模型。
+
+### Live Activity 的角色
+
+Live Activity、Dynamic Island 和 StandBy 只负责展示状态。它们不会自己连接 Mac，也不能自己长期接收网络事件。状态更新必须来自 iPhone app 本身，或者通过 ActivityKit push。当前方案不使用 APNs，所以后台更新主要依赖 BLE 摘要通道和 iOS 允许的后台唤醒窗口。
+
 ## 使用方式
 
 1. 在 Mac 上运行这个 fork 里的 CodeIsland。
@@ -167,6 +195,8 @@ swift test
 ## 目前边界
 
 - 不依赖 APNs，也不需要部署后端。
+- MultipeerConnectivity 主要用于前台完整同步；iPhone 进入后台较久后，不能保证继续收到完整消息。
 - iPhone 被用户从多任务界面强制杀掉后，系统不会保证继续接收事件。
 - Live Activity 和 BLE 后台接收受 iOS 调度策略影响，适合作为轻量伴随能力，不等价于常驻后台进程。
+- StandBy 是否持续亮屏由 iOS、机型、Always-On Display、低电量模式和睡眠专注决定，app 不能强制保持屏幕常亮。
 - Watch 真机震动、通知触达和后台同步仍需要真机验收；模拟器主要用于构建、布局和页面状态验证。
