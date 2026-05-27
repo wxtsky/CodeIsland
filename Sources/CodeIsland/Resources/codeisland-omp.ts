@@ -1,40 +1,12 @@
 // CodeIsland pi extension
 // version: v1
+// OMP-compatible install
 
 /**
- * @fileoverview CodeIsland Integration Extension.
+ * @fileoverview CodeIsland Integration Extension for Oh My Pi / OMP.
  *
- * Bridges the running pi session to the CodeIsland macOS floating-window app
- * (https://github.com/wxtsky/CodeIsland) by forwarding lifecycle events over
- * the Unix domain socket CodeIsland listens on.
- *
- * Architecture:
- *   pi (this extension)  ──→  /tmp/codeisland-{uid}.sock  ──→  CodeIsland.app
- *
- * The extension is a socket CLIENT — no server is started. If CodeIsland is not
- * running the socket does not exist and all send calls fail silently.
- *
- * Event mapping:
- *   session_start          →  SessionStart
- *   session_shutdown       →  SessionEnd
- *   before_agent_start     →  UserPromptSubmit
- *   tool_call              →  PreToolUse  (or PermissionRequest for dangerous bash)
- *   tool_result            →  PostToolUse
- *   agent_end              →  Stop
- *   session_before_compact →  PreCompact
- *   session_compact        →  PostCompact
- *
- * Permission handling:
- *   Dangerous bash commands (`rm -rf`, `sudo`, `chmod 777`) are intercepted and
- *   sent as a blocking PermissionRequest via the codeisland-bridge binary. The
- *   extension waits for CodeIsland's decision and returns allow/block accordingly.
- *   This replaces the built-in permission-gate.ts when CodeIsland is active.
- *
- * Installation:
- *   Drop this file in ~/.pi/agent/extensions/ — it is auto-discovered.
- *
- * Requirements:
- *   - CodeIsland.app running on the same machine
+ * This is the same socket bridge as codeisland-pi.ts, but imports OMP's
+ * package scope so `omp` can load it from ~/.omp/agent/extensions.
  */
 
 import { execFile, execFileSync } from "node:child_process";
@@ -42,8 +14,7 @@ import { existsSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { getuid } from "node:process";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
 
 // ── Socket / bridge constants ─────────────────────────────────────────────────
 
@@ -225,7 +196,7 @@ function extractLastAssistantText(
   messages: readonly unknown[],
 ): string {
   const assistants = messages.filter(
-    (m): m is AssistantMessage =>
+    (m): m is { role: "assistant"; content: unknown } =>
       !!m &&
       typeof m === "object" &&
       (m as { role?: string }).role === "assistant",

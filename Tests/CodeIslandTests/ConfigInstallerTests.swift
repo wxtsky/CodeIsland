@@ -799,4 +799,141 @@ hooks:
         XCTAssertFalse(cleaned.contains("file:///tmp/codeisland.js"))
         XCTAssertFalse(cleaned.contains("\\/"), "No slash escaping")
     }
+    // MARK: - pi extension
+
+    func testInstallPiExtensionWritesBundledExtensionWhenPiAgentDirExists() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piAgentDir = tempDir.appendingPathComponent(".pi/agent")
+        let piExtensionDir = piAgentDir.appendingPathComponent("extensions")
+        let piExtensionPath = piExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: piAgentDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installPiExtension(
+            piAgentDir: piAgentDir.path,
+            piExtensionDir: piExtensionDir.path,
+            piExtensionPath: piExtensionPath.path,
+            fm: fm
+        ))
+
+        let contents = try String(contentsOf: piExtensionPath)
+        XCTAssertTrue(contents.contains("CodeIsland pi extension"))
+        XCTAssertTrue(contents.contains("// version: v1"))
+        XCTAssertTrue(contents.contains("@earendil-works/pi-coding-agent"))
+        XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testInstallPiExtensionSkipsWhenPiAgentDirIsMissing() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piAgentDir = tempDir.appendingPathComponent(".pi/agent")
+        let piExtensionDir = piAgentDir.appendingPathComponent("extensions")
+        let piExtensionPath = piExtensionDir.appendingPathComponent("codeisland.ts")
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installPiExtension(
+            piAgentDir: piAgentDir.path,
+            piExtensionDir: piExtensionDir.path,
+            piExtensionPath: piExtensionPath.path,
+            fm: fm
+        ))
+        XCTAssertFalse(fm.fileExists(atPath: piExtensionPath.path))
+    }
+
+    func testUninstallPiExtensionOnlyRemovesCodeIslandExtension() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        let userExtensionPath = tempDir.appendingPathComponent("user.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// CodeIsland pi extension\n// version: v1\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+        try "// user extension\n".write(to: userExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallPiExtension(piExtensionPath: piExtensionPath.path, fm: fm)
+
+        XCTAssertFalse(fm.fileExists(atPath: piExtensionPath.path))
+        XCTAssertTrue(fm.fileExists(atPath: userExtensionPath.path))
+    }
+
+    func testUninstallPiExtensionPreservesUserFileAtSamePath() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// user-managed file\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallPiExtension(piExtensionPath: piExtensionPath.path, fm: fm)
+
+        XCTAssertTrue(fm.fileExists(atPath: piExtensionPath.path))
+        XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testOutdatedPiExtensionRequiresRepair() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// CodeIsland pi extension\n// version: old\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testInstallOmpExtensionWritesBundledExtensionWhenOmpAgentDirExists() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompAgentDir = tempDir.appendingPathComponent(".omp/agent")
+        let ompExtensionDir = ompAgentDir.appendingPathComponent("extensions")
+        let ompExtensionPath = ompExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: ompAgentDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installOmpExtension(
+            ompAgentDir: ompAgentDir.path,
+            ompExtensionDir: ompExtensionDir.path,
+            ompExtensionPath: ompExtensionPath.path,
+            fm: fm
+        ))
+
+        let contents = try String(contentsOf: ompExtensionPath)
+        XCTAssertTrue(contents.contains("CodeIsland pi extension"))
+        XCTAssertTrue(contents.contains("// version: v1"))
+        XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
+        XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
+        XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
+    }
+
+    func testInstallOmpExtensionSkipsWhenOmpAgentDirIsMissing() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompAgentDir = tempDir.appendingPathComponent(".omp/agent")
+        let ompExtensionDir = ompAgentDir.appendingPathComponent("extensions")
+        let ompExtensionPath = ompExtensionDir.appendingPathComponent("codeisland.ts")
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installOmpExtension(
+            ompAgentDir: ompAgentDir.path,
+            ompExtensionDir: ompExtensionDir.path,
+            ompExtensionPath: ompExtensionPath.path,
+            fm: fm
+        ))
+        XCTAssertFalse(fm.fileExists(atPath: ompExtensionPath.path))
+    }
+
+    func testUninstallOmpExtensionPreservesUserFileAtSamePath() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// user-managed file\n".write(to: ompExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallOmpExtension(ompExtensionPath: ompExtensionPath.path, fm: fm)
+
+        XCTAssertTrue(fm.fileExists(atPath: ompExtensionPath.path))
+        XCTAssertFalse(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
+    }
 }
