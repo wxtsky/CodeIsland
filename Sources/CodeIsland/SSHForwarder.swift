@@ -35,6 +35,12 @@ final class SSHForwarder {
         let currentGeneration = generation
         status = .connecting
 
+        // Remove stale remote socket left over from a previous tunnel.
+        // macOS system SSH (LibreSSL) does not honour StreamLocalBindUnlink=yes
+        // for -R remote forwarding, so a leftover socket causes "remote port
+        // forwarding failed" on reconnect.  See #206.
+        cleanupStaleRemoteSocket(host: host, remoteSocketPath: remoteSocketPath)
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         process.arguments = buildArguments(host: host, localSocketPath: localSocketPath, remoteSocketPath: remoteSocketPath)
@@ -97,6 +103,42 @@ final class SSHForwarder {
             status = .disconnected
         }
         self.process = nil
+    }
+
+    /// Remove a stale Unix-domain socket on the remote host before forwarding.
+    ///
+    /// macOS system SSH (`/usr/bin/ssh`, LibreSSL build) ignores
+    /// `StreamLocalBindUnlink=yes` for `-R` (remote) forwarding.  When a tunnel
+    /// drops the listen socket is left behind and reconnect fails with
+    /// "remote port forwarding failed for listen path …".  A quick `rm -f`
+    /// over SSH sidesteps the issue.  See issue #206.
+    private func cleanupStaleRemoteSocket(host: RemoteHost, remoteSocketPath: String) {
+        let target = host.sshTarget
+        guard !target.isEmpty else { return }
+
+        var args: [String] = [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=5",
+        ]
+        if let port = host.port {
+            args += ["-p", String(port)]
+        }
+        let trimmedIdentity = host.identityFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedIdentity.isEmpty {
+            args += ["-i", trimmedIdentity]
+        }
+        args += [target, "rm", "-f", remoteSocketPath]
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        proc.arguments = args
+        proc.standardInput = FileHandle.nullDevice
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        proc.environment = buildEnvironment(host: host)
+
+        try? proc.run()
+        proc.waitUntilExit()
     }
 
     private func buildArguments(host: RemoteHost, localSocketPath: String, remoteSocketPath: String) -> [String] {
