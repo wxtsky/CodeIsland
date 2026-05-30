@@ -82,6 +82,18 @@ final class WarpPaneResolverTests: XCTestCase {
         XCTAssertTrue(hit.isPaneFocused)
     }
 
+    func testResolveMatchesCwdCaseInsensitivelyOnDefaultMacVolumes() throws {
+        let dbPath = try createTestDatabase(panes: [
+            TestPane(id: 42, uuid: "DEADBEEF", cwd: "/Users/bob/codeisland", isActive: true, isFocused: true, tabId: 5, windowId: 3, activeTabIndex: 0)
+        ])
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let resolver = WarpPaneResolver(sqlitePath: dbPath)
+        let matches = try resolver.resolve(cwd: "/Users/bob/CodeIsland")
+        XCTAssertEqual(matches.first?.paneId, 42)
+        XCTAssertEqual(matches.first?.cwd, "/Users/bob/codeisland")
+    }
+
     func testResolveResolvesFirmlinkVariant() throws {
         let dbPath = try createTestDatabase(panes: [
             TestPane(id: 1, uuid: "01", cwd: "/private/tmp/work", isActive: true, isFocused: true, tabId: 1, windowId: 1, activeTabIndex: 0)
@@ -124,25 +136,40 @@ final class WarpPaneResolverTests: XCTestCase {
 
         let w10t20 = try XCTUnwrap(try resolver.resolve(cwd: "/w10-t20").first)
         XCTAssertEqual(w10t20.tabIndexInWindow, 0)
+        XCTAssertEqual(w10t20.tabCountInWindow, 3)
         XCTAssertFalse(w10t20.isActiveTab)
 
         let w10t22 = try XCTUnwrap(try resolver.resolve(cwd: "/w10-t22").first)
         XCTAssertEqual(w10t22.tabIndexInWindow, 2)
+        XCTAssertEqual(w10t22.tabCountInWindow, 3)
         XCTAssertTrue(w10t22.isActiveTab)
 
         let w11t30 = try XCTUnwrap(try resolver.resolve(cwd: "/w11-t30").first)
         XCTAssertEqual(w11t30.tabIndexInWindow, 0)
+        XCTAssertEqual(w11t30.tabCountInWindow, 1)
         XCTAssertTrue(w11t30.isActiveTab)
+    }
+
+    func testIsActiveTabReflectsWindowActiveTabIndex() throws {
+        let dbPath = try createTestDatabase(panes: [
+            TestPane(id: 1, uuid: "01", cwd: "/inactive", isActive: true, isFocused: true, tabId: 10, windowId: 1, activeTabIndex: 1),
+            TestPane(id: 2, uuid: "02", cwd: "/active", isActive: false, isFocused: false, tabId: 11, windowId: 1, activeTabIndex: 1)
+        ])
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let resolver = WarpPaneResolver(sqlitePath: dbPath)
+        XCTAssertFalse(try resolver.isActiveTab(cwd: "/inactive"))
+        XCTAssertTrue(try resolver.isActiveTab(cwd: "/active"))
     }
 
     func testFileURIEncodesSpacesAndSpecials() {
         XCTAssertEqual(
             WarpPaneResolver.fileURI(for: "/Users/alice/my path/warp.sqlite"),
-            "file:///Users/alice/my%20path/warp.sqlite?mode=ro&nolock=1"
+            "file:///Users/alice/my%20path/warp.sqlite?mode=ro"
         )
         XCTAssertEqual(
             WarpPaneResolver.fileURI(for: "/tmp/a#b?c%.sqlite"),
-            "file:///tmp/a%23b%3Fc%25.sqlite?mode=ro&nolock=1"
+            "file:///tmp/a%23b%3Fc%25.sqlite?mode=ro"
         )
     }
 

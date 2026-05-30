@@ -9,6 +9,7 @@ public struct WarpPaneMatch: Equatable {
     public let windowDbId: Int64
     public let cwd: String
     public let tabIndexInWindow: Int
+    public let tabCountInWindow: Int
     public let isActiveTab: Bool
     public let isPaneActive: Bool
     public let isPaneFocused: Bool
@@ -20,6 +21,7 @@ public struct WarpPaneMatch: Equatable {
         windowDbId: Int64,
         cwd: String,
         tabIndexInWindow: Int,
+        tabCountInWindow: Int,
         isActiveTab: Bool,
         isPaneActive: Bool,
         isPaneFocused: Bool
@@ -30,6 +32,7 @@ public struct WarpPaneMatch: Equatable {
         self.windowDbId = windowDbId
         self.cwd = cwd
         self.tabIndexInWindow = tabIndexInWindow
+        self.tabCountInWindow = tabCountInWindow
         self.isActiveTab = isActiveTab
         self.isPaneActive = isPaneActive
         self.isPaneFocused = isPaneFocused
@@ -46,8 +49,8 @@ public enum WarpPaneResolverError: Error, Equatable {
 /// given working directory, plus enough hierarchy (tab, window) to best-effort
 /// drive a focus keystroke afterwards.
 ///
-/// The database is always opened **read-only** over a URI with `nolock=1` so we
-/// do not contend with Warp while it is running. WAL pages are still honored.
+/// The database is always opened **read-only** over a URI. WAL pages are honored,
+/// and a short busy timeout avoids contending with Warp while it is writing.
 public struct WarpPaneResolver {
     public let sqlitePath: String
 
@@ -70,7 +73,14 @@ public struct WarpPaneResolver {
         guard FileManager.default.fileExists(atPath: sqlitePath) else {
             throw WarpPaneResolverError.sqliteFileMissing(sqlitePath)
         }
-        return try performQuery(cwdCandidates: variants)
+        return try performQuery(
+            cwdCandidates: variants,
+            caseInsensitive: WarpPaneResolver.isCaseInsensitivePath(cwd)
+        )
+    }
+
+    public func isActiveTab(cwd: String) throws -> Bool {
+        try resolve(cwd: cwd).contains { $0.isActiveTab }
     }
 
     // MARK: - Cwd normalization
@@ -103,7 +113,7 @@ public struct WarpPaneResolver {
 
     // MARK: - SQLite
 
-    private func performQuery(cwdCandidates: [String]) throws -> [WarpPaneMatch] {
+    private func performQuery(cwdCandidates: [String], caseInsensitive: Bool) throws -> [WarpPaneMatch] {
         let uri = WarpPaneResolver.fileURI(for: sqlitePath)
         var db: OpaquePointer?
         let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI | SQLITE_OPEN_NOMUTEX
@@ -115,11 +125,16 @@ public struct WarpPaneResolver {
         }
         defer { sqlite3_close_v2(handle) }
 
-        // Let sqlite block briefly if Warp is holding a write lock. Ignored when
-        // opened with nolock=1 but cheap insurance for legacy Warp builds.
+        // Let sqlite block briefly if Warp is holding a write lock.
         sqlite3_busy_timeout(handle, 150)
 
         let placeholders = cwdCandidates.map { _ in "?" }.joined(separator: ", ")
+        let whereClause: String
+        if caseInsensitive {
+            whereClause = "tp.cwd IN (\(placeholders)) OR tp.cwd COLLATE NOCASE IN (\(placeholders))"
+        } else {
+            whereClause = "tp.cwd IN (\(placeholders))"
+        }
         let sql = """
         SELECT
             tp.id,
@@ -133,13 +148,17 @@ public struct WarpPaneResolver {
             (
                 SELECT COUNT(*) FROM tabs t2
                 WHERE t2.window_id = t.window_id AND t2.id < t.id
-            ) AS tab_idx
+            ) AS tab_idx,
+            (
+                SELECT COUNT(*) FROM tabs t3
+                WHERE t3.window_id = t.window_id
+            ) AS tab_count
         FROM terminal_panes tp
         LEFT JOIN pane_leaves pl ON tp.id = pl.pane_node_id AND pl.kind = 'terminal'
         LEFT JOIN pane_nodes pn ON tp.id = pn.id
         LEFT JOIN tabs t ON pn.tab_id = t.id
         LEFT JOIN windows w ON t.window_id = w.id
-        WHERE tp.cwd IN (\(placeholders))
+        WHERE \(whereClause)
         ORDER BY tp.is_active DESC, focused DESC, tp.id DESC
         """
 
@@ -157,6 +176,18 @@ public struct WarpPaneResolver {
             guard bindStatus == SQLITE_OK else {
                 let message = String(cString: sqlite3_errmsg(handle))
                 throw WarpPaneResolverError.queryFailed("bind \(idx): \(message)")
+            }
+        }
+        if caseInsensitive {
+            let offset = cwdCandidates.count
+            for (idx, candidate) in cwdCandidates.enumerated() {
+                let bindStatus = candidate.withCString { cstr in
+                    sqlite3_bind_text(query, Int32(offset + idx + 1), cstr, -1, Self.sqliteTransient)
+                }
+                guard bindStatus == SQLITE_OK else {
+                    let message = String(cString: sqlite3_errmsg(handle))
+                    throw WarpPaneResolverError.queryFailed("bind nocase \(idx): \(message)")
+                }
             }
         }
 
@@ -178,6 +209,7 @@ public struct WarpPaneResolver {
             let windowId = sqlite3_column_int64(query, 6)
             let activeTabIndex = Int(sqlite3_column_int(query, 7))
             let tabIndex = Int(sqlite3_column_int(query, 8))
+            let tabCount = Int(sqlite3_column_int(query, 9))
 
             matches.append(WarpPaneMatch(
                 paneUUID: uuidHex,
@@ -186,6 +218,7 @@ public struct WarpPaneResolver {
                 windowDbId: windowId,
                 cwd: cwdText,
                 tabIndexInWindow: tabIndex,
+                tabCountInWindow: tabCount,
                 isActiveTab: activeTabIndex == tabIndex,
                 isPaneActive: paneActive,
                 isPaneFocused: paneFocused
@@ -208,7 +241,25 @@ public struct WarpPaneResolver {
             default:  encoded.unicodeScalars.append(scalar)
             }
         }
-        return "file://\(encoded)?mode=ro&nolock=1"
+        return "file://\(encoded)?mode=ro"
+    }
+
+    /// macOS paths are usually case-insensitive even though the original casing
+    /// can differ between Codex's cwd and Warp's SQLite row. Respect case-sensitive
+    /// volumes by walking to the nearest existing parent and reading its volume flag.
+    static func isCaseInsensitivePath(_ path: String) -> Bool {
+        var url = URL(fileURLWithPath: path)
+        let fm = FileManager.default
+        while !fm.fileExists(atPath: url.path) {
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path { break }
+            url = parent
+        }
+        if let values = try? url.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]),
+           let supportsCaseSensitive = values.volumeSupportsCaseSensitiveNames {
+            return !supportsCaseSensitive
+        }
+        return true
     }
 
     /// The canonical `SQLITE_TRANSIENT` sentinel as a Swift destructor type.
