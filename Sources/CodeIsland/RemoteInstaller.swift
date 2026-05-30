@@ -127,12 +127,17 @@ print(target)
         return await runSSH(host: host, command: command, timeout: 30)
     }
 
-    static func configureRemoteHooksScript(host: RemoteHost, remoteSocketPath: String? = nil) -> String {
+    static func configureRemoteHooksScript(
+        host: RemoteHost,
+        remoteSocketPath: String? = nil,
+        customCLIs: [CLIConfig] = ConfigInstaller.customCLIs()
+    ) -> String {
         let hostId = pythonStringLiteral(host.id)
         let hostName = pythonStringLiteral(host.name)
         let version = pythonStringLiteral(remoteHookVersion)
         let opencodePluginVersion = pythonStringLiteral(remoteOpencodePluginVersion)
         let socketPath = pythonStringLiteral(remoteSocketPath ?? host.remoteSocketPath)
+        let customCLIsLiteral = remoteCustomCLIsLiteral(customCLIs)
         return """
 import json
 import pathlib
@@ -147,6 +152,7 @@ host_name = \(hostName)
 version = \(version)
 opencode_plugin_version = \(opencodePluginVersion)
 socket_path = \(socketPath)
+custom_clis = \(customCLIsLiteral)
 
 def _codex_home():
     raw = (os.environ.get("CODEX_HOME") or "").strip()
@@ -712,7 +718,35 @@ def install_opencode():
                 write_opencode_config(legacy_path, legacy)
     return "OpenCode ok"
 
-parts = [install_claude(), install_hermes(), install_codex(), install_codebuddy(), install_traecli(), install_opencode()]
+def install_custom():
+    results = []
+    for cli in custom_clis:
+        source = cli["source"]
+        config_path = home / cli["config_path"]
+        if not config_path.parent.exists() and shutil.which(source) is None:
+            results.append(cli["name"] + " skipped")
+            continue
+        data = ensure_json(config_path)
+        if not isinstance(data, dict):
+            data = {}
+        hooks = data.get(cli["config_key"])
+        if not isinstance(hooks, dict):
+            hooks = {}
+        remove_our_hooks(hooks)
+        cmd = command_for(source)
+        for ev in cli["events"]:
+            event = ev[0]
+            timeout = ev[1]
+            if cli["format"] == "claude":
+                hooks[event] = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}]
+            else:
+                hooks[event] = [{"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}]
+        data[cli["config_key"]] = hooks
+        write_json(config_path, data)
+        results.append(cli["name"] + " ok")
+    return results
+
+parts = [install_claude(), install_hermes(), install_codex(), install_codebuddy(), install_traecli(), install_opencode()] + install_custom()
 print(" · ".join(parts))
 """
     }
@@ -775,6 +809,29 @@ print(" · ".join(parts))
         }
         args.append(host.sshTarget)
         return args
+    }
+
+    /// Serialize custom CLI configs into a Python list literal for the remote install
+    /// script. Only `.claude` / `.nested` formats are emitted — their stdin carries
+    /// `hook_event_name`, so the remote hook handles them with no `--event` flag.
+    /// Other formats (flat/Cursor, traecli, copilot, kimi, …) are skipped remotely (#192).
+    private static func remoteCustomCLIsLiteral(_ clis: [CLIConfig]) -> String {
+        let supported = clis.filter { $0.format == .claude || $0.format == .nested }
+        let entries = supported.map { cli -> String in
+            let fmt = cli.format == .claude ? "claude" : "nested"
+            let events = cli.events
+                .map { "[\(pythonStringLiteral($0.0)), \($0.1)]" }
+                .joined(separator: ", ")
+            return "{"
+                + "\"name\": \(pythonStringLiteral(cli.name)), "
+                + "\"source\": \(pythonStringLiteral(cli.source)), "
+                + "\"config_path\": \(pythonStringLiteral(cli.configPath)), "
+                + "\"config_key\": \(pythonStringLiteral(cli.configKey)), "
+                + "\"format\": \(pythonStringLiteral(fmt)), "
+                + "\"events\": [\(events)]"
+                + "}"
+        }
+        return "[\(entries.joined(separator: ", "))]"
     }
 
     private static func pythonStringLiteral(_ value: String) -> String {

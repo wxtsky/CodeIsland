@@ -548,6 +548,52 @@ hooks:
         XCTAssertTrue(plugin.contains(#"const SOCKET_PATH = "/tmp/codeisland-1000.sock";"#))
     }
 
+    func testRemoteInstallerConfigureScriptInstallsCustomClaudeCLI() throws {
+        // #192: custom CLIs (claude/nested format) should also get hooks installed on remote hosts.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let custom = CLIConfig(
+            name: "MyCLI", source: "mycli",
+            configPath: ".mycli/settings.json", configKey: "hooks",
+            format: .claude,
+            events: [("UserPromptSubmit", 5, true), ("Stop", 5, true)]
+        )
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [custom])
+
+        XCTAssertTrue(script.contains("def install_custom():"))
+        XCTAssertTrue(script.contains(#""source": "mycli""#))
+        XCTAssertTrue(script.contains(#""config_path": ".mycli/settings.json""#))
+        XCTAssertTrue(script.contains(#""format": "claude""#))
+        XCTAssertTrue(script.contains("install_opencode()] + install_custom()"))
+        try assertPythonCompiles(script)
+    }
+
+    func testRemoteInstallerConfigureScriptSkipsUnsupportedCustomFormat() {
+        // #192: flat (Cursor-style) hooks need a --event flag the remote hook can't
+        // supply, so they are skipped remotely — the list must come out empty.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let flat = CLIConfig(
+            name: "CursorLike", source: "cursorlike",
+            configPath: ".cl/settings.json", configKey: "hooks",
+            format: .flat,
+            events: [("beforeSubmitPrompt", 5, false)]
+        )
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [flat])
+
+        XCTAssertFalse(script.contains("cursorlike"))
+        XCTAssertTrue(script.contains("custom_clis = []"))
+    }
+
+    func testRemoteInstallerConfigureScriptWithNoCustomCLIsIsEmptyList() {
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [])
+
+        XCTAssertTrue(script.contains("custom_clis = []"))
+        XCTAssertTrue(script.contains("def install_custom():"))
+    }
+
     func testRemoteTraecliPermissionRequestRoutesAsPermissionAndUsesRemoteSessionNamespace() async throws {
         let payload: [String: Any] = [
             "hook_event_name": "permission_request",
