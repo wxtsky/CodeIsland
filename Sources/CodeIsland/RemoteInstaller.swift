@@ -17,7 +17,7 @@ enum RemoteInstaller {
     private static let remoteHookVersion = "0.1.2"
     private static let remoteOpencodePluginVersion = "v2"
 
-    static func installAll(host: RemoteHost) async -> RemoteInstallResult {
+    static func installAll(host: RemoteHost, remoteSocketPath: String) async -> RemoteInstallResult {
         guard let source = remoteHookSource() else {
             return RemoteInstallResult(ok: false, message: "Missing remote hook resource")
         }
@@ -30,12 +30,12 @@ enum RemoteInstaller {
             return RemoteInstallResult(ok: false, message: "Upload failed: \(upload.stderrSummary)")
         }
 
-        let uploadOpencode = await uploadRemoteOpencodePlugin(source: opencodePlugin, host: host)
+        let uploadOpencode = await uploadRemoteOpencodePlugin(source: opencodePlugin, host: host, remoteSocketPath: remoteSocketPath)
         guard uploadOpencode.ok else {
             return RemoteInstallResult(ok: false, message: "OpenCode plugin upload failed: \(uploadOpencode.stderrSummary)")
         }
 
-        let configure = await configureRemoteHooks(host: host)
+        let configure = await configureRemoteHooks(host: host, remoteSocketPath: remoteSocketPath)
         guard configure.ok else {
             return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
         }
@@ -44,8 +44,23 @@ enum RemoteInstaller {
         return RemoteInstallResult(ok: true, message: summary)
     }
 
-    static func cleanupRemoteSocket(host: RemoteHost) async {
+    /// Probe the remote user's UID and return a per-user socket path so that multiple
+    /// OS users on a shared host don't collide on a single `/tmp/codeisland.sock` (#193).
+    /// Also clears any stale per-user socket left behind by a previous session. Falls
+    /// back to the legacy shared path when the probe fails (older / restricted host).
+    static func prepareRemoteSocketPath(host: RemoteHost) async -> String {
+        let probe = await runSSH(
+            host: host,
+            command: "uid=$(id -u 2>/dev/null); rm -f \"/tmp/codeisland-$uid.sock\" 2>/dev/null; printf '%s' \"$uid\"",
+            timeout: 8
+        )
+        let uid = probe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if probe.ok, !uid.isEmpty, uid.allSatisfy({ $0.isNumber }) {
+            return "/tmp/codeisland-\(uid).sock"
+        }
+        // Probe failed — fall back to the legacy shared path, clearing any stale socket.
         _ = await runSSH(host: host, command: "rm -f \(shellSingleQuoted(host.remoteSocketPath))", timeout: 8)
+        return host.remoteSocketPath
     }
 
     private static func remoteHookSource() -> String? {
@@ -86,8 +101,8 @@ print(target)
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
     }
 
-    private static func uploadRemoteOpencodePlugin(source: String, host: RemoteHost) async -> RemoteCommandResult {
-        let configuredSource = remoteOpencodePluginForInstall(source: source, host: host)
+    private static func uploadRemoteOpencodePlugin(source: String, host: RemoteHost, remoteSocketPath: String) async -> RemoteCommandResult {
+        let configuredSource = remoteOpencodePluginForInstall(source: source, host: host, remoteSocketPath: remoteSocketPath)
         let encoded = Data(configuredSource.utf8).base64EncodedString()
         let py = """
 import base64, os, pathlib
@@ -101,8 +116,8 @@ print(target)
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
     }
 
-    private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
-        let py = configureRemoteHooksScript(host: host)
+    private static func configureRemoteHooks(host: RemoteHost, remoteSocketPath: String) async -> RemoteCommandResult {
+        let py = configureRemoteHooksScript(host: host, remoteSocketPath: remoteSocketPath)
         // Run via the remote user's login shell so ~/.zprofile / ~/.bash_profile etc. are
         // sourced — that's how $CODEX_HOME (and similar) reach a non-interactive ssh session.
         // base64 keeps the script intact regardless of shell quoting.
@@ -112,11 +127,12 @@ print(target)
         return await runSSH(host: host, command: command, timeout: 30)
     }
 
-    static func configureRemoteHooksScript(host: RemoteHost) -> String {
+    static func configureRemoteHooksScript(host: RemoteHost, remoteSocketPath: String? = nil) -> String {
         let hostId = pythonStringLiteral(host.id)
         let hostName = pythonStringLiteral(host.name)
         let version = pythonStringLiteral(remoteHookVersion)
         let opencodePluginVersion = pythonStringLiteral(remoteOpencodePluginVersion)
+        let socketPath = pythonStringLiteral(remoteSocketPath ?? host.remoteSocketPath)
         return """
 import json
 import pathlib
@@ -130,6 +146,7 @@ host_id = \(hostId)
 host_name = \(hostName)
 version = \(version)
 opencode_plugin_version = \(opencodePluginVersion)
+socket_path = \(socketPath)
 
 def _codex_home():
     raw = (os.environ.get("CODEX_HOME") or "").strip()
@@ -207,7 +224,7 @@ def write_opencode_config(path, data):
     write_json(path, data)
 
 def command_for(source):
-    return f"CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
+    return f"CODEISLAND_SOCKET_PATH={socket_path} CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
 
 def remove_our_hooks(hooks):
     for event in list(hooks.keys()):
@@ -768,11 +785,12 @@ print(" · ".join(parts))
         return "\"\(escaped)\""
     }
 
-    static func remoteOpencodePluginForInstall(source: String, host: RemoteHost) -> String {
-        source
+    static func remoteOpencodePluginForInstall(source: String, host: RemoteHost, remoteSocketPath: String? = nil) -> String {
+        let socketPath = remoteSocketPath ?? host.remoteSocketPath
+        return source
             .replacingOccurrences(
                 of: #"const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";"#,
-                with: #"const SOCKET_PATH = \#(jsonStringLiteral(host.remoteSocketPath));"#
+                with: #"const SOCKET_PATH = \#(jsonStringLiteral(socketPath));"#
             )
             .replacingOccurrences(
                 of: #"const REMOTE_HOST_ID = process.env.CODEISLAND_REMOTE_HOST_ID || "";"#,

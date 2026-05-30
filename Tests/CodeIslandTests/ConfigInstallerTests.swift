@@ -517,6 +517,37 @@ hooks:
         XCTAssertTrue(plugin.contains(#"const REMOTE_HOST_NAME = "devbox\nwest";"#))
     }
 
+    func testRemoteInstallerConfigureScriptInjectsPerUserSocketPath() {
+        // #193: on a shared remote host the hook command must point at a uid-scoped
+        // socket path so different OS users don't collide on /tmp/codeisland.sock.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, remoteSocketPath: "/tmp/codeisland-1000.sock")
+
+        XCTAssertTrue(script.contains(#"socket_path = "/tmp/codeisland-1000.sock""#))
+        XCTAssertTrue(script.contains("CODEISLAND_SOCKET_PATH={socket_path}"))
+        XCTAssertFalse(script.contains("CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock"))
+    }
+
+    func testRemoteInstallerConfigureScriptFallsBackToLegacySocketPath() {
+        // When no per-user path is supplied (probe failed) the legacy shared path is used.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host)
+
+        XCTAssertTrue(script.contains(#"socket_path = "/tmp/codeisland.sock""#))
+    }
+
+    func testRemoteOpencodePluginInjectsPerUserSocketPath() {
+        // #193
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let source = #"const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";"#
+
+        let plugin = RemoteInstaller.remoteOpencodePluginForInstall(source: source, host: host, remoteSocketPath: "/tmp/codeisland-1000.sock")
+
+        XCTAssertTrue(plugin.contains(#"const SOCKET_PATH = "/tmp/codeisland-1000.sock";"#))
+    }
+
     func testRemoteTraecliPermissionRequestRoutesAsPermissionAndUsesRemoteSessionNamespace() async throws {
         let payload: [String: Any] = [
             "hook_event_name": "permission_request",

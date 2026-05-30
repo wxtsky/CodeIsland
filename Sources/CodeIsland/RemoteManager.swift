@@ -12,6 +12,9 @@ final class RemoteManager: ObservableObject {
     var onDisconnect: ((String) -> Void)?
 
     private var forwarders: [String: SSHForwarder] = [:]
+    // Per-user remote socket path resolved at connect time (#193). Keyed by host id;
+    // reused by installHooks so the SSH -R forward and the remote hooks agree.
+    private var remoteSocketPaths: [String: String] = [:]
     private let defaults = UserDefaults.standard
     private let hostsKey = "remoteHosts"
 
@@ -105,9 +108,10 @@ final class RemoteManager: ObservableObject {
         lastMessage[id] = host.displayAddress
 
         Task {
-            await RemoteInstaller.cleanupRemoteSocket(host: host)
+            let remoteSocketPath = await RemoteInstaller.prepareRemoteSocketPath(host: host)
             await MainActor.run {
-                forwarder.connect(host: host, localSocketPath: HookServer.socketPath)
+                self.remoteSocketPaths[host.id] = remoteSocketPath
+                forwarder.connect(host: host, localSocketPath: HookServer.socketPath, remoteSocketPath: remoteSocketPath)
             }
         }
     }
@@ -117,6 +121,7 @@ final class RemoteManager: ObservableObject {
         reconnectAttempts[id] = nil
         forwarders[id]?.disconnect()
         forwarders[id] = nil
+        remoteSocketPaths[id] = nil
         connectionStatus[id] = .disconnected
         installRunning[id] = false
         onDisconnect?(id)
@@ -182,7 +187,8 @@ final class RemoteManager: ObservableObject {
 
     private func installHooks(for host: RemoteHost) async {
         installRunning[host.id] = true
-        let result = await RemoteInstaller.installAll(host: host)
+        let remoteSocketPath = remoteSocketPaths[host.id] ?? host.remoteSocketPath
+        let result = await RemoteInstaller.installAll(host: host, remoteSocketPath: remoteSocketPath)
         installRunning[host.id] = false
         lastMessage[host.id] = result.message
         if !result.ok {

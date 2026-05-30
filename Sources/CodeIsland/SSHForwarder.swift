@@ -22,7 +22,7 @@ final class SSHForwarder {
     private var stderrPipe: Pipe?
     private var generation: UInt64 = 0
 
-    func connect(host: RemoteHost, localSocketPath: String) {
+    func connect(host: RemoteHost, localSocketPath: String, remoteSocketPath: String) {
         disconnect()
 
         let target = host.sshTarget
@@ -37,7 +37,7 @@ final class SSHForwarder {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = buildArguments(host: host, localSocketPath: localSocketPath)
+        process.arguments = buildArguments(host: host, localSocketPath: localSocketPath, remoteSocketPath: remoteSocketPath)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.environment = buildEnvironment(host: host)
@@ -99,7 +99,7 @@ final class SSHForwarder {
         self.process = nil
     }
 
-    private func buildArguments(host: RemoteHost, localSocketPath: String) -> [String] {
+    private func buildArguments(host: RemoteHost, localSocketPath: String, remoteSocketPath: String) -> [String] {
         var args: [String] = [
             "-N",
             "-T",
@@ -109,6 +109,12 @@ final class SSHForwarder {
             "-o", "ServerAliveCountMax=2",
             "-o", "StreamLocalBindUnlink=yes",
             "-o", "StreamLocalBindMask=0000",
+            // Never reuse or spawn a multiplexing master connection (#190): a shared
+            // ControlMaster makes `ssh -N` hand the forward to the master and exit 0
+            // immediately, which we'd misread as a failed tunnel. Force a dedicated
+            // connection that stays alive for the lifetime of this forwarder.
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
         ]
 
         if let port = host.port {
@@ -120,7 +126,7 @@ final class SSHForwarder {
             args += ["-i", trimmedIdentity]
         }
 
-        args += ["-R", "\(host.remoteSocketPath):\(localSocketPath)"]
+        args += ["-R", "\(remoteSocketPath):\(localSocketPath)"]
         args.append(host.sshTarget)
         return args
     }
