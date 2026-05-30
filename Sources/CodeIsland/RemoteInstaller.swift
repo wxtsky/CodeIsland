@@ -46,20 +46,20 @@ enum RemoteInstaller {
 
     /// Probe the remote user's UID and return a per-user socket path so that multiple
     /// OS users on a shared host don't collide on a single `/tmp/codeisland.sock` (#193).
-    /// Also clears any stale per-user socket left behind by a previous session. Falls
-    /// back to the legacy shared path when the probe fails (older / restricted host).
+    /// Falls back to the legacy shared path when the probe fails (older / restricted host).
     static func prepareRemoteSocketPath(host: RemoteHost) async -> String {
-        let probe = await runSSH(
-            host: host,
-            command: "uid=$(id -u 2>/dev/null); rm -f \"/tmp/codeisland-$uid.sock\" 2>/dev/null; printf '%s' \"$uid\"",
-            timeout: 8
-        )
+        // `id -u` is a bare external command, so it returns the remote uid identically
+        // under any login shell (bash / zsh / fish / csh). A fancier `$(...)` pipeline
+        // would break under non-POSIX login shells like fish and silently fall back.
+        let probe = await runSSH(host: host, command: "id -u", timeout: 8)
         let uid = probe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         if probe.ok, !uid.isEmpty, uid.allSatisfy({ $0.isNumber }) {
             return "/tmp/codeisland-\(uid).sock"
         }
-        // Probe failed — fall back to the legacy shared path, clearing any stale socket.
-        _ = await runSSH(host: host, command: "rm -f \(shellSingleQuoted(host.remoteSocketPath))", timeout: 8)
+        // Probe failed (old / restricted host) — fall back to the legacy shared path.
+        // StreamLocalBindUnlink=yes on the forward already clears any stale socket, so
+        // we avoid a second SSH round-trip here (it would just add latency on a host
+        // that's likely failing to connect anyway).
         return host.remoteSocketPath
     }
 
@@ -820,10 +820,6 @@ print(" · ".join(parts))
             }
         }
         return "\"\(escaped)\""
-    }
-
-    private static func shellSingleQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
