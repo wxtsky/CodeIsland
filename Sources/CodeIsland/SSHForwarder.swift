@@ -113,9 +113,23 @@ final class SSHForwarder {
     /// "remote port forwarding failed for listen path …".  A quick `rm -f`
     /// over SSH sidesteps the issue.  See issue #206.
     private func cleanupStaleRemoteSocket(host: RemoteHost, remoteSocketPath: String) {
-        let target = host.sshTarget
-        guard !target.isEmpty else { return }
+        guard !host.sshTarget.isEmpty else { return }
 
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        proc.arguments = Self.cleanupArguments(host: host, remoteSocketPath: remoteSocketPath)
+        proc.standardInput = FileHandle.nullDevice
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        proc.environment = buildEnvironment(host: host)
+
+        try? proc.run()
+        proc.waitUntilExit()
+    }
+
+    /// Build SSH arguments that remove a stale remote socket file.
+    /// Extracted for testability.  See `cleanupStaleRemoteSocket`.
+    static func cleanupArguments(host: RemoteHost, remoteSocketPath: String) -> [String] {
         var args: [String] = [
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=5",
@@ -127,18 +141,8 @@ final class SSHForwarder {
         if !trimmedIdentity.isEmpty {
             args += ["-i", trimmedIdentity]
         }
-        args += [target, "rm", "-f", remoteSocketPath]
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        proc.arguments = args
-        proc.standardInput = FileHandle.nullDevice
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        proc.environment = buildEnvironment(host: host)
-
-        try? proc.run()
-        proc.waitUntilExit()
+        args += [host.sshTarget, "rm", "-f", remoteSocketPath]
+        return args
     }
 
     private func buildArguments(host: RemoteHost, localSocketPath: String, remoteSocketPath: String) -> [String] {
