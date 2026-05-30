@@ -70,10 +70,15 @@ struct TerminalActivator {
     static func activate(session: SessionSnapshot, sessionId: String? = nil) {
         guard !session.isRemote else { return }
 
-        // Native app by bundle ID (e.g. Codex APP vs Codex CLI)
+        // Native app by bundle ID (e.g. Codex APP vs Codex CLI). These are IDE-style
+        // apps (Cursor, Trae, Qoder, Factory, …) that can hold several workspace
+        // windows at once, so match the one whose title contains the session's
+        // project folder instead of just raising the most-recently-used window (#199).
+        // activateIDEWindow falls back to a plain app-level activation when there's
+        // no cwd or no matching window, so this never regresses single-window apps.
         if let bundleId = session.termBundleId,
            nativeAppBundles[bundleId] != nil {
-            activateByBundleId(bundleId)
+            activateIDEWindow(bundleId: bundleId, cwd: session.cwd)
             return
         }
 
