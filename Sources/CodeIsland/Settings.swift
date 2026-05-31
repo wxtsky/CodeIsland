@@ -80,7 +80,7 @@ enum SettingsKey {
     // Tool status display
     static let showToolStatus = "showToolStatus"              // true = detailed, false = simple
 
-    // Island collapsed width scale (percentage: 50–150, default 100)
+    // Island collapsed width scale (percentage: 50-150, default 100)
     static let collapsedWidthScale = "collapsedWidthScale"
 
     // Default mascot source when no sessions exist (falls back to this instead of always "claude")
@@ -170,6 +170,12 @@ struct SettingsDefaults {
     static let webhookEnabled = false
     static let webhookURL = ""
     static let webhookEventFilter = ""
+}
+
+enum NotchWidthScale {
+    static let min = 50
+    static let max = 150
+    static let step = 1
 }
 
 @MainActor

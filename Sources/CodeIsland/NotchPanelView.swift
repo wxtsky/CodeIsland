@@ -3,8 +3,44 @@ import CodeIslandCore
 
 enum NotchWidthMetrics {
     static func effectiveNotchWidth(notchW: CGFloat, collapsedWidthScale: Int) -> CGFloat {
-        let clampedScale = max(50, min(collapsedWidthScale, 150))
+        let clampedScale = max(NotchWidthScale.min, min(collapsedWidthScale, NotchWidthScale.max))
         return notchW * CGFloat(clampedScale) / 100.0
+    }
+}
+
+enum NotchHoverPhase: Equatable {
+    case collapsed
+    case prehover
+    case expanded
+}
+
+enum NotchHoverEvent {
+    case mouseEntered
+    case mouseExited
+    case expandDelayElapsed
+    case collapseDelayElapsed
+}
+
+enum NotchHoverInteraction {
+    static let prehoverAnimationDuration: TimeInterval = 0.21
+    static let expandDelay: TimeInterval = 0.5
+    static let collapseDelay: TimeInterval = 0.5
+    static let prehoverWidthDelta: CGFloat = 7
+    static let prehoverScale: CGFloat = 1.004
+
+    static func nextPhase(from phase: NotchHoverPhase, event: NotchHoverEvent) -> NotchHoverPhase {
+        switch (phase, event) {
+        case (.collapsed, .mouseEntered):
+            return .prehover
+        case (.prehover, .mouseExited):
+            return .collapsed
+        case (.prehover, .expandDelayElapsed):
+            return .expanded
+        case (.expanded, .collapseDelayElapsed):
+            return .collapsed
+        default:
+            return phase
+        }
     }
 }
 
@@ -27,6 +63,7 @@ struct NotchPanelView: View {
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
     @State private var isHovered = false
+    @State private var hoverPhase: NotchHoverPhase = .collapsed
     @State private var idleHovered = false
     /// Curtain animation for tool status toggle
     @State private var curtainOffset: CGFloat = 0
@@ -45,6 +82,9 @@ struct NotchPanelView: View {
     }
     private var shouldShowExpanded: Bool {
         showBar && appState.surface.isExpanded
+    }
+    private var shouldShowPrehover: Bool {
+        showBar && !shouldShowExpanded && hoverPhase == .prehover
     }
 
     /// Mascot size — fits within the menu bar height
@@ -72,7 +112,8 @@ struct NotchPanelView: View {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
-        return nw + wing * 2 + extra + toolExtra
+        let prehoverExtra = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
+        return nw + wing * 2 + extra + toolExtra + prehoverExtra
     }
 
     var body: some View {
@@ -183,11 +224,12 @@ struct NotchPanelView: View {
             .background(
                 NotchPanelShape(
                     topExtension: shouldShowExpanded ? 14 : 3,
-                    bottomRadius: shouldShowExpanded ? 24 : 12,
+                    bottomRadius: shouldShowExpanded ? 24 : (shouldShowPrehover ? 13 : 12),
                     minHeight: notchHeight
                 )
                 .fill(.black)
             )
+            .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .offset(y: curtainOffset)
             .opacity(curtainOpacity)
             .onChange(of: showToolStatus) { _, newValue in
@@ -209,6 +251,13 @@ struct NotchPanelView: View {
                 }
             }
             .onAppear { displayedToolStatus = showToolStatus }
+            .onChange(of: appState.surface) { _, surface in
+                if case .collapsed = surface {
+                    hoverPhase = .collapsed
+                } else if surface.isExpanded {
+                    hoverPhase = .expanded
+                }
+            }
             .contentShape(Rectangle())
             .onHover { hovering in
                 // Idle indicator hover — delay un-hover to prevent oscillation when
@@ -247,8 +296,6 @@ struct NotchPanelView: View {
                     return
                 default: break
                 }
-                // Respect collapseOnMouseLeave setting
-                if !hovering && !SettingsManager.shared.collapseOnMouseLeave { return }
                 // Smart suppress: don't auto-expand when active session's terminal is foreground
                 if hovering && smartSuppress {
                     if let delegate = NSApp.delegate as? AppDelegate,
@@ -258,14 +305,19 @@ struct NotchPanelView: View {
                     }
                 }
 
-                isHovered = hovering
                 if hovering {
-                    // Delay expansion to avoid accidental triggers
+                    isHovered = true
                     hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                    hoverTimer = nil
+                    if !appState.surface.isExpanded {
+                        withAnimation(NotchAnimation.hoverPrehover) {
+                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
+                        }
+                    }
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: NotchHoverInteraction.expandDelay, repeats: false) { _ in
                         Task { @MainActor in
                             // Guard: mouse may have left during the delay
-                            guard isHovered else { return }
+                            guard isHovered, hoverPhase == .prehover else { return }
                             if hapticOnHover {
                                 let performer = NSHapticFeedbackManager.defaultPerformer
                                 switch hapticIntensity {
@@ -281,6 +333,7 @@ struct NotchPanelView: View {
                                 }
                             }
                             withAnimation(NotchAnimation.open) {
+                                hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .expandDelayElapsed)
                                 appState.surface = .sessionList
                                 appState.cancelCompletionQueue()
                                 if appState.activeSessionId == nil {
@@ -290,12 +343,27 @@ struct NotchPanelView: View {
                         }
                     }
                 } else {
-                    // Collapse with brief delay to prevent flicker on accidental mouse-out
+                    isHovered = false
                     hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { _ in
+                    hoverTimer = nil
+
+                    if hoverPhase == .prehover {
+                        withAnimation(NotchAnimation.hoverPrehover) {
+                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseExited)
+                        }
+                        return
+                    }
+
+                    if appState.surface.isExpanded {
+                        hoverPhase = .expanded
+                    }
+                    guard SettingsManager.shared.collapseOnMouseLeave else { return }
+
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: NotchHoverInteraction.collapseDelay, repeats: false) { _ in
                         Task { @MainActor in
                             guard !isHovered else { return }
                             withAnimation(NotchAnimation.close) {
+                                hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .collapseDelayElapsed)
                                 appState.surface = .collapsed
                             }
                         }

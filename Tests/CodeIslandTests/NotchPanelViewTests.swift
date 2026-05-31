@@ -2,6 +2,10 @@ import XCTest
 @testable import CodeIsland
 
 final class NotchPanelViewTests: XCTestCase {
+    func testCollapsedWidthScaleUsesSinglePercentIncrements() {
+        XCTAssertEqual(NotchWidthScale.step, 1)
+    }
+
     func testEffectiveNotchWidthAppliesCollapsedWidthScale() {
         XCTAssertEqual(
             NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 50),
@@ -26,6 +30,29 @@ final class NotchPanelViewTests: XCTestCase {
             300,
             accuracy: 0.001
         )
+    }
+
+    func testHoverInteractionCancelsExpansionWhenMouseLeavesPrehover() {
+        var phase = NotchHoverInteraction.nextPhase(from: .collapsed, event: .mouseEntered)
+        XCTAssertEqual(phase, .prehover)
+
+        phase = NotchHoverInteraction.nextPhase(from: phase, event: .mouseExited)
+        XCTAssertEqual(phase, .collapsed)
+
+        phase = NotchHoverInteraction.nextPhase(from: phase, event: .expandDelayElapsed)
+        XCTAssertEqual(phase, .collapsed)
+    }
+
+    func testHoverInteractionKeepsExpandedUntilCollapseDelayElapsed() {
+        var phase = NotchHoverInteraction.nextPhase(from: .collapsed, event: .mouseEntered)
+        phase = NotchHoverInteraction.nextPhase(from: phase, event: .expandDelayElapsed)
+        XCTAssertEqual(phase, .expanded)
+
+        phase = NotchHoverInteraction.nextPhase(from: phase, event: .mouseExited)
+        XCTAssertEqual(phase, .expanded)
+
+        phase = NotchHoverInteraction.nextPhase(from: phase, event: .collapseDelayElapsed)
+        XCTAssertEqual(phase, .collapsed)
     }
 
     func testShouldTriggerJumpFailureFeedbackWhenAllAttemptsFail() {

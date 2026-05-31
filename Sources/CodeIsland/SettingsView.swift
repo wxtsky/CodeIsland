@@ -828,7 +828,7 @@ private struct AppearancePage: View {
                     Slider(value: Binding(
                         get: { Double(collapsedWidthScale) },
                         set: { collapsedWidthScale = Int($0) }
-                    ), in: 50...150, step: 10)
+                    ), in: Double(NotchWidthScale.min)...Double(NotchWidthScale.max), step: Double(NotchWidthScale.step))
                     Text(l10n["collapsed_width_scale_desc"])
                         .font(.caption)
                         .foregroundStyle(.secondary)
