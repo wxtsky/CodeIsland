@@ -6,7 +6,7 @@ if [ -d /Applications/Xcode.app/Contents/Developer ]; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 
-APP_NAME="CodeIsland"
+APP_NAME="UniIsland"
 BUILD_DIR=".build/release"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 ICON_CATALOG="Assets.xcassets"
@@ -86,8 +86,8 @@ build_mac() {
 
     lipo -create "$ARM_DIR/$APP_NAME" "$X86_DIR/$APP_NAME" \
          -output "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-    lipo -create "$ARM_DIR/codeisland-bridge" "$X86_DIR/codeisland-bridge" \
-         -output "$APP_BUNDLE/Contents/Helpers/codeisland-bridge"
+    lipo -create "$ARM_DIR/uniisland-bridge" "$X86_DIR/uniisland-bridge" \
+         -output "$APP_BUNDLE/Contents/Helpers/uniisland-bridge"
     cp Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
     echo "Embedding frameworks..."
@@ -103,23 +103,27 @@ build_mac() {
     install_name_tool -add_rpath "@executable_path/../Frameworks" \
         "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
     install_name_tool -add_rpath "@executable_path/../../Frameworks" \
-        "$APP_BUNDLE/Contents/Helpers/codeisland-bridge" 2>/dev/null || true
+        "$APP_BUNDLE/Contents/Helpers/uniisland-bridge" 2>/dev/null || true
 
-    echo "Compiling app icon assets..."
-    xcrun actool \
-        --output-format human-readable-text \
-        --warnings \
-        --errors \
-        --notices \
-        --platform macosx \
-        --target-device mac \
-        --minimum-deployment-target 14.0 \
-        --app-icon AppIcon \
-        --output-partial-info-plist "$ICON_INFO_PLIST" \
-        --compile "$APP_BUNDLE/Contents/Resources" \
-        "$ICON_CATALOG" \
-        "$ICON_SOURCE"
-    cp "Sources/CodeIsland/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+    if xcrun -f actool &>/dev/null; then
+        echo "Compiling app icon assets..."
+        xcrun actool \
+            --output-format human-readable-text \
+            --warnings \
+            --errors \
+            --notices \
+            --platform macosx \
+            --target-device mac \
+            --minimum-deployment-target 14.0 \
+            --app-icon AppIcon \
+            --output-partial-info-plist "$ICON_INFO_PLIST" \
+            --compile "$APP_BUNDLE/Contents/Resources" \
+            "$ICON_CATALOG" \
+            "$ICON_SOURCE"
+    else
+        echo "WARNING: actool not found, skipping app icon asset compilation."
+    fi
+    cp "Sources/UniIsland/Resources/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
     # Copy SPM resource bundles into Contents/Resources/ (required for code signing)
     for bundle in .build/*/release/*.bundle; do
@@ -129,7 +133,7 @@ build_mac() {
         fi
     done
 
-    ENTITLEMENTS="CodeIsland.entitlements"
+    ENTITLEMENTS="UniIsland.entitlements"
 
     # Use SIGN_ID env var, or auto-detect: prefer "Developer ID Application" for distribution,
     # fall back to any valid identity, then ad-hoc
@@ -139,9 +143,24 @@ build_mac() {
     if [ -z "$SIGN_ID" ]; then
         SIGN_ID=$(security find-identity -v -p codesigning | grep -v "REVOKED" | grep '"' | head -1 | sed 's/.*"\(.*\)".*/\1/' 2>/dev/null || true)
     fi
+    # Local dev fallback: a self-signed "UniIsland Dev" cert (untrusted, so omitted by -v).
+    # Signing with a stable identity keeps Accessibility / Full Disk Access grants across
+    # rebuilds — ad-hoc changes the cdhash every build and drops those TCC permissions.
+    if [ -z "$SIGN_ID" ] && security find-identity -p codesigning | grep -q "UniIsland Dev"; then
+        SIGN_ID="UniIsland Dev"
+    fi
     if [ -z "$SIGN_ID" ]; then
         echo "No developer certificate found, using ad-hoc signing..."
         SIGN_ID="-"
+    fi
+
+    # Hardened runtime is only needed for notarization/distribution (Developer ID). For ad-hoc
+    # or the local self-signed "UniIsland Dev" cert it must be OFF — hardened runtime enforces
+    # library validation (matching Team IDs), which a self-signed cert can't satisfy and would
+    # crash the app at launch when loading Sparkle.framework.
+    SIGN_OPTS="--options runtime"
+    if [ "$SIGN_ID" = "-" ] || [ "$SIGN_ID" = "UniIsland Dev" ]; then
+        SIGN_OPTS=""
     fi
 
     echo "Code signing ($SIGN_ID)..."
@@ -150,18 +169,18 @@ build_mac() {
     # Sign nested helpers inside Sparkle before the framework itself.
     for xpc in "$SPARKLE_FW/Versions/B/XPCServices/"*.xpc; do
         [ -e "$xpc" ] || continue
-        codesign --force --options runtime --sign "$SIGN_ID" "$xpc"
+        codesign --force $SIGN_OPTS --sign "$SIGN_ID" "$xpc"
     done
     if [ -d "$SPARKLE_FW/Versions/B/Updater.app" ]; then
-        codesign --force --options runtime --sign "$SIGN_ID" "$SPARKLE_FW/Versions/B/Updater.app"
+        codesign --force $SIGN_OPTS --sign "$SIGN_ID" "$SPARKLE_FW/Versions/B/Updater.app"
     fi
     if [ -e "$SPARKLE_FW/Versions/B/Autoupdate" ]; then
-        codesign --force --options runtime --sign "$SIGN_ID" "$SPARKLE_FW/Versions/B/Autoupdate"
+        codesign --force $SIGN_OPTS --sign "$SIGN_ID" "$SPARKLE_FW/Versions/B/Autoupdate"
     fi
-    codesign --force --options runtime --sign "$SIGN_ID" "$SPARKLE_FW"
+    codesign --force $SIGN_OPTS --sign "$SIGN_ID" "$SPARKLE_FW"
 
-    codesign --force --options runtime --sign "$SIGN_ID" "$APP_BUNDLE/Contents/Helpers/codeisland-bridge"
-    codesign --force --options runtime --sign "$SIGN_ID" --entitlements "$ENTITLEMENTS" "$APP_BUNDLE"
+    codesign --force $SIGN_OPTS --sign "$SIGN_ID" "$APP_BUNDLE/Contents/Helpers/uniisland-bridge"
+    codesign --force $SIGN_OPTS --sign "$SIGN_ID" --entitlements "$ENTITLEMENTS" "$APP_BUNDLE"
 
     if [ "$NOTARIZE" = true ] && [[ "$SIGN_ID" == *"Developer ID"* ]]; then
         echo "Creating ZIP for notarization..."
@@ -169,11 +188,11 @@ build_mac() {
         ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 
         echo "Submitting for notarization..."
-        if xcrun notarytool submit "$ZIP_PATH" --keychain-profile "CodeIsland" --wait 2>&1 | tee /dev/stderr | grep -q "status: Accepted"; then
+        if xcrun notarytool submit "$ZIP_PATH" --keychain-profile "UniIsland" --wait 2>&1 | tee /dev/stderr | grep -q "status: Accepted"; then
             echo "Stapling notarization ticket..."
             xcrun stapler staple "$APP_BUNDLE"
         else
-            echo "ERROR: Notarization failed. Run 'xcrun notarytool log <submission-id> --keychain-profile CodeIsland' for details."
+            echo "ERROR: Notarization failed. Run 'xcrun notarytool log <submission-id> --keychain-profile UniIsland' for details."
             rm -f "$ZIP_PATH"
             exit 1
         fi
@@ -194,7 +213,7 @@ build_mac() {
 
         codesign --force --sign "$SIGN_ID" "$DMG_PATH"
         echo "Notarizing DMG..."
-        if xcrun notarytool submit "$DMG_PATH" --keychain-profile "CodeIsland" --wait 2>&1 | tee /dev/stderr | grep -q "status: Accepted"; then
+        if xcrun notarytool submit "$DMG_PATH" --keychain-profile "UniIsland" --wait 2>&1 | tee /dev/stderr | grep -q "status: Accepted"; then
             xcrun stapler staple "$DMG_PATH"
             echo "DMG ready: $DMG_PATH"
         else

@@ -1,6 +1,6 @@
 <h1 align="center">
-  <img src="logo.png" width="48" height="48" alt="CodeIsland Logo" valign="middle">&nbsp;
-  CodeIsland
+  <img src="logo.png" width="48" height="48" alt="UniIsland Logo" valign="middle">&nbsp;
+  UniIsland
 </h1>
 <p align="center">
   <b>macOS 灵动岛（刘海）实时 AI 编码 Agent 状态面板</b><br>
@@ -14,12 +14,12 @@
 ---
 
 <p align="center">
-  <img src="docs/images/notch-panel.png" width="700" alt="CodeIsland Panel Preview">
+  <img src="docs/images/notch-panel.png" width="700" alt="UniIsland Panel Preview">
 </p>
 
-## CodeIsland 是什么？
+## UniIsland 是什么？
 
-CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的工作状态。不用再频繁切窗口去看 Claude 是否在等审批、Codex 是否完成了任务。
+UniIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的工作状态。不用再频繁切窗口去看 Claude 是否在等审批、Codex 是否完成了任务。
 
 它通过 Unix socket IPC 连接 **12 种 AI 编码工具**，在刘海面板中展示会话状态、工具调用、权限请求等信息——全部呈现在一个紧凑的像素风面板中。
 
@@ -42,18 +42,18 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 
 | | 工具 | 事件 | 跳转 | 状态 |
 |:---:|------|------|------|------|
-| <img src="docs/images/mascots/claude.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/claude.png" width="16"> Claude Code | 13 | 终端标签页 | 完整 |
-| <img src="docs/images/mascots/codex.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/codex.png" width="16"> Codex | 3 | 终端 | 基础 |
-| <img src="docs/images/mascots/gemini.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/gemini.png" width="16"> Gemini CLI | 6 | 终端 | 完整 |
-| <img src="docs/images/mascots/cursor.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cursor.png" width="16"> Cursor | 10 | IDE | 完整 |
-| <img src="docs/images/mascots/trae.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/traecli.png" width="16"> TraeCli | 10 | 终端 | 完整 |
-| <img src="docs/images/mascots/qoder.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/qoder.png" width="16"> Qoder | 10 | IDE | 完整 |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/copilot.png" width="16"> Copilot | 6 | 终端 | 完整 |
-| <img src="docs/images/mascots/factory.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/factory.png" width="16"> Factory | 10 | IDE | 完整 |
-| <img src="docs/images/mascots/codebuddy.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/codebuddy.png" width="16"> CodeBuddy | 10 | APP/终端 | 完整 |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/kimi.png" width="16"> Kimi Code CLI | 10 | 终端 | 完整 |
-| <img src="docs/images/mascots/opencode.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/opencode.png" width="16"> OpenCode | All | APP/终端 | 完整 |
-| <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | 完整 |
+| <img src="docs/images/mascots/claude.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/claude.png" width="16"> Claude Code | 13 | 终端标签页 | 完整 |
+| <img src="docs/images/mascots/codex.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/codex.png" width="16"> Codex | 3 | 终端 | 基础 |
+| <img src="docs/images/mascots/gemini.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/gemini.png" width="16"> Gemini CLI | 6 | 终端 | 完整 |
+| <img src="docs/images/mascots/cursor.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/cursor.png" width="16"> Cursor | 10 | IDE | 完整 |
+| <img src="docs/images/mascots/trae.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/traecli.png" width="16"> TraeCli | 10 | 终端 | 完整 |
+| <img src="docs/images/mascots/qoder.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/qoder.png" width="16"> Qoder | 10 | IDE | 完整 |
+| | <img src="Sources/UniIsland/Resources/cli-icons/copilot.png" width="16"> Copilot | 6 | 终端 | 完整 |
+| <img src="docs/images/mascots/factory.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/factory.png" width="16"> Factory | 10 | IDE | 完整 |
+| <img src="docs/images/mascots/codebuddy.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/codebuddy.png" width="16"> CodeBuddy | 10 | APP/终端 | 完整 |
+| | <img src="Sources/UniIsland/Resources/cli-icons/kimi.png" width="16"> Kimi Code CLI | 10 | 终端 | 完整 |
+| <img src="docs/images/mascots/opencode.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/opencode.png" width="16"> OpenCode | All | APP/终端 | 完整 |
+| <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/UniIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | 完整 |
 
 ## 安装
 
@@ -61,15 +61,15 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 
 ```bash
 brew tap wxtsky/tap
-brew install --cask codeisland
+brew install --cask uniisland
 ```
 
 ### 手动下载
 
-1. 前往 [Releases](https://github.com/wxtsky/CodeIsland/releases) 页面
-2. 下载 `CodeIsland.dmg`
-3. 打开 DMG，将 `CodeIsland.app` 拖入「应用程序」文件夹
-4. 启动 CodeIsland — 会自动为所有检测到的 AI 工具安装 hooks
+1. 前往 [Releases](https://github.com/wxtsky/UniIsland/releases) 页面
+2. 下载 `UniIsland.dmg`
+3. 打开 DMG，将 `UniIsland.app` 拖入「应用程序」文件夹
+4. 启动 UniIsland — 会自动为所有检测到的 AI 工具安装 hooks
 
 > **提示：** 首次启动时 macOS 可能弹出安全提示，前往 **系统设置 → 隐私与安全性** 点击 **仍要打开** 即可。
 
@@ -78,15 +78,15 @@ brew install --cask codeisland
 需要 **macOS 14+** 和 **Swift 5.9+**。
 
 ```bash
-git clone https://github.com/wxtsky/CodeIsland.git
-cd CodeIsland
+git clone https://github.com/wxtsky/UniIsland.git
+cd UniIsland
 
 # 开发模式（debug 构建 + 启动；Buddy 蓝牙需要下面的 .app）
-swift build && ./.build/debug/CodeIsland
+swift build && ./.build/debug/UniIsland
 
 # 发布模式（通用二进制：Apple Silicon + Intel）
 ./build.sh
-open .build/release/CodeIsland.app
+open .build/release/UniIsland.app
 ```
 
 ## 工作原理
@@ -94,19 +94,19 @@ open .build/release/CodeIsland.app
 ```
 AI 工具 (Claude/Codex/Gemini/Cursor/...)
   → 触发 Hook 事件
-    → codeisland-bridge（原生 Swift 二进制，约 86KB）
-      → Unix socket → /tmp/codeisland-<uid>.sock
-        → CodeIsland 接收事件
+    → uniisland-bridge（原生 Swift 二进制，约 86KB）
+      → Unix socket → /tmp/uniisland-<uid>.sock
+        → UniIsland 接收事件
           → 实时更新 UI
 ```
 
-CodeIsland 在每个 AI 工具的配置中安装轻量级 hooks。当工具触发事件（会话开始、工具调用、权限请求等）时，hook 通过 Unix socket 发送 JSON 消息。CodeIsland 监听此 socket 并即时更新刘海面板。
+UniIsland 在每个 AI 工具的配置中安装轻量级 hooks。当工具触发事件（会话开始、工具调用、权限请求等）时，hook 通过 Unix socket 发送 JSON 消息。UniIsland 监听此 socket 并即时更新刘海面板。
 
 **OpenCode** 使用 JS 插件直接连接 socket，无需 bridge 二进制。
 
 ## 设置
 
-CodeIsland 提供 7 个标签页的设置面板：
+UniIsland 提供 7 个标签页的设置面板：
 
 - **通用** — 语言、登录时启动、显示器选择
 - **行为** — 自动隐藏、智能抑制、会话清理
@@ -125,13 +125,21 @@ CodeIsland 提供 7 个标签页的设置面板：
 
 本项目受 [@farouqaldori](https://github.com/farouqaldori) 的 [claude-island](https://github.com/farouqaldori/claude-island) 启发，感谢提供了将 AI Agent 状态带入 macOS 刘海的创意。
 
+### 开源引用与参考致谢
+
+UniIsland 在开发过程中，深度学习并借鉴了以下优秀开源工具的核心设计与功能逻辑：
+- **NotchDrop** ([GitHub](https://github.com/NotchDrop/NotchDrop)) — 启发了刘海动态文件投递、缓存区以及临时文件快速 AirDrop 共享的管理逻辑。
+- **Boring Notch** ([GitHub](https://github.com/lsw/Boring-Notch)) — 参考了系统播放媒体获取、专注番茄钟流程控制，以及硬件活动状态的微仪表盘设计。
+- **Atoll** ([GitHub](https://github.com/atoll-app/Atoll)) & **DynamicNotch** ([GitHub](https://github.com/shobhit99/SuperIsland)) — 启发了刘海模块化开关、硬件 HUD 排布以及微光动画交互布局。
+- **SuperIsland** ([GitHub](https://github.com/shobhit99/SuperIsland)) — 参考了系统电池电量状态监控与充电微动效，以及通过 `EventKit` 自动关联日历日程并一键进入虚拟会议（如 Zoom、Google Meet、Teams）的便利功能。
+
 ## Star History
 
-<a href="https://www.star-history.com/?repos=wxtsky%2FCodeIsland&type=date&legend=bottom-right">
+<a href="https://www.star-history.com/?repos=wxtsky%2FUniIsland&type=date&legend=bottom-right">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=wxtsky/CodeIsland&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=wxtsky/UniIsland&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=wxtsky/UniIsland&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=wxtsky/UniIsland&type=date&legend=top-left" />
  </picture>
 </a>
 

@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodeIsland",
+    name: "UniIsland",
     platforms: [.macOS(.v14)],
     dependencies: [
         // Sparkle — auto-update framework. Pinned to 2.6+ for stable
@@ -12,38 +12,38 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "CodeIslandCore",
-            path: "Sources/CodeIslandCore"
+            name: "UniIslandCore",
+            path: "Sources/UniIslandCore"
         ),
         .executableTarget(
-            name: "CodeIsland",
+            name: "UniIsland",
             dependencies: [
-                "CodeIslandCore",
+                "UniIslandCore",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "Yams", package: "Yams"),
             ],
-            path: "Sources/CodeIsland",
+            path: "Sources/UniIsland",
             resources: [
                 .copy("Resources")
             ]
         ),
         .executableTarget(
-            name: "codeisland-bridge",
-            dependencies: ["CodeIslandCore"],
-            path: "Sources/CodeIslandBridge"
+            name: "uniisland-bridge",
+            dependencies: ["UniIslandCore"],
+            path: "Sources/UniIslandBridge"
         ),
         .testTarget(
-            name: "CodeIslandCoreTests",
-            dependencies: ["CodeIslandCore"],
-            path: "Tests/CodeIslandCoreTests"
+            name: "UniIslandCoreTests",
+            dependencies: ["UniIslandCore"],
+            path: "Tests/UniIslandCoreTests"
         ),
         .testTarget(
-            name: "CodeIslandTests",
+            name: "UniIslandTests",
             dependencies: [
-                "CodeIsland",
+                "UniIsland",
                 .product(name: "Yams", package: "Yams"),
             ],
-            path: "Tests/CodeIslandTests"
+            path: "Tests/UniIslandTests"
         ),
     ]
 )
