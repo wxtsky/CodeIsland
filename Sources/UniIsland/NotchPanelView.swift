@@ -184,6 +184,10 @@ struct NotchPanelView: View {
         )
     }
 
+    private var compactJumpSessionId: String? {
+        appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
+    }
+
     /// Total panel width — adapts based on state and screen geometry
     private var panelWidth: CGFloat {
         let nw = shouldShowExpanded ? effectiveNotchW : collapsedCenterGap
@@ -211,6 +215,17 @@ struct NotchPanelView: View {
             prehoverExtra: prehoverExtra,
             minimumVisibleWidth: collapsedCenterGap + compactWingWidth + collapsedRightWingWidth
         )
+    }
+
+    private func activateCompactSessionIfNeeded() {
+        guard showBar, !shouldShowExpanded,
+              let sessionId = compactJumpSessionId,
+              let session = appState.sessions[sessionId],
+              !session.isRemote
+        else {
+            return
+        }
+        TerminalActivator.activate(session: session, sessionId: sessionId)
     }
 
     var body: some View {
@@ -342,6 +357,10 @@ struct NotchPanelView: View {
             }
             .frame(width: panelWidth)
             .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                activateCompactSessionIfNeeded()
+            }
             .background(
                 Color.clear
                     .padding(.horizontal, 40)

@@ -70,6 +70,12 @@ struct TerminalActivator {
         "com.tencent.xinWeChat": "WeChat",
     ]
 
+    static func shouldUseDirectNativeAppActivation(source: String, bundleId: String?, cwd: String?) -> Bool {
+        guard let bundleId, nativeAppBundles[bundleId] != nil else { return false }
+        if source == "wechat" { return true }
+        return cwd?.isEmpty ?? true
+    }
+
     static func activate(session: SessionSnapshot, sessionId: String? = nil) {
         guard !session.isRemote else { return }
 
@@ -89,7 +95,11 @@ struct TerminalActivator {
         // no cwd or no matching window, so this never regresses single-window apps.
         if let bundleId = session.termBundleId,
            nativeAppBundles[bundleId] != nil {
-            activateIDEWindow(bundleId: bundleId, cwd: session.cwd)
+            if shouldUseDirectNativeAppActivation(source: session.source, bundleId: bundleId, cwd: session.cwd) {
+                activateByBundleId(bundleId, restoreMinimizedWindow: true)
+            } else {
+                activateIDEWindow(bundleId: bundleId, cwd: session.cwd)
+            }
             return
         }
 
@@ -120,7 +130,7 @@ struct TerminalActivator {
         if session.termBundleId == nil,
            let nativeBundleId = sourceToNativeAppBundleId[session.source],
            NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == nativeBundleId }) {
-            activateByBundleId(nativeBundleId)
+            activateByBundleId(nativeBundleId, restoreMinimizedWindow: session.source == "wechat")
             return
         }
 
@@ -1050,17 +1060,118 @@ struct TerminalActivator {
 
     // MARK: - Activate by bundle ID
 
-    private static func activateByBundleId(_ bundleId: String) {
+    private static func activateByBundleId(_ bundleId: String, restoreMinimizedWindow: Bool = false) {
+        var restoredWindow = false
         if let app = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == bundleId
         }) {
             if app.isHidden { app.unhide() }
-            app.activate()
+            if restoreMinimizedWindow {
+                restoredWindow = restoreFirstWindowViaAccessibility(for: app)
+            }
+            _ = app.activate(options: [.activateAllWindows])
+            if restoreMinimizedWindow && !restoredWindow {
+                restoredWindow = restoreFirstWindowViaAccessibility(for: app)
+            }
         }
         // Also use openApplication for reliable Space switching (Electron apps like VSCode)
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: url, configuration: configuration)
         }
+        if restoreMinimizedWindow && !restoredWindow {
+            restoredWindow = restoreFirstWindowViaAccessibility(bundleId: bundleId)
+        }
+        if restoreMinimizedWindow && !restoredWindow {
+            restoreFirstWindowViaSystemEvents(bundleId: bundleId)
+        }
+    }
+
+    @discardableResult
+    private static func restoreFirstWindowViaAccessibility(bundleId: String) -> Bool {
+        guard let app = NSWorkspace.shared.runningApplications.first(where: {
+            $0.bundleIdentifier == bundleId
+        }) else {
+            return false
+        }
+        return restoreFirstWindowViaAccessibility(for: app)
+    }
+
+    @discardableResult
+    private static func restoreFirstWindowViaAccessibility(for app: NSRunningApplication) -> Bool {
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var windowsValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            appElement,
+            kAXWindowsAttribute as CFString,
+            &windowsValue
+        )
+        guard result == .success,
+              let windows = windowsValue as? [AXUIElement],
+              !windows.isEmpty
+        else {
+            return false
+        }
+
+        var firstWindow: AXUIElement?
+        for window in windows {
+            if firstWindow == nil {
+                firstWindow = window
+            }
+
+            var minimizedValue: CFTypeRef?
+            let minimizedResult = AXUIElementCopyAttributeValue(
+                window,
+                kAXMinimizedAttribute as CFString,
+                &minimizedValue
+            )
+            if minimizedResult == .success, minimizedValue as? Bool == true {
+                _ = AXUIElementSetAttributeValue(
+                    window,
+                    kAXMinimizedAttribute as CFString,
+                    false as CFBoolean
+                )
+                _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                return true
+            }
+        }
+
+        if let firstWindow {
+            _ = AXUIElementPerformAction(firstWindow, kAXRaiseAction as CFString)
+            return true
+        }
+        return false
+    }
+
+    private static func restoreFirstWindowViaSystemEvents(bundleId: String) {
+        let escapedBundleId = escapeAppleScript(bundleId)
+        let script = """
+        tell application "System Events"
+            set matchingProcesses to (processes whose bundle identifier is "\(escapedBundleId)")
+            if (count of matchingProcesses) > 0 then
+                tell item 1 of matchingProcesses
+                    set frontmost to true
+                    repeat with w in windows
+                        try
+                            if value of attribute "AXMinimized" of w is true then
+                                set value of attribute "AXMinimized" of w to false
+                                perform action "AXRaise" of w
+                                return
+                            end if
+                        end try
+                    end repeat
+                    repeat with w in windows
+                        try
+                            perform action "AXRaise" of w
+                            return
+                        end try
+                    end repeat
+                end tell
+            end if
+        end tell
+        """
+        runAppleScript(script)
     }
 
     /// Bring an app forward without calling `NSRunningApplication.activate()`.

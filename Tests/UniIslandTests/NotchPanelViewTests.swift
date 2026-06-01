@@ -164,6 +164,26 @@ final class NotchPanelViewTests: XCTestCase {
         XCTAssertEqual(JumpAnimationHelper.shakeSequence, [8, -8, 6, -6, 3, -3, 0])
     }
 
+    func testWeChatNativeActivationSkipsWorkspaceTitleMatching() {
+        XCTAssertTrue(
+            TerminalActivator.shouldUseDirectNativeAppActivation(
+                source: "wechat",
+                bundleId: "com.tencent.xinWeChat",
+                cwd: "/Applications/WeChat.app"
+            )
+        )
+    }
+
+    func testProjectNativeActivationKeepsWorkspaceTitleMatching() {
+        XCTAssertFalse(
+            TerminalActivator.shouldUseDirectNativeAppActivation(
+                source: "cursor",
+                bundleId: "com.todesktop.230313mzl4w4u92",
+                cwd: "/Users/example/project"
+            )
+        )
+    }
+
     func testEvaluateJumpValidationReturnsSuccessWhenCheckSucceeds() async {
         var callCount = 0
         let outcome = await evaluateJumpValidation(
