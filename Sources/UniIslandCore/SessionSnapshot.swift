@@ -304,7 +304,7 @@ public struct SessionSnapshot: Sendable {
         case "pi": return "pi"
         case "kiro": return "Kiro"
         case "cline": return "Cline"
-        case "wechat": return "WeChat"
+        case "wechat": return "微信"
         case "drops": return "Drops"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {

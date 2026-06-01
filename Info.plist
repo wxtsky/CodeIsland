@@ -9,7 +9,7 @@
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.uniisland.app</string>
+	<string>com.uniisland.desktop</string>
 	<key>CFBundleName</key>
 	<string>UniIsland</string>
 	<key>CFBundlePackageType</key>

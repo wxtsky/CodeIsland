@@ -142,7 +142,7 @@ struct NotchPanelView: View {
 
     private var collapsedRightWingWidth: CGFloat {
         let alertExtra: CGFloat = isAlerting ? 12 : 0
-        let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
+        let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? 8 : 12) : 0
         let baseWidth: CGFloat = hasNotch ? 30 : compactWingWidth
         let naturalWidth = baseWidth + alertExtra + toolExtra
         let reservedWidth = NotchWidthMetrics.collapsedRightWingReservedWidth(
@@ -192,7 +192,19 @@ struct NotchPanelView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        let dragRadius = shouldShowExpanded ? 24.0 : 12.0
+        let dragGradient = LinearGradient(
+            colors: [
+                Color(red: 0.15, green: 0.85, blue: 1.00),
+                Color(red: 1.00, green: 0.20, blue: 0.70)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        let dragStroke = StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round, dash: [6, 4])
+        let shadowCol = Color(red: 0.15, green: 0.85, blue: 1.00).opacity(0.4)
+
+        return VStack(spacing: 0) {
             VStack(spacing: 0) {
                 if showBar {
                     // Active: compact bar — wider version when expanded
@@ -201,8 +213,9 @@ struct NotchPanelView: View {
                         if hasNotch && !shouldShowExpanded {
                             Spacer(minLength: collapsedCenterGap)
                         } else if !shouldShowExpanded && showToolStatus {
+                            Spacer()
                             CompactToolStatus(appState: appState)
-                            Spacer(minLength: 0)
+                            Spacer()
                         } else {
                             Spacer()
                         }
@@ -239,67 +252,70 @@ struct NotchPanelView: View {
                         .frame(height: 0.5)
                         .padding(.horizontal, 12)
 
-                    switch appState.surface {
-                    case .approvalCard(let sid):
-                        if let pending = appState.pendingPermission {
+                    Group {
+                        switch appState.surface {
+                        case .approvalCard(let sid):
+                            if let pending = appState.pendingPermission {
+                                let session = appState.sessions[sid]
+                                ApprovalBar(
+                                    tool: pending.event.toolName ?? "Unknown",
+                                    toolInput: pending.event.toolInput,
+                                    queuePosition: 1,
+                                    queueTotal: appState.permissionQueue.count,
+                                    session: session,
+                                    sessionId: sid,
+                                    appState: appState,
+                                    onAllow: { appState.approvePermission(always: false) },
+                                    onAlwaysAllow: { appState.approvePermission(always: true) },
+                                    onDeny: { appState.denyPermission() },
+                                    onDismiss: { appState.dismissPermissionPrompt() }
+                                )
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            }
+                        case .questionCard(let sid):
                             let session = appState.sessions[sid]
-                            ApprovalBar(
-                                tool: pending.event.toolName ?? "Unknown",
-                                toolInput: pending.event.toolInput,
-                                queuePosition: 1,
-                                queueTotal: appState.permissionQueue.count,
-                                session: session,
-                                sessionId: sid,
-                                appState: appState,
-                                onAllow: { appState.approvePermission(always: false) },
-                                onAlwaysAllow: { appState.approvePermission(always: true) },
-                                onDeny: { appState.denyPermission() },
-                                onDismiss: { appState.dismissPermissionPrompt() }
-                            )
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            if let q = appState.pendingQuestion {
+                                QuestionBar(
+                                    question: q.question.question,
+                                    options: q.question.options,
+                                    descriptions: q.question.descriptions,
+                                    allQuestions: q.askUserQuestionState?.items ?? [],
+                                    sessionSource: session?.source,
+                                    sessionContext: session?.cwd,
+                                    queuePosition: 1,
+                                    queueTotal: appState.questionQueue.count,
+                                    onAnswer: { appState.answerQuestion($0) },
+                                    onAnswerMulti: { appState.answerQuestionMulti($0) },
+                                    onSkip: { appState.skipQuestion() }
+                                )
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            } else if let preview = appState.previewQuestionPayload {
+                                QuestionBar(
+                                    question: preview.question,
+                                    options: preview.options,
+                                    descriptions: preview.descriptions,
+                                    allQuestions: [],
+                                    sessionSource: session?.source,
+                                    sessionContext: session?.cwd,
+                                    queuePosition: 1,
+                                    queueTotal: 1,
+                                    onAnswer: { _ in },
+                                    onAnswerMulti: { _ in },
+                                    onSkip: { }
+                                )
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            }
+                        case .completionCard:
+                            SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
+                                .transition(.blurFade.combined(with: .move(edge: .top)))
+                        case .sessionList:
+                            SessionListView(appState: appState, onlySessionId: nil)
+                                .transition(.blurFade.combined(with: .move(edge: .top)))
+                        case .collapsed:
+                            EmptyView()
                         }
-                    case .questionCard(let sid):
-                        let session = appState.sessions[sid]
-                        if let q = appState.pendingQuestion {
-                            QuestionBar(
-                                question: q.question.question,
-                                options: q.question.options,
-                                descriptions: q.question.descriptions,
-                                allQuestions: q.askUserQuestionState?.items ?? [],
-                                sessionSource: session?.source,
-                                sessionContext: session?.cwd,
-                                queuePosition: 1,
-                                queueTotal: appState.questionQueue.count,
-                                onAnswer: { appState.answerQuestion($0) },
-                                onAnswerMulti: { appState.answerQuestionMulti($0) },
-                                onSkip: { appState.skipQuestion() }
-                            )
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
-                        } else if let preview = appState.previewQuestionPayload {
-                            QuestionBar(
-                                question: preview.question,
-                                options: preview.options,
-                                descriptions: preview.descriptions,
-                                allQuestions: [],
-                                sessionSource: session?.source,
-                                sessionContext: session?.cwd,
-                                queuePosition: 1,
-                                queueTotal: 1,
-                                onAnswer: { _ in },
-                                onAnswerMulti: { _ in },
-                                onSkip: { }
-                            )
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
-                        }
-                    case .completionCard:
-                        SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .sessionList:
-                        SessionListView(appState: appState, onlySessionId: nil)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .collapsed:
-                        EmptyView()
                     }
+                    .padding(.bottom, 8)
                 }
             }
             .frame(width: panelWidth)
@@ -330,23 +346,13 @@ struct NotchPanelView: View {
             .overlay(
                 Group {
                     if appState.isDraggingOver {
-                        RoundedRectangle(cornerRadius: shouldShowExpanded ? 24 : 12)
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.15, green: 0.85, blue: 1.00), // Neon Cyan
-                                        Color(red: 1.00, green: 0.20, blue: 0.70)  // Hot Pink
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round, dash: [6, 4])
-                            )
+                        RoundedRectangle(cornerRadius: dragRadius)
+                            .strokeBorder(dragGradient, style: dragStroke)
                             .background(
-                                RoundedRectangle(cornerRadius: shouldShowExpanded ? 24 : 12)
+                                RoundedRectangle(cornerRadius: dragRadius)
                                     .fill(Color.black.opacity(0.15))
                             )
-                            .shadow(color: Color(red: 0.15, green: 0.85, blue: 1.00).opacity(0.4), radius: 8)
+                            .shadow(color: shadowCol, radius: 8)
                     }
                 }
             )
@@ -472,9 +478,12 @@ struct NotchPanelView: View {
                         hoverPhase = .expanded
                     }
                     // Idle always collapses on mouse leave; active respects the setting
-                    guard showIdleIndicator || SettingsManager.shared.collapseOnMouseLeave else { return }
+                    // WeChat notifications and permissions always collapse on mouse leave to prevent getting stuck expanded.
+                    let isWeChatActive = appState.activeSessionId == "wechat" || appState.activeSessionId == "wechat_permission"
+                    guard showIdleIndicator || SettingsManager.shared.collapseOnMouseLeave || isWeChatActive else { return }
 
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: NotchHoverInteraction.collapseDelay, repeats: false) { _ in
+                    let delay = isWeChatActive ? 1.5 : NotchHoverInteraction.collapseDelay
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
                         Task { @MainActor in
                             guard !isHovered else { return }
                             withAnimation(NotchAnimation.close) {
@@ -487,11 +496,8 @@ struct NotchPanelView: View {
                     }
                 }
             }
-
-            Spacer()
-                .allowsHitTesting(false)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
         .animation(NotchAnimation.open, value: appState.surface)
     }
 }
@@ -517,12 +523,10 @@ private struct CompactLeftWing: View {
         return appState.sessions[sid]
     }
     private var displaySource: String {
-        // Honor user's configured default mascot whenever nothing is actively
-        // happening. Covers no-session and all-idle equally (#149) — without
-        // this, an idle session's source overrides the user preference.
-        if displayStatus == .idle { return settingsDefaultSource }
+        // If there's an active session (even if idle), we want to show its specific mascot!
+        // We only fall back to settingsDefaultSource when there's no session at all.
         if let s = displaySession?.source { return s }
-        return appState.primarySource
+        return settingsDefaultSource
     }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
     private var liveTool: String? { displaySession?.currentTool }
@@ -808,12 +812,13 @@ private struct IdleIndicatorBar: View {
     let isDraggingOver: Bool
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
+    @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
 
     var body: some View {
         HStack(spacing: 0) {
             // Left: mascot
             HStack(spacing: 6) {
-                MascotView(source: "cat", status: .idle, size: mascotSize, isDraggingOver: isDraggingOver)
+                MascotView(source: settingsDefaultSource, status: .idle, size: mascotSize, isDraggingOver: isDraggingOver)
                     .opacity(expanded ? 0.9 : 0.5)
             }
             .padding(.leading, 6)
@@ -1040,61 +1045,110 @@ private struct ApprovalBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Tool name + file context
-            HStack(spacing: 6) {
-                Text("!")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                Text(tool)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                if let server = serverName {
-                    Text("(\(server))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color(red: 0.6, green: 0.7, blue: 0.9))
+        HStack(spacing: 0) {
+            // Left guide line (shining neon orange vertical bar)
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 1.0, green: 0.65, blue: 0.15), Color(red: 0.9, green: 0.35, blue: 0.1)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 3)
+                .padding(.vertical, 8)
+                .padding(.leading, 8)
+            
+            VStack(spacing: 8) {
+                // Tool name + file context
+                HStack(spacing: 6) {
+                    // Shining Pill tag for the tool
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.shield.fill")
+                            .font(.system(size: 9))
+                        Text(tool.uppercased())
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: [Color(red: 1.0, green: 0.6, blue: 0.2), Color(red: 0.85, green: 0.4, blue: 0.1)], startPoint: .leading, endPoint: .trailing))
+                    )
+                    
+                    if let server = serverName {
+                        Text("(\(server))")
+                            .font(.system(size: 9.5, design: .rounded))
+                            .foregroundStyle(Color(red: 0.5, green: 0.8, blue: 1.0))
+                    }
+                    
+                    if let name = fileName {
+                        HStack(spacing: 3) {
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 9))
+                            Text(name)
+                                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundStyle(.white.opacity(0.72))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.08)))
+                    }
+                    
+                    if queueTotal > 1 {
+                        Text("\(queuePosition)/\(queueTotal)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                    }
+                    Spacer()
                 }
-                if let name = fileName {
-                    Text(name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                if queueTotal > 1 {
-                    Text("\(queuePosition)/\(queueTotal)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .contentShape(Rectangle())
-            .onTapGesture { handleCardClick() }
+                .padding(.horizontal, 14)
+                .contentShape(Rectangle())
+                .onTapGesture { handleCardClick() }
 
-            // Tool-specific detail view
-            if toolInput != nil {
-                ApprovalToolDetailView(tool: tool, toolInput: toolInput)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.04))
-                    .contentShape(Rectangle())
-                    .onTapGesture { handleCardClick() }
-            }
+                // Tool-specific detail view with terminal background
+                if toolInput != nil {
+                    ApprovalToolDetailView(tool: tool, toolInput: toolInput)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.black.opacity(0.4))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+                        )
+                        .padding(.horizontal, 10)
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleCardClick() }
+                }
 
-            // Pixel-style buttons
-            HStack(spacing: 6) {
-                PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
-                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
-                PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
-                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
+                // Premium buttons
+                HStack(spacing: 6) {
+                    PremiumButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
+                    PremiumButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
+                    PremiumButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
+                    PremiumButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
+                }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 14)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.01))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(.white.opacity(0.04), lineWidth: 1)
+                )
+        )
         .offset(x: failureShakeOffset)
         .onDisappear {
             jumpValidationTask?.cancel()
@@ -1271,13 +1325,17 @@ private struct QuestionBar: View {
                 .lineLimit(3)
             Spacer()
             if allQuestions.count > 1 {
-                Text("\(currentQuestionIndex + 1)/\(allQuestions.count)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                HStack(spacing: 4) {
+                    ForEach(0..<allQuestions.count, id: \.self) { i in
+                        Circle()
+                            .fill(i == currentQuestionIndex ? cyan : .white.opacity(0.28))
+                            .frame(width: 6, height: 6)
+                            .shadow(color: i == currentQuestionIndex ? cyan.opacity(0.5) : .clear, radius: 2)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(.white.opacity(0.06)))
             }
             if queueTotal > 1 {
                 Text("\(queuePosition)/\(queueTotal)")
@@ -1316,13 +1374,13 @@ private struct QuestionBar: View {
 
                 // "Other" text input
                 if showOtherInput {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Text(">")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
                         TextField(L10n.shared["type_answer"], text: $otherText)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 10.5, design: .rounded))
                             .foregroundStyle(.white)
                             .focused($otherFocused)
                             .onSubmit {
@@ -1331,49 +1389,58 @@ private struct QuestionBar: View {
                                 }
                             }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(4)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.black.opacity(0.3))
                     )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(otherFocused ? cyan : .white.opacity(0.12), lineWidth: 1)
+                    )
+                    .shadow(color: cyan.opacity(otherFocused ? 0.25 : 0.0), radius: 6, x: 0, y: 2)
                     .padding(.horizontal, 14)
                     .onAppear { otherFocused = true }
+                    .animation(.spring(response: 0.2, dampingFraction: 0.7), value: otherFocused)
                 }
             }
             .padding(.horizontal, 14)
         } else {
             // No options — text input only
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text(">")
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
                 TextField(L10n.shared["type_answer"], text: $textInput)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10.5, design: .rounded))
                     .foregroundStyle(.white)
                     .focused($isFocused)
                     .onSubmit {
                         if !textInput.isEmpty { advanceWithAnswer(textInput) }
                     }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black.opacity(0.3))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isFocused ? cyan : .white.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: cyan.opacity(isFocused ? 0.25 : 0.0), radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 14)
+            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: isFocused)
             .padding(.horizontal, 14)
         }
 
         // Buttons
         HStack(spacing: 6) {
             if currentQuestionIndex > 0 {
-                PixelButton(
+                PremiumButton(
                     label: L10n.shared["back"],
                     fg: .white.opacity(0.6),
                     bg: Color.white.opacity(0.06),
@@ -1381,7 +1448,7 @@ private struct QuestionBar: View {
                     action: goBack
                 )
             }
-            PixelButton(
+            PremiumButton(
                 label: L10n.shared["skip"],
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
@@ -1389,7 +1456,7 @@ private struct QuestionBar: View {
                 action: onSkip
             )
             if item.multiSelect {
-                PixelButton(
+                PremiumButton(
                     label: L10n.shared["confirm"],
                     fg: .white.opacity(0.95),
                     bg: Color(red: 0.16, green: 0.38, blue: 0.18),
@@ -1397,7 +1464,7 @@ private struct QuestionBar: View {
                     action: confirmMultiSelect
                 )
             } else if item.payload.options == nil || item.payload.options?.isEmpty == true {
-                PixelButton(
+                PremiumButton(
                     label: L10n.shared["submit"],
                     fg: .white.opacity(0.95),
                     bg: Color(red: 0.16, green: 0.38, blue: 0.18),
@@ -1405,7 +1472,7 @@ private struct QuestionBar: View {
                     action: { if !textInput.isEmpty { advanceWithAnswer(textInput) } }
                 )
             } else if showOtherInput && !item.multiSelect {
-                PixelButton(
+                PremiumButton(
                     label: L10n.shared["submit"],
                     fg: .white.opacity(0.95),
                     bg: Color(red: 0.16, green: 0.38, blue: 0.18),
@@ -1543,7 +1610,7 @@ private struct QuestionBar: View {
         }
 
         HStack(spacing: 6) {
-            PixelButton(
+            PremiumButton(
                 label: L10n.shared["skip"],
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
@@ -1551,7 +1618,7 @@ private struct QuestionBar: View {
                 action: onSkip
             )
             if options == nil || options?.isEmpty == true {
-                PixelButton(
+                PremiumButton(
                     label: L10n.shared["submit"],
                     fg: .white.opacity(0.95),
                     bg: Color(red: 0.16, green: 0.38, blue: 0.18),
@@ -1577,37 +1644,60 @@ private struct MultiSelectRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 11))
-                    .foregroundStyle(isChecked ? accent : .white.opacity(0.4))
-                    .frame(width: 14)
+            HStack(spacing: 10) {
+                // Circular checkbox
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(isChecked ? accent : .white.opacity(0.3), lineWidth: 1.5)
+                        .frame(width: 14, height: 14)
+                    
+                    if isChecked {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(accent)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: accent.opacity(0.5), radius: 2)
+                    }
+                }
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 10.5, weight: hovering || isChecked ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1 : 0.75))
+                        .font(.system(size: 10.5, weight: hovering || isChecked ? .semibold : .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1.0 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(2)
                     }
                 }
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isChecked ? accent.opacity(0.08) : (hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03)))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isChecked ? accent.opacity(0.06) : (hovering ? Color.white.opacity(0.06) : Color.white.opacity(0.02)))
+                    
+                    // Left glow line
+                    if isChecked {
+                        HStack {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(accent)
+                                .frame(width: 2)
+                                .padding(.vertical, 6)
+                            Spacer()
+                        }
+                    }
+                }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(isChecked ? accent.opacity(0.4) : (hovering ? accent.opacity(0.2) : Color.clear), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isChecked ? accent.opacity(0.25) : (hovering ? .white.opacity(0.08) : Color.clear), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .onHover { h in withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hovering = h } }
     }
 }
 
@@ -1624,78 +1714,138 @@ private struct OptionRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                // Selector arrow
-                Text(hovering ? "▸" : " ")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(accent)
-                    .frame(width: 10)
-                // Number (or ellipsis for "Other")
-                if index > 0 {
-                    Text("\(index).")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
-                } else {
-                    Text("…")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
+            HStack(spacing: 10) {
+                // Sleek circular index badge
+                ZStack {
+                    Circle()
+                        .strokeBorder(isSelected ? accent : .white.opacity(0.2), lineWidth: 1.2)
+                        .background(Circle().fill(isSelected ? accent.opacity(0.12) : .white.opacity(0.04)))
+                        .frame(width: 16, height: 16)
+                    
+                    if index > 0 {
+                        Text("\(index)")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundStyle(isSelected ? accent : .white.opacity(0.6))
+                    } else {
+                        Text("…")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundStyle(isSelected ? accent : .white.opacity(0.6))
+                    }
                 }
-                // Label + Description
+                
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 10.5, weight: hovering ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering ? 1 : 0.75))
+                        .font(.system(size: 10.5, weight: hovering || isSelected ? .semibold : .regular, design: .rounded))
+                        .foregroundStyle(.white.opacity(hovering || isSelected ? 1.0 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(2)
                     }
                 }
                 Spacer()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? accent.opacity(0.06) : (hovering ? Color.white.opacity(0.06) : Color.white.opacity(0.02)))
+                    
+                    // Left glow line
+                    if isSelected {
+                        HStack {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(accent)
+                                .frame(width: 2)
+                                .padding(.vertical, 6)
+                            Spacer()
+                        }
+                    }
+                }
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(hovering ? accent.opacity(0.4) : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? accent.opacity(0.25) : (hovering ? .white.opacity(0.08) : Color.clear), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .onHover { h in withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hovering = h } }
     }
 }
 
-private struct PixelButton: View {
+private struct PremiumButton: View {
     let label: String
     let fg: Color
     let bg: Color
     let border: Color
     let action: () -> Void
+    
     @State private var hovering = false
+    @State private var isPressed = false
 
     var body: some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(fg)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(hovering ? bg.opacity(1.5) : bg)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(hovering ? border : border.opacity(0.4), lineWidth: 1)
-                )
+            HStack(spacing: 5) {
+                if let iconName = determineIcon(label: label) {
+                    Image(systemName: iconName)
+                        .font(.system(size: 10, weight: .bold))
+                }
+                Text(label)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+            }
+            .foregroundStyle(fg)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                ZStack {
+                    // Base color
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(bg)
+                    
+                    // Shiny top highlight
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.12), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    
+                    // Hover overlay
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.white.opacity(hovering ? 0.08 : 0.0))
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(hovering ? border : border.opacity(0.4), lineWidth: 1)
+            )
+            .shadow(color: bg.opacity(hovering ? 0.3 : 0.0), radius: 6, x: 0, y: 2)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: hovering)
+            .animation(.spring(response: 0.15, dampingFraction: 0.55), value: isPressed)
         }
         .buttonStyle(.plain)
-        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        .onHover { h in hovering = h }
+    }
+
+    private func determineIcon(label: String) -> String? {
+        let l = label.lowercased()
+        if l.contains("deny") || l.contains("拒绝") { return "xmark.circle.fill" }
+        if l.contains("dismiss") || l.contains("忽略") || l.contains("跳过") || l.contains("skip") { return "bell.slash.fill" }
+        if l.contains("once") || l.contains("一次") { return "checkmark.circle.fill" }
+        if l.contains("always") || l.contains("始终") { return "lock.open.fill" }
+        if l.contains("submit") || l.contains("确认") || l.contains("确定") || l.contains("ok") || l.contains("confirm") { return "paperplane.fill" }
+        if l.contains("back") || l.contains("返回") { return "chevron.left" }
+        return nil
     }
 }
 
@@ -1757,7 +1907,7 @@ private struct SessionListView: View {
                 ("qwen", "Qwen Code"),
                 ("kimi", "Kimi Code CLI"),
                 ("opencode", "OpenCode"),
-                ("wechat", "WeChat"),
+                ("wechat", "微信"),
             ]
             var result: [(String, String?, [String])] = []
             var seen = Set<String>()
@@ -2120,22 +2270,36 @@ private struct SessionCard: View {
     ) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: max(10, fontSize - 1), weight: .semibold, design: .monospaced))
+                .font(.system(size: max(10, fontSize - 1), weight: .bold, design: .rounded))
                 .foregroundStyle(fg)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(bg.opacity(enabled ? 1 : 0.35))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(bg.opacity(enabled ? 1.0 : 0.35))
+                        
+                        if enabled {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.white.opacity(0.12), Color.clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                    }
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(.white.opacity(enabled ? 0.25 : 0.12), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(.white.opacity(enabled ? 0.22 : 0.1), lineWidth: 1)
                 )
+                .shadow(color: bg.opacity(enabled ? 0.25 : 0.0), radius: 4, x: 0, y: 1.5)
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.55)
+        .opacity(enabled ? 1 : 0.5)
     }
 
     var body: some View {
@@ -2143,14 +2307,12 @@ private struct SessionCard: View {
             DropsCard(appState: appState, session: session)
         } else if session.source == "pomodoro" {
             PomodoroCard(appState: appState, session: session)
-        } else if session.source == "stats" {
-            StatsCard(appState: appState, session: session)
         } else if session.source == "media" {
             MediaCard(appState: appState, session: session)
-        } else if session.source == "battery" {
-            BatteryCard(appState: appState, session: session)
         } else if session.source == "calendar" {
             CalendarCard(appState: appState, session: session)
+        } else if session.source == "wechat_permission" {
+            WeChatPermissionCard(appState: appState, session: session)
         } else {
             HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
@@ -2189,11 +2351,8 @@ private struct SessionCard: View {
                         sessionColor: .white.opacity(0.76),
                         dividerColor: .white.opacity(0.28)
                     )
-                    // The beautiful dynamic neon voice wave stretches to fill the entire remaining horizontal space!
-                    MiniSoundWaveView(source: session.source, status: session.status)
-                        .opacity(0.85)
-                        .padding(.horizontal, 10)
-                        .offset(y: 2.5)
+                    Spacer()
+
 
                     HStack(spacing: 4) {
                         if let remote = session.remoteDisplayName {
@@ -2448,6 +2607,94 @@ private struct SessionCard: View {
     }
 }
 
+// MARK: - WeChat Permission Card View
+private struct WeChatPermissionCard: View {
+    var appState: AppState
+    let session: SessionSnapshot
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
+    private var fontSize: CGFloat { CGFloat(contentFontSize) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Mascot Column
+            VStack {
+                MascotView(source: "wechat", status: .waitingQuestion, size: 32)
+            }
+            .frame(width: 36)
+
+            // Content Column
+            VStack(alignment: .leading, spacing: 6) {
+                // Header line
+                HStack {
+                    Text("微信监控")
+                        .font(.system(size: fontSize + 1, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color(red: 1.00, green: 0.60, blue: 0.20)) // Warning Orange
+                    
+                    Text("• 权限警告")
+                        .font(.system(size: fontSize - 1, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.5))
+                    
+                    Spacer()
+                }
+
+                Text("系统重签/安全限制导致微信“辅助功能”权限丢失，灵动岛无法读取消息。")
+                    .font(.system(size: fontSize - 1, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    Button {
+                        // Open system preference accessibility settings
+                        NSWorkspace.shared.open(
+                            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+                        )
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "hand.raised.fill")
+                                .font(.system(size: 10))
+                            Text("去系统设置开启权限")
+                                .font(.system(size: fontSize - 1, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(LinearGradient(colors: [Color(red: 1.00, green: 0.60, blue: 0.20), Color(red: 0.85, green: 0.40, blue: 0.10)], startPoint: .top, endPoint: .bottom))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        appState.dismissWeChatPermissionAlert()
+                    } label: {
+                        Text("忽略")
+                            .font(.system(size: fontSize - 1, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(.white.opacity(0.08))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.02))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(.white.opacity(0.06), lineWidth: 1)
+                )
+        )
+    }
+}
+
 // MARK: - Drops Card View for NotchDrop file management
 private struct DropsCard: View {
     var appState: AppState
@@ -2489,77 +2736,7 @@ private struct DropsCard: View {
                 // File List
                 VStack(spacing: 4) {
                     ForEach(Array(appState.droppedFiles.enumerated()), id: \.element) { idx, url in
-                        HStack(spacing: 8) {
-                            // File Icon
-                            let icon = NSWorkspace.shared.icon(forFile: url.path)
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 16, height: 16)
-
-                            // File Name
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(url.lastPathComponent)
-                                    .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.9))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                
-                                Text(formatFileSize(url))
-                                    .font(.system(size: fontSize - 2, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
-
-                            Spacer()
-
-                            // Actions
-                            HStack(spacing: 6) {
-                                // Open
-                                Button {
-                                    NSWorkspace.shared.open(url)
-                                } label: {
-                                    Image(systemName: "arrow.up.right.circle.fill")
-                                        .foregroundStyle(Color(red: 0.15, green: 0.85, blue: 1.00))
-                                        .font(.system(size: 14))
-                                }
-                                .buttonStyle(.plain)
-                                .help("打开文件")
-
-                                // AirDrop
-                                Button {
-                                    let sender = NSApplication.shared.keyWindow?.contentView ?? NSView()
-                                    appState.shareDroppedFile(url, sender: sender)
-                                } label: {
-                                    Image(systemName: "square.and.arrow.up.fill")
-                                        .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                                        .font(.system(size: 14))
-                                }
-                                .buttonStyle(.plain)
-                                .help("分享 / AirDrop")
-
-                                // Delete
-                                Button {
-                                    withAnimation {
-                                        appState.deleteDroppedFile(url)
-                                    }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(Color(red: 1.0, green: 0.35, blue: 0.35))
-                                        .font(.system(size: 14))
-                                }
-                                .buttonStyle(.plain)
-                                .help("删除")
-                            }
-                            .opacity(hoveringIndex == idx ? 1.0 : 0.6)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(hoveringIndex == idx ? 0.08 : 0.03))
-                        )
-                        .onHover { isHover in
-                            hoveringIndex = isHover ? idx : nil
-                        }
+                        DropFileRow(idx: idx, url: url, appState: appState, fontSize: fontSize, hoveringIndex: $hoveringIndex)
                     }
                 }
             }
@@ -2573,6 +2750,149 @@ private struct DropsCard: View {
                         .strokeBorder(.white.opacity(0.06), lineWidth: 1)
                 )
         )
+    }
+}
+
+private struct DropFileRow: View {
+    let idx: Int
+    let url: URL
+    var appState: AppState
+    let fontSize: CGFloat
+    @Binding var hoveringIndex: Int?
+
+    var body: some View {
+        let openColor = Color(red: 0.15, green: 0.85, blue: 1.00)
+        let shareColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+        let saveColor = Color(red: 0.95, green: 0.65, blue: 0.15)
+        let deleteColor = Color(red: 1.0, green: 0.35, blue: 0.35)
+
+        HStack(spacing: 8) {
+            // File Icon
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 16, height: 16)
+
+            // File Name
+            VStack(alignment: .leading, spacing: 1) {
+                Text(url.lastPathComponent)
+                    .font(.system(size: fontSize, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                
+                Text(formatFileSize(url))
+                    .font(.system(size: fontSize - 2, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+
+            Spacer()
+
+            // Actions
+            HStack(spacing: 6) {
+                // Open
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Image(systemName: "arrow.up.right.circle.fill")
+                        .foregroundStyle(openColor)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .help("打开文件")
+
+                // AirDrop
+                Button {
+                    let sender = NSApplication.shared.keyWindow?.contentView ?? NSView()
+                    appState.shareDroppedFile(url, sender: sender)
+                } label: {
+                    Image(systemName: "square.and.arrow.up.fill")
+                        .foregroundStyle(shareColor)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .help("分享 / AirDrop")
+
+                // Save As
+                Button {
+                    appState.saveDroppedFileAs(url)
+                } label: {
+                    Image(systemName: "tray.and.arrow.down.fill")
+                        .foregroundStyle(saveColor)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .help("另存为...")
+
+                // Delete
+                Button {
+                    withAnimation {
+                        appState.deleteDroppedFile(url)
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(deleteColor)
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .help("删除")
+            }
+            .opacity(hoveringIndex == idx ? 1.0 : 0.6)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(hoveringIndex == idx ? 0.08 : 0.03))
+        )
+        .onHover { isHover in
+            hoveringIndex = isHover ? idx : nil
+        }
+        .onDrag {
+            let provider = NSItemProvider()
+            provider.suggestedName = url.deletingPathExtension().lastPathComponent
+            
+            // Register NSURL so macOS handles naming and system-level file-url metadata correctly
+            provider.registerObject(url as NSURL, visibility: .all)
+            
+            // Register specific UTI for proper file transfer handling in Finder/WeChat
+            let fileExtension = url.pathExtension
+            let fileUTI = UTType(filenameExtension: fileExtension) ?? .data
+            provider.registerFileRepresentation(forTypeIdentifier: fileUTI.identifier, fileOptions: [], visibility: .all) { completionHandler in
+                completionHandler(url, false, nil)
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    withAnimation {
+                        appState.deleteDroppedFile(url)
+                    }
+                }
+                return nil
+            }
+            return provider
+        } preview: {
+            HStack(spacing: 8) {
+                let icon = NSWorkspace.shared.icon(forFile: url.path)
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 24, height: 24)
+                
+                Text(url.lastPathComponent)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(red: 0.1, green: 0.1, blue: 0.1).opacity(0.95))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 3)
+            )
+        }
     }
 
     private func formatFileSize(_ url: URL) -> String {

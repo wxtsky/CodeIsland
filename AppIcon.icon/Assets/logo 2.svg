@@ -1,15 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="512" height="512">
-  <g shape-rendering="crispEdges">
-    <!-- Dynamic Island (notch pill shape) -->
-    <rect x="3" y="6" width="10" height="4" rx="2" fill="#1a1a1a"/>
-    <!-- Eyes -->
-    <rect x="5" y="7" width="2" height="2" fill="#f5a623"/>
-    <rect x="9" y="7" width="2" height="2" fill="#f5a623"/>
-    <!-- Pupils -->
-    <rect x="6" y="7" width="1" height="1" fill="#ffffff"/>
-    <rect x="10" y="7" width="1" height="1" fill="#ffffff"/>
-    <!-- Highlight dots -->
-    <rect x="6" y="7" width="0.5" height="0.5" fill="#fff" opacity="0.9"/>
-    <rect x="10" y="7" width="0.5" height="0.5" fill="#fff" opacity="0.9"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d1b69"/>
+      <stop offset="50%" style="stop-color:#1a1a4e"/>
+      <stop offset="100%" style="stop-color:#0f3460"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#00d4ff"/>
+      <stop offset="100%" style="stop-color:#9b59b6"/>
+    </linearGradient>
+    <filter id="neon">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- U shape / Island -->
+  <path d="M160 160 L160 320 Q160 400 256 400 Q352 400 352 320 L352 160" 
+        fill="none" stroke="url(#glow)" stroke-width="36" stroke-linecap="round"
+        filter="url(#neon)"/>
+  <!-- Notch shape at top -->
+  <rect x="190" y="120" width="132" height="50" rx="25" fill="#1a1a1a" opacity="0.8"/>
+  <!-- Notch camera dot -->
+  <circle cx="280" cy="145" r="8" fill="#333" stroke="#555" stroke-width="1"/>
 </svg>

@@ -2258,52 +2258,12 @@ private struct ShortcutRow: View {
 
 // MARK: - Widgets Page
 private struct WidgetsPage: View {
-    @ObservedObject private var l10n = L10n.shared
-
-    @AppStorage(SettingsKey.pomodoroEnabled) private var pomodoroEnabled = SettingsDefaults.pomodoroEnabled
-    @AppStorage(SettingsKey.pomodoroDurationMinutes) private var pomodoroDuration = SettingsDefaults.pomodoroDurationMinutes
-    
-    @AppStorage(SettingsKey.systemMonitorEnabled) private var systemMonitorEnabled = SettingsDefaults.systemMonitorEnabled
-    @AppStorage(SettingsKey.systemMonitorIntervalSeconds) private var statsInterval = SettingsDefaults.systemMonitorIntervalSeconds
-
     @AppStorage(SettingsKey.mediaControllerEnabled) private var mediaControllerEnabled = SettingsDefaults.mediaControllerEnabled
-    @AppStorage(SettingsKey.batteryMonitorEnabled) private var batteryMonitorEnabled = SettingsDefaults.batteryMonitorEnabled
-    @AppStorage(SettingsKey.calendarMonitorEnabled) private var calendarMonitorEnabled = SettingsDefaults.calendarMonitorEnabled
 
     var body: some View {
         Form {
-            Section("番茄工作法 (Pomodoro Focus)") {
-                Toggle("启用番茄钟 Focus Timer", isOn: $pomodoroEnabled)
-                if pomodoroEnabled {
-                    HStack {
-                        Text("专注时长 Duration")
-                        Slider(value: $pomodoroDuration, in: 5...60, step: 5)
-                        Text("\(Int(pomodoroDuration)) 分钟")
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                }
-            }
-
-            Section("系统诊断 HUD (System Stats)") {
-                Toggle("启用系统监控 Activity Monitor", isOn: $systemMonitorEnabled)
-                if systemMonitorEnabled {
-                    Picker("刷新间隔 Update Interval", selection: $statsInterval) {
-                        Text("1 秒").tag(1.0)
-                        Text("2 秒 (默认)").tag(2.0)
-                        Text("5 秒").tag(5.0)
-                        Text("10 秒").tag(10.0)
-                    }
-                }
-            }
-
             Section("系统媒体控制 (Media Controls)") {
                 Toggle("显示播放媒体 Now Playing Monitor", isOn: $mediaControllerEnabled)
-            }
-
-            Section("超级刘海增强 (SuperIsland Ports)") {
-                Toggle("启用电池状态监控 Battery Monitor", isOn: $batteryMonitorEnabled)
-                Toggle("启用日历日程提醒 Calendar Observer", isOn: $calendarMonitorEnabled)
             }
         }
         .formStyle(.grouped)

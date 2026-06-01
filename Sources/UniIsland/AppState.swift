@@ -62,21 +62,10 @@ final class AppState {
     var pomodoroLabel = "专注"
     @ObservationIgnored private var pomodoroTimer: Timer?
 
-    var cpuUsage: Double = 0.0
-    var memUsage: Double = 0.0
-    var netDownloadSpeed: Double = 0.0
-    var netUploadSpeed: Double = 0.0
-    @ObservationIgnored private var systemMonitorTimer: Timer?
-
     var mediaTrackName = ""
     var mediaArtistName = ""
     var isMediaPlaying = false
     @ObservationIgnored private var mediaMonitorTimer: Timer?
-
-    var batteryPercent: Int = 100
-    var isCharging = false
-    var batteryTimeRemainingDescription = ""
-    @ObservationIgnored private var batteryMonitorTimer: Timer?
 
     var calendarEventTitle = "无近期日程"
     var calendarEventCountdown = "暂无日程"
@@ -936,7 +925,7 @@ final class AppState {
         // because deriveSessionSummary echoes the most recently active source.
         // Active work always wins (running / processing / waiting* status).
         let effectiveSource: String
-        if summary.status == .idle {
+        if sessions.isEmpty {
             effectiveSource = SettingsManager.shared.defaultSource
         } else {
             effectiveSource = summary.primarySource
@@ -2208,11 +2197,15 @@ final class AppState {
         // For LSUIElement apps the OS suppresses the standard accessibility prompt.
         // Open System Settings directly on first run if permission is missing.
         if !AXIsProcessTrusted() {
-            log.info("Accessibility not granted — opening System Settings")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                NSWorkspace.shared.open(
-                    URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                )
+            let hasPrompted = UserDefaults.standard.bool(forKey: "hasPromptedAccessibility")
+            if !hasPrompted {
+                UserDefaults.standard.set(true, forKey: "hasPromptedAccessibility")
+                log.info("Accessibility not granted — opening System Settings (first-time prompt)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    NSWorkspace.shared.open(
+                        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+                    )
+                }
             }
         }
         scheduleNextWeChatPoll(after: 0.05)
@@ -2277,8 +2270,65 @@ final class AppState {
         weChatFSEventStream = stream
     }
 
+    var isWeChatPermissionAlertDismissed = false
+
+    func dismissWeChatPermissionAlert() {
+        isWeChatPermissionAlertDismissed = true
+        sessions.removeValue(forKey: "wechat_permission")
+        refreshDerivedState()
+    }
+
     private func pollWeChatBadge() {
         pendingImmediateWeChatPoll = false
+
+        guard AXIsProcessTrusted() else {
+            // Accessibility permission is missing. Do not poll dock badge.
+            // But if WeChat is running and we haven't dismissed the alert, show the permission warning card!
+            let isWeChatRunning = NSWorkspace.shared.runningApplications.contains {
+                $0.bundleIdentifier == "com.tencent.xinWeChat"
+            }
+            if isWeChatRunning && !isWeChatPermissionAlertDismissed {
+                let permId = "wechat_permission"
+                if sessions[permId] == nil {
+                    var snap = SessionSnapshot()
+                    snap.source = "wechat_permission"
+                    snap.cwd = "/"
+                    snap.currentTool = "微信"
+                    snap.toolDescription = "微信监控需要辅助功能权限"
+                    snap.status = .waitingQuestion
+                    sessions[permId] = snap
+                    
+                    if activeSessionId == nil || activeSessionId == "default" {
+                        activeSessionId = permId
+                    }
+                    
+                    // Auto-expand the island to show the permission warning
+                    if surface == .collapsed {
+                        withAnimation(NotchAnimation.open) {
+                            surface = .sessionList
+                            activeSessionId = permId
+                        }
+                    }
+                    
+                    refreshDerivedState()
+                }
+            } else {
+                if sessions["wechat_permission"] != nil {
+                    sessions.removeValue(forKey: "wechat_permission")
+                    refreshDerivedState()
+                }
+            }
+            
+            scheduleNextWeChatPoll(after: 2.0)
+            return
+        }
+
+        // Accessibility is trusted: clean up the permission alert if present
+        if sessions["wechat_permission"] != nil {
+            sessions.removeValue(forKey: "wechat_permission")
+            refreshDerivedState()
+        }
+
         let isWeChatRunning = NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == "com.tencent.xinWeChat"
         }
@@ -2316,9 +2366,20 @@ final class AppState {
         let wechatSessionId = "wechat"
 
         if !badge.isEmpty {
-            if dismissedWeChatUnreadKey == unreadKey {
+            // Check if this is a new message vs the same dismissed one
+            // If the signature changed (new message arrived), clear the dismissal state
+            let isSameUnreadKey = dismissedWeChatUnreadKey == unreadKey
+            let hasNewSignature = !unreadKey.isEmpty && lastWeChatUnreadKey != unreadKey
+            
+            if isSameUnreadKey && !hasNewSignature {
+                // Same message that was already dismissed — don't show again
                 hideWeChatSessionFromIsland(clearDismissal: false)
                 return
+            }
+            
+            // New message detected (different unreadKey or signature changed) — clear dismissal
+            if hasNewSignature {
+                dismissedWeChatUnreadKey = nil
             }
 
             if sessions[wechatSessionId] == nil {
@@ -2326,7 +2387,7 @@ final class AppState {
                 sessions[wechatSessionId]?.source = "wechat"
                 sessions[wechatSessionId]?.cwd = "/Applications/WeChat.app"
                 sessions[wechatSessionId]?.termBundleId = "com.tencent.xinWeChat"
-                sessions[wechatSessionId]?.termApp = "WeChat"
+                sessions[wechatSessionId]?.termApp = "微信"
             }
 
             let displayMsg = "微信有新消息 (\(badge))"
@@ -2346,8 +2407,28 @@ final class AppState {
 
                 refreshDerivedState()
                 startRotationIfNeeded()
-                // Auto-expand the island to show WeChat notification
-                enqueueCompletion(wechatSessionId)
+                
+                // Auto-expand the island to show WeChat notification in session list
+                // This is independent of the autoExpandOnCompletion setting
+                if surface == .collapsed {
+                    withAnimation(NotchAnimation.open) {
+                        surface = .sessionList
+                        activeSessionId = wechatSessionId
+                    }
+
+                    // Auto-collapse after 8 seconds so it doesn't stay expanded forever!
+                    autoCollapseTask?.cancel()
+                    autoCollapseTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                        guard let self = self else { return }
+                        guard !Task.isCancelled else { return }
+                        if self.surface == .sessionList && self.activeSessionId == wechatSessionId {
+                            withAnimation(NotchAnimation.close) {
+                                self.surface = .collapsed
+                            }
+                        }
+                    }
+                }
             }
         } else {
             // All read
@@ -2484,6 +2565,37 @@ final class AppState {
         picker.show(relativeTo: .zero, of: sender, preferredEdge: .minY)
     }
 
+    /// Export / Save As... a dropped file to user selected location
+    func saveDroppedFileAs(_ url: URL) {
+        let savePanel = NSSavePanel()
+        savePanel.nameFieldStringValue = url.lastPathComponent
+        savePanel.title = "保存文件到..."
+        savePanel.prompt = "保存"
+        
+        guard savePanel.runModal() == .OK, let destURL = savePanel.url else { return }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                if FileManager.default.fileExists(atPath: destURL.path) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: url, to: destURL)
+                
+                DispatchQueue.main.async {
+                    SoundManager.shared.preview("8bit_complete")
+                }
+            } catch {
+                log.error("Failed to save dropped file: \(error)")
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "保存失败"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
     /// Manage the synthesized "drops" session card in dynamic island
     private func updateDropsSession() {
         let sessionId = "drops"
@@ -2592,6 +2704,7 @@ final class AppState {
             return ""
         }
 
+        var foundBadge = ""
         for item in dockItems {
             var titleVal: AnyObject?
             AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &titleVal)
@@ -2599,10 +2712,14 @@ final class AppState {
             if title == "微信" || title == "WeChat" {
                 var badgeVal: AnyObject?
                 AXUIElementCopyAttributeValue(item, "AXStatusLabel" as CFString, &badgeVal)
-                return (badgeVal as? String) ?? ""
+                let badge = (badgeVal as? String) ?? ""
+                if !badge.isEmpty {
+                    return badge
+                }
+                foundBadge = badge
             }
         }
-        return ""
+        return foundBadge
     }
 
     /// A single WeChat notification: sender (title) + message text (body).
@@ -5173,47 +5290,14 @@ final class AppState {
     // ==========================================
 
     func startWidgetsTimers() {
-        // 1. Pomodoro Timer (ticking every 1s)
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.tickPomodoro()
-            }
-        }
-
-        // 2. System Stats Timer
-        let statsInterval = UserDefaults.standard.double(forKey: SettingsKey.systemMonitorIntervalSeconds)
-        let interval = statsInterval > 0.1 ? statsInterval : 2.0
-        systemMonitorTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateSystemStats()
-            }
-        }
-
-        // 3. Media Monitor Timer (every 3 seconds)
+        // 2. Media Monitor Timer (every 3 seconds)
         mediaMonitorTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMediaNowPlaying()
             }
         }
 
-        // 4. Battery Monitor Timer (every 10 seconds)
-        batteryMonitorTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateBatteryStatus()
-            }
-        }
-
-        // 5. Calendar Monitor Timer (every 30 seconds)
-        calendarMonitorTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.updateCalendarEvents()
-            }
-        }
-
         // Run initial updates
-        updateSystemStats()
-        updateBatteryStatus()
-        updateCalendarEvents()
         updateMediaNowPlaying()
     }
 
@@ -5266,151 +5350,80 @@ final class AppState {
         updateWidgetsSessions()
     }
 
-    private func updateSystemStats() {
-        cpuUsage = SystemStatsHelper.shared.getCPUUsage()
-        memUsage = SystemStatsHelper.shared.getMemoryUsage()
-        let speeds = SystemStatsHelper.shared.getNetworkSpeeds()
-        netDownloadSpeed = speeds.downloadSpeed
-        netUploadSpeed = speeds.uploadSpeed
-        updateWidgetsSessions()
-    }
+
 
     private func updateMediaNowPlaying() {
-        let script = """
-        try
-            if application "Music" is running then
-                tell application "Music"
-                    if player state is playing then
-                        return "Music|playing|" & name of current track & "|" & artist of current track
-                    else
-                        return "Music|paused|" & name of current track & "|" & artist of current track
-                    end if
-                end tell
-            end if
-        end try
-        try
-            if application "Spotify" is running then
-                tell application "Spotify"
-                    set pstate to "paused"
-                    try
-                        if player state is playing or player state is 1800426578 then
-                            set pstate to "playing"
-                        end if
-                    end try
-                    return "Spotify|" & pstate & "|" & name of current track & "|" & artist of current track
-                end tell
-            end if
-        end try
-        return ""
-        """
-        
-        Task.detached {
-            guard let appleScript = NSAppleScript(source: script) else { return }
-            var error: NSDictionary?
-            let result = appleScript.executeAndReturnError(&error)
-            guard error == nil else { return }
-            
-            if let output = result.stringValue, !output.isEmpty {
-                let parts = output.components(separatedBy: "|")
-                if parts.count >= 4 {
-                    let playingState = parts[1]
-                    let track = parts[2]
-                    let artist = parts[3]
-                    
-                    await MainActor.run { [weak self] in
-                        guard let self else { return }
-                        self.mediaTrackName = track
-                        self.mediaArtistName = artist
-                        self.isMediaPlaying = (playingState == "playing")
-                        self.updateWidgetsSessions()
-                    }
-                    return
-                }
-            }
-            
-            await MainActor.run { [weak self] in
-                guard let self else { return }
+        let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW)
+        guard handle != nil else {
+            Task { @MainActor in
                 self.mediaTrackName = ""
                 self.mediaArtistName = ""
                 self.isMediaPlaying = false
                 self.updateWidgetsSessions()
             }
+            return
+        }
+        
+        typealias MRMediaRemoteGetNowPlayingInfoFunction = @convention(c) (DispatchQueue, @escaping (NSDictionary?) -> Void) -> Void
+        guard let sym = dlsym(handle, "MRMediaRemoteGetNowPlayingInfo") else {
+            Task { @MainActor in
+                self.mediaTrackName = ""
+                self.mediaArtistName = ""
+                self.isMediaPlaying = false
+                self.updateWidgetsSessions()
+            }
+            return
+        }
+        
+        let getNowPlayingInfo = unsafeBitCast(sym, to: MRMediaRemoteGetNowPlayingInfoFunction.self)
+        
+        getNowPlayingInfo(DispatchQueue.global(qos: .userInitiated)) { [weak self] info in
+            guard let self = self else { return }
+            if let info = info {
+                let track = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
+                let artist = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
+                let playbackRate = info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double ?? 0.0
+                let isPlaying = playbackRate > 0.0
+                
+                Task { @MainActor in
+                    self.mediaTrackName = track
+                    self.mediaArtistName = artist
+                    self.isMediaPlaying = isPlaying
+                    self.updateWidgetsSessions()
+                }
+            } else {
+                Task { @MainActor in
+                    self.mediaTrackName = ""
+                    self.mediaArtistName = ""
+                    self.isMediaPlaying = false
+                    self.updateWidgetsSessions()
+                }
+            }
         }
     }
 
     func controlMedia(_ command: String) {
-        let script: String
+        let handle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_NOW)
+        guard handle != nil else { return }
+        
+        typealias MRMediaRemoteSendCommandFunction = @convention(c) (Int32, NSDictionary?) -> Bool
+        guard let symCommand = dlsym(handle, "MRMediaRemoteSendCommand") else { return }
+        let sendCommand = unsafeBitCast(symCommand, to: MRMediaRemoteSendCommandFunction.self)
+        
+        let cmdCode: Int32
         switch command {
-        case "playpause":
-            script = """
-            try
-                if application "Music" is running then tell application "Music" to playpause
-            end try
-            try
-                if application "Spotify" is running then tell application "Spotify" to playpause
-            end try
-            """
-        case "next":
-            script = """
-            try
-                if application "Music" is running then tell application "Music" to next track
-            end try
-            try
-                if application "Spotify" is running then tell application "Spotify" to next track
-            end try
-            """
-        case "previous":
-            script = """
-            try
-                if application "Music" is running then tell application "Music" to previous track
-            end try
-            try
-                if application "Spotify" is running then tell application "Spotify" to previous track
-            end try
-            """
-        default:
-            return
+        case "playpause": cmdCode = 2
+        case "next": cmdCode = 4
+        case "previous": cmdCode = 5
+        default: return
         }
         
-        Task.detached {
-            if let appleScript = NSAppleScript(source: script) {
-                var error: NSDictionary?
-                appleScript.executeAndReturnError(&error)
-            }
+        Task.detached(priority: .userInitiated) {
+            _ = sendCommand(cmdCode, nil)
         }
     }
 
-    private func updateBatteryStatus() {
-        let blob = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        let sources = IOPSCopyPowerSourcesList(blob).takeRetainedValue() as [CFTypeRef]
-        
-        for source in sources {
-            let info = IOPSGetPowerSourceDescription(blob, source).takeUnretainedValue() as! [String: AnyObject]
-            if let type = info[kIOPSTypeKey] as? String, type == kIOPSInternalBatteryType {
-                if let capacity = info[kIOPSCurrentCapacityKey] as? Int,
-                   let maxCapacity = info[kIOPSMaxCapacityKey] as? Int {
-                    batteryPercent = Int(Double(capacity) / Double(maxCapacity) * 100)
-                }
-                
-                if let charging = info[kIOPSIsChargingKey] as? Bool {
-                    isCharging = charging
-                }
-                
-                if let timeToEmpty = info[kIOPSTimeToEmptyKey] as? Int {
-                    if timeToEmpty > 0 {
-                        let hours = timeToEmpty / 60
-                        let mins = timeToEmpty % 60
-                        batteryTimeRemainingDescription = "剩余 \(hours)h \(mins)m"
-                    } else if timeToEmpty == -1 && isCharging {
-                        batteryTimeRemainingDescription = "计算中..."
-                    } else {
-                        batteryTimeRemainingDescription = "已充满"
-                    }
-                }
-            }
-        }
-        updateWidgetsSessions()
-    }
+
 
     private var eventStore = EKEventStore()
 
@@ -5493,43 +5506,11 @@ final class AppState {
     }
 
     func updateWidgetsSessions() {
-        // 1. Pomodoro Focus Session
+        // 1. Pomodoro Focus Session - Bypassed
         let pomodoroId = "pomodoro"
-        let isPomoEnabled = UserDefaults.standard.bool(forKey: SettingsKey.pomodoroEnabled)
-        if isPomoEnabled && pomodoroActive {
-            if sessions[pomodoroId] == nil {
-                var snap = SessionSnapshot()
-                snap.source = "pomodoro"
-                snap.cwd = "/"
-                snap.currentTool = "番茄钟"
-                sessions[pomodoroId] = snap
-            }
-            sessions[pomodoroId]?.status = pomodoroPaused ? .idle : .processing
-            sessions[pomodoroId]?.toolDescription = pomodoroPaused ? "已暂停" : "正在专注: \(formattedRemainingTime())"
-            sessions[pomodoroId]?.lastActivity = Date()
-        } else {
-            sessions.removeValue(forKey: pomodoroId)
-        }
+        sessions.removeValue(forKey: pomodoroId)
 
-        // 2. System Stats Session
-        let statsId = "stats"
-        let isStatsEnabled = UserDefaults.standard.bool(forKey: SettingsKey.systemMonitorEnabled)
-        if isStatsEnabled {
-            if sessions[statsId] == nil {
-                var snap = SessionSnapshot()
-                snap.source = "stats"
-                snap.cwd = "/"
-                snap.currentTool = "系统监控"
-                sessions[statsId] = snap
-            }
-            sessions[statsId]?.status = .running
-            sessions[statsId]?.toolDescription = "CPU: \(Int(cpuUsage))% | MEM: \(Int(memUsage))%"
-            sessions[statsId]?.lastActivity = Date()
-        } else {
-            sessions.removeValue(forKey: statsId)
-        }
-
-        // 3. Media Controls Session
+        // 2. Media Controls Session
         let mediaId = "media"
         let isMediaEnabled = UserDefaults.standard.bool(forKey: SettingsKey.mediaControllerEnabled)
         if isMediaEnabled && !mediaTrackName.isEmpty {
@@ -5547,41 +5528,9 @@ final class AppState {
             sessions.removeValue(forKey: mediaId)
         }
 
-        // 4. Battery Session
-        let batteryId = "battery"
-        let isBatteryEnabled = UserDefaults.standard.bool(forKey: SettingsKey.batteryMonitorEnabled)
-        if isBatteryEnabled {
-            if sessions[batteryId] == nil {
-                var snap = SessionSnapshot()
-                snap.source = "battery"
-                snap.cwd = "/"
-                snap.currentTool = "电池状态"
-                sessions[batteryId] = snap
-            }
-            sessions[batteryId]?.status = isCharging ? .processing : .idle
-            sessions[batteryId]?.toolDescription = isCharging ? "正在充电: \(batteryPercent)%" : "剩余: \(batteryPercent)% (\(batteryTimeRemainingDescription))"
-            sessions[batteryId]?.lastActivity = Date()
-        } else {
-            sessions.removeValue(forKey: batteryId)
-        }
-
-        // 5. Calendar Session
+        // 5. Calendar Session - Bypassed
         let calendarId = "calendar"
-        let isCalEnabled = UserDefaults.standard.bool(forKey: SettingsKey.calendarMonitorEnabled)
-        if isCalEnabled && calendarEventTitle != "无近期日程" {
-            if sessions[calendarId] == nil {
-                var snap = SessionSnapshot()
-                snap.source = "calendar"
-                snap.cwd = "/"
-                snap.currentTool = "日程提醒"
-                sessions[calendarId] = snap
-            }
-            sessions[calendarId]?.status = .running
-            sessions[calendarId]?.toolDescription = "\(calendarEventTitle) (\(calendarEventCountdown))"
-            sessions[calendarId]?.lastActivity = Date()
-        } else {
-            sessions.removeValue(forKey: calendarId)
-        }
+        sessions.removeValue(forKey: calendarId)
         
         refreshDerivedState()
     }

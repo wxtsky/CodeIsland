@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.0.28] - 2026-06-01
+
+### English
+- Fix WeChat notification dismissal logic — new messages now correctly trigger Dynamic Island popup even when previous unread count is unchanged (#200)
+  - Previously, dismissing a WeChat notification would suppress all future notifications with the same badge count
+  - Now detects database signature changes to distinguish truly new messages from dismissed ones
+  - Ensures smooth user experience: dismiss once, but still get alerted for genuinely new messages
+
+### 中文
+- 修复微信通知 dismissal 逻辑——即使未读数量相同，新消息也能正确触发灵动岛弹出 (#200)
+  - 之前 dismiss 微信通知后，所有相同 badge 数量的通知都会被抑制不再显示
+  - 现在通过检测数据库签名变化来区分真正的新消息和已被 dismiss 的消息
+  - 确保流畅的用户体验：dismiss 一次，但真正的新消息仍然会收到提醒
+
 ## [v1.0.27] - 2026-05-30
 
 ### English

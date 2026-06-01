@@ -144,6 +144,9 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     private var lastDisplayChoice = ""
     private var lastNotchHeightMode = SettingsDefaults.notchHeightMode
     private var lastCustomNotchHeight = SettingsDefaults.customNotchHeight
+    private var isSystemSleepingOrLocked = false
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var distributedObservers: [NSObjectProtocol] = []
 
     init(appState: AppState) {
         self.appState = appState
@@ -249,9 +252,43 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             }
         }
 
-        // Observe settings changes (display choice, panel height)
         observeSettingsChanges()
         configureAutoScreenPolling()
+
+        // Sleep/Lock notifications
+        let wsNC = NSWorkspace.shared.notificationCenter
+        let distNC = DistributedNotificationCenter.default()
+
+        let sleepHandler: @Sendable (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor in
+                self?.isSystemSleepingOrLocked = true
+                log.info("System sleep or screen lock detected, layout/animations suspended")
+            }
+        }
+
+        let wakeHandler: @Sendable (Notification) -> Void = { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.isSystemSleepingOrLocked = false
+                self.isAnimatingScreenHop = false // Recover from any stuck animation
+                log.info("System wake or screen unlock detected, restoring notch panel...")
+                
+                if let panel = self.panel {
+                    panel.alphaValue = 1
+                }
+                
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                self.refreshCurrentScreen(forceRebuild: true)
+            }
+        }
+
+        workspaceObservers.append(wsNC.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main, using: sleepHandler))
+        workspaceObservers.append(wsNC.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main, using: sleepHandler))
+        distributedObservers.append(distNC.addObserver(forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main, using: sleepHandler))
+
+        workspaceObservers.append(wsNC.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main, using: wakeHandler))
+        workspaceObservers.append(wsNC.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main, using: wakeHandler))
+        distributedObservers.append(distNC.addObserver(forName: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main, using: wakeHandler))
 
         // Global click monitor: close panel + repost click when clicking outside
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
@@ -305,6 +342,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     }
 
     private func refreshCurrentScreen(forceRebuild: Bool = false) {
+        if isSystemSleepingOrLocked { return }
         if isAnimatingScreenHop { return }
 
         let screen = chosenScreen()
@@ -598,6 +636,12 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         fullscreenPoller?.invalidate()
         for observer in settingsObservers {
             NotificationCenter.default.removeObserver(observer)
+        }
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
         if let monitor = globalClickMonitor {
             NSEvent.removeMonitor(monitor)

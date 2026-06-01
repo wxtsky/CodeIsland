@@ -181,13 +181,13 @@ struct SettingsDefaults {
     static let webhookEventFilter = ""
 
     // Widgets
-    static let pomodoroEnabled = true
+    static let pomodoroEnabled = false
     static let pomodoroDurationMinutes = 25.0
-    static let systemMonitorEnabled = true
+    static let systemMonitorEnabled = false
     static let systemMonitorIntervalSeconds = 2.0
     static let mediaControllerEnabled = true
-    static let batteryMonitorEnabled = true
-    static let calendarMonitorEnabled = true
+    static let batteryMonitorEnabled = false
+    static let calendarMonitorEnabled = false
 }
 
 enum NotchWidthScale {
