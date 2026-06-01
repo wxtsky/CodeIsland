@@ -810,7 +810,9 @@ final class AppState {
     private func showCompletion(_ sessionId: String) {
         // Fast path: terminal not even frontmost — show immediately
         guard shouldSuppressAppLevel(for: sessionId) else {
-            doShowCompletion(sessionId)
+            withAnimation(NotchAnimation.pop) {
+                doShowCompletion(sessionId)
+            }
             return
         }
 
@@ -1148,7 +1150,9 @@ final class AppState {
             // If user is already browsing the session list, keep them there and
             // let inline controls handle approval without stealing focus.
             if surface != .sessionList {
-                surface = .approvalCard(sessionId: sessionId)
+                withAnimation(NotchAnimation.open) {
+                    surface = .approvalCard(sessionId: sessionId)
+                }
             }
             SoundManager.shared.handleEvent("PermissionRequest")
         }
@@ -1635,13 +1639,17 @@ final class AppState {
             activeSessionId = sid
             // When the session list is open, keep it open; approvals can be handled inline.
             if surface != .sessionList {
-                surface = .approvalCard(sessionId: sid)
+                withAnimation(NotchAnimation.open) {
+                    surface = .approvalCard(sessionId: sid)
+                }
             }
             return true
         } else if let next = questionQueue.first {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
-            surface = .questionCard(sessionId: sid)
+            withAnimation(NotchAnimation.open) {
+                surface = .questionCard(sessionId: sid)
+            }
             return true
         } else if !completionQueue.isEmpty {
             while let next = completionQueue.first {
@@ -1653,9 +1661,13 @@ final class AppState {
             }
             return false
         } else if case .approvalCard = surface {
-            surface = .collapsed
+            withAnimation(NotchAnimation.close) {
+                surface = .collapsed
+            }
         } else if case .questionCard = surface {
-            surface = .collapsed
+            withAnimation(NotchAnimation.close) {
+                surface = .collapsed
+            }
         }
         return false
     }
@@ -2271,10 +2283,43 @@ final class AppState {
     }
 
     var isWeChatPermissionAlertDismissed = false
+    private var weChatPermissionAlertSnoozedUntil: Date?
 
     func dismissWeChatPermissionAlert() {
         isWeChatPermissionAlertDismissed = true
-        sessions.removeValue(forKey: "wechat_permission")
+        weChatPermissionAlertSnoozedUntil = nil
+        removeWeChatPermissionAlertSession()
+    }
+
+    func openWeChatAccessibilitySettings() {
+        isWeChatPermissionAlertDismissed = false
+        weChatPermissionAlertSnoozedUntil = Date().addingTimeInterval(90)
+        removeWeChatPermissionAlertSession()
+        NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        )
+        scheduleNextWeChatPoll(after: 0.5)
+    }
+
+    private var isWeChatPermissionAlertSnoozed: Bool {
+        guard let until = weChatPermissionAlertSnoozedUntil else { return false }
+        if until > Date() { return true }
+        weChatPermissionAlertSnoozedUntil = nil
+        return false
+    }
+
+    private func removeWeChatPermissionAlertSession() {
+        let permId = "wechat_permission"
+        let hadSession = sessions.removeValue(forKey: permId) != nil
+        if activeSessionId == permId {
+            activeSessionId = mostActiveSessionId()
+        }
+        if surface == .sessionList && activeSessionId == nil {
+            withAnimation(NotchAnimation.close) {
+                surface = .collapsed
+            }
+        }
+        guard hadSession else { return }
         refreshDerivedState()
     }
 
@@ -2287,7 +2332,8 @@ final class AppState {
             let isWeChatRunning = NSWorkspace.shared.runningApplications.contains {
                 $0.bundleIdentifier == "com.tencent.xinWeChat"
             }
-            if isWeChatRunning && !isWeChatPermissionAlertDismissed {
+            let isSnoozed = isWeChatPermissionAlertSnoozed
+            if isWeChatRunning && !isWeChatPermissionAlertDismissed && !isSnoozed {
                 let permId = "wechat_permission"
                 if sessions[permId] == nil {
                     var snap = SessionSnapshot()
@@ -2313,21 +2359,16 @@ final class AppState {
                     refreshDerivedState()
                 }
             } else {
-                if sessions["wechat_permission"] != nil {
-                    sessions.removeValue(forKey: "wechat_permission")
-                    refreshDerivedState()
-                }
+                removeWeChatPermissionAlertSession()
             }
             
-            scheduleNextWeChatPoll(after: 2.0)
+            scheduleNextWeChatPoll(after: isSnoozed ? 0.5 : 2.0)
             return
         }
 
+        weChatPermissionAlertSnoozedUntil = nil
         // Accessibility is trusted: clean up the permission alert if present
-        if sessions["wechat_permission"] != nil {
-            sessions.removeValue(forKey: "wechat_permission")
-            refreshDerivedState()
-        }
+        removeWeChatPermissionAlertSession()
 
         let isWeChatRunning = NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == "com.tencent.xinWeChat"

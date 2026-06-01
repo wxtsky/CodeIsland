@@ -45,6 +45,21 @@ enum NotchWidthMetrics {
         guard hasNotch else { return effectiveNotchWidth }
         return max(effectiveNotchWidth, physicalNotchWidth - 2)
     }
+
+    static func activeCollapsedPanelWidth(
+        scaledCenterGap: CGFloat,
+        compactWingWidth: CGFloat,
+        rightWingWidth: CGFloat,
+        prehoverExtra: CGFloat,
+        minimumVisibleWidth: CGFloat
+    ) -> CGFloat {
+        let scaledWidth = scaledCenterGap
+            + compactWingWidth
+            + rightWingWidth
+            + prehoverExtra
+            + NotchHoverInteraction.activeCollapsedWidthBonus
+        return max(scaledWidth, minimumVisibleWidth)
+    }
 }
 
 enum NotchHoverPhase: Equatable {
@@ -66,6 +81,7 @@ enum NotchHoverInteraction {
     static let collapseDelay: TimeInterval = 0.5
     static let prehoverWidthDelta: CGFloat = 7
     static let prehoverScale: CGFloat = 1.004
+    static let activeCollapsedWidthBonus: CGFloat = 60
 
     static func nextPhase(from phase: NotchHoverPhase, event: NotchHoverEvent) -> NotchHoverPhase {
         switch (phase, event) {
@@ -188,7 +204,13 @@ struct NotchPanelView: View {
             )
         }
         let prehoverExtra = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        return nw + compactWingWidth + collapsedRightWingWidth + prehoverExtra
+        return NotchWidthMetrics.activeCollapsedPanelWidth(
+            scaledCenterGap: effectiveNotchW,
+            compactWingWidth: compactWingWidth,
+            rightWingWidth: collapsedRightWingWidth,
+            prehoverExtra: prehoverExtra,
+            minimumVisibleWidth: collapsedCenterGap + compactWingWidth + collapsedRightWingWidth
+        )
     }
 
     var body: some View {
@@ -496,9 +518,11 @@ struct NotchPanelView: View {
                     }
                 }
             }
+
+            Spacer()
+                .allowsHitTesting(false)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
-        .animation(NotchAnimation.open, value: appState.surface)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -2644,10 +2668,7 @@ private struct WeChatPermissionCard: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        // Open system preference accessibility settings
-                        NSWorkspace.shared.open(
-                            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                        )
+                        appState.openWeChatAccessibilitySettings()
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "hand.raised.fill")

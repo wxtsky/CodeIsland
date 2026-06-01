@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import os.log
 import UniIslandCore
 
@@ -70,7 +71,9 @@ extension AppState {
         if wasHead {
             if permissionQueue.isEmpty {
                 if case .approvalCard = surface {
-                    surface = .collapsed
+                    withAnimation(NotchAnimation.close) {
+                        surface = .collapsed
+                    }
                 }
             } else {
                 showNextPending()

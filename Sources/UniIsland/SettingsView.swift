@@ -806,7 +806,8 @@ private struct AppearancePage: View {
                 AppearancePreview(
                     fontSize: contentFontSize,
                     lineLimit: aiMessageLines,
-                    showDetails: showAgentDetails
+                    showDetails: showAgentDetails,
+                    collapsedWidthScale: collapsedWidthScale
                 )
             }
 
@@ -887,10 +888,16 @@ private struct AppearancePreview: View {
     let fontSize: Int
     let lineLimit: Int
     let showDetails: Bool
+    let collapsedWidthScale: Int
 
     private var fs: CGFloat { CGFloat(fontSize) }
     private let green = Color(red: 0.3, green: 0.85, blue: 0.4)
     private let aiColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    private var previewPanelWidth: CGFloat {
+        let clampedScale = max(NotchWidthScale.min, min(collapsedWidthScale, NotchWidthScale.max))
+        let scaledWidth = 720 * CGFloat(clampedScale) / 100.0
+        return max(360, min(scaledWidth, 900))
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -961,13 +968,16 @@ private struct AppearancePreview: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .frame(maxWidth: previewPanelWidth, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(white: 0.05))
         )
+        .frame(maxWidth: .infinity, alignment: .center)
         .animation(.easeInOut(duration: 0.25), value: fontSize)
         .animation(.easeInOut(duration: 0.25), value: lineLimit)
         .animation(.easeInOut(duration: 0.25), value: showDetails)
+        .animation(.easeInOut(duration: 0.18), value: collapsedWidthScale)
     }
 }
 

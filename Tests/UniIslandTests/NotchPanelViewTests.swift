@@ -69,6 +69,42 @@ final class NotchPanelViewTests: XCTestCase {
         XCTAssertGreaterThan(alerting, normal)
     }
 
+    func testActiveCollapsedPanelWidthAddsRequestedBreathingRoom() {
+        let width = NotchWidthMetrics.activeCollapsedPanelWidth(
+            scaledCenterGap: 198,
+            compactWingWidth: 35,
+            rightWingWidth: 32,
+            prehoverExtra: 0,
+            minimumVisibleWidth: 198
+        )
+
+        XCTAssertEqual(width, 198 + 35 + 32 + 60, accuracy: 0.001)
+    }
+
+    func testActiveCollapsedPanelWidthUsesScaledWidthWhenStillCoveringNotch() {
+        let width = NotchWidthMetrics.activeCollapsedPanelWidth(
+            scaledCenterGap: 126,
+            compactWingWidth: 35,
+            rightWingWidth: 32,
+            prehoverExtra: 0,
+            minimumVisibleWidth: 198
+        )
+
+        XCTAssertEqual(width, 126 + 35 + 32 + 60, accuracy: 0.001)
+    }
+
+    func testActiveCollapsedPanelWidthNeverShrinksBelowNotchCoverage() {
+        let width = NotchWidthMetrics.activeCollapsedPanelWidth(
+            scaledCenterGap: 80,
+            compactWingWidth: 20,
+            rightWingWidth: 20,
+            prehoverExtra: 0,
+            minimumVisibleWidth: 198
+        )
+
+        XCTAssertEqual(width, 198, accuracy: 0.001)
+    }
+
     func testCollapsedCenterGapUsesPhysicalNotchWhenScaledSmaller() {
         XCTAssertEqual(
             NotchWidthMetrics.collapsedCenterGap(
