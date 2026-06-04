@@ -52,6 +52,7 @@ public struct SessionSnapshot: Sendable {
     public var model: String?
     public var permissionMode: String?
     public var toolHistory: [ToolHistoryEntry] = []
+    public var totalToolCallCount: Int = 0
     public var subagents: [String: SubagentState] = [:]
     public var startTime: Date = Date()
     public var lastUserPrompt: String?
@@ -202,6 +203,7 @@ public struct SessionSnapshot: Sendable {
     }
 
     public mutating func recordTool(_ tool: String, description: String?, success: Bool, agentType: String?, maxHistory: Int) {
+        totalToolCallCount += 1
         let entry = ToolHistoryEntry(tool: tool, description: description, timestamp: Date(), success: success, agentType: agentType)
         toolHistory.append(entry)
         if toolHistory.count > maxHistory {

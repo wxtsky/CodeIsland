@@ -89,3 +89,9 @@ void dexAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, DEX_ALERT);
 }
+
+void dexQuestion(float t) {
+  _questionMode = true;
+  dexAlert(t);
+  _questionMode = false;
+}

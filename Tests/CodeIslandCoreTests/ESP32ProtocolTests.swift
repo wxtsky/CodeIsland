@@ -160,4 +160,173 @@ final class ESP32ProtocolTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Model frame encoding
+
+    func testEncodeModelFrame() {
+        let frame = BuddyModelPayload(modelName: "opus")
+        let data = frame.encode()
+        XCTAssertEqual(data[0], ESP32Protocol.modelFrameMarker)
+        XCTAssertEqual(data[1], 4)
+        XCTAssertEqual(String(data: data.subdata(in: 2..<data.count), encoding: .utf8), "opus")
+    }
+
+    func testEncodeModelFrameNil() {
+        let frame = BuddyModelPayload(modelName: nil)
+        let data = frame.encode()
+        XCTAssertEqual(Array(data), [ESP32Protocol.modelFrameMarker, 0])
+    }
+
+    func testEncodeModelFrameTruncates() {
+        let long = String(repeating: "a", count: 30)
+        let frame = BuddyModelPayload(modelName: long)
+        let data = frame.encode()
+        XCTAssertEqual(data[1], UInt8(ESP32Protocol.maxModelNameBytes))
+        XCTAssertEqual(data.count, 2 + ESP32Protocol.maxModelNameBytes)
+    }
+
+    // MARK: - Stats frame encoding
+
+    func testEncodeStatsFrame() {
+        let frame = BuddyStatsPayload(activeSessionCount: 2, totalSessionCount: 5, toolCallCount: 47, sessionDurationMinutes: 23)
+        let data = frame.encode()
+        XCTAssertEqual(data[0], ESP32Protocol.statsFrameMarker)
+        XCTAssertEqual(data[1], 2)
+        XCTAssertEqual(data[2], 5)
+        XCTAssertEqual(UInt16(data[3]) << 8 | UInt16(data[4]), 47)
+        XCTAssertEqual(data[5], 23)
+        XCTAssertEqual(data.count, 6)
+    }
+
+    func testEncodeStatsFrameClampsValues() {
+        let frame = BuddyStatsPayload(activeSessionCount: 300, totalSessionCount: -1, toolCallCount: 70000, sessionDurationMinutes: 999)
+        XCTAssertEqual(frame.activeSessionCount, 255)
+        XCTAssertEqual(frame.totalSessionCount, 0)
+        XCTAssertEqual(frame.toolCallCount, 65535)
+        XCTAssertEqual(frame.sessionDurationMinutes, 255)
+    }
+
+    // MARK: - Subagent frame encoding
+
+    func testEncodeSubagentFrame() {
+        let frame = BuddySubagentPayload(count: 3)
+        let data = frame.encode()
+        XCTAssertEqual(Array(data), [ESP32Protocol.subagentFrameMarker, 3])
+    }
+
+    func testEncodeSubagentFrameClampsToFifteen() {
+        let frame = BuddySubagentPayload(count: 20)
+        XCTAssertEqual(frame.count, 15)
+    }
+
+    // MARK: - Event frame encoding
+
+    func testEncodeEventFrame() {
+        XCTAssertEqual(Array(BuddyEventPayload.complete.encode()), [ESP32Protocol.eventFrameMarker, 1])
+        XCTAssertEqual(Array(BuddyEventPayload.error.encode()), [ESP32Protocol.eventFrameMarker, 2])
+    }
+
+    // MARK: - Time hint frame encoding
+
+    func testEncodeTimeHintFrame() {
+        let frame = BuddyTimeHintPayload(hour: 14)
+        XCTAssertEqual(Array(frame.encode()), [ESP32Protocol.timeHintFrameMarker, 14])
+    }
+
+    func testEncodeTimeHintFrameClampsRange() {
+        XCTAssertEqual(BuddyTimeHintPayload(hour: 25).hour, 23)
+        XCTAssertEqual(BuddyTimeHintPayload(hour: -1).hour, 0)
+    }
+
+    // MARK: - Tool history frame encoding
+
+    func testEncodeToolHistoryFrame() {
+        let frame = BuddyToolHistoryPayload(index: 0, success: true, toolName: "Bash")
+        let data = frame.encode()
+        XCTAssertEqual(data[0], ESP32Protocol.toolHistoryFrameMarker)
+        XCTAssertEqual(data[1], 0)
+        XCTAssertEqual(data[2] & 0x80, 0x80)
+        XCTAssertEqual(data[2] & 0x7F, 4)
+        XCTAssertEqual(String(data: data.subdata(in: 3..<data.count), encoding: .utf8), "Bash")
+    }
+
+    func testEncodeToolHistoryFrameFailure() {
+        let frame = BuddyToolHistoryPayload(index: 2, success: false, toolName: "Edit")
+        let data = frame.encode()
+        XCTAssertEqual(data[2] & 0x80, 0x00)
+    }
+
+    func testEncodeToolHistoryFrameTruncatesName() {
+        let long = "VeryLongToolNameThatExceeds"
+        let frame = BuddyToolHistoryPayload(index: 0, success: true, toolName: long)
+        let data = frame.encode()
+        let nameLen = data[2] & 0x7F
+        XCTAssertEqual(nameLen, UInt8(ESP32Protocol.maxToolHistoryNameBytes))
+    }
+
+    func testEncodeToolHistoryClearFrame() {
+        XCTAssertEqual(
+            Array(BuddyToolHistoryClearPayload().encode()),
+            [ESP32Protocol.toolHistoryFrameMarker, 0, 0]
+        )
+    }
+
+    // MARK: - Pair request frame encoding
+
+    func testEncodePairRequestFrame() {
+        let hostId = Data([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])
+        let frame = BuddyPairRequestPayload(hostId: hostId)
+        let data = frame.encode()
+        XCTAssertEqual(data.count, ESP32Protocol.pairRequestFrameBytes)
+        XCTAssertEqual(data[0], ESP32Protocol.pairRequestMarker)
+        XCTAssertEqual(Array(data.suffix(6)), [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF])
+    }
+
+    func testPairRequestPadsShortHostId() {
+        let shortId = Data([0x01, 0x02])
+        let frame = BuddyPairRequestPayload(hostId: shortId)
+        let data = frame.encode()
+        XCTAssertEqual(data.count, ESP32Protocol.pairRequestFrameBytes)
+        XCTAssertEqual(Array(data.suffix(6)), [0x01, 0x02, 0x00, 0x00, 0x00, 0x00])
+    }
+
+    func testPairRequestTruncatesLongHostId() {
+        let longId = Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08])
+        let frame = BuddyPairRequestPayload(hostId: longId)
+        let data = frame.encode()
+        XCTAssertEqual(data.count, ESP32Protocol.pairRequestFrameBytes)
+        XCTAssertEqual(Array(data.suffix(6)), [0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    }
+
+    // MARK: - Unpair frame encoding
+
+    func testEncodeUnpairFrame() {
+        let hostId = Data([0x11, 0x22, 0x33, 0x44, 0x55, 0x66])
+        let frame = BuddyUnpairPayload(hostId: hostId)
+        let data = frame.encode()
+        XCTAssertEqual(data.count, ESP32Protocol.unpairFrameBytes)
+        XCTAssertEqual(data[0], ESP32Protocol.unpairMarker)
+        XCTAssertEqual(Array(data.suffix(6)), [0x11, 0x22, 0x33, 0x44, 0x55, 0x66])
+    }
+
+    // MARK: - Uplink pairing response parsing
+
+    func testBuddyUplinkEventParsesPairAccepted() {
+        let event = BuddyUplinkEvent(payload: Data([ESP32Protocol.pairAcceptedMarker]))
+        XCTAssertEqual(event, .pairResponse(.accepted))
+    }
+
+    func testBuddyUplinkEventParsesPairRejected() {
+        let event = BuddyUplinkEvent(payload: Data([ESP32Protocol.pairRejectedMarker]))
+        XCTAssertEqual(event, .pairResponse(.rejected))
+    }
+
+    func testBuddyUplinkEventParsesPairPending() {
+        let event = BuddyUplinkEvent(payload: Data([ESP32Protocol.pairPendingMarker]))
+        XCTAssertEqual(event, .pairResponse(.pending))
+    }
+
+    func testBuddyUplinkEventEmptyPayloadReturnsNil() {
+        XCTAssertNil(BuddyUplinkEvent(payload: Data()))
+    }
 }

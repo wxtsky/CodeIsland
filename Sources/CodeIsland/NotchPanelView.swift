@@ -1,6 +1,13 @@
 import SwiftUI
 import CodeIslandCore
 
+enum NotchWidthMetrics {
+    static func effectiveNotchWidth(notchW: CGFloat, collapsedWidthScale: Int) -> CGFloat {
+        let clampedScale = max(50, min(collapsedWidthScale, 150))
+        return notchW * CGFloat(clampedScale) / 100.0
+    }
+}
+
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
@@ -46,11 +53,12 @@ struct NotchPanelView: View {
     /// Minimum wing width needed to display compact bar content
     private var compactWingWidth: CGFloat { mascotSize + 14 }
 
-    /// Effective notch width — applies user scale on non-notch screens (#56).
+    /// Effective island width — applies user scale on both notch and non-notch screens.
     private var effectiveNotchW: CGFloat {
-        guard !hasNotch else { return notchW }
-        let scale = CGFloat(max(collapsedWidthScale, 50)) / 100.0
-        return notchW * scale
+        NotchWidthMetrics.effectiveNotchWidth(
+            notchW: notchW,
+            collapsedWidthScale: collapsedWidthScale
+        )
     }
 
     /// Total panel width — adapts based on state and screen geometry
@@ -58,7 +66,7 @@ struct NotchPanelView: View {
         let nw = effectiveNotchW
         let maxWidth = min(620, screenWidth - 40)
         if showIdleIndicator { return idleHovered ? nw + compactWingWidth * 2 + 80 : nw + compactWingWidth * 2 }
-        if !isActive { return hasNotch ? notchW - 20 : nw }
+        if !isActive { return hasNotch ? nw - 20 : nw }
         if shouldShowExpanded { return min(max(nw + 200, 580), maxWidth) }
         let wing = compactWingWidth
         let extra: CGFloat = appState.status == .idle ? 0 : 20
@@ -75,7 +83,7 @@ struct NotchPanelView: View {
                     HStack(spacing: 0) {
                         CompactLeftWing(appState: appState, expanded: shouldShowExpanded, mascotSize: mascotSize, hasNotch: hasNotch, showToolStatus: showToolStatus)
                         if hasNotch && !shouldShowExpanded {
-                            Spacer(minLength: notchW)
+                            Spacer(minLength: effectiveNotchW)
                         } else if !shouldShowExpanded && showToolStatus {
                             CompactToolStatus(appState: appState)
                             Spacer(minLength: 0)
@@ -89,7 +97,7 @@ struct NotchPanelView: View {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
                         compactWingWidth: compactWingWidth,
-                        notchW: notchW,
+                        notchW: effectiveNotchW,
                         notchHeight: notchHeight,
                         hasNotch: hasNotch,
                         hovered: idleHovered

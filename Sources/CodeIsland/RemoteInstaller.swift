@@ -17,7 +17,7 @@ enum RemoteInstaller {
     private static let remoteHookVersion = "0.1.2"
     private static let remoteOpencodePluginVersion = "v2"
 
-    static func installAll(host: RemoteHost) async -> RemoteInstallResult {
+    static func installAll(host: RemoteHost, remoteSocketPath: String) async -> RemoteInstallResult {
         guard let source = remoteHookSource() else {
             return RemoteInstallResult(ok: false, message: "Missing remote hook resource")
         }
@@ -30,12 +30,12 @@ enum RemoteInstaller {
             return RemoteInstallResult(ok: false, message: "Upload failed: \(upload.stderrSummary)")
         }
 
-        let uploadOpencode = await uploadRemoteOpencodePlugin(source: opencodePlugin, host: host)
+        let uploadOpencode = await uploadRemoteOpencodePlugin(source: opencodePlugin, host: host, remoteSocketPath: remoteSocketPath)
         guard uploadOpencode.ok else {
             return RemoteInstallResult(ok: false, message: "OpenCode plugin upload failed: \(uploadOpencode.stderrSummary)")
         }
 
-        let configure = await configureRemoteHooks(host: host)
+        let configure = await configureRemoteHooks(host: host, remoteSocketPath: remoteSocketPath)
         guard configure.ok else {
             return RemoteInstallResult(ok: false, message: "Install failed: \(configure.stderrSummary)")
         }
@@ -44,8 +44,23 @@ enum RemoteInstaller {
         return RemoteInstallResult(ok: true, message: summary)
     }
 
-    static func cleanupRemoteSocket(host: RemoteHost) async {
-        _ = await runSSH(host: host, command: "rm -f \(shellSingleQuoted(host.remoteSocketPath))", timeout: 8)
+    /// Probe the remote user's UID and return a per-user socket path so that multiple
+    /// OS users on a shared host don't collide on a single `/tmp/codeisland.sock` (#193).
+    /// Falls back to the legacy shared path when the probe fails (older / restricted host).
+    static func prepareRemoteSocketPath(host: RemoteHost) async -> String {
+        // `id -u` is a bare external command, so it returns the remote uid identically
+        // under any login shell (bash / zsh / fish / csh). A fancier `$(...)` pipeline
+        // would break under non-POSIX login shells like fish and silently fall back.
+        let probe = await runSSH(host: host, command: "id -u", timeout: 8)
+        let uid = probe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if probe.ok, !uid.isEmpty, uid.allSatisfy({ $0.isNumber }) {
+            return "/tmp/codeisland-\(uid).sock"
+        }
+        // Probe failed (old / restricted host) — fall back to the legacy shared path.
+        // StreamLocalBindUnlink=yes on the forward already clears any stale socket, so
+        // we avoid a second SSH round-trip here (it would just add latency on a host
+        // that's likely failing to connect anyway).
+        return host.remoteSocketPath
     }
 
     private static func remoteHookSource() -> String? {
@@ -86,8 +101,8 @@ print(target)
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
     }
 
-    private static func uploadRemoteOpencodePlugin(source: String, host: RemoteHost) async -> RemoteCommandResult {
-        let configuredSource = remoteOpencodePluginForInstall(source: source, host: host)
+    private static func uploadRemoteOpencodePlugin(source: String, host: RemoteHost, remoteSocketPath: String) async -> RemoteCommandResult {
+        let configuredSource = remoteOpencodePluginForInstall(source: source, host: host, remoteSocketPath: remoteSocketPath)
         let encoded = Data(configuredSource.utf8).base64EncodedString()
         let py = """
 import base64, os, pathlib
@@ -101,8 +116,8 @@ print(target)
         return await runSSH(host: host, command: "python3 - <<'PY'\n\(py)\nPY", timeout: 25)
     }
 
-    private static func configureRemoteHooks(host: RemoteHost) async -> RemoteCommandResult {
-        let py = configureRemoteHooksScript(host: host)
+    private static func configureRemoteHooks(host: RemoteHost, remoteSocketPath: String) async -> RemoteCommandResult {
+        let py = configureRemoteHooksScript(host: host, remoteSocketPath: remoteSocketPath)
         // Run via the remote user's login shell so ~/.zprofile / ~/.bash_profile etc. are
         // sourced — that's how $CODEX_HOME (and similar) reach a non-interactive ssh session.
         // base64 keeps the script intact regardless of shell quoting.
@@ -112,11 +127,17 @@ print(target)
         return await runSSH(host: host, command: command, timeout: 30)
     }
 
-    static func configureRemoteHooksScript(host: RemoteHost) -> String {
+    static func configureRemoteHooksScript(
+        host: RemoteHost,
+        remoteSocketPath: String? = nil,
+        customCLIs: [CLIConfig] = ConfigInstaller.customCLIs()
+    ) -> String {
         let hostId = pythonStringLiteral(host.id)
         let hostName = pythonStringLiteral(host.name)
         let version = pythonStringLiteral(remoteHookVersion)
         let opencodePluginVersion = pythonStringLiteral(remoteOpencodePluginVersion)
+        let socketPath = pythonStringLiteral(remoteSocketPath ?? host.remoteSocketPath)
+        let customCLIsLiteral = remoteCustomCLIsLiteral(customCLIs)
         return """
 import json
 import pathlib
@@ -130,6 +151,8 @@ host_id = \(hostId)
 host_name = \(hostName)
 version = \(version)
 opencode_plugin_version = \(opencodePluginVersion)
+socket_path = \(socketPath)
+custom_clis = \(customCLIsLiteral)
 
 def _codex_home():
     raw = (os.environ.get("CODEX_HOME") or "").strip()
@@ -207,7 +230,7 @@ def write_opencode_config(path, data):
     write_json(path, data)
 
 def command_for(source):
-    return f"CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
+    return f"CODEISLAND_SOCKET_PATH={socket_path} CODEISLAND_REMOTE_HOST_ID={json.dumps(host_id)} CODEISLAND_REMOTE_HOST_NAME={json.dumps(host_name)} CODEISLAND_SOURCE={source} python3 ~/.codeisland/codeisland-remote-hook.py"
 
 def remove_our_hooks(hooks):
     for event in list(hooks.keys()):
@@ -527,17 +550,54 @@ def install_claude():
     write_json(settings_path, data)
     return "Claude ok"
 
+def install_hermes():
+    # Hermes is a Claude Code fork: same settings.json + hooks layout.
+    hermes_root = home / ".hermes"
+    if not hermes_root.exists() and shutil.which("hermes") is None:
+        return "Hermes skipped"
+
+    settings_path = hermes_root / "settings.json"
+    data = ensure_json(settings_path)
+    hooks = data.get("hooks") or {}
+    remove_our_hooks(hooks)
+
+    cmd = command_for("hermes")
+    without_matcher = [{"hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_matcher = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
+    with_long_timeout = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 86400}]}]
+    precompact = [
+        {"matcher": "auto", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+        {"matcher": "manual", "hooks": [{"type": "command", "command": cmd, "timeout": 60}]},
+    ]
+    hooks["UserPromptSubmit"] = without_matcher
+    hooks["PermissionRequest"] = with_long_timeout
+    hooks["Notification"] = with_matcher
+    hooks["Stop"] = without_matcher
+    hooks["SessionStart"] = without_matcher
+    hooks["SessionEnd"] = without_matcher
+    hooks["PreCompact"] = precompact
+    data["hooks"] = hooks
+    write_json(settings_path, data)
+    return "Hermes ok"
+
 def ensure_toml_codex_hooks(path):
     content = path.read_text() if path.exists() else ""
-    if re.search(r"(?m)^\\s*hooks\\s*=\\s*true\\s*$", content):
+    current_hooks_pattern = r"(?m)^\\s*hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
+    hooks_true_pattern = r"(?m)^\\s*hooks\\s*=\\s*true\\s*(#.*)?$"
+    hooks_false_pattern = r"(?m)^\\s*hooks\\s*=\\s*false\\s*(#.*)?$"
+    legacy_hooks_pattern = r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
+    has_current_hooks = re.search(current_hooks_pattern, content) is not None
+    had_legacy_hooks = re.search(legacy_hooks_pattern, content) is not None
+    if re.search(legacy_hooks_pattern, content):
+        replacement = "" if has_current_hooks else "hooks = true"
+        content = re.sub(legacy_hooks_pattern, replacement, content)
+    if re.search(hooks_true_pattern, content):
+        if had_legacy_hooks:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content.rstrip() + "\\n")
         return
-    if re.search(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", content):
-        content = re.sub(r"(?m)^\\s*hooks\\s*=\\s*false\\s*$", "hooks = true", content)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.rstrip() + "\\n")
-        return
-    if re.search(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", content):
-        content = re.sub(r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*$", "hooks = true", content)
+    if re.search(hooks_false_pattern, content):
+        content = re.sub(hooks_false_pattern, "hooks = true", content)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content.rstrip() + "\\n")
         return
@@ -658,7 +718,35 @@ def install_opencode():
                 write_opencode_config(legacy_path, legacy)
     return "OpenCode ok"
 
-parts = [install_claude(), install_codex(), install_codebuddy(), install_traecli(), install_opencode()]
+def install_custom():
+    results = []
+    for cli in custom_clis:
+        source = cli["source"]
+        config_path = home / cli["config_path"]
+        if not config_path.parent.exists() and shutil.which(source) is None:
+            results.append(cli["name"] + " skipped")
+            continue
+        data = ensure_json(config_path)
+        if not isinstance(data, dict):
+            data = {}
+        hooks = data.get(cli["config_key"])
+        if not isinstance(hooks, dict):
+            hooks = {}
+        remove_our_hooks(hooks)
+        cmd = command_for(source)
+        for ev in cli["events"]:
+            event = ev[0]
+            timeout = ev[1]
+            if cli["format"] == "claude":
+                hooks[event] = [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}]
+            else:
+                hooks[event] = [{"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}]
+        data[cli["config_key"]] = hooks
+        write_json(config_path, data)
+        results.append(cli["name"] + " ok")
+    return results
+
+parts = [install_claude(), install_hermes(), install_codex(), install_codebuddy(), install_traecli(), install_opencode()] + install_custom()
 print(" · ".join(parts))
 """
     }
@@ -723,6 +811,29 @@ print(" · ".join(parts))
         return args
     }
 
+    /// Serialize custom CLI configs into a Python list literal for the remote install
+    /// script. Only `.claude` / `.nested` formats are emitted — their stdin carries
+    /// `hook_event_name`, so the remote hook handles them with no `--event` flag.
+    /// Other formats (flat/Cursor, traecli, copilot, kimi, …) are skipped remotely (#192).
+    private static func remoteCustomCLIsLiteral(_ clis: [CLIConfig]) -> String {
+        let supported = clis.filter { $0.format == .claude || $0.format == .nested }
+        let entries = supported.map { cli -> String in
+            let fmt = cli.format == .claude ? "claude" : "nested"
+            let events = cli.events
+                .map { "[\(pythonStringLiteral($0.0)), \($0.1)]" }
+                .joined(separator: ", ")
+            return "{"
+                + "\"name\": \(pythonStringLiteral(cli.name)), "
+                + "\"source\": \(pythonStringLiteral(cli.source)), "
+                + "\"config_path\": \(pythonStringLiteral(cli.configPath)), "
+                + "\"config_key\": \(pythonStringLiteral(cli.configKey)), "
+                + "\"format\": \(pythonStringLiteral(fmt)), "
+                + "\"events\": [\(events)]"
+                + "}"
+        }
+        return "[\(entries.joined(separator: ", "))]"
+    }
+
     private static func pythonStringLiteral(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -731,11 +842,12 @@ print(" · ".join(parts))
         return "\"\(escaped)\""
     }
 
-    static func remoteOpencodePluginForInstall(source: String, host: RemoteHost) -> String {
-        source
+    static func remoteOpencodePluginForInstall(source: String, host: RemoteHost, remoteSocketPath: String? = nil) -> String {
+        let socketPath = remoteSocketPath ?? host.remoteSocketPath
+        return source
             .replacingOccurrences(
                 of: #"const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";"#,
-                with: #"const SOCKET_PATH = \#(jsonStringLiteral(host.remoteSocketPath));"#
+                with: #"const SOCKET_PATH = \#(jsonStringLiteral(socketPath));"#
             )
             .replacingOccurrences(
                 of: #"const REMOTE_HOST_ID = process.env.CODEISLAND_REMOTE_HOST_ID || "";"#,
@@ -765,10 +877,6 @@ print(" · ".join(parts))
             }
         }
         return "\"\(escaped)\""
-    }
-
-    private static func shellSingleQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

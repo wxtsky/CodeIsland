@@ -38,8 +38,10 @@ void clawdSleep(float t) {
   gfx->fillRect(sx(-1), sy(13), sw(2), sh(2), CLAWD_BODY);
   gfx->fillRect(sx(14), sy(13), sw(2), sh(2), CLAWD_BODY);
   float eyeY = 12.2f - puff * 2.5f;
-  gfx->fillRect(sx(3), sy(eyeY), sw(2.5f), sh(1.0f), CLAWD_EYE);
-  gfx->fillRect(sx(9.5f), sy(eyeY), sw(2.5f), sh(1.0f), CLAWD_EYE);
+  float eyeOff = globalBoredEyeOffsetX * 0.5f;
+  gfx->fillRect(sx(3 + eyeOff), sy(eyeY), sw(2.5f), sh(1.0f), CLAWD_EYE);
+  gfx->fillRect(sx(9.5f + eyeOff), sy(eyeY), sw(2.5f), sh(1.0f), CLAWD_EYE);
+  drawBoredYawn(t, 6.0f, 13.5f);
   drawZParticles(t);
 }
 
@@ -125,4 +127,10 @@ void clawdAlert(float t) {
   fillRotatedRect(0, 9, 2, 2, 2, 10, aL, dy, CLAWD_BODY);
   fillRotatedRect(13, 9, 2, 2, 13, 10, aR, dy, CLAWD_BODY);
   drawBang(bangOp, bangSc, jumpY, dy, CLAWD_ALERT, 4.5f);
+}
+
+void clawdQuestion(float t) {
+  _questionMode = true;
+  clawdAlert(t);
+  _questionMode = false;
 }

@@ -150,6 +150,9 @@ quit_app() {
 }
 
 launch_app() {
+  if [[ "$APP_PATH" != *.app/Contents/MacOS/* ]]; then
+    log "NOTE: launching a bare executable; Buddy Bluetooth requires a signed .app bundle with Bluetooth entitlements"
+  fi
   if [[ -n "$SOCKET_PATH" ]]; then
     log "Launching app with CODEISLAND_SOCKET_PATH=$SOCKET_PATH"
     CODEISLAND_SOCKET_PATH="$SOCKET_PATH" "$APP_PATH" &

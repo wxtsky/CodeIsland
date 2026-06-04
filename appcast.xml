@@ -8,6 +8,45 @@
     <description>Most recent CodeIsland updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.0.27</title>
+      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.27</link>
+      <sparkle:version>1.0.27</sparkle:version>
+      <sparkle:shortVersionString>1.0.27</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 30 May 2026 02:54:21 +0000</pubDate>
+      <enclosure
+        url="https://github.com/wxtsky/CodeIsland/releases/download/v1.0.27/CodeIsland.dmg"
+        sparkle:edSignature="c/MSeHA/8frRqN/zc5hOuZb1Os96Hk1C+XKd+DEn52U1AZmu7bo4TuBGMmwpxtTI2fQvU5gaRQ6xNOo7RaViBQ=="
+        length="9164399"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.26</title>
+      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.26</link>
+      <sparkle:version>1.0.26</sparkle:version>
+      <sparkle:shortVersionString>1.0.26</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 30 May 2026 02:17:38 +0000</pubDate>
+      <enclosure
+        url="https://github.com/wxtsky/CodeIsland/releases/download/v1.0.26/CodeIsland.dmg"
+        sparkle:edSignature="rOHbkxAG26AdwYcyIYcBJFB4OIxXhWxXx1H+rbca5ySYinbOXQI5lyCJnhMWxXE7+VLxCQR50oKiOF+4OHMzBg=="
+        length="9159465"
+        type="application/octet-stream" />
+    </item>
+    <item>
+      <title>Version 1.0.25</title>
+      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.25</link>
+      <sparkle:version>1.0.25</sparkle:version>
+      <sparkle:shortVersionString>1.0.25</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 26 May 2026 02:44:58 +0000</pubDate>
+      <enclosure
+        url="https://github.com/wxtsky/CodeIsland/releases/download/v1.0.25/CodeIsland.dmg"
+        sparkle:edSignature="ZxwlINogOKOlqtmbFS5PhEtrnWyAhv90iLROoKGK2ZXmtGEeOFUgUlXaKklBo4i4yjiKhiLj+CnXaJ0DoMcwBw=="
+        length="9141141"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0.24</title>
       <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.24</link>
       <sparkle:version>1.0.24</sparkle:version>

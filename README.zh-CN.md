@@ -81,7 +81,7 @@ brew install --cask codeisland
 git clone https://github.com/wxtsky/CodeIsland.git
 cd CodeIsland
 
-# 开发模式（debug 构建 + 启动）
+# 开发模式（debug 构建 + 启动；Buddy 蓝牙需要下面的 .app）
 swift build && ./.build/debug/CodeIsland
 
 # 发布模式（通用二进制：Apple Silicon + Intel）

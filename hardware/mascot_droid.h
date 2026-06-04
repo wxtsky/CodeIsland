@@ -94,3 +94,9 @@ void droidAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, DRD_ALERT, 3.0f);
 }
+
+void droidQuestion(float t) {
+  _questionMode = true;
+  droidAlert(t);
+  _questionMode = false;
+}

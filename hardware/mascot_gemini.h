@@ -82,3 +82,9 @@ void geminiAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, GEM_ALERT);
 }
+
+void geminiQuestion(float t) {
+  _questionMode = true;
+  geminiAlert(t);
+  _questionMode = false;
+}

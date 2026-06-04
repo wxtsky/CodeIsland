@@ -97,6 +97,17 @@ extension AppState {
         else { return false }
 
         let existing = permissionQueue[existingIndex]
+        // #169: a shared tool_use_id alone is not enough to call this a replay.
+        // Claude Code can emit several *parallel* tool calls (e.g. reading 4
+        // files at once); if they carry the same id but different inputs they are
+        // distinct requests and each needs its own decision. Treat it as a replay
+        // — deny the old waiter, keep the new one in place — only when the tool
+        // inputs match. Otherwise let the new request enqueue on its own.
+        let existingInput = existing.event.toolInput ?? [:]
+        let newInput = request.event.toolInput ?? [:]
+        guard NSDictionary(dictionary: existingInput).isEqual(to: NSDictionary(dictionary: newInput)) else {
+            return false
+        }
         log.notice("⚠️ permission deny reason=mergeDuplicatePermissionRequest session=\(existing.event.sessionId ?? "nil", privacy: .public) toolUseId=\(toolUseId, privacy: .public) tool=\(existing.event.toolName ?? "nil", privacy: .public)")
         let denyBody = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
         existing.continuation.resume(returning: Data(denyBody.utf8))

@@ -24,6 +24,12 @@ final class ESP32StatePublisher {
     private var screenOrientation: BuddyScreenOrientation = .up
     private var keepAliveActivity: NSObjectProtocol?
     private var interactiveRetryTask: Task<Void, Never>?
+    private var lastSentDisplay: SentDisplayState?
+
+    private struct SentDisplayState {
+        let identity: String
+        let status: MascotStatusCode
+    }
 
     private init() {
         self.bridge = ESP32BridgeManager.shared
@@ -33,6 +39,7 @@ final class ESP32StatePublisher {
     func attach(_ appState: AppState) {
         self.appState = appState
         bridge.onConnected = { [weak self] in
+            self?.resetEventState()
             self?.syncConfig()
             self?.flush(reason: "connected")
         }
@@ -66,6 +73,7 @@ final class ESP32StatePublisher {
             }
         } else {
             endKeepAliveActivity()
+            resetEventState()
             bridge.stop()
         }
     }
@@ -79,12 +87,56 @@ final class ESP32StatePublisher {
     private func flush(reason: String) {
         guard let appState else { return }
         guard bridge.status == .connected else { return }
+        guard bridge.selectedBuddyIdentifier != nil else { return }
         let session = appState.esp32DisplaySession()
+        let displayIdentity = appState.esp32DisplayIdentity()
         let frame = appState.esp32DisplayFrame(session: session)
         bridge.send(frame)
+
+        if bridge.usesLegacyPairingFallback {
+            lastSentDisplay = SentDisplayState(identity: displayIdentity, status: frame.status)
+            Self.log.debug("push(\(reason), legacy): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
+            return
+        }
+
         bridge.sendWorkspace(appState.esp32WorkspacePayload(session: session))
         appState.esp32MessagePreviewPayloads(session: session).forEach { bridge.sendMessagePreview($0) }
+        bridge.sendModel(appState.esp32ModelPayload(session: session))
+        bridge.sendTimeHint(BuddyTimeHintPayload(hour: Calendar.current.component(.hour, from: Date())))
+        bridge.sendStats(appState.esp32StatsPayload(session: session))
+        bridge.sendSubagent(appState.esp32SubagentPayload(session: session))
+        let toolHistory = appState.esp32ToolHistoryPayloads(session: session)
+        if toolHistory.isEmpty {
+            bridge.sendToolHistoryClear()
+        } else {
+            toolHistory.forEach { bridge.sendToolHistory($0) }
+        }
+
+        // Detect status transitions for event animations
+        let currentStatus = frame.status
+        if let previous = lastSentDisplay,
+           previous.identity == displayIdentity,
+           previous.status != currentStatus {
+            let prev = previous.status
+            if (prev == .processing || prev == .running) && currentStatus == .idle {
+                if let lastTool = session?.toolHistory.last, !lastTool.success {
+                    bridge.sendEvent(.error)
+                } else {
+                    bridge.sendEvent(.complete)
+                }
+            }
+            if (currentStatus == .waitingApproval || currentStatus == .waitingQuestion)
+                && prev != .waitingApproval && prev != .waitingQuestion {
+                bridge.sendEvent(.approval)
+            }
+        }
+        lastSentDisplay = SentDisplayState(identity: displayIdentity, status: currentStatus)
+
         Self.log.debug("push(\(reason)): mascot=\(frame.mascot.sourceName) status=\(frame.status.rawValue) tool=\(frame.toolName ?? "")")
+    }
+
+    private func resetEventState() {
+        lastSentDisplay = nil
     }
 
     private func syncConfig() {
@@ -134,9 +186,26 @@ extension AppState {
         let messages: [ChatMessage]
     }
 
-    func esp32DisplaySession() -> SessionSnapshot? {
+    func esp32DisplaySessionId() -> String? {
         let sid = rotatingSessionId ?? activeSessionId ?? sessions.keys.sorted().first
-        return sid.flatMap { sessions[$0] }
+        return sid
+    }
+
+    func esp32DisplaySession() -> SessionSnapshot? {
+        esp32DisplaySessionId().flatMap { sessions[$0] }
+    }
+
+    func esp32DisplayIdentity() -> String {
+        if let pending = pendingPermission {
+            return "session:\(pending.event.sessionId ?? activeSessionId ?? "default")"
+        }
+        if let pending = pendingQuestion {
+            return "session:\(pending.event.sessionId ?? activeSessionId ?? "default")"
+        }
+        if let sessionId = esp32DisplaySessionId() {
+            return "session:\(sessionId)"
+        }
+        return "fallback:\(SettingsManager.shared.defaultSource)"
     }
 
     private func esp32DisplayContext(session: SessionSnapshot? = nil) -> BuddyDisplayContext {
@@ -175,10 +244,18 @@ extension AppState {
             )
         }
 
+        let sessionStatus = session?.status ?? .idle
+        let effectiveSource: String
+        if sessionStatus == .idle {
+            effectiveSource = SettingsManager.shared.defaultSource
+        } else {
+            effectiveSource = session?.source ?? primarySource
+        }
+
         return BuddyDisplayContext(
-            source: session?.source ?? primarySource,
-            status: session?.status ?? .idle,
-            tool: (session?.status == .running || session?.status == .processing || session?.status == .waitingApproval || session?.status == .waitingQuestion)
+            source: effectiveSource,
+            status: sessionStatus,
+            tool: (sessionStatus == .running || sessionStatus == .processing || sessionStatus == .waitingApproval || sessionStatus == .waitingQuestion)
                 ? session?.currentTool
                 : nil,
             workspace: session?.projectDisplayName,
@@ -225,6 +302,41 @@ extension AppState {
             context.workspace ?? "",
             messageKey,
         ].joined(separator: "|")
+    }
+
+    func esp32ModelPayload(session: SessionSnapshot? = nil) -> BuddyModelPayload {
+        BuddyModelPayload(modelName: session?.shortModelName)
+    }
+
+    func esp32StatsPayload(session: SessionSnapshot? = nil) -> BuddyStatsPayload {
+        let toolCount = esp32TotalToolCallCount()
+        let durationMin: Int
+        if let start = session?.startTime {
+            durationMin = Int(Date().timeIntervalSince(start) / 60.0)
+        } else {
+            durationMin = 0
+        }
+        return BuddyStatsPayload(
+            activeSessionCount: activeSessionCount,
+            totalSessionCount: totalSessionCount,
+            toolCallCount: toolCount,
+            sessionDurationMinutes: durationMin
+        )
+    }
+
+    func esp32TotalToolCallCount() -> Int {
+        sessions.values.reduce(0) { $0 + $1.totalToolCallCount }
+    }
+
+    func esp32SubagentPayload(session: SessionSnapshot? = nil) -> BuddySubagentPayload {
+        BuddySubagentPayload(count: session?.activeSubagentCount ?? 0)
+    }
+
+    func esp32ToolHistoryPayloads(session: SessionSnapshot? = nil) -> [BuddyToolHistoryPayload] {
+        guard let history = session?.toolHistory, !history.isEmpty else { return [] }
+        return history.suffix(10).enumerated().map { index, entry in
+            BuddyToolHistoryPayload(index: index, success: entry.success, toolName: entry.tool)
+        }
     }
 
     func appleCompanionStatePayload(sequence: UInt64, session: SessionSnapshot? = nil) -> AppleCompanionStatePayload {
@@ -351,7 +463,6 @@ extension AppState {
         guard collapsed.count > 240 else { return collapsed }
         return String(collapsed.prefix(237)) + "..."
     }
-
     func esp32MessagePreviewSegments(text: String?) -> [String] {
         guard let text else { return [] }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -82,3 +82,9 @@ void qoderAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, QOD_ALERT);
 }
+
+void qoderQuestion(float t) {
+  _questionMode = true;
+  qoderAlert(t);
+  _questionMode = false;
+}

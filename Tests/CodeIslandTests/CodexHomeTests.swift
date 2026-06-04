@@ -99,6 +99,20 @@ final class CodexHomeTests: XCTestCase {
         XCTAssertFalse(contents.contains("codex_hooks"))
     }
 
+    func testEnableCodexHooksConfigRemovesLegacyFeatureNameWhenCurrentFeatureAlreadyEnabled() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let config = codexHome.appendingPathComponent("config.toml")
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        try "[features]\nhooks = true # current\ncodex_hooks = true # legacy\n".write(to: config, atomically: true, encoding: .utf8)
+
+        XCTAssertTrue(ConfigInstaller.enableCodexHooksConfig(fm: .default))
+
+        let contents = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(contents.contains("hooks = true"))
+        XCTAssertFalse(contents.contains("codex_hooks"))
+    }
+
     private func makeTemporaryCodexHome() -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("codeisland-codex-home-\(UUID().uuidString)", isDirectory: true)

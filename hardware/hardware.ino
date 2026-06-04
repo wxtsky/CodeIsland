@@ -7,6 +7,11 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <pgmspace.h>
+#include <Preferences.h>
+#ifdef BUDDY_OTA_ENABLED
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#endif
 
 // =========================================================
 //  Buddy — Multi-mascot Bluetooth Pet
@@ -71,6 +76,17 @@ static char bleDeviceName[BLE_DEVICE_NAME_LEN] = "Buddy";
 #define BUDDY_SCREEN_UP                 0
 #define BUDDY_SCREEN_DOWN               1
 
+// --- Pairing protocol ---
+#define PAIR_REQUEST_MARKER    0xE0
+#define UNPAIR_MARKER          0xE1
+#define PAIR_ACCEPTED_MARKER   0xE0
+#define PAIR_REJECTED_MARKER   0xE1
+#define PAIR_PENDING_MARKER    0xE2
+#define HOST_ID_LENGTH         6
+#define PAIR_CONFIRM_TIMEOUT_MS 30000UL
+#define PAIR_REJECT_DELAY_MS   500UL
+#define SUPER_LONG_PRESS_MS    3000
+
 // QR code for https://github.com/wxtsky/CodeIsland (version 3, ECC M, border 2).
 #define CODEISLAND_QR_SIZE 33
 #define CODEISLAND_QR_SCALE 4
@@ -114,21 +130,101 @@ static const char CODEISLAND_QR[CODEISLAND_QR_SIZE][CODEISLAND_QR_SIZE + 1] PROG
 volatile uint8_t  bleSourceId = 0;    // 0=claude, 1=codex, ...
 volatile uint8_t  bleStatusId = 0;    // 0=idle, 1=processing, 2=running, 3=waitApproval, 4=waitQuestion
 volatile bool     bleConnected = false;
+volatile uint16_t bleConnId = 0;
+volatile bool     bleConnIdValid = false;
 volatile unsigned long lastBleData = 0;
 volatile uint8_t  buddyBrightnessPercent = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
 volatile uint8_t  buddyScreenOrientation = BUDDY_SCREEN_UP;
 volatile bool     buddyOrientationDirty = false;
 char              bleToolName[18] = {0};
+char              bleWorkspaceName[20] = {0};
+char              bleModelName[20] = {0};
 BLECharacteristic* pNotifyChar = nullptr;
 portMUX_TYPE      bleMux = portMUX_INITIALIZER_UNLOCKED;
 
+// --- Session stats from BLE ---
+uint8_t bleActiveSessionCount = 0;
+uint8_t bleTotalSessionCount = 0;
+uint16_t bleToolCallCount = 0;
+uint8_t bleSessionDurationMin = 0;
+
+// --- Subagent count ---
+uint8_t bleSubagentCount = 0;
+
+// --- Progress-aware animation ---
+volatile unsigned long lastBleWriteTime = 0;
+volatile unsigned long bleWriteInterval = 5000;
+
+// --- Transient animation ---
+enum TransientAnim { ANIM_NONE, ANIM_CELEBRATE, ANIM_FRUSTRATED };
+TransientAnim pendingAnim = ANIM_NONE;
+unsigned long animStartTime = 0;
+#define ANIM_DURATION_MS 2000
+
+// --- Tool history ---
+#define MAX_TOOL_HISTORY 10
+struct ToolHistEntry {
+    char name[12];
+    bool success;
+};
+ToolHistEntry toolHistory[MAX_TOOL_HISTORY];
+uint8_t toolHistCount = 0;
+
+// --- Activity heatmap ---
+uint8_t heatmap[24] = {0};
+uint8_t heatmapSlot = 0;
+uint8_t bleCurrentHour = 255;
+bool heatmapStatsBaselineReady = false;
+
+// --- Global bored flag (checked by mascot sleep functions) ---
+bool globalBored = false;
+float globalBoredEyeOffsetX = 0.0f;
+
+// --- Activity-based time scale for work animations ---
+float globalWorkTimeScale = 1.0f;
+
+// --- NVS persistence ---
+Preferences prefs;
+unsigned long lastNvsSave = 0;
+volatile bool nvsDirty = false;
+#define NVS_DEBOUNCE_MS 5000
+
+#ifdef BUDDY_OTA_ENABLED
+// --- OTA state ---
+bool otaEnabled = false;
+volatile bool otaPending = false;
+char otaSsid[33] = {0};
+char otaPassword[65] = {0};
+#endif
+
+// --- Dirty flags for partial screen refresh ---
+volatile bool headerDirty = true;
+volatile bool infoDirty = true;
+// Track previous values for dirty detection
+uint8_t prevSourceId = 0xFF;
+uint8_t prevStatusId = 0xFF;
+char prevToolName[18] = {0};
+char prevWorkspaceName[20] = {0};
+
 // --- Scenes ---
-enum Scene { SCENE_SLEEP, SCENE_WORK, SCENE_ALERT, SCENE_COUNT };
+enum Scene { SCENE_SLEEP, SCENE_WORK, SCENE_ALERT, SCENE_QUESTION, SCENE_COUNT };
 
 // --- App mode ---
-enum AppMode { MODE_ONBOARD, MODE_DEMO, MODE_AGENT };
+enum AppMode { MODE_ONBOARD, MODE_DEMO, MODE_AGENT, MODE_PAIR_CONFIRM };
 volatile AppMode appMode = MODE_ONBOARD;
 bool hasEverConnected = false;
+
+// --- Pairing state ---
+// These are accessed from both BLE callbacks (may run on BLE task) and loop().
+// Use volatile + bleMux for compound reads/writes.
+volatile bool isPaired = false;
+uint8_t pairedHostId[HOST_ID_LENGTH] = {0};
+uint8_t pendingHostId[HOST_ID_LENGTH] = {0};
+volatile unsigned long pairRequestTime = 0;
+volatile bool pairRejectPending = false;
+volatile unsigned long pairRejectTime = 0;
+volatile bool pairAuthenticated = false;
+bool superLongPressFired = false;
 
 // --- Include all mascot headers ---
 #include "mascot_common.h"
@@ -156,28 +252,29 @@ struct Mascot {
   DrawFunc sleep;
   DrawFunc work;
   DrawFunc alert;
+  DrawFunc question;
   const char* name;
 };
 
 #define NUM_MASCOTS 16
 
 Mascot mascots[NUM_MASCOTS] = {
-  { clawdSleep,     clawdWork,     clawdAlert,     "Claude"      },  // 0
-  { dexSleep,       dexWork,       dexAlert,       "Codex"       },  // 1
-  { geminiSleep,    geminiWork,    geminiAlert,    "Gemini"      },  // 2
-  { cursorSleep,    cursorWork,    cursorAlert,    "Cursor"      },  // 3
-  { copilotSleep,   copilotWork,   copilotAlert,   "Copilot"     },  // 4
-  { traeSleep,      traeWork,      traeAlert,      "Trae"        },  // 5
-  { qoderSleep,     qoderWork,     qoderAlert,     "Qoder"       },  // 6
-  { droidSleep,     droidWork,     droidAlert,     "Factory"     },  // 7
-  { buddySleep,     buddyWork,     buddyAlert,     "CodeBuddy"   },  // 8
-  { stepfunSleep,   stepfunWork,   stepfunAlert,   "StepFun"     },  // 9
-  { opencodeSleep,  opencodeWork,  opencodeAlert,  "OpenCode"    },  // 10
-  { qwenSleep,      qwenWork,      qwenAlert,      "Qwen"        },  // 11
-  { antigravSleep,  antigravWork,  antigravAlert,  "AntiGravity" },  // 12
-  { workbuddySleep, workbuddyWork, workbuddyAlert, "WorkBuddy"  },  // 13
-  { hermesSleep,    hermesWork,    hermesAlert,    "Hermes"      },  // 14
-  { kimiSleep,      kimiWork,      kimiAlert,      "Kimi"        },  // 15
+  { clawdSleep,     clawdWork,     clawdAlert,     clawdQuestion,     "Claude"      },  // 0
+  { dexSleep,       dexWork,       dexAlert,       dexQuestion,       "Codex"       },  // 1
+  { geminiSleep,    geminiWork,    geminiAlert,    geminiQuestion,    "Gemini"      },  // 2
+  { cursorSleep,    cursorWork,    cursorAlert,    cursorQuestion,    "Cursor"      },  // 3
+  { copilotSleep,   copilotWork,   copilotAlert,   copilotQuestion,   "Copilot"     },  // 4
+  { traeSleep,      traeWork,      traeAlert,      traeQuestion,      "Trae"        },  // 5
+  { qoderSleep,     qoderWork,     qoderAlert,     qoderQuestion,     "Qoder"       },  // 6
+  { droidSleep,     droidWork,     droidAlert,     droidQuestion,     "Factory"     },  // 7
+  { buddySleep,     buddyWork,     buddyAlert,     buddyQuestion,     "CodeBuddy"   },  // 8
+  { stepfunSleep,   stepfunWork,   stepfunAlert,   stepfunQuestion,   "StepFun"     },  // 9
+  { opencodeSleep,  opencodeWork,  opencodeAlert,  opencodeQuestion,  "OpenCode"    },  // 10
+  { qwenSleep,      qwenWork,      qwenAlert,      qwenQuestion,      "Qwen"        },  // 11
+  { antigravSleep,  antigravWork,  antigravAlert,  antigravQuestion,  "AntiGravity" },  // 12
+  { workbuddySleep, workbuddyWork, workbuddyAlert, workbuddyQuestion, "WorkBuddy"  },  // 13
+  { hermesSleep,    hermesWork,    hermesAlert,    hermesQuestion,    "Hermes"      },  // 14
+  { kimiSleep,      kimiWork,      kimiAlert,      kimiQuestion,      "Kimi"        },  // 15
 };
 
 // --- Mode ---
@@ -200,19 +297,21 @@ float currentFps = 0;
 
 static const char* sceneStr(Scene s) {
   switch (s) {
-    case SCENE_SLEEP: return "SLEEP";
-    case SCENE_WORK:  return "WORK";
-    case SCENE_ALERT: return "ALERT";
-    default:          return "?";
+    case SCENE_SLEEP:    return "SLEEP";
+    case SCENE_WORK:     return "WORK";
+    case SCENE_ALERT:    return "ALERT";
+    case SCENE_QUESTION: return "QUESTION";
+    default:             return "?";
   }
 }
 
 static const char* appModeStr(AppMode m) {
   switch (m) {
-    case MODE_ONBOARD: return "ONBOARD";
-    case MODE_DEMO:    return "DEMO";
-    case MODE_AGENT:   return "AGENT";
-    default:           return "?";
+    case MODE_ONBOARD:       return "ONBOARD";
+    case MODE_DEMO:          return "DEMO";
+    case MODE_AGENT:         return "AGENT";
+    case MODE_PAIR_CONFIRM:  return "PAIR_CONFIRM";
+    default:                 return "?";
   }
 }
 
@@ -317,19 +416,102 @@ int pollButton(unsigned long now) {
   return btnLongFired ? 0 : 1;
 }
 
+static void rememberBleConnection(uint16_t connId) {
+  portENTER_CRITICAL(&bleMux);
+  bleConnId = connId;
+  bleConnIdValid = true;
+  portEXIT_CRITICAL(&bleMux);
+}
+
+static void clearBleConnection() {
+  portENTER_CRITICAL(&bleMux);
+  bleConnIdValid = false;
+  portEXIT_CRITICAL(&bleMux);
+}
+
+static bool currentBleConnectionId(uint16_t* outConnId) {
+  portENTER_CRITICAL(&bleMux);
+  bool valid = bleConnIdValid;
+  uint16_t connId = bleConnId;
+  portEXIT_CRITICAL(&bleMux);
+  if (!valid) return false;
+  *outConnId = connId;
+  return true;
+}
+
+static void disconnectCurrentClient(const char* reason) {
+  uint16_t connId = 0;
+  if (!currentBleConnectionId(&connId)) {
+    Serial.printf("[BLE]  Cannot disconnect client (%s): no active connId\n", reason);
+    return;
+  }
+  BLEServer* server = BLEDevice::getServer();
+  if (!server) {
+    Serial.printf("[BLE]  Cannot disconnect client (%s): server unavailable\n", reason);
+    return;
+  }
+  server->disconnect(connId);
+  Serial.printf("[BLE]  Disconnecting client (%s, connId=%u)\n", reason, connId);
+}
+
 // --- BLE Callbacks ---
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) override {
+    rememberBleConnection(pServer->getConnId());
     bleConnected = true;
-    hasEverConnected = true;
-    Serial.println("[BLE] Connected");
+    pairAuthenticated = false;
+    Serial.println("[BLE] Connected, waiting for pair handshake...");
   }
   void onDisconnect(BLEServer* pServer) override {
     bleConnected = false;
+    clearBleConnection();
+    pairAuthenticated = false;
+    if (appMode == MODE_PAIR_CONFIRM) {
+      appMode = MODE_ONBOARD;
+      Serial.println("[BLE] Disconnected during pairing, back to ONBOARD");
+    }
     Serial.println("[BLE] Disconnected, re-advertising...");
     BLEDevice::startAdvertising();
   }
+#if defined(CONFIG_BLUEDROID_ENABLED)
+  void onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
+    rememberBleConnection(param->connect.conn_id);
+  }
+  void onDisconnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
+    clearBleConnection();
+  }
+#endif
 };
+
+// --- Pairing helpers (called from BLE callback context) ---
+static void sendPairNotify(uint8_t marker) {
+  if (pNotifyChar) {
+    pNotifyChar->setValue(&marker, 1);
+    pNotifyChar->notify();
+  }
+}
+
+static void savePairedHost(const uint8_t* hostId) {
+  memcpy(pairedHostId, hostId, HOST_ID_LENGTH);
+  isPaired = true;
+  prefs.putBytes("ph", pairedHostId, HOST_ID_LENGTH);
+  prefs.putBool("ps", true);
+  Serial.printf("[PAIR] Saved paired host: %02X%02X%02X%02X%02X%02X\n",
+    pairedHostId[0], pairedHostId[1], pairedHostId[2],
+    pairedHostId[3], pairedHostId[4], pairedHostId[5]);
+}
+
+static void clearPairedHost() {
+  memset(pairedHostId, 0, HOST_ID_LENGTH);
+  isPaired = false;
+  prefs.remove("ph");
+  prefs.putBool("ps", false);
+  Serial.println("[PAIR] Cleared paired host");
+}
+
+static bool hostIdMatches(const uint8_t* a, const uint8_t* b) {
+  return memcmp(a, b, HOST_ID_LENGTH) == 0;
+}
 
 class CharCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pChar) override {
@@ -339,10 +521,87 @@ class CharCallbacks : public BLECharacteristicCallbacks {
     for (size_t i = 0; i < len && i < 24; i++) Serial.printf(" %02X", data[i]);
     Serial.println();
 
+    // --- Pair Request (0xE0) — always processed regardless of auth state ---
+    if (len >= 1 + HOST_ID_LENGTH && data[0] == PAIR_REQUEST_MARKER) {
+      uint8_t incomingId[HOST_ID_LENGTH];
+      memcpy(incomingId, data + 1, HOST_ID_LENGTH);
+      Serial.printf("[PAIR] Request from host: %02X%02X%02X%02X%02X%02X\n",
+        incomingId[0], incomingId[1], incomingId[2],
+        incomingId[3], incomingId[4], incomingId[5]);
+
+      portENTER_CRITICAL(&bleMux);
+      bool localIsPaired = isPaired;
+      bool hostMatch = localIsPaired && hostIdMatches(pairedHostId, incomingId);
+      bool alreadyConfirming = (appMode == MODE_PAIR_CONFIRM);
+      portEXIT_CRITICAL(&bleMux);
+
+      if (hostMatch) {
+        portENTER_CRITICAL(&bleMux);
+        pairAuthenticated = true;
+        hasEverConnected = true;
+        appMode = MODE_AGENT;
+        lastBleData = millis();
+        portEXIT_CRITICAL(&bleMux);
+        sendPairNotify(PAIR_ACCEPTED_MARKER);
+        Serial.println("[PAIR] Accepted (known host)");
+      } else if (!localIsPaired && !alreadyConfirming) {
+        portENTER_CRITICAL(&bleMux);
+        memcpy(pendingHostId, incomingId, HOST_ID_LENGTH);
+        pairRequestTime = millis();
+        appMode = MODE_PAIR_CONFIRM;
+        portEXIT_CRITICAL(&bleMux);
+        sendPairNotify(PAIR_PENDING_MARKER);
+        Serial.println("[PAIR] Pending — waiting for button confirmation");
+      } else if (!localIsPaired && alreadyConfirming) {
+        sendPairNotify(PAIR_REJECTED_MARKER);
+        pairRejectPending = true;
+        pairRejectTime = millis();
+        Serial.println("[PAIR] Rejected (already confirming another host)");
+      } else {
+        sendPairNotify(PAIR_REJECTED_MARKER);
+        pairRejectPending = true;
+        pairRejectTime = millis();
+        Serial.println("[PAIR] Rejected (already paired to different host)");
+      }
+      return;
+    }
+
+    // --- Unpair (0xE1) — always processed regardless of auth state ---
+    if (len >= 1 + HOST_ID_LENGTH && data[0] == UNPAIR_MARKER) {
+      uint8_t incomingId[HOST_ID_LENGTH];
+      memcpy(incomingId, data + 1, HOST_ID_LENGTH);
+      Serial.printf("[PAIR] Unpair from host: %02X%02X%02X%02X%02X%02X\n",
+        incomingId[0], incomingId[1], incomingId[2],
+        incomingId[3], incomingId[4], incomingId[5]);
+
+      portENTER_CRITICAL(&bleMux);
+      bool shouldUnpair = isPaired && hostIdMatches(pairedHostId, incomingId);
+      portEXIT_CRITICAL(&bleMux);
+
+      if (shouldUnpair) {
+        clearPairedHost();
+        portENTER_CRITICAL(&bleMux);
+        pairAuthenticated = false;
+        appMode = MODE_ONBOARD;
+        portEXIT_CRITICAL(&bleMux);
+        Serial.println("[PAIR] Unpaired successfully");
+      } else {
+        Serial.println("[PAIR] Unpair ignored (host mismatch or not paired)");
+      }
+      return;
+    }
+
+    // --- All other frames require successful pairing ---
+    if (!pairAuthenticated) {
+      Serial.println("[BLE] WARN: data frame rejected (not paired/authenticated)");
+      return;
+    }
+
     if (len == 2 && data[0] == BUDDY_BRIGHTNESS_FRAME) {
       uint8_t percent = clampBuddyBrightness(data[1]);
       portENTER_CRITICAL(&bleMux);
       buddyBrightnessPercent = percent;
+      nvsDirty = true;
       portEXIT_CRITICAL(&bleMux);
       lastInteraction = millis();
       Serial.printf("[BLE] Brightness config: %d%%\n", percent);
@@ -355,10 +614,193 @@ class CharCallbacks : public BLECharacteristicCallbacks {
       if (buddyScreenOrientation != orientation) {
         buddyScreenOrientation = orientation;
         buddyOrientationDirty = true;
+        nvsDirty = true;
       }
       portEXIT_CRITICAL(&bleMux);
       lastInteraction = millis();
       Serial.printf("[BLE] Screen orientation config: %s\n", buddyOrientationStr(orientation));
+      return;
+    }
+
+    // Workspace frame (0xFC)
+    if (len >= 2 && data[0] == 0xFC) {
+      uint8_t wsLen = data[1];
+      if (wsLen > 18) wsLen = 18;
+      portENTER_CRITICAL(&bleMux);
+      memset(bleWorkspaceName, 0, sizeof(bleWorkspaceName));
+      if (wsLen > 0 && len >= 2u + wsLen) {
+        memcpy(bleWorkspaceName, data + 2, wsLen);
+      }
+      bleWorkspaceName[wsLen] = '\0';
+      lastBleData = millis();
+      portEXIT_CRITICAL(&bleMux);
+      infoDirty = true;
+      Serial.printf("[BLE] Workspace: \"%s\"\n", bleWorkspaceName);
+      return;
+    }
+
+    // Model info frame (0xF9)
+    if (len >= 2 && data[0] == 0xF9) {
+      uint8_t mLen = data[1];
+      if (mLen > 18) mLen = 18;
+      portENTER_CRITICAL(&bleMux);
+      memset(bleModelName, 0, sizeof(bleModelName));
+      if (mLen > 0 && len >= 2u + mLen) memcpy(bleModelName, data + 2, mLen);
+      headerDirty = true;
+      lastBleData = millis();
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Model: \"%s\"\n", bleModelName);
+      return;
+    }
+
+    // Session stats frame (0xFA)
+    if (len >= 6 && data[0] == 0xFA) {
+      uint8_t loggedActiveSessions;
+      uint8_t loggedTotalSessions;
+      uint16_t loggedToolCount;
+      uint8_t loggedDuration;
+      portENTER_CRITICAL(&bleMux);
+      bleActiveSessionCount = data[1];
+      bleTotalSessionCount = data[2];
+      uint16_t newToolCount = ((uint16_t)data[3] << 8) | data[4];
+      if (!heatmapStatsBaselineReady || bleCurrentHour == 255 || newToolCount < bleToolCallCount) {
+        heatmapStatsBaselineReady = true;
+      } else if (newToolCount > bleToolCallCount) {
+        uint16_t delta = newToolCount - bleToolCallCount;
+        uint16_t newVal = heatmap[heatmapSlot] + delta;
+        heatmap[heatmapSlot] = (newVal > 255) ? 255 : (uint8_t)newVal;
+      }
+      bleToolCallCount = newToolCount;
+      bleSessionDurationMin = data[5];
+      lastBleData = millis();
+      loggedActiveSessions = bleActiveSessionCount;
+      loggedTotalSessions = bleTotalSessionCount;
+      loggedToolCount = bleToolCallCount;
+      loggedDuration = bleSessionDurationMin;
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Stats: sessions=%d/%d tools=%d duration=%dm\n",
+        loggedActiveSessions, loggedTotalSessions, loggedToolCount, loggedDuration);
+      return;
+    }
+
+    // Subagent count frame (0xF8)
+    if (len >= 2 && data[0] == 0xF8) {
+      portENTER_CRITICAL(&bleMux);
+      bleSubagentCount = data[1];
+      lastBleData = millis();
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Subagents: %d\n", bleSubagentCount);
+      return;
+    }
+
+    // Event frame (0xF7) — transient animations
+    if (len >= 2 && data[0] == 0xF7) {
+      uint8_t eventId = data[1];
+      portENTER_CRITICAL(&bleMux);
+      lastBleData = millis();
+      if (eventId == 1) { pendingAnim = ANIM_CELEBRATE; animStartTime = millis(); }
+      else if (eventId == 2) { pendingAnim = ANIM_FRUSTRATED; animStartTime = millis(); }
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Event: %d\n", eventId);
+      return;
+    }
+
+    // Time hint frame (0xF6)
+    if (len >= 2 && data[0] == 0xF6) {
+      uint8_t newHour = data[1];
+      uint8_t loggedHour;
+      portENTER_CRITICAL(&bleMux);
+      if (bleCurrentHour != 255 && newHour != bleCurrentHour) {
+        heatmapSlot = newHour % 24;
+        heatmap[heatmapSlot] = 0;
+      } else if (bleCurrentHour == 255) {
+        heatmapSlot = newHour % 24;
+      }
+      bleCurrentHour = newHour;
+      lastBleData = millis();
+      loggedHour = bleCurrentHour;
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] Hour: %d\n", loggedHour);
+      return;
+    }
+
+#ifdef BUDDY_OTA_ENABLED
+    // OTA SSID frame (0xF4)
+    if (len >= 2 && data[0] == 0xF4) {
+      uint8_t ssidLen = data[1];
+      if (ssidLen > 31) ssidLen = 31;
+      memset(otaSsid, 0, sizeof(otaSsid));
+      if (ssidLen > 0 && len >= 2u + ssidLen) {
+        memcpy(otaSsid, data + 2, ssidLen);
+      }
+      lastBleData = millis();
+      #ifdef DEBUG
+      Serial.printf("[BLE] OTA SSID: \"%s\"\n", otaSsid);
+      #else
+      Serial.println("[BLE] OTA SSID received");
+      #endif
+      return;
+    }
+
+    // OTA Password frame (0xF3)
+    if (len >= 3 && data[0] == 0xF3) {
+      uint8_t chunkIdx = data[1];
+      uint8_t chunkLen = data[2];
+      if (chunkLen > 17) chunkLen = 17;
+      if (chunkIdx == 0) memset(otaPassword, 0, sizeof(otaPassword));
+      size_t curLen = strlen(otaPassword);
+      if (curLen + chunkLen < sizeof(otaPassword) - 1 && len >= 3u + chunkLen) {
+        memcpy(otaPassword + curLen, data + 3, chunkLen);
+        otaPassword[curLen + chunkLen] = '\0';
+      }
+      lastBleData = millis();
+      #ifdef DEBUG
+      Serial.printf("[BLE] OTA password chunk %d (%d bytes, total=%zu)\n", chunkIdx, chunkLen, strlen(otaPassword));
+      #endif
+      if (otaSsid[0] != '\0' && otaPassword[0] != '\0' && !otaEnabled) {
+        otaPending = true;
+      }
+      return;
+    }
+#endif
+
+    // Message preview frame (0xFB)
+    if (len >= 4 && data[0] == 0xFB) {
+      uint8_t msgIdx = data[1];
+      uint8_t msgTotal = data[2];
+      portENTER_CRITICAL(&bleMux);
+      lastBleData = millis();
+      portEXIT_CRITICAL(&bleMux);
+      Serial.printf("[BLE] MsgPreview: idx=%d/%d\n", msgIdx, msgTotal);
+      return;
+    }
+
+    // Tool history frame (0xF5)
+    if (len >= 3 && data[0] == 0xF5) {
+      uint8_t entryIdx = data[1];
+      uint8_t flagsByte = data[2];
+      bool success = (flagsByte & 0x80) != 0;
+      uint8_t nameLen = flagsByte & 0x7F;
+      if (nameLen > 11) nameLen = 11;
+      portENTER_CRITICAL(&bleMux);
+      if (entryIdx == 0) toolHistCount = 0;
+      if (entryIdx == 0 && nameLen == 0) {
+        lastBleData = millis();
+        portEXIT_CRITICAL(&bleMux);
+        Serial.println("[BLE] Tool history cleared");
+        return;
+      }
+      if (toolHistCount < MAX_TOOL_HISTORY) {
+        ToolHistEntry& entry = toolHistory[toolHistCount];
+        memset(entry.name, 0, sizeof(entry.name));
+        if (nameLen > 0 && len >= 3u + nameLen) {
+          memcpy(entry.name, data + 3, nameLen);
+        }
+        entry.success = success;
+        toolHistCount++;
+      }
+      lastBleData = millis();
+      portEXIT_CRITICAL(&bleMux);
       return;
     }
 
@@ -368,6 +810,8 @@ class CharCallbacks : public BLECharacteristicCallbacks {
     }
 
     portENTER_CRITICAL(&bleMux);
+    if (bleSourceId != data[0]) headerDirty = true;
+    if (bleStatusId != data[1]) infoDirty = true;
     bleSourceId = data[0];
     bleStatusId = data[1];
     uint8_t toolLen = data[2];
@@ -379,6 +823,11 @@ class CharCallbacks : public BLECharacteristicCallbacks {
     bleToolName[toolLen] = '\0';
     lastBleData = millis();
     appMode = MODE_AGENT;
+    unsigned long now_write = millis();
+    if (lastBleWriteTime > 0) {
+      bleWriteInterval = now_write - lastBleWriteTime;
+    }
+    lastBleWriteTime = now_write;
     portEXIT_CRITICAL(&bleMux);
 
     const char* srcName = (bleSourceId < NUM_MASCOTS) ? mascots[bleSourceId].name : "?";
@@ -394,13 +843,13 @@ Scene statusToScene(uint8_t status) {
     case 1: return SCENE_WORK;        // processing
     case 2: return SCENE_WORK;        // running
     case 3: return SCENE_ALERT;       // waitingApproval
-    case 4: return SCENE_ALERT;       // waitingQuestion
+    case 4: return SCENE_QUESTION;    // waitingQuestion
     default: return SCENE_SLEEP;
   }
 }
 
 // --- Draw tool name label ---
-void drawToolLabel() {
+void drawToolLabel(int baseY = 240) {
   char localTool[18];
   uint8_t localStatus;
   portENTER_CRITICAL(&bleMux);
@@ -408,35 +857,213 @@ void drawToolLabel() {
   localStatus = bleStatusId;
   portEXIT_CRITICAL(&bleMux);
   if (localTool[0] == '\0') return;
-  if (localStatus < 1 || localStatus > 2) return;
+  if (localStatus < 1 || localStatus > 4) return;
+
+  ToolIcon icon = classifyTool(localTool);
+  int16_t tw = strlen(localTool) * 12;
+  int16_t totalW = tw + (icon != ICON_NONE ? 12 : 0);
+  int16_t startX = (LCD_W - totalW) / 2;
+
+  if (icon != ICON_NONE) {
+    drawToolIcon(icon, startX, baseY + 2, RGB565(80, 180, 220));
+    startX += 12;
+  }
+
   gfx->setTextColor(RGB565(120, 120, 130));
   gfx->setTextSize(2);
-  int16_t tw = strlen(localTool) * 12;
-  gfx->setCursor((LCD_W - tw) / 2, sy(19.35f));
+  gfx->setCursor(startX, baseY);
   gfx->print(localTool);
 }
 
-// --- Draw mascot name label (below mascot, larger font) ---
+// --- Draw mascot name label (header area) ---
 void drawMascotName(uint8_t idx) {
   if (idx >= NUM_MASCOTS) return;
   const char* name = mascots[idx].name;
-  gfx->setTextSize(2);
-  int16_t tw = strlen(name) * 12;
-  gfx->setTextColor(RGB565(160, 160, 170));
-  gfx->setCursor((LCD_W - tw) / 2, sy(17.45f));
-  gfx->print(name);
+
+  char localModel[20];
+  portENTER_CRITICAL(&bleMux);
+  memcpy(localModel, bleModelName, sizeof(localModel));
+  portEXIT_CRITICAL(&bleMux);
+
+  if (localModel[0] != '\0') {
+    char headerBuf[40];
+    snprintf(headerBuf, sizeof(headerBuf), "%s · %s", name, localModel);
+    int16_t tw = strlen(headerBuf) * 6;
+    gfx->setTextSize(1);
+    gfx->setTextColor(RGB565(160, 160, 170));
+    gfx->setCursor((LCD_W - tw) / 2, 8);
+    gfx->print(headerBuf);
+  } else {
+    gfx->setTextSize(2);
+    int16_t tw = strlen(name) * 12;
+    gfx->setTextColor(RGB565(160, 160, 170));
+    gfx->setCursor((LCD_W - tw) / 2, 6);
+    gfx->print(name);
+  }
+}
+
+// --- Draw workspace label ---
+void drawWorkspaceLabel(int baseY = 224) {
+  char localWs[20];
+  portENTER_CRITICAL(&bleMux);
+  memcpy(localWs, bleWorkspaceName, sizeof(localWs));
+  portEXIT_CRITICAL(&bleMux);
+  if (localWs[0] == '\0') return;
+  gfx->setTextColor(RGB565(80, 180, 220));
+  gfx->setTextSize(1);
+  int16_t tw = strlen(localWs) * 6;
+  gfx->setCursor((LCD_W - tw) / 2, baseY);
+  gfx->print(localWs);
+}
+
+// --- Draw action hints for Alert/Question scenes (y=300) ---
+void drawAlertActionHints(uint8_t status) {
+  if (status == 3) {
+    drawCenteredText("Press: Allow", LCD_H - 18, 1, RGB565(50, 200, 50));
+    drawCenteredText("Hold:  Deny",  LCD_H - 8,  1, RGB565(200, 60, 60));
+  } else if (status == 4) {
+    drawCenteredText("Press: Open", LCD_H - 18, 1, RGB565(80, 180, 255));
+    drawCenteredText("Hold:  Skip", LCD_H - 8,  1, RGB565(150, 150, 160));
+  }
+}
+
+// --- Draw session stats panel (shown during idle, below workspace) ---
+void drawStatsPanel() {
+  uint8_t actS, totS, durM;
+  uint16_t toolC;
+  portENTER_CRITICAL(&bleMux);
+  actS = bleActiveSessionCount;
+  totS = bleTotalSessionCount;
+  toolC = bleToolCallCount;
+  durM = bleSessionDurationMin;
+  portEXIT_CRITICAL(&bleMux);
+
+  if (actS == 0 && totS == 0 && toolC == 0) return;
+
+  int panelY = 236;
+  char buf[32];
+  gfx->setTextSize(1);
+  gfx->setTextColor(RGB565(100, 100, 120));
+
+  snprintf(buf, sizeof(buf), "S:%d/%d  T:%d  %dm", actS, totS, toolC, durM);
+  int16_t tw = strlen(buf) * 6;
+  gfx->setCursor((LCD_W - tw) / 2, panelY);
+  gfx->print(buf);
+}
+
+// --- Draw tool history timeline (shown during idle, below stats) ---
+void drawToolTimeline() {
+  if (toolHistCount == 0) return;
+  int startY = 248;
+  gfx->setTextSize(1);
+  uint8_t localCount;
+  ToolHistEntry localHist[MAX_TOOL_HISTORY];
+  portENTER_CRITICAL(&bleMux);
+  localCount = toolHistCount;
+  memcpy(localHist, toolHistory, sizeof(localHist));
+  portEXIT_CRITICAL(&bleMux);
+
+  uint8_t maxVisible = min(localCount, (uint8_t)5);
+  for (uint8_t i = 0; i < maxVisible; i++) {
+    int y = startY + i * 10;
+    uint16_t markCol = localHist[i].success ? RGB565(50, 200, 50) : RGB565(200, 60, 60);
+    gfx->fillRect(14, y + 2, 3, 3, markCol);
+    gfx->setTextColor(RGB565(120, 120, 140));
+    gfx->setCursor(22, y);
+    gfx->print(localHist[i].name);
+  }
+}
+
+// --- Draw heatmap bar (24h activity, bottom of idle screen) ---
+void drawHeatmapBar() {
+  uint8_t localHeatmap[24];
+  uint8_t localSlot;
+  portENTER_CRITICAL(&bleMux);
+  memcpy(localHeatmap, heatmap, sizeof(localHeatmap));
+  localSlot = heatmapSlot;
+  portEXIT_CRITICAL(&bleMux);
+
+  bool hasData = false;
+  for (int i = 0; i < 24; i++) { if (localHeatmap[i] > 0) { hasData = true; break; } }
+  if (!hasData) return;
+
+  int barY = LCD_H - 24;
+  int slotW = (LCD_W - 4) / 24;
+  for (int i = 0; i < 24; i++) {
+    uint8_t val = localHeatmap[(localSlot + 1 + i) % 24];
+    float intensity = val / 255.0f;
+    uint8_t r = (uint8_t)(20 + intensity * 30);
+    uint8_t g = (uint8_t)(40 + intensity * 200);
+    uint8_t b = (uint8_t)(80 + intensity * 50);
+    gfx->fillRect(2 + i * slotW, barY, slotW - 1, 8, RGB565(r, g, b));
+  }
+}
+
+// --- Draw celebration animation ---
+void drawCelebration(float t, uint8_t mascotIdx, unsigned long animationStartTime) {
+  float elapsed = (millis() - animationStartTime) / 1000.0f;
+  mascots[mascotIdx].work(t);
+  for (int i = 0; i < 5; i++) {
+    float px = 3.0f + i * 2.5f + sinf(elapsed * 3 + i) * 1.5f;
+    float py = 4.0f - elapsed * 3.0f + i * 0.5f;
+    float op = fmaxf(0, 1.0f - elapsed * 0.5f);
+    gfx->fillRect(sx(px), sy(py), sw(1), sh(1), dim565(RGB565(255, 220, 50), op));
+  }
+  drawCenteredText("Done!", LCD_H - 30, 2, dim565(RGB565(50, 230, 50), fmaxf(0, 1.0f - elapsed * 0.4f)));
+}
+
+// --- Draw frustrated animation ---
+void drawFrustrated(float t, uint8_t mascotIdx, unsigned long animationStartTime) {
+  float elapsed = (millis() - animationStartTime) / 1000.0f;
+  float shakeX = sinf(elapsed * 30.0f) * (1.0f - elapsed * 0.5f) * 2.0f;
+  setViewportShiftX(shakeX);
+  mascots[mascotIdx].work(t);
+  setViewportShiftX(0.0f);
+  float op = fmaxf(0, 1.0f - elapsed * 0.5f);
+  gfx->setTextSize(3);
+  gfx->setTextColor(dim565(RGB565(255, 60, 60), op));
+  gfx->setCursor(sx(12.0f), sy(4.0f));
+  gfx->print("X");
 }
 
 // --- Draw connection status ---
 void drawStatusBar() {
   uint16_t col = bleConnected ? RGB565(50, 230, 50) : RGB565(100, 100, 100);
-  gfx->fillRect(LCD_W / 2 - 3, 4, 6, 3, col);
+  gfx->fillRect(LCD_W / 2 - 3, 0, 6, 3, col);
   if (appMode == MODE_DEMO) {
     gfx->setTextColor(RGB565(60, 60, 70));
     gfx->setTextSize(1);
-    gfx->setCursor(LCD_W / 2 - 18, 10);
+    gfx->setCursor(2, 0);
     gfx->print("DEMO");
   }
+}
+
+// --- Draw pair confirmation screen ---
+void drawPairConfirmScreen(float t) {
+  drawCenteredText("Pair?", 40, 3, RGB565(235, 235, 245));
+
+  char hostHex[18];
+  snprintf(hostHex, sizeof(hostHex), "%02X%02X%02X-%02X%02X%02X",
+    pendingHostId[0], pendingHostId[1], pendingHostId[2],
+    pendingHostId[3], pendingHostId[4], pendingHostId[5]);
+  drawCenteredText(hostHex, 80, 1, RGB565(120, 200, 255));
+
+  float pulse = (sinf(t * 2.5f) + 1.0f) * 0.5f;
+  uint8_t g = 140 + (uint8_t)(pulse * 60);
+  drawCenteredText("Press BOOT", 140, 2, RGB565(50, (uint8_t)g, 50));
+  drawCenteredText("to accept", 162, 2, RGB565(50, (uint8_t)g, 50));
+
+  drawCenteredText("Hold BOOT", 210, 1, RGB565(180, 80, 80));
+  drawCenteredText("to reject", 224, 1, RGB565(180, 80, 80));
+
+  unsigned long elapsed = millis() - pairRequestTime;
+  unsigned long remaining = 0;
+  if (elapsed < PAIR_CONFIRM_TIMEOUT_MS) {
+    remaining = (PAIR_CONFIRM_TIMEOUT_MS - elapsed) / 1000;
+  }
+  char timeBuf[8];
+  snprintf(timeBuf, sizeof(timeBuf), "%lus", remaining);
+  drawCenteredText(timeBuf, LCD_H - 30, 2, RGB565(100, 100, 120));
 }
 
 // --- Draw onboarding screen ---
@@ -464,7 +1091,12 @@ void drawOnboardScreen(float t) {
     drawCenteredText("Waiting for Buddy...", y, 1, RGB565(g, g, (uint8_t)(g + 30)));
   }
 
-  drawCenteredText("Long press: demo", LCD_H - 18, 1, RGB565(60, 60, 80));
+  if (isPaired) {
+    drawCenteredText("Paired", y + 14, 1, RGB565(80, 200, 80));
+    drawCenteredText("Hold 3s: unpair", LCD_H - 18, 1, RGB565(60, 60, 80));
+  } else {
+    drawCenteredText("Long press: demo", LCD_H - 18, 1, RGB565(60, 60, 80));
+  }
 }
 
 // ============================================================
@@ -477,6 +1109,29 @@ void setup() {
   Serial.println("========================================");
   Serial.println("  Buddy — Multi-mascot Bluetooth Pet");
   Serial.println("========================================");
+
+  // NVS — restore persisted settings
+  prefs.begin("buddy", false);
+  buddyBrightnessPercent = prefs.getUChar("bright", BUDDY_BRIGHTNESS_DEFAULT_PERCENT);
+  buddyScreenOrientation = prefs.getUChar("orient", BUDDY_SCREEN_UP);
+  Serial.printf("[NVS]  Restored brightness=%d%% orientation=%s\n",
+    buddyBrightnessPercent, buddyOrientationStr(buddyScreenOrientation));
+
+  // NVS — restore pairing state
+  isPaired = prefs.getBool("ps", false);
+  if (isPaired) {
+    size_t readLen = prefs.getBytes("ph", pairedHostId, HOST_ID_LENGTH);
+    if (readLen != HOST_ID_LENGTH) {
+      memset(pairedHostId, 0, HOST_ID_LENGTH);
+      isPaired = false;
+    }
+  }
+  Serial.printf("[NVS]  Pairing: %s", isPaired ? "paired to " : "not paired\n");
+  if (isPaired) {
+    Serial.printf("%02X%02X%02X%02X%02X%02X\n",
+      pairedHostId[0], pairedHostId[1], pairedHostId[2],
+      pairedHostId[3], pairedHostId[4], pairedHostId[5]);
+  }
   Serial.printf("[BOOT] Chip: %s  Rev: %d  Cores: %d\n",
     ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores());
   Serial.printf("[BOOT] CPU freq: %d MHz\n", ESP.getCpuFreqMHz());
@@ -586,7 +1241,8 @@ void loop() {
   // Frame rate limiter
   bool isSleepy = (appMode == MODE_DEMO && currentScene == SCENE_SLEEP)
                || (appMode == MODE_AGENT && statusToScene(bleStatusId) == SCENE_SLEEP)
-               || (appMode == MODE_ONBOARD);
+               || (appMode == MODE_ONBOARD)
+               || (appMode == MODE_PAIR_CONFIRM);
   unsigned long frameInterval = isSleepy ? FRAME_MS_SLEEP : FRAME_MS_ACTIVE;
   if ((now - lastFrameTime) < frameInterval) {
     delay(1);
@@ -606,8 +1262,76 @@ void loop() {
 
   // Button handling
   int btn = pollButton(now);
-  if (appMode == MODE_AGENT) {
-    if (btn == 1 && bleConnected && pNotifyChar) {
+
+  // Super-long-press detection (3s): clear pairing (factory reset) from
+  // ONBOARD/DEMO/AGENT modes. MODE_PAIR_CONFIRM uses normal long press.
+  if (btnPressed && !superLongPressFired &&
+      (now - btnPressStart) >= SUPER_LONG_PRESS_MS &&
+      appMode != MODE_PAIR_CONFIRM) {
+    superLongPressFired = true;
+    if (isPaired) {
+      Serial.println("[BTN]  Super-long press -> factory reset pairing");
+      clearPairedHost();
+      portENTER_CRITICAL(&bleMux);
+      pairAuthenticated = false;
+      appMode = MODE_ONBOARD;
+      portEXIT_CRITICAL(&bleMux);
+      if (bleConnected) {
+        disconnectCurrentClient("factory reset pairing");
+      }
+    }
+  }
+  if (!btnPressed) {
+    superLongPressFired = false;
+  }
+
+  if (appMode == MODE_PAIR_CONFIRM) {
+    if (btn == 1) {
+      uint8_t localPending[HOST_ID_LENGTH];
+      portENTER_CRITICAL(&bleMux);
+      memcpy(localPending, pendingHostId, HOST_ID_LENGTH);
+      portEXIT_CRITICAL(&bleMux);
+      savePairedHost(localPending);
+      portENTER_CRITICAL(&bleMux);
+      pairAuthenticated = true;
+      hasEverConnected = true;
+      appMode = MODE_AGENT;
+      lastBleData = now;
+      portEXIT_CRITICAL(&bleMux);
+      sendPairNotify(PAIR_ACCEPTED_MARKER);
+      lastInteraction = now;
+      Serial.println("[BTN]  Pairing accepted");
+    } else if (btn == 2) {
+      sendPairNotify(PAIR_REJECTED_MARKER);
+      pairRejectPending = true;
+      pairRejectTime = now;
+      portENTER_CRITICAL(&bleMux);
+      appMode = MODE_ONBOARD;
+      portEXIT_CRITICAL(&bleMux);
+      Serial.println("[BTN]  Pairing rejected");
+    }
+  } else if (appMode == MODE_AGENT) {
+    Scene agentScene = statusToScene(bleStatusId);
+    if ((agentScene == SCENE_ALERT || agentScene == SCENE_QUESTION) && bleConnected && pNotifyChar) {
+      if (btn == 1) {
+        uint8_t payload;
+        if (bleStatusId == 3) {
+          payload = 0xF0;
+          Serial.println("[BTN]  Approve sent (0xF0)");
+        } else {
+          payload = bleSourceId;
+          Serial.println("[BTN]  Focus request (question mode)");
+        }
+        pNotifyChar->setValue(&payload, 1);
+        pNotifyChar->notify();
+      } else if (btn == 2) {
+        uint8_t payload = (bleStatusId == 3) ? 0xF1 : 0xF2;
+        pNotifyChar->setValue(&payload, 1);
+        pNotifyChar->notify();
+        Serial.printf("[BTN]  %s sent (0x%02X)\n",
+            bleStatusId == 3 ? "Deny" : "Skip", payload);
+      }
+    } else if (btn == 1 && bleConnected && pNotifyChar) {
       uint8_t focusPayload = bleSourceId;
       pNotifyChar->setValue(&focusPayload, 1);
       pNotifyChar->notify();
@@ -643,15 +1367,34 @@ void loop() {
     }
   }
 
+  // Pair confirm timeout
+  if (appMode == MODE_PAIR_CONFIRM && (now - pairRequestTime) > PAIR_CONFIRM_TIMEOUT_MS) {
+    sendPairNotify(PAIR_REJECTED_MARKER);
+    pairRejectPending = true;
+    pairRejectTime = now;
+    appMode = MODE_ONBOARD;
+    Serial.println("[PAIR] Confirmation timeout, rejected");
+  }
+
+  // Delayed disconnect after pair rejection
+  if (pairRejectPending && (now - pairRejectTime) > PAIR_REJECT_DELAY_MS) {
+    pairRejectPending = false;
+    if (bleConnected) {
+      disconnectCurrentClient("pair rejected");
+    }
+  }
+
   // BLE timeout: agent mode -> back to previous mode
   if (appMode == MODE_AGENT && (now - lastBleData) > BLE_TIMEOUT_MS) {
     appMode = hasEverConnected ? MODE_ONBOARD : MODE_ONBOARD;
     Serial.printf("[BLE]  Timeout (%lus no data), -> %s\n", BLE_TIMEOUT_MS / 1000, appModeStr(appMode));
   }
 
-  // Dynamic backlight brightness
+  // Dynamic backlight brightness (with night mode)
   uint8_t targetBright;
-  if (appMode == MODE_AGENT && bleConnected) {
+  if (appMode == MODE_PAIR_CONFIRM) {
+    targetBright = activeBrightness();
+  } else if (appMode == MODE_AGENT && bleConnected) {
     lastInteraction = now;
     Scene agentScene = statusToScene(bleStatusId);
     targetBright = (agentScene == SCENE_SLEEP) ? sleepBrightness() : activeBrightness();
@@ -661,6 +1404,14 @@ void loop() {
     targetBright = sleepBrightness();
   } else {
     targetBright = (currentScene == SCENE_SLEEP) ? sleepBrightness() : activeBrightness();
+  }
+  // Night mode: reduce brightness during late hours
+  if (bleCurrentHour != 255) {
+    if (bleCurrentHour >= 22 || bleCurrentHour < 6) {
+      targetBright = min(targetBright, idleBrightness());
+    } else if (bleCurrentHour >= 18) {
+      targetBright = min(targetBright, sleepBrightness());
+    }
   }
   if (currentBrightness != targetBright) {
     uint8_t prevBright = currentBrightness;
@@ -675,7 +1426,9 @@ void loop() {
   // ---- Render ----
   canvas.fillScreen(0x0000);
 
-  if (appMode == MODE_ONBOARD) {
+  if (appMode == MODE_PAIR_CONFIRM) {
+    drawPairConfirmScreen(t);
+  } else if (appMode == MODE_ONBOARD) {
     drawOnboardScreen(t);
   } else {
     uint8_t drawIdx;
@@ -702,22 +1455,153 @@ void loop() {
       drawScene = statusToScene(bleStatusId);
     }
 
+    // Header area (y=0..16)
     drawStatusBar();
-
-    Mascot& m = mascots[drawIdx];
-    switch (drawScene) {
-      case SCENE_SLEEP: m.sleep(t); break;
-      case SCENE_WORK:  m.work(t);  break;
-      case SCENE_ALERT: m.alert(t); break;
-      default: break;
-    }
-
     drawMascotName(drawIdx);
 
-    if (appMode == MODE_AGENT) drawToolLabel();
+    // Mascot animation area (y=16..220)
+    Mascot& m = mascots[drawIdx];
+
+    // Check transient animations
+    bool playingTransient = false;
+    TransientAnim localPendingAnim;
+    unsigned long localAnimStartTime;
+    portENTER_CRITICAL(&bleMux);
+    localPendingAnim = pendingAnim;
+    localAnimStartTime = animStartTime;
+    portEXIT_CRITICAL(&bleMux);
+    if (localPendingAnim != ANIM_NONE && (now - localAnimStartTime) < ANIM_DURATION_MS) {
+      playingTransient = true;
+      if (localPendingAnim == ANIM_CELEBRATE) {
+        drawCelebration(t, drawIdx, localAnimStartTime);
+      } else if (localPendingAnim == ANIM_FRUSTRATED) {
+        drawFrustrated(t, drawIdx, localAnimStartTime);
+      }
+    } else {
+      if (localPendingAnim != ANIM_NONE) {
+        portENTER_CRITICAL(&bleMux);
+        if (pendingAnim == localPendingAnim && animStartTime == localAnimStartTime) {
+          pendingAnim = ANIM_NONE;
+        }
+        portEXIT_CRITICAL(&bleMux);
+      }
+
+      // Bored detection for idle mascots
+      if (drawScene == SCENE_SLEEP) {
+        unsigned long idleDuration = now - lastBleData;
+        globalBored = (idleDuration > 300000UL);  // 5 minutes
+        if (globalBored) {
+          float boredCycle = fmodf(t, 8.0f);
+          if (boredCycle < 1.0f) globalBoredEyeOffsetX = -1.0f;
+          else if (boredCycle > 3.0f && boredCycle < 4.0f) globalBoredEyeOffsetX = 1.0f;
+          else globalBoredEyeOffsetX = 0.0f;
+        } else {
+          globalBoredEyeOffsetX = 0.0f;
+        }
+      } else {
+        globalBored = false;
+        globalBoredEyeOffsetX = 0.0f;
+      }
+
+      // Compute activity-based time scale for work animations
+      if (drawScene == SCENE_WORK) {
+        globalWorkTimeScale = 1.0f;
+        if (bleWriteInterval < 2000) globalWorkTimeScale = 1.5f;
+        if (bleWriteInterval < 500)  globalWorkTimeScale = 2.0f;
+      }
+
+      switch (drawScene) {
+        case SCENE_SLEEP:    m.sleep(t); break;
+        case SCENE_WORK:     m.work(t * globalWorkTimeScale);  break;
+        case SCENE_ALERT:    m.alert(t); break;
+        case SCENE_QUESTION: m.question(t); break;
+        default: break;
+      }
+
+      // Subagent dots during work scene
+      if (drawScene == SCENE_WORK && bleSubagentCount > 0) {
+        drawSubagentDots(bleSubagentCount, 0);
+      }
+    }
+
+    // Info area (AGENT mode only)
+    if (appMode == MODE_AGENT && !playingTransient) {
+      if (drawScene == SCENE_SLEEP) {
+        drawWorkspaceLabel(224);
+        drawStatsPanel();
+        drawToolTimeline();
+        drawHeatmapBar();
+      } else if (drawScene == SCENE_ALERT || drawScene == SCENE_QUESTION) {
+        drawWorkspaceLabel(274);
+        drawToolLabel(286);
+        drawAlertActionHints(bleStatusId);
+      } else {
+        drawWorkspaceLabel(292);
+        drawToolLabel(304);
+      }
+    }
   }
 
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), LCD_W, LCD_H);
+
+  // NVS debounce write
+  if ((now - lastNvsSave) > NVS_DEBOUNCE_MS) {
+    bool shouldSaveNvs = false;
+    uint8_t nvsBrightness = BUDDY_BRIGHTNESS_DEFAULT_PERCENT;
+    uint8_t nvsOrientation = BUDDY_SCREEN_UP;
+    portENTER_CRITICAL(&bleMux);
+    if (nvsDirty) {
+      nvsBrightness = buddyBrightnessPercent;
+      nvsOrientation = buddyScreenOrientation;
+      nvsDirty = false;
+      shouldSaveNvs = true;
+    }
+    portEXIT_CRITICAL(&bleMux);
+    if (shouldSaveNvs) {
+      prefs.putUChar("bright", nvsBrightness);
+      prefs.putUChar("orient", nvsOrientation);
+      lastNvsSave = now;
+      Serial.printf("[NVS]  Saved brightness=%d%% orientation=%s\n",
+        nvsBrightness, buddyOrientationStr(nvsOrientation));
+    }
+  }
+
+#ifdef BUDDY_OTA_ENABLED
+  // OTA initialization (deferred from BLE callback to avoid blocking)
+  if (otaPending && !otaEnabled) {
+    otaPending = false;
+    Serial.println("[OTA] Starting WiFi + OTA from main loop...");
+    WiFi.begin(otaSsid, otaPassword);
+    ArduinoOTA.setHostname(bleDeviceName);
+    ArduinoOTA.onStart([]() {
+      canvas.fillScreen(0x0000);
+      drawCenteredText("OTA Update", 100, 2, RGB565(255, 200, 50));
+      tft.drawRGBBitmap(0, 0, canvas.getBuffer(), LCD_W, LCD_H);
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      int pct = progress * 100 / total;
+      char buf[16];
+      snprintf(buf, sizeof(buf), "%d%%", pct);
+      canvas.fillScreen(0x0000);
+      drawCenteredText("OTA Update", 100, 2, RGB565(255, 200, 50));
+      drawCenteredText(buf, 140, 2, RGB565(200, 200, 200));
+      int barW = LCD_W * pct / 100;
+      canvas.fillRect(0, 160, barW, 8, RGB565(50, 200, 50));
+      canvas.fillRect(barW, 160, LCD_W - barW, 8, RGB565(40, 40, 40));
+      tft.drawRGBBitmap(0, 0, canvas.getBuffer(), LCD_W, LCD_H);
+    });
+    ArduinoOTA.onEnd([]() {
+      canvas.fillScreen(0x0000);
+      drawCenteredText("Rebooting...", 120, 2, RGB565(50, 230, 50));
+      tft.drawRGBBitmap(0, 0, canvas.getBuffer(), LCD_W, LCD_H);
+    });
+    ArduinoOTA.begin();
+    otaEnabled = true;
+  }
+
+  // OTA handle
+  if (otaEnabled) ArduinoOTA.handle();
+#endif
 
   // Periodic status log
   if ((now - lastLogTime) >= LOG_INTERVAL_MS) {
@@ -727,10 +1611,11 @@ void loop() {
 
     Serial.printf("[STAT] up=%lus | fps=%.1f | heap=%d | bright=%d/255 (%d%%)\n",
       upSec, currentFps, ESP.getFreeHeap(), currentBrightness, buddyBrightnessPercent);
-    Serial.printf("[STAT] mode=%s | ble=%s | ever_connected=%s\n",
+    Serial.printf("[STAT] mode=%s | ble=%s | paired=%s | auth=%s\n",
       appModeStr(appMode),
       bleConnected ? "CONNECTED" : "disconnected",
-      hasEverConnected ? "yes" : "no");
+      isPaired ? "yes" : "no",
+      pairAuthenticated ? "yes" : "no");
 
     if (appMode == MODE_AGENT) {
       char toolBuf[18];

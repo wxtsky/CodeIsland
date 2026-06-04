@@ -83,3 +83,9 @@ void buddyAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, BUD_ALERT);
 }
+
+void buddyQuestion(float t) {
+  _questionMode = true;
+  buddyAlert(t);
+  _questionMode = false;
+}

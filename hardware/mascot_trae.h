@@ -76,3 +76,9 @@ void traeAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, bangSc, jumpY, jumpY, TRAE_ALERT);
 }
+
+void traeQuestion(float t) {
+  _questionMode = true;
+  traeAlert(t);
+  _questionMode = false;
+}

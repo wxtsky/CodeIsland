@@ -76,3 +76,9 @@ void antigravAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, 1.0f, jumpY, jumpY, AG_ALERT);
 }
+
+void antigravQuestion(float t) {
+  _questionMode = true;
+  antigravAlert(t);
+  _questionMode = false;
+}

@@ -94,6 +94,21 @@ static const float kfBangScCommon[] = {
   0,0.3f, 0.03f,1.3f, 0.10f,1.0f, 0.55f,1.0f, 0.62f,0.6f, 1.0f,0.6f
 };
 
+// Global bored state (set by main loop, read by mascot sleep functions)
+extern bool globalBored;
+extern float globalBoredEyeOffsetX;
+
+// Draw yawn mouth for bored state
+inline void drawBoredYawn(float t, float mouthX, float mouthY, float dy = 0) {
+  if (!globalBored) return;
+  float boredCycle = fmodf(t, 8.0f);
+  if (boredCycle > 6.0f && boredCycle < 6.5f) {
+    float openAmount = sinf((boredCycle - 6.0f) * PI * 2.0f);
+    float mh = 1.0f + openAmount * 0.8f;
+    gfx->fillRect(sx(mouthX), sy(mouthY, dy), sw(2.0f), sh(mh), RGB565(80, 60, 60));
+  }
+}
+
 // Draw floating "z" particles (shared sleep element)
 inline void drawZParticles(float t, float baseX = 11.8f, float baseY = 7.7f,
                            uint16_t baseColor = 0xFFFF) {
@@ -135,11 +150,31 @@ inline void drawKeyboard(float t, uint16_t baseCol, uint16_t keyCol, uint16_t hi
                 sw(1.8f), sh(0.7f), hiCol);
 }
 
+// Global flag: when true, drawBang renders a "?" instead of "!"
+static bool _questionMode = false;
+static const uint16_t QUESTION_COLOR = RGB565(80, 160, 255);
+
+// Draw question mark (shared question element — blue "?" instead of red "!")
+inline void drawQuestionMark(float bangOp, float bangSc, float jumpY,
+                              uint16_t questionCol, float baseY = 4.0f) {
+  if (bangOp <= 0.05f) return;
+  float bx = 12.5f;
+  float by = baseY + jumpY * 0.15f;
+  gfx->setTextSize(3);
+  gfx->setTextColor(dim565(questionCol, bangOp));
+  gfx->setCursor(sx(bx), sy(by));
+  gfx->print("?");
+}
+
 // Draw exclamation bang (shared alert element)
 inline void drawBang(float bangOp, float bangSc, float jumpY, float dy,
                      uint16_t alertCol, float baseY = 4.0f) {
   (void)dy;
   if (bangOp <= 0.05f) return;
+  if (_questionMode) {
+    drawQuestionMark(bangOp, bangSc, jumpY, QUESTION_COLOR, baseY);
+    return;
+  }
   float bx = 13.0f;
   float by = baseY + jumpY * 0.15f;
   float bw = 2.0f * bangSc;
@@ -147,6 +182,68 @@ inline void drawBang(float bangOp, float bangSc, float jumpY, float dy,
   float bh2 = 1.5f * bangSc;
   gfx->fillRect(sx(bx), sy(by), sw(bw), sh(bh1), alertCol);
   gfx->fillRect(sx(bx), sy(by + 4.0f * bangSc), sw(bw), sh(bh2), alertCol);
+}
+
+// Tool icon classification
+enum ToolIcon { ICON_NONE, ICON_TERMINAL, ICON_FILE, ICON_WEB, ICON_AGENT, ICON_SEARCH };
+
+inline ToolIcon classifyTool(const char* tool) {
+  if (strcmp(tool, "Bash") == 0 || strcmp(tool, "Shell") == 0) return ICON_TERMINAL;
+  if (strcmp(tool, "Read") == 0 || strcmp(tool, "Write") == 0 ||
+      strcmp(tool, "Edit") == 0 || strcmp(tool, "Glob") == 0) return ICON_FILE;
+  if (strcmp(tool, "WebSearch") == 0 || strcmp(tool, "WebFetch") == 0) return ICON_WEB;
+  if (strcmp(tool, "Task") == 0 || strcmp(tool, "Agent") == 0) return ICON_AGENT;
+  if (strcmp(tool, "Grep") == 0) return ICON_SEARCH;
+  return ICON_NONE;
+}
+
+// 8x8 pixel icon bitmaps (stored in PROGMEM)
+static const uint8_t ICON_TERMINAL_BMP[] PROGMEM = {
+  0xFF, 0x81, 0xA1, 0x91, 0x89, 0x85, 0x81, 0xFF
+};
+static const uint8_t ICON_FILE_BMP[] PROGMEM = {
+  0x3C, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x3C
+};
+static const uint8_t ICON_WEB_BMP[] PROGMEM = {
+  0x3C, 0x42, 0xFF, 0x42, 0x42, 0xFF, 0x42, 0x3C
+};
+static const uint8_t ICON_AGENT_BMP[] PROGMEM = {
+  0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C
+};
+static const uint8_t ICON_SEARCH_BMP[] PROGMEM = {
+  0x38, 0x44, 0x44, 0x44, 0x38, 0x0E, 0x07, 0x03
+};
+
+inline void drawToolIcon(ToolIcon icon, int px, int py, uint16_t color) {
+  if (icon == ICON_NONE) return;
+  const uint8_t* bmp = nullptr;
+  switch (icon) {
+    case ICON_TERMINAL: bmp = ICON_TERMINAL_BMP; break;
+    case ICON_FILE:     bmp = ICON_FILE_BMP;     break;
+    case ICON_WEB:      bmp = ICON_WEB_BMP;      break;
+    case ICON_AGENT:    bmp = ICON_AGENT_BMP;    break;
+    case ICON_SEARCH:   bmp = ICON_SEARCH_BMP;   break;
+    default: return;
+  }
+  for (int row = 0; row < 8; row++) {
+    uint8_t bits = pgm_read_byte(&bmp[row]);
+    for (int col = 0; col < 8; col++) {
+      if (bits & (0x80 >> col)) {
+        gfx->drawPixel(px + col, py + row, color);
+      }
+    }
+  }
+}
+
+// Subagent dots above mascot head
+inline void drawSubagentDots(uint8_t count, float dy) {
+  if (count == 0) return;
+  uint8_t n = min(count, (uint8_t)5);
+  float startX = 7.5f - n * 0.8f;
+  for (uint8_t i = 0; i < n; i++) {
+    gfx->fillCircle(sx(startX + i * 1.6f), sy(5.0f, dy), sw(0.4f),
+                     RGB565(100, 220, 255));
+  }
 }
 
 // Shadow helper

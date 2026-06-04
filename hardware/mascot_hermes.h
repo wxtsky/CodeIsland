@@ -73,3 +73,9 @@ void hermesAlert(float t) {
   setViewportShiftX(0.0f);
   drawBang(bangOp, 1.0f, jumpY, jumpY, HRM_ALERT);
 }
+
+void hermesQuestion(float t) {
+  _questionMode = true;
+  hermesAlert(t);
+  _questionMode = false;
+}

@@ -1029,6 +1029,9 @@ private struct MascotsPage: View {
                     Text(l10n["default_mascot"])
                     Text(l10n["default_mascot_desc"])
                 }
+                .onChange(of: defaultSource) { _, _ in
+                    ESP32StatePublisher.shared.notifyDirty()
+                }
             }
 
             Section {
@@ -1268,6 +1271,9 @@ private struct BuddyPage: View {
         case .scanning: return l10n["buddy_status_scanning"]
         case .searchingSelected: return l10n["buddy_status_searching_selected"]
         case .connecting: return l10n["buddy_status_connecting"]
+        case .pairing: return l10n["buddy_status_pairing"]
+        case .pairWaitingConfirm: return l10n["buddy_status_pair_waiting_confirm"]
+        case .pairRejected: return l10n["buddy_status_pair_rejected"]
         case .connected: return l10n["buddy_status_connected"]
         case .reconnecting(let s): return String(format: l10n["buddy_status_reconnecting"], s)
         }
@@ -1277,10 +1283,11 @@ private struct BuddyPage: View {
         _ = refreshTick
         switch bridge.status {
         case .connected: return .green
-        case .scanning, .connecting, .searchingSelected: return .orange
+        case .scanning, .connecting, .searchingSelected, .pairing: return .orange
+        case .pairWaitingConfirm: return .blue
         case .reconnecting: return .yellow
         case .off, .noSelection: return .secondary
-        case .poweredOff: return .red
+        case .poweredOff, .pairRejected: return .red
         }
     }
 
@@ -1319,6 +1326,36 @@ private struct BuddyPage: View {
                         .font(.caption)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                }
+
+                if bridge.status == .pairWaitingConfirm {
+                    HStack(spacing: 6) {
+                        Image(systemName: "hand.tap.fill")
+                            .foregroundStyle(.blue)
+                        Text(l10n["buddy_pair_confirm_hint"])
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                }
+
+                if bridge.status == .pairRejected {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(l10n["buddy_pair_rejected_hint"])
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                if bridge.usesLegacyPairingFallback {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                        Text(l10n["buddy_legacy_firmware_hint"])
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Button {

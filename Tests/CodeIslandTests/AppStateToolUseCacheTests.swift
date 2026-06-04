@@ -98,6 +98,49 @@ final class AppStateToolUseCacheTests: XCTestCase {
         XCTAssertEqual(try behavior(secondResponse), "allow")
     }
 
+    /// Repro for #169: parallel tool calls that share a tool_use_id but operate
+    /// on different inputs (e.g. "Read 4 files" at once) must not deny one
+    /// another. Merging by id alone denied all but the last, which users saw as
+    /// "denied by PermissionRequest hook" on tools they never rejected.
+    func testParallelRequestsSharingIdButDifferentInputAreNotMerged() async throws {
+        let appState = AppState()
+        let readA = try makeHookEvent(
+            name: "PermissionRequest", sessionId: "s1", toolName: "Read",
+            toolUseId: "shared_id", toolInput: ["file_path": "/a.txt"]
+        )
+        let readB = try makeHookEvent(
+            name: "PermissionRequest", sessionId: "s1", toolName: "Read",
+            toolUseId: "shared_id", toolInput: ["file_path": "/b.txt"]
+        )
+
+        let taskA = Task<Data, Never> {
+            await withCheckedContinuation { cont in
+                appState.handlePermissionRequest(readA, continuation: cont)
+            }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+
+        let taskB = Task<Data, Never> {
+            await withCheckedContinuation { cont in
+                appState.handlePermissionRequest(readB, continuation: cont)
+            }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(appState.permissionQueue.count, 2,
+            "Parallel requests with different inputs must not deny each other (#169)")
+        await assertTaskNotResolved(taskA)
+
+        // Both stay until the user decides each one.
+        appState.approvePermission()
+        let responseA = await taskA.value
+        XCTAssertEqual(try behavior(responseA), "allow")
+        appState.approvePermission()
+        let responseB = await taskB.value
+        XCTAssertEqual(try behavior(responseB), "allow")
+    }
+
     // MARK: - Stale queue drain via PostToolUse
 
     func testPostToolUseDrainsQueuedPermissionForSameId() async throws {

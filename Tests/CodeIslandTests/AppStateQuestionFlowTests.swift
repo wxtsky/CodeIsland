@@ -40,8 +40,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(returnedQuestions[1]["question"] as? String, questions[1]["question"] as? String)
 
         let answers = try extractAnswers(from: responseData)
-        XCTAssertEqual(answers["工作模式"] as? String, "先给方案")
-        XCTAssertEqual(answers["输出风格"] as? String, "平衡")
+        XCTAssertEqual(answers["你希望我接下来以哪种方式协作？"] as? String, "先给方案")
+        XCTAssertEqual(answers["你更喜欢我用哪种回答风格？"] as? String, "平衡")
     }
 
     // MARK: - Single question
@@ -68,7 +68,7 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
-        XCTAssertEqual(answers["语言偏好"] as? String, "中文")
+        XCTAssertEqual(answers["你希望我主要使用哪种语言回复？"] as? String, "中文")
     }
 
     // MARK: - Skip returns deny
@@ -217,15 +217,18 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(fallback, .bashCommand("echo 2"))
     }
 
-    // MARK: - Duplicate headers dedup
+    // MARK: - Duplicate question text dedup
 
-    func testDuplicateHeadersGetDedupedKeys() async throws {
+    func testDuplicateQuestionTextGetsDedupedKeys() async throws {
+        // Answer keys are the question text (matching Claude Code's
+        // `answers[question.question]` lookup). Two questions sharing the same
+        // text get a suffixed key so each answer stays addressable.
         let appState = AppState()
         let event = try makeAskUserQuestionEvent(
             sessionId: "s-dup",
             questions: [
-                question(header: "偏好", text: "第一个问题", options: ["A", "B"]),
-                question(header: "偏好", text: "第二个问题", options: ["C", "D"]),
+                question(header: "偏好", text: "重复的问题", options: ["A", "B"]),
+                question(header: "其他", text: "重复的问题", options: ["C", "D"]),
             ]
         )
 
@@ -237,19 +240,22 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         await Task.yield()
         appState.answerQuestionMulti([
-            (question: "第一个问题", answer: "A"),
-            (question: "第二个问题", answer: "D"),
+            (question: "重复的问题", answer: "A"),
+            (question: "重复的问题", answer: "D"),
         ])
 
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
-        XCTAssertEqual(answers["偏好"] as? String, "A")
-        XCTAssertEqual(answers["偏好_2"] as? String, "D")
+        XCTAssertEqual(answers["重复的问题"] as? String, "A")
+        XCTAssertEqual(answers["重复的问题_2"] as? String, "D")
     }
 
-    // MARK: - Missing/empty header fallback
+    // MARK: - Answer key ignores header
 
-    func testMissingHeaderUsesIndexedFallbackKeys() async throws {
+    func testAnswerKeyUsesQuestionTextRegardlessOfHeader() async throws {
+        // header used to be the answer key but no longer participates. Even
+        // when header is nil or empty, the key stays the question text so
+        // Claude Code's `answers[question.question]` lookup resolves.
         let appState = AppState()
         let event = try makeAskUserQuestionEvent(
             sessionId: "s-nohdr",
@@ -273,8 +279,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
-        XCTAssertEqual(answers["answer_1"] as? String, "B")
-        XCTAssertEqual(answers["answer_2"] as? String, "C")
+        XCTAssertEqual(answers["没有 header"] as? String, "B")
+        XCTAssertEqual(answers["空 header"] as? String, "C")
     }
 
     // MARK: - Direct answerQuestion blocked
@@ -370,8 +376,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
         appState.answerCompanionQuestion("平衡")
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
-        XCTAssertEqual(answers["工作模式"] as? String, "直接执行")
-        XCTAssertEqual(answers["输出风格"] as? String, "平衡")
+        XCTAssertEqual(answers["你希望我接下来以哪种方式协作？"] as? String, "直接执行")
+        XCTAssertEqual(answers["你更喜欢我用哪种回答风格？"] as? String, "平衡")
         XCTAssertEqual(appState.questionQueue.count, 0)
 
         let completedPayload = appState.appleCompanionStatePayload(sequence: 44)

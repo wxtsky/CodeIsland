@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CodeIslandCore
 
 /// Activates the terminal window/tab running a specific Claude Code session.
@@ -70,10 +71,15 @@ struct TerminalActivator {
     static func activate(session: SessionSnapshot, sessionId: String? = nil) {
         guard !session.isRemote else { return }
 
-        // Native app by bundle ID (e.g. Codex APP vs Codex CLI)
+        // Native app by bundle ID (e.g. Codex APP vs Codex CLI). These are IDE-style
+        // apps (Cursor, Trae, Qoder, Factory, …) that can hold several workspace
+        // windows at once, so match the one whose title contains the session's
+        // project folder instead of just raising the most-recently-used window (#199).
+        // activateIDEWindow falls back to a plain app-level activation when there's
+        // no cwd or no matching window, so this never regresses single-window apps.
         if let bundleId = session.termBundleId,
            nativeAppBundles[bundleId] != nil {
-            activateByBundleId(bundleId)
+            activateIDEWindow(bundleId: bundleId, cwd: session.cwd)
             return
         }
 
@@ -482,6 +488,9 @@ struct TerminalActivator {
                             repeat with s in sessions of t
                                 try
                                     if tty of s is "\(escapeAppleScript(fullTty))" then
+                                        try
+                                            select w
+                                        end try
                                         select t
                                         select s
                                         set index of w to 1
@@ -508,6 +517,9 @@ struct TerminalActivator {
                         repeat with s in sessions of t
                             try
                                 if name of s contains "\(escapeAppleScript(dirName))" or path of s contains "\(escapeAppleScript(dirName))" then
+                                    try
+                                        select w
+                                    end try
                                     select t
                                     select s
                                     set index of w to 1
@@ -541,6 +553,9 @@ struct TerminalActivator {
                         repeat with aSession in sessions of aTab
                             if unique ID of aSession is "\(escapeAppleScript(sessionId))" then
                                 set miniaturized of aWindow to false
+                                try
+                                    select aWindow
+                                end try
                                 select aTab
                                 select aSession
                                 return
@@ -1189,8 +1204,7 @@ struct TerminalActivator {
             bringToFront("Warp")
             return
         }
-        if warpApp.isHidden { warpApp.unhide() }
-        warpApp.activate()
+        raiseAppWithoutQuickTerminal(bundleId: warpBundleId)
 
         guard let cwd, !cwd.isEmpty else { return }
 
@@ -1207,18 +1221,31 @@ struct TerminalActivator {
             guard let best = matches.first else { return }
             if best.isActiveTab { return }
 
-            let targetPosition = best.tabIndexInWindow + 1
-            guard (1...9).contains(targetPosition) else { return }
-
-            DispatchQueue.main.async {
-                sendWarpGoToTab(position: targetPosition)
+            guard let targetPosition = warpShortcutPosition(for: best) else {
+                return
             }
+            guard hasAccessibilityPermission(prompt: true) else { return }
+
+            sendWarpGoToTabWhenFrontmost(
+                position: targetPosition,
+                bundleId: warpBundleId,
+                pid: warpApp.processIdentifier
+            )
         }
     }
 
-    /// Synthesize Warp's default "jump to tab N" shortcut (Cmd+<digit>, 1-9) for the
-    /// frontmost window. 10+ would require an extra keycode table; we bail for now.
-    private static func sendWarpGoToTab(position: Int) {
+    /// Convert Warp's 0-based tab index to its built-in shortcut semantics:
+    /// Cmd+1...Cmd+8 select tabs 1...8, and Cmd+9 selects the last tab.
+    private static func warpShortcutPosition(for match: WarpPaneMatch) -> Int? {
+        let targetPosition = match.tabIndexInWindow + 1
+        if (1...8).contains(targetPosition) { return targetPosition }
+        if targetPosition == match.tabCountInWindow { return 9 }
+        return nil
+    }
+
+    /// Synthesize Warp's default "jump to tab" shortcut for the frontmost window.
+    /// Positions 1...8 mean tabs 1...8; position 9 means the last tab.
+    private static func sendWarpGoToTab(position: Int, pid: pid_t) {
         guard (1...9).contains(position) else { return }
         // ANSI virtual keycodes for digits 1..9 (QWERTY layout).
         let digitKeyCodes: [CGKeyCode] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
@@ -1227,11 +1254,44 @@ struct TerminalActivator {
 
         if let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
             down.flags = .maskCommand
-            down.post(tap: .cghidEventTap)
+            down.postToPid(pid)
         }
         if let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
             up.flags = .maskCommand
-            up.post(tap: .cghidEventTap)
+            up.postToPid(pid)
         }
+    }
+
+    private static func sendWarpGoToTabWhenFrontmost(
+        position: Int,
+        bundleId: String,
+        pid: pid_t,
+        attemptsRemaining: Int = 6
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            let frontBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            if frontBundleId == bundleId {
+                sendWarpGoToTab(position: position, pid: pid)
+                return
+            }
+
+            guard attemptsRemaining > 0 else { return }
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+            sendWarpGoToTabWhenFrontmost(
+                position: position,
+                bundleId: bundleId,
+                pid: pid,
+                attemptsRemaining: attemptsRemaining - 1
+            )
+        }
+    }
+
+    private static func hasAccessibilityPermission(prompt: Bool) -> Bool {
+        let options = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt
+        ] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 }

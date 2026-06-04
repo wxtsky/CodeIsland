@@ -6,7 +6,10 @@ import subprocess
 import sys
 
 VERSION = "0.1.2"
-SOCKET_PATH = os.environ.get("CODEISLAND_SOCKET_PATH", "/tmp/codeisland.sock")
+# Per-user socket path (#193): CodeIsland injects CODEISLAND_SOCKET_PATH via the hook
+# command, but fall back to a uid-scoped path so multiple users on a shared host never
+# collide on a single /tmp/codeisland.sock.
+SOCKET_PATH = os.environ.get("CODEISLAND_SOCKET_PATH") or f"/tmp/codeisland-{os.getuid()}.sock"
 REMOTE_HOST_ID = os.environ.get("CODEISLAND_REMOTE_HOST_ID", "")
 REMOTE_HOST_NAME = os.environ.get("CODEISLAND_REMOTE_HOST_NAME", "")
 SOURCE = os.environ.get("CODEISLAND_SOURCE", "")

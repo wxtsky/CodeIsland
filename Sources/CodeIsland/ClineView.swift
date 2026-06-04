@@ -278,6 +278,7 @@ struct ClineView: View {
     }
 }
 
+#if DEBUG
 #Preview("ClineView") {
     HStack(spacing: 20) {
         ClineView(status: .idle,            size: 54)
@@ -287,3 +288,4 @@ struct ClineView: View {
     .padding(24)
     .background(Color(white: 0.15))
 }
+#endif

@@ -489,6 +489,19 @@ hooks:
         XCTAssertTrue(script.contains(#""file://" + str(plugin_path)"#))
     }
 
+    func testRemoteInstallerConfigureScriptInstallsHermes() {
+        // #176: Hermes (a Claude Code fork) must be configured on remote hosts too.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host)
+
+        XCTAssertTrue(script.contains("def install_hermes():"))
+        XCTAssertTrue(script.contains(#"home / ".hermes""#))
+        XCTAssertTrue(script.contains(#"command_for("hermes")"#))
+        XCTAssertTrue(script.contains(#""Hermes ok""#))
+        XCTAssertTrue(script.contains("install_hermes()"))
+    }
+
     func testRemoteOpencodePluginCarriesRemoteHostIdentity() throws {
         let host = RemoteHost(id: #"host-"quoted""#, name: "devbox\nwest", host: "example.com")
         let source = """
@@ -502,6 +515,83 @@ hooks:
         XCTAssertTrue(plugin.contains(#"const SOCKET_PATH = "/tmp/codeisland.sock";"#))
         XCTAssertTrue(plugin.contains(#"const REMOTE_HOST_ID = "host-\"quoted\"";"#))
         XCTAssertTrue(plugin.contains(#"const REMOTE_HOST_NAME = "devbox\nwest";"#))
+    }
+
+    func testRemoteInstallerConfigureScriptInjectsPerUserSocketPath() {
+        // #193: on a shared remote host the hook command must point at a uid-scoped
+        // socket path so different OS users don't collide on /tmp/codeisland.sock.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, remoteSocketPath: "/tmp/codeisland-1000.sock")
+
+        XCTAssertTrue(script.contains(#"socket_path = "/tmp/codeisland-1000.sock""#))
+        XCTAssertTrue(script.contains("CODEISLAND_SOCKET_PATH={socket_path}"))
+        XCTAssertFalse(script.contains("CODEISLAND_SOCKET_PATH=/tmp/codeisland.sock"))
+    }
+
+    func testRemoteInstallerConfigureScriptFallsBackToLegacySocketPath() {
+        // When no per-user path is supplied (probe failed) the legacy shared path is used.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host)
+
+        XCTAssertTrue(script.contains(#"socket_path = "/tmp/codeisland.sock""#))
+    }
+
+    func testRemoteOpencodePluginInjectsPerUserSocketPath() {
+        // #193
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let source = #"const SOCKET_PATH = process.env.CODEISLAND_SOCKET_PATH || "/tmp/codeisland.sock";"#
+
+        let plugin = RemoteInstaller.remoteOpencodePluginForInstall(source: source, host: host, remoteSocketPath: "/tmp/codeisland-1000.sock")
+
+        XCTAssertTrue(plugin.contains(#"const SOCKET_PATH = "/tmp/codeisland-1000.sock";"#))
+    }
+
+    func testRemoteInstallerConfigureScriptInstallsCustomClaudeCLI() throws {
+        // #192: custom CLIs (claude/nested format) should also get hooks installed on remote hosts.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let custom = CLIConfig(
+            name: "MyCLI", source: "mycli",
+            configPath: ".mycli/settings.json", configKey: "hooks",
+            format: .claude,
+            events: [("UserPromptSubmit", 5, true), ("Stop", 5, true)]
+        )
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [custom])
+
+        XCTAssertTrue(script.contains("def install_custom():"))
+        XCTAssertTrue(script.contains(#""source": "mycli""#))
+        XCTAssertTrue(script.contains(#""config_path": ".mycli/settings.json""#))
+        XCTAssertTrue(script.contains(#""format": "claude""#))
+        XCTAssertTrue(script.contains("install_opencode()] + install_custom()"))
+        try assertPythonCompiles(script)
+    }
+
+    func testRemoteInstallerConfigureScriptSkipsUnsupportedCustomFormat() {
+        // #192: flat (Cursor-style) hooks need a --event flag the remote hook can't
+        // supply, so they are skipped remotely — the list must come out empty.
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+        let flat = CLIConfig(
+            name: "CursorLike", source: "cursorlike",
+            configPath: ".cl/settings.json", configKey: "hooks",
+            format: .flat,
+            events: [("beforeSubmitPrompt", 5, false)]
+        )
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [flat])
+
+        XCTAssertFalse(script.contains("cursorlike"))
+        XCTAssertTrue(script.contains("custom_clis = []"))
+    }
+
+    func testRemoteInstallerConfigureScriptWithNoCustomCLIsIsEmptyList() {
+        let host = RemoteHost(id: "host-1", name: "devbox", host: "example.com")
+
+        let script = RemoteInstaller.configureRemoteHooksScript(host: host, customCLIs: [])
+
+        XCTAssertTrue(script.contains("custom_clis = []"))
+        XCTAssertTrue(script.contains("def install_custom():"))
     }
 
     func testRemoteTraecliPermissionRequestRoutesAsPermissionAndUsesRemoteSessionNamespace() async throws {
@@ -785,5 +875,142 @@ hooks:
         XCTAssertTrue(cleaned.contains("file:///user/other.js"))
         XCTAssertFalse(cleaned.contains("file:///tmp/codeisland.js"))
         XCTAssertFalse(cleaned.contains("\\/"), "No slash escaping")
+    }
+    // MARK: - pi extension
+
+    func testInstallPiExtensionWritesBundledExtensionWhenPiAgentDirExists() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piAgentDir = tempDir.appendingPathComponent(".pi/agent")
+        let piExtensionDir = piAgentDir.appendingPathComponent("extensions")
+        let piExtensionPath = piExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: piAgentDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installPiExtension(
+            piAgentDir: piAgentDir.path,
+            piExtensionDir: piExtensionDir.path,
+            piExtensionPath: piExtensionPath.path,
+            fm: fm
+        ))
+
+        let contents = try String(contentsOf: piExtensionPath)
+        XCTAssertTrue(contents.contains("CodeIsland pi extension"))
+        XCTAssertTrue(contents.contains("// version: v1"))
+        XCTAssertTrue(contents.contains("@earendil-works/pi-coding-agent"))
+        XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testInstallPiExtensionSkipsWhenPiAgentDirIsMissing() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piAgentDir = tempDir.appendingPathComponent(".pi/agent")
+        let piExtensionDir = piAgentDir.appendingPathComponent("extensions")
+        let piExtensionPath = piExtensionDir.appendingPathComponent("codeisland.ts")
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installPiExtension(
+            piAgentDir: piAgentDir.path,
+            piExtensionDir: piExtensionDir.path,
+            piExtensionPath: piExtensionPath.path,
+            fm: fm
+        ))
+        XCTAssertFalse(fm.fileExists(atPath: piExtensionPath.path))
+    }
+
+    func testUninstallPiExtensionOnlyRemovesCodeIslandExtension() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        let userExtensionPath = tempDir.appendingPathComponent("user.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// CodeIsland pi extension\n// version: v1\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+        try "// user extension\n".write(to: userExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallPiExtension(piExtensionPath: piExtensionPath.path, fm: fm)
+
+        XCTAssertFalse(fm.fileExists(atPath: piExtensionPath.path))
+        XCTAssertTrue(fm.fileExists(atPath: userExtensionPath.path))
+    }
+
+    func testUninstallPiExtensionPreservesUserFileAtSamePath() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// user-managed file\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallPiExtension(piExtensionPath: piExtensionPath.path, fm: fm)
+
+        XCTAssertTrue(fm.fileExists(atPath: piExtensionPath.path))
+        XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testOutdatedPiExtensionRequiresRepair() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// CodeIsland pi extension\n// version: old\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+    }
+
+    func testInstallOmpExtensionWritesBundledExtensionWhenOmpAgentDirExists() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompAgentDir = tempDir.appendingPathComponent(".omp/agent")
+        let ompExtensionDir = ompAgentDir.appendingPathComponent("extensions")
+        let ompExtensionPath = ompExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: ompAgentDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installOmpExtension(
+            ompAgentDir: ompAgentDir.path,
+            ompExtensionDir: ompExtensionDir.path,
+            ompExtensionPath: ompExtensionPath.path,
+            fm: fm
+        ))
+
+        let contents = try String(contentsOf: ompExtensionPath)
+        XCTAssertTrue(contents.contains("CodeIsland pi extension"))
+        XCTAssertTrue(contents.contains("// version: v1"))
+        XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
+        XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
+        XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
+    }
+
+    func testInstallOmpExtensionSkipsWhenOmpAgentDirIsMissing() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompAgentDir = tempDir.appendingPathComponent(".omp/agent")
+        let ompExtensionDir = ompAgentDir.appendingPathComponent("extensions")
+        let ompExtensionPath = ompExtensionDir.appendingPathComponent("codeisland.ts")
+        defer { try? fm.removeItem(at: tempDir) }
+
+        XCTAssertTrue(ConfigInstaller.installOmpExtension(
+            ompAgentDir: ompAgentDir.path,
+            ompExtensionDir: ompExtensionDir.path,
+            ompExtensionPath: ompExtensionPath.path,
+            fm: fm
+        ))
+        XCTAssertFalse(fm.fileExists(atPath: ompExtensionPath.path))
+    }
+
+    func testUninstallOmpExtensionPreservesUserFileAtSamePath() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompExtensionPath = tempDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// user-managed file\n".write(to: ompExtensionPath, atomically: true, encoding: .utf8)
+
+        ConfigInstaller.uninstallOmpExtension(ompExtensionPath: ompExtensionPath.path, fm: fm)
+
+        XCTAssertTrue(fm.fileExists(atPath: ompExtensionPath.path))
+        XCTAssertFalse(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
     }
 }

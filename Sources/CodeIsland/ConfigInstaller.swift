@@ -120,6 +120,13 @@ struct ConfigInstaller {
     /// Absolute path for external CLI hooks — avoids tilde expansion issues in IDE environments
     private static let bridgeCommand = codeislandDir + "/codeisland-bridge"
     private static let traecliConfigPath = NSHomeDirectory() + "/.trae/traecli.yaml"
+    private static let piAgentDir = NSHomeDirectory() + "/.pi/agent"
+    private static let piExtensionDir = NSHomeDirectory() + "/.pi/agent/extensions"
+    private static let piExtensionPath = NSHomeDirectory() + "/.pi/agent/extensions/codeisland.ts"
+    private static let ompAgentDir = NSHomeDirectory() + "/.omp/agent"
+    private static let ompExtensionDir = NSHomeDirectory() + "/.omp/agent/extensions"
+    private static let ompExtensionPath = NSHomeDirectory() + "/.omp/agent/extensions/codeisland.ts"
+
 
     // Legacy paths for migration cleanup (#32)
     private static let legacyBridgePath = NSHomeDirectory() + "/.claude/hooks/codeisland-bridge"
@@ -368,6 +375,25 @@ struct ConfigInstaller {
                 ("PreCompact",       5, true),
             ]
         ),
+        // pi — TypeScript extension auto-discovered from ~/.pi/agent/extensions.
+        CLIConfig(
+            name: "pi",
+            source: "pi",
+            configPath: ".pi/agent/extensions/codeisland.ts",
+            configKey: "",
+            format: .none,
+            events: []
+        )
+        ,
+        // Oh My Pi / OMP — TypeScript extension loaded from ~/.omp/agent/extensions.
+        CLIConfig(
+            name: "Oh My Pi",
+            source: "omp",
+            configPath: ".omp/agent/extensions/codeisland.ts",
+            configKey: "",
+            format: .none,
+            events: []
+        )
     ]
 
     static var allCLIs: [CLIConfig] {
@@ -613,6 +639,8 @@ struct ConfigInstaller {
                 if !installClaudeHooks(cli: cli, fm: fm) { ok = false }
             } else if cli.source == "traecli" {
                 if !installTraecliHooks(fm: fm) { ok = false }
+            } else if cli.source == "pi" || cli.source == "omp" {
+                continue
             } else {
                 if !installExternalHooks(cli: cli, fm: fm) { ok = false }
             }
@@ -629,6 +657,16 @@ struct ConfigInstaller {
             if !installOpencodePlugin(fm: fm) { ok = false }
         }
 
+        // Install pi extension
+        if isEnabled(source: "pi") {
+            if !installPiExtension(fm: fm) { ok = false }
+        }
+
+        // Install Oh My Pi / OMP extension
+        if isEnabled(source: "omp") {
+            if !installOmpExtension(fm: fm) { ok = false }
+        }
+
         return ok
     }
 
@@ -643,6 +681,10 @@ struct ConfigInstaller {
         for cli in allCLIs {
             if cli.source == "traecli" {
                 uninstallTraecliHooks(fm: fm)
+            } else if cli.source == "pi" {
+                uninstallPiExtension(fm: fm)
+            } else if cli.source == "omp" {
+                uninstallOmpExtension(fm: fm)
             } else {
                 uninstallHooks(cli: cli, fm: fm)
             }
@@ -661,6 +703,8 @@ struct ConfigInstaller {
     /// Check if a specific CLI's hooks are installed
     static func isInstalled(source: String) -> Bool {
         if source == "opencode" { return isOpencodePluginInstalled(fm: FileManager.default) }
+        if source == "pi" { return isPiExtensionInstalled(fm: FileManager.default) }
+        if source == "omp" { return isOmpExtensionInstalled(fm: FileManager.default) }
         if source == "traecli" { return isTraecliHooksInstalled(fm: FileManager.default) }
         if source == "cline" {
             guard let cli = allCLIs.first(where: { $0.source == "cline" }) else { return false }
@@ -673,6 +717,8 @@ struct ConfigInstaller {
     /// Check if CLI directory exists (tool is installed on this machine)
     static func cliExists(source: String) -> Bool {
         if source == "opencode" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.config/opencode") }
+        if source == "pi" { return FileManager.default.fileExists(atPath: piAgentDir) }
+        if source == "omp" { return FileManager.default.fileExists(atPath: ompAgentDir) }
         if source == "copilot" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.copilot") }
         if source == "cline" {
             let fm = FileManager.default
@@ -704,6 +750,12 @@ struct ConfigInstaller {
             if source == "opencode" {
                 return installOpencodePlugin(fm: fm)
             }
+            if source == "pi" {
+                return installPiExtension(fm: fm)
+            }
+            if source == "omp" {
+                return installOmpExtension(fm: fm)
+            }
             guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
             if cli.source == "claude" {
                 return installClaudeHooks(cli: cli, fm: fm)
@@ -717,6 +769,10 @@ struct ConfigInstaller {
         } else {
             if source == "opencode" {
                 uninstallOpencodePlugin(fm: fm)
+            } else if source == "pi" {
+                uninstallPiExtension(fm: fm)
+            } else if source == "omp" {
+                uninstallOmpExtension(fm: fm)
             } else if let cli = allCLIs.first(where: { $0.source == source }) {
                 if cli.source == "traecli" {
                     uninstallTraecliHooks(fm: fm)
@@ -738,9 +794,16 @@ struct ConfigInstaller {
         var repaired: [String] = []
         for cli in allCLIs {
             guard isEnabled(source: cli.source) else { continue }
-            let dirExists = cli.format == .copilot
-                ? fm.fileExists(atPath: NSHomeDirectory() + "/.copilot")
-                : fm.fileExists(atPath: cli.dirPath)
+            let dirExists: Bool
+            if cli.format == .copilot {
+                dirExists = fm.fileExists(atPath: NSHomeDirectory() + "/.copilot")
+            } else if cli.source == "pi" {
+                dirExists = fm.fileExists(atPath: piAgentDir)
+            } else if cli.source == "omp" {
+                dirExists = fm.fileExists(atPath: ompAgentDir)
+            } else {
+                dirExists = fm.fileExists(atPath: cli.dirPath)
+            }
             guard dirExists else { continue }
             if cli.source == "traecli" {
                 if isTraecliHooksInstalled(fm: fm) { continue }
@@ -749,7 +812,25 @@ struct ConfigInstaller {
                 }
                 continue
             }
+            if cli.source == "pi" {
+                if isPiExtensionInstalled(fm: fm) { continue }
+                if installPiExtension(fm: fm) {
+                    repaired.append(cli.name)
+                }
+                continue
+            }
+            if cli.source == "omp" {
+                if isOmpExtensionInstalled(fm: fm) { continue }
+                if installOmpExtension(fm: fm) {
+                    repaired.append(cli.name)
+                }
+                continue
+            }
             if isHooksInstalled(for: cli, fm: fm) { continue }
+            // #182: respect a user who deleted some hook events by hand — don't
+            // re-add them unless nothing of ours remains or a stale entry needs
+            // cleanup.
+            if shouldPreservePartialHooks(for: cli, fm: fm) { continue }
             if cli.source == "claude" {
                 if installClaudeHooks(cli: cli, fm: fm) {
                     repaired.append(cli.name)
@@ -772,6 +853,18 @@ struct ConfigInstaller {
            fm.fileExists(atPath: (opencodeConfigPath as NSString).deletingLastPathComponent),
            !isOpencodePluginInstalled(fm: fm) {
             if installOpencodePlugin(fm: fm) { repaired.append("OpenCode") }
+        }
+        // pi extension
+        if isEnabled(source: "pi"),
+           fm.fileExists(atPath: piAgentDir),
+           !isPiExtensionInstalled(fm: fm) {
+            if installPiExtension(fm: fm) { repaired.append("pi") }
+        }
+        // Oh My Pi / OMP extension
+        if isEnabled(source: "omp"),
+           fm.fileExists(atPath: ompAgentDir),
+           !isOmpExtensionInstalled(fm: fm) {
+            if installOmpExtension(fm: fm) { repaired.append("Oh My Pi") }
         }
         return repaired
     }
@@ -1627,25 +1720,35 @@ struct ConfigInstaller {
             contents = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
         }
 
-        // Already set to true (non-commented) — don't touch
-        if contents.range(of: #"(?m)^\s*hooks\s*=\s*true"#, options: .regularExpression) != nil {
+        let currentHooksPattern = #"(?m)^\s*hooks\s*=\s*(true|false)\s*(#.*)?$"#
+        let hooksTruePattern = #"(?m)^\s*hooks\s*=\s*true\s*(#.*)?$"#
+        let hooksFalsePattern = #"(?m)^\s*hooks\s*=\s*false\s*(#.*)?$"#
+        let legacyHooksPattern = #"(?m)^\s*codex_hooks\s*=\s*(true|false)\s*(#.*)?$"#
+        let hasCurrentHooks = contents.range(of: currentHooksPattern, options: .regularExpression) != nil
+        let hasLegacyHooks = contents.range(of: legacyHooksPattern, options: .regularExpression) != nil
+
+        // Remove the retired feature name used by older Codex releases. If the
+        // current flag is absent, turn the legacy flag into the current one.
+        if hasLegacyHooks {
+            contents = contents.replacingOccurrences(
+                of: legacyHooksPattern,
+                with: hasCurrentHooks ? "" : "hooks = true",
+                options: .regularExpression
+            )
+        }
+
+        // Already set to true (non-commented) — don't touch beyond legacy cleanup.
+        if contents.range(of: hooksTruePattern, options: .regularExpression) != nil {
+            if hasLegacyHooks {
+                return fm.createFile(atPath: configPath, contents: contents.data(using: .utf8))
+            }
             return true
         }
 
-        // Set to false (non-commented) — flip it to true in place
-        if contents.range(of: #"(?m)^\s*hooks\s*=\s*false"#, options: .regularExpression) != nil {
+        // Set to false (non-commented) — flip it to true in place.
+        if contents.range(of: hooksFalsePattern, options: .regularExpression) != nil {
             contents = contents.replacingOccurrences(
-                of: #"(?m)^\s*hooks\s*=\s*false"#,
-                with: "hooks = true",
-                options: .regularExpression
-            )
-            return fm.createFile(atPath: configPath, contents: contents.data(using: .utf8))
-        }
-
-        // Migrate the retired feature name used by older Codex releases.
-        if contents.range(of: #"(?m)^\s*codex_hooks\s*=\s*(true|false)"#, options: .regularExpression) != nil {
-            contents = contents.replacingOccurrences(
-                of: #"(?m)^\s*codex_hooks\s*=\s*(true|false)"#,
+                of: hooksFalsePattern,
                 with: "hooks = true",
                 options: .regularExpression
             )
@@ -1935,6 +2038,27 @@ struct ConfigInstaller {
         return true
     }
 
+    /// #182: tell apart a user who intentionally kept only some hook events
+    /// from a config that was never installed, fully wiped, or corrupted.
+    /// Returns true when at least one of our hook entries is present and
+    /// nothing stale needs rewriting — meaning verifyAndRepair should leave the
+    /// (incomplete) config untouched instead of re-adding the removed events.
+    static func shouldPreservePartialHooks(hooks: [String: Any], events: [(String, Int, Bool)]) -> Bool {
+        if hasStaleAsyncKey(hooks) { return false }
+        return events.contains { (event, _, _) in
+            guard let entries = hooks[event] as? [[String: Any]] else { return false }
+            return entries.contains { containsOurHook($0) }
+        }
+    }
+
+    private static func shouldPreservePartialHooks(for cli: CLIConfig, fm: FileManager) -> Bool {
+        // Kimi stores hooks in TOML with its own all-or-nothing detection.
+        if cli.format == .kimi { return false }
+        guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
+              let hooks = root[cli.configKey] as? [String: Any] else { return false }
+        return shouldPreservePartialHooks(hooks: hooks, events: cli.events)
+    }
+
     /// Detect legacy hook entries with invalid "async" key
     private static func hasStaleAsyncKey(_ hooks: [String: Any]) -> Bool {
         for (_, value) in hooks {
@@ -2029,6 +2153,93 @@ struct ConfigInstaller {
         if let url = Bundle.appModule.url(forResource: "codeisland-opencode", withExtension: "js"),
            let src = try? String(contentsOf: url) { return src }
         return nil
+    }
+
+    // MARK: - pi Extension
+
+    /// Current pi extension version — bump when codeisland-pi.ts changes.
+    private static let piExtensionVersion = "v1"
+
+    private static func piExtensionSource() -> String? {
+        if let url = Bundle.appModule.url(forResource: "codeisland-pi", withExtension: "ts", subdirectory: "Resources"),
+           let src = try? String(contentsOf: url) { return src }
+        if let url = Bundle.appModule.url(forResource: "codeisland-pi", withExtension: "ts"),
+           let src = try? String(contentsOf: url) { return src }
+        return nil
+    }
+
+    @discardableResult
+    static func installPiExtension(
+        piAgentDir: String = piAgentDir,
+        piExtensionDir: String = piExtensionDir,
+        piExtensionPath: String = piExtensionPath,
+        fm: FileManager
+    ) -> Bool {
+        guard fm.fileExists(atPath: piAgentDir) else { return true }
+        guard let source = piExtensionSource() else { return false }
+        try? fm.createDirectory(atPath: piExtensionDir, withIntermediateDirectories: true)
+        if fm.fileExists(atPath: piExtensionPath) { try? fm.removeItem(atPath: piExtensionPath) }
+        return fm.createFile(atPath: piExtensionPath, contents: Data(source.utf8))
+    }
+
+    static func uninstallPiExtension(
+        piExtensionPath: String = piExtensionPath,
+        fm: FileManager
+    ) {
+        guard fm.fileExists(atPath: piExtensionPath),
+              let data = fm.contents(atPath: piExtensionPath),
+              let content = String(data: data, encoding: .utf8),
+              content.contains("CodeIsland pi extension")
+        else { return }
+        try? fm.removeItem(atPath: piExtensionPath)
+    }
+
+    static func isPiExtensionInstalled(
+        piExtensionPath: String = piExtensionPath,
+        fm: FileManager
+    ) -> Bool {
+        guard fm.fileExists(atPath: piExtensionPath),
+              let data = fm.contents(atPath: piExtensionPath),
+              let content = String(data: data, encoding: .utf8)
+        else { return false }
+        return content.contains("CodeIsland pi extension")
+            && content.contains("// version: \(piExtensionVersion)")
+    }
+
+    private static func ompExtensionSource() -> String? {
+        if let url = Bundle.appModule.url(forResource: "codeisland-omp", withExtension: "ts", subdirectory: "Resources"),
+           let src = try? String(contentsOf: url) { return src }
+        if let url = Bundle.appModule.url(forResource: "codeisland-omp", withExtension: "ts"),
+           let src = try? String(contentsOf: url) { return src }
+        return nil
+    }
+
+    @discardableResult
+    static func installOmpExtension(
+        ompAgentDir: String = ompAgentDir,
+        ompExtensionDir: String = ompExtensionDir,
+        ompExtensionPath: String = ompExtensionPath,
+        fm: FileManager
+    ) -> Bool {
+        guard fm.fileExists(atPath: ompAgentDir) else { return true }
+        guard let source = ompExtensionSource() else { return false }
+        try? fm.createDirectory(atPath: ompExtensionDir, withIntermediateDirectories: true)
+        if fm.fileExists(atPath: ompExtensionPath) { try? fm.removeItem(atPath: ompExtensionPath) }
+        return fm.createFile(atPath: ompExtensionPath, contents: Data(source.utf8))
+    }
+
+    static func uninstallOmpExtension(
+        ompExtensionPath: String = ompExtensionPath,
+        fm: FileManager
+    ) {
+        uninstallPiExtension(piExtensionPath: ompExtensionPath, fm: fm)
+    }
+
+    static func isOmpExtensionInstalled(
+        ompExtensionPath: String = ompExtensionPath,
+        fm: FileManager
+    ) -> Bool {
+        isPiExtensionInstalled(piExtensionPath: ompExtensionPath, fm: fm)
     }
 
     /// Merge our plugin reference into an opencode.json file's contents.
