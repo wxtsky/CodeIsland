@@ -35,6 +35,7 @@ It connects to **12 AI coding tools** via Unix socket IPC, displaying session st
 - **Smart suppress** — Tab-level terminal detection: only suppresses notifications when you're looking at the specific session tab, not just the terminal app
 - **Sound effects** — Optional 8-bit sound notifications for session events
 - **Auto hook install** — Automatically configures hooks for all detected CLI tools, with auto-repair and version tracking
+- **iPhone & Apple Watch Buddy** — Mirror session status to Dynamic Island, Lock Screen, StandBy, and Apple Watch
 - **Bilingual UI** — English and Chinese, auto-detects system language
 - **Multi-display** — Works with external monitors, auto-detects notch displays
 
@@ -73,6 +74,16 @@ brew install --cask codeisland
 
 > **Note:** On first launch, macOS may show a security warning. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
+### iPhone & Apple Watch Buddy
+
+Code Island Buddy is available on the App Store:
+
+[Download Code Island Buddy](https://apps.apple.com/us/app/code-island-buddy/id6773881129)
+
+The iPhone app mirrors your Mac sessions to Dynamic Island, Lock Screen, StandBy, and Apple Watch. The Mac app publishes lightweight session snapshots over your local network while the iPhone app is open, and sends compact Bluetooth summaries for background refreshes such as Live Activities and Watch updates.
+
+Code Island Buddy is completely free and open source. It does not require an account or an external server; the companion source code lives in this repository under `ios/CodeIslandCompanion` and `apple-companion`.
+
 ### Build from Source
 
 Requires **macOS 14+** and **Swift 5.9+**.
@@ -98,6 +109,7 @@ AI Tool (Claude/Codex/Gemini/Cursor/...)
       → Unix socket → /tmp/codeisland-<uid>.sock
         → CodeIsland app receives event
           → Updates UI in real time
+          → Optional local Buddy sync to iPhone / Apple Watch
 ```
 
 CodeIsland installs lightweight hooks into each AI tool's config. When the tool triggers an event (session start, tool call, permission request, etc.), the hook sends a JSON message through a Unix socket. CodeIsland listens on this socket and updates the notch panel instantly.
