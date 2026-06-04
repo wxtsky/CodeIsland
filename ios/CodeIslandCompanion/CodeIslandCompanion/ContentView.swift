@@ -673,22 +673,30 @@ private struct StandByIsland: View {
     @EnvironmentObject private var connection: CompanionConnection
     @EnvironmentObject private var liveActivity: LiveActivityController
 
+    private var sessions: [CompanionSessionPreview] {
+        standbySessions(for: state)
+    }
+
+    private var activeCount: Int {
+        sessions.filter { $0.status != .idle }.count
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 16) {
                     CompanionMascotView(source: state.source, status: state.status, size: 78)
 
                     VStack(alignment: .leading, spacing: 5) {
                         MorphText(
-                            text: state.source.isEmpty ? "CODEISLAND" : state.source.uppercased(),
+                            text: sessions.count > 1 ? "CODE ISLAND" : (state.source.isEmpty ? "CODEISLAND" : state.source.uppercased()),
                             font: .system(size: 32, weight: .black, design: .rounded),
                             color: .white
                         )
                         MorphText(
-                            text: state.status.label,
+                            text: sessions.count > 1 ? "\(sessions.count) 个会话 · \(activeCount) 个活跃" : state.status.label,
                             font: .system(size: 22, weight: .semibold, design: .rounded),
-                            color: statusColor(state.status)
+                            color: activeCount > 0 ? .green : statusColor(state.status)
                         )
                     }
                 }
@@ -712,28 +720,34 @@ private struct StandByIsland: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: sessions.count > 1 ? availableSize.width * 0.42 : .infinity, alignment: .leading)
             .padding(24)
 
             DividerLine(vertical: true)
 
-            VStack(spacing: 10) {
-                IconIslandButton(icon: "arrow.up.forward.app.fill", tint: Color(red: 0.35, green: 0.85, blue: 0.45)) {
-                    connection.send(.focus)
-                }
-                IconIslandButton(icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
-                    liveActivity.startOrUpdate(with: state)
-                }
-                if state.pendingAction != nil {
-                    IconIslandButton(icon: "checkmark", tint: .orange) {
-                        connection.send(.approveCurrentPermission)
+            if sessions.count > 1 {
+                StandBySessionBoard(sessions: sessions, activeCount: activeCount)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(20)
+            } else {
+                VStack(spacing: 10) {
+                    IconIslandButton(icon: "arrow.up.forward.app.fill", tint: Color(red: 0.35, green: 0.85, blue: 0.45)) {
+                        connection.send(.focus)
                     }
-                    IconIslandButton(icon: "xmark", tint: .red) {
-                        connection.send(.denyCurrentPermission)
+                    IconIslandButton(icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
+                        liveActivity.startOrUpdate(with: state)
+                    }
+                    if state.pendingAction != nil {
+                        IconIslandButton(icon: "checkmark", tint: .orange) {
+                            connection.send(.approveCurrentPermission)
+                        }
+                        IconIslandButton(icon: "xmark", tint: .red) {
+                            connection.send(.denyCurrentPermission)
+                        }
                     }
                 }
+                .padding(18)
             }
-            .padding(18)
         }
         .frame(
             width: min(760, max(0, availableSize.width - 28)),
@@ -745,6 +759,117 @@ private struct StandByIsland: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
     }
+}
+
+private struct StandBySessionBoard: View {
+    let sessions: [CompanionSessionPreview]
+    let activeCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text("会话")
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                StandByCountBadge(count: sessions.count, activeCount: activeCount)
+                Spacer(minLength: 0)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(Array(sessions.prefix(4))) { session in
+                    StandBySessionRow(session: session)
+                }
+            }
+
+            if sessions.count > 4 {
+                Text("还有 \(sessions.count - 4) 个会话")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.48))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 2)
+            }
+        }
+    }
+}
+
+private struct StandBySessionRow: View {
+    let session: CompanionSessionPreview
+
+    var body: some View {
+        HStack(spacing: 10) {
+            CompanionMascotView(source: session.source, status: session.status, size: 38)
+                .frame(width: 42, height: 42)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Text(session.source.isEmpty ? "CODEISLAND" : session.source.uppercased())
+                        .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
+                        Text(workspace)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.48))
+                            .lineLimit(1)
+                    }
+                }
+                Text(standbySessionText(session))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.66))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            PulseDot(status: session.status)
+                .frame(width: 24, height: 24)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 1))
+    }
+}
+
+private struct StandByCountBadge: View {
+    let count: Int
+    let activeCount: Int
+
+    var body: some View {
+        Text(activeCount > 0 ? "\(activeCount) 活跃" : "\(count) 总计")
+            .font(.system(size: 12, weight: .black, design: .rounded))
+            .foregroundStyle(activeCount > 0 ? .green : .white.opacity(0.64))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background((activeCount > 0 ? Color.green : Color.white).opacity(0.12), in: Capsule())
+    }
+}
+
+private func standbySessions(for state: CompanionStatePayload) -> [CompanionSessionPreview] {
+    guard !state.sessions.isEmpty else {
+        return [
+            CompanionSessionPreview(
+                sessionId: state.sessionId,
+                source: state.source,
+                status: state.status,
+                toolName: state.toolName,
+                workspaceName: state.workspaceName,
+                message: state.question?.question ?? state.messages.last?.text,
+                updatedAt: state.updatedAt
+            )
+        ]
+    }
+    return state.sessions
+}
+
+private func standbySessionText(_ session: CompanionSessionPreview) -> String {
+    if let message = CompanionDisplayText.message(session.message), !message.isEmpty {
+        return message
+    }
+    if let toolName = CompanionDisplayText.tool(session.toolName), !toolName.isEmpty {
+        return toolName
+    }
+    return session.status.label
 }
 
 private struct MorphText: View {

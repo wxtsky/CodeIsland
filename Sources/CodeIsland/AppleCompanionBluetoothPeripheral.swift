@@ -220,6 +220,16 @@ extension AppleCompanionBluetoothPeripheral: CBPeripheralManagerDelegate {
 }
 
 private struct AppleCompanionBluetoothSummary: Codable {
+    struct SessionSummary: Codable {
+        let sessionId: String?
+        let source: String
+        let status: String
+        let toolName: String?
+        let workspaceName: String?
+        let message: String?
+        let updatedAt: Date
+    }
+
     let version: Int
     let sequence: UInt64
     let sessionId: String?
@@ -231,6 +241,7 @@ private struct AppleCompanionBluetoothSummary: Codable {
     let pendingAction: String?
     let questionHeader: String?
     let questionText: String?
+    let sessions: [SessionSummary]
     let updatedAt: Date
 
     init(payload: AppleCompanionStatePayload) {
@@ -245,6 +256,17 @@ private struct AppleCompanionBluetoothSummary: Codable {
         pendingAction = payload.pendingAction?.rawValue
         questionHeader = payload.question?.header.map { Self.truncate($0, limit: 40) }
         questionText = payload.question.map { Self.truncate($0.question, limit: 180) }
+        sessions = payload.sessions.prefix(5).map {
+            SessionSummary(
+                sessionId: $0.sessionId.map { Self.truncate($0, limit: 96) },
+                source: $0.source,
+                status: $0.status.rawValue,
+                toolName: $0.toolName.map { Self.truncate($0, limit: 48) },
+                workspaceName: $0.workspaceName.map { Self.truncate($0, limit: 48) },
+                message: $0.message.map { Self.truncate($0, limit: 120) },
+                updatedAt: $0.updatedAt
+            )
+        }
         updatedAt = payload.updatedAt
     }
 

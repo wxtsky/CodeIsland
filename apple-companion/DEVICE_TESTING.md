@@ -1,4 +1,4 @@
-# Code Island Apple Companion 真机测试流程
+# Code Island Buddy 真机测试流程
 
 这份流程用于验证 Code Island 的 iPhone、Live Activity / Dynamic Island / StandBy、Apple Watch app 和 watchOS widget 在真实设备上的表现。
 
@@ -103,18 +103,18 @@ xcodebuild -project ios/CodeIslandCompanion/CodeIslandCompanion.xcodeproj \
 1. 启动当前分支构建出的 CodeIsland Mac app。
 2. 打开 CodeIsland 设置。
 3. 进入 `Buddy`。
-4. 打开 Apple Companion 广播。
+4. 打开 iPhone Buddy 广播。
 5. 确认状态显示为等待或已连接。
 
 通过标准：
 
 - iPhone app 能发现这台 Mac。
-- Mac 设置页中 Apple Companion 状态能从未连接变成连接中或已连接。
+- Mac 设置页中 iPhone Buddy 状态能从未连接变成连接中或已连接。
 
 失败排查：
 
 - iPhone 和 Mac 不在同一 Wi-Fi 时，Multipeer 发现可能失败。
-- macOS 防火墙或网络权限异常时，先关闭再打开 Apple Companion 广播。
+- macOS 防火墙或网络权限异常时，先关闭再打开 iPhone Buddy 广播。
 - iPhone 端本地网络权限被拒绝时，进入 iPhone `设置 -> Code Island -> 本地网络` 打开。
 
 ## 3. iPhone 前台同步
@@ -257,7 +257,7 @@ xcodebuild -project ios/CodeIslandCompanion/CodeIslandCompanion.xcodeproj \
 ### iPhone 断开 Mac
 
 1. iPhone 已连接 Mac。
-2. 在 Mac CodeIsland 设置里关闭 Apple Companion 广播。
+2. 在 Mac CodeIsland 设置里关闭 iPhone Buddy 广播。
 3. 等 10 秒。
 4. 重新打开广播。
 

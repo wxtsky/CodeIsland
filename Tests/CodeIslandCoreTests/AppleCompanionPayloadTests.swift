@@ -57,6 +57,49 @@ final class AppleCompanionPayloadTests: XCTestCase {
         XCTAssertEqual(decoded.sequence, 8)
         XCTAssertEqual(decoded.source, "claude")
         XCTAssertNil(decoded.question)
+        XCTAssertTrue(decoded.sessions.isEmpty)
+    }
+
+    func testStatePayloadRoundTripsSessionPreviews() throws {
+        let updatedAt = Date(timeIntervalSince1970: 1_777_171_230)
+        let payload = AppleCompanionStatePayload(
+            sequence: 9,
+            sessionId: "codex-1",
+            source: "codex",
+            status: .processing,
+            toolName: "Read",
+            workspaceName: "CodeIsland",
+            messages: [],
+            pendingAction: nil,
+            sessions: [
+                AppleCompanionSessionPreview(
+                    sessionId: "codex-1",
+                    source: "codex",
+                    status: .processing,
+                    toolName: "Read",
+                    workspaceName: "CodeIsland",
+                    message: "检查 StandBy 多会话展示",
+                    updatedAt: updatedAt
+                ),
+                AppleCompanionSessionPreview(
+                    sessionId: "claude-1",
+                    source: "claude",
+                    status: .waitingQuestion,
+                    toolName: "AskUserQuestion",
+                    workspaceName: "workspace",
+                    message: "你想写什么类型的小说？",
+                    updatedAt: updatedAt
+                )
+            ],
+            updatedAt: updatedAt
+        )
+
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(AppleCompanionStatePayload.self, from: data)
+
+        XCTAssertEqual(decoded, payload)
+        XCTAssertEqual(decoded.sessions.count, 2)
+        XCTAssertEqual(decoded.sessions[1].status, .waitingQuestion)
     }
 
     func testAnswerQuestionCommandCarriesSelectedAnswer() throws {

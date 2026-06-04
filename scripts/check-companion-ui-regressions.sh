@@ -104,8 +104,13 @@ expect_absent \
   "ios/CodeIslandCompanion/CodeIslandCompanionWidget/CodeIslandLiveActivityWidget.swift"
 
 expect_present \
-  "Dynamic Island expanded trailing status is dot-only" \
-  'ExpandedStatusDot(state: context.state)' \
+  "Dynamic Island expanded trailing uses adaptive status" \
+  'ExpandedTrailingStatus(state: context.state)' \
+  "ios/CodeIslandCompanion/CodeIslandCompanionWidget/CodeIslandLiveActivityWidget.swift"
+
+expect_present \
+  "Dynamic Island single-session expanded trailing stays dot-only" \
+  'ExpandedStatusDot(state: state)' \
   "ios/CodeIslandCompanion/CodeIslandCompanionWidget/CodeIslandLiveActivityWidget.swift"
 
 expect_absent \

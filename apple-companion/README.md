@@ -1,11 +1,11 @@
-# Code Island Apple Companion
+# Code Island Buddy
 
-Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy、Apple Watch app 和 watchOS widget。
+Code Island Buddy 是 Code Island 的 Apple 设备端，包括 iPhone、Dynamic Island / StandBy、Apple Watch app 和 watchOS widget。
 
 它的目标不是做一个新的聊天客户端，而是把 Mac 上 CodeIsland 当前看到的 agent 状态同步到随身设备：你可以在 iPhone 灵动岛和 Apple Watch 上看当前会话、工具调用、最近动态，并在需要时回到 Mac 继续处理。
 
 > [!NOTE]
-> 当前代码仍然放在 `ios/CodeIslandCompanion/` Xcode 工程里。这个目录是 Apple companion 的产品说明与截图目录，方便像 `android-watch/` 一样单独阅读和展示。
+> 当前代码仍然放在 `ios/CodeIslandCompanion/` Xcode 工程里。这个目录是 Code Island Buddy 的产品说明与截图目录，方便像 `android-watch/` 一样单独阅读和展示。
 
 ## 代码位置
 
@@ -17,7 +17,7 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 | `ios/CodeIslandCompanion/CodeIslandWatchWidget/` | watchOS Widget / Smart Stack 展示 |
 | `ios/CodeIslandCompanion/Shared/` | ActivityKit、Watch、iPhone 共用模型与 mascot 视图 |
 | `ios/CodeIslandCompanion/project.yml` | XcodeGen 工程定义 |
-| `Sources/CodeIsland/AppleCompanionPublisher.swift` | Mac 端 Apple companion 状态发布 |
+| `Sources/CodeIsland/AppleCompanionPublisher.swift` | Mac 端 iPhone Buddy 状态发布 |
 | `Sources/CodeIsland/AppleCompanionBluetoothPeripheral.swift` | Mac 端 BLE 后台摘要通道 |
 | `Sources/CodeIslandCore/AppleCompanionPayload.swift` | Mac / iPhone / Watch 共用协议模型 |
 | `scripts/smoke-companion-ui.sh` | iPhone UI smoke 截图测试 |
@@ -28,6 +28,7 @@ Code Island 的 Apple 生态伴随端，包括 iPhone、Dynamic Island / StandBy
 | 路径 | 作用 |
 | --- | --- |
 | `apple-companion/APP_STORE_RELEASE.md` | App Store / TestFlight 发布清单 |
+| `apple-companion/APP_STORE_METADATA.md` | App Store Connect 可复制的名称、描述、关键词、隐私与审核材料 |
 | `apple-companion/APP_REVIEW_NOTES.md` | 可粘贴到 App Store Connect 的审核说明 |
 | `apple-companion/PRIVACY_POLICY.md` | 隐私政策草稿，发布前需要放到公开 URL |
 | `apple-companion/DEVICE_TESTING.md` | iPhone / Apple Watch 真机测试流程 |
@@ -72,7 +73,7 @@ Live Activity、Dynamic Island 和 StandBy 只负责展示状态。它们不会�
 ## 使用方式
 
 1. 在 Mac 上运行这个 fork 里的 CodeIsland。
-2. 打开 CodeIsland 设置，进入 `Buddy`，开启 Apple Companion 广播。
+2. 打开 CodeIsland 设置，进入 `Buddy`，开启 iPhone Buddy 广播。
 3. 在 Xcode 打开 `ios/CodeIslandCompanion/CodeIslandCompanion.xcodeproj`。
 4. 在 `Signing & Capabilities` 里给 iPhone app、Widget、Watch app、Watch Widget 都选择你的 Apple Developer Team。
 5. 选择 `CodeIslandCompanion` scheme 和你的 iPhone，点击 Run。
@@ -82,7 +83,7 @@ Live Activity、Dynamic Island 和 StandBy 只负责展示状态。它们不会�
 
 ## 演示模式
 
-iPhone app 首屏提供 `进入演示模式`。它用于 App Store 审核、截图和没有 Mac companion 时的快速预览：
+iPhone app 首屏提供 `进入演示模式`。它用于 App Store 审核、截图和没有 Mac 时的快速预览：
 
 1. 打开 iPhone app。
 2. 点击 `进入演示模式`。
@@ -197,6 +198,6 @@ swift test
 - 不依赖 APNs，也不需要部署后端。
 - MultipeerConnectivity 主要用于前台完整同步；iPhone 进入后台较久后，不能保证继续收到完整消息。
 - iPhone 被用户从多任务界面强制杀掉后，系统不会保证继续接收事件。
-- Live Activity 和 BLE 后台接收受 iOS 调度策略影响，适合作为轻量伴随能力，不等价于常驻后台进程。
+- Live Activity 和 BLE 后台接收受 iOS 调度策略影响，适合作为轻量 Buddy 能力，不等价于常驻后台进程。
 - StandBy 是否持续亮屏由 iOS、机型、Always-On Display、低电量模式和睡眠专注决定，app 不能强制保持屏幕常亮。
 - Watch 真机震动、通知触达和后台同步仍需要真机验收；模拟器主要用于构建、布局和页面状态验证。

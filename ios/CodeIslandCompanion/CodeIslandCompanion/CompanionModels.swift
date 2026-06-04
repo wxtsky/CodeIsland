@@ -1,6 +1,6 @@
 import Foundation
 
-enum CompanionStatus: String, Codable {
+enum CompanionStatus: String, Codable, Hashable {
     case idle
     case processing
     case running
@@ -66,6 +66,20 @@ struct CompanionQuestionPayload: Codable {
     let allowsMultipleSelection: Bool
 }
 
+struct CompanionSessionPreview: Codable, Identifiable, Hashable {
+    let sessionId: String?
+    let source: String
+    let status: CompanionStatus
+    let toolName: String?
+    let workspaceName: String?
+    let message: String?
+    let updatedAt: Date
+
+    var id: String {
+        sessionId ?? "\(source)-\(workspaceName ?? "session")-\(updatedAt.timeIntervalSince1970)"
+    }
+}
+
 struct CompanionStatePayload: Codable {
     let version: Int
     let sequence: UInt64
@@ -77,7 +91,67 @@ struct CompanionStatePayload: Codable {
     let messages: [CompanionMessagePreview]
     let pendingAction: CompanionPendingAction?
     let question: CompanionQuestionPayload?
+    let sessions: [CompanionSessionPreview]
     let updatedAt: Date
+
+    init(
+        version: Int,
+        sequence: UInt64,
+        sessionId: String?,
+        source: String,
+        status: CompanionStatus,
+        toolName: String?,
+        workspaceName: String?,
+        messages: [CompanionMessagePreview],
+        pendingAction: CompanionPendingAction?,
+        question: CompanionQuestionPayload?,
+        sessions: [CompanionSessionPreview] = [],
+        updatedAt: Date
+    ) {
+        self.version = version
+        self.sequence = sequence
+        self.sessionId = sessionId
+        self.source = source
+        self.status = status
+        self.toolName = toolName
+        self.workspaceName = workspaceName
+        self.messages = messages
+        self.pendingAction = pendingAction
+        self.question = question
+        self.sessions = sessions
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case sequence
+        case sessionId
+        case source
+        case status
+        case toolName
+        case workspaceName
+        case messages
+        case pendingAction
+        case question
+        case sessions
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        sequence = try container.decode(UInt64.self, forKey: .sequence)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        source = try container.decode(String.self, forKey: .source)
+        status = try container.decode(CompanionStatus.self, forKey: .status)
+        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        workspaceName = try container.decodeIfPresent(String.self, forKey: .workspaceName)
+        messages = try container.decode([CompanionMessagePreview].self, forKey: .messages)
+        pendingAction = try container.decodeIfPresent(CompanionPendingAction.self, forKey: .pendingAction)
+        question = try container.decodeIfPresent(CompanionQuestionPayload.self, forKey: .question)
+        sessions = try container.decodeIfPresent([CompanionSessionPreview].self, forKey: .sessions) ?? []
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 enum CompanionCommandType: String, Codable {

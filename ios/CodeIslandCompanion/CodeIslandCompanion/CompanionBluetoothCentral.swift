@@ -279,6 +279,16 @@ extension CompanionBluetoothCentral: CBPeripheralDelegate {
 }
 
 struct CompanionBluetoothSummary: Codable {
+    struct SessionSummary: Codable {
+        let sessionId: String?
+        let source: String
+        let status: String
+        let toolName: String?
+        let workspaceName: String?
+        let message: String?
+        let updatedAt: Date
+    }
+
     let version: Int
     let sequence: UInt64
     let sessionId: String?
@@ -290,6 +300,7 @@ struct CompanionBluetoothSummary: Codable {
     let pendingAction: String?
     let questionHeader: String?
     let questionText: String?
+    let sessions: [SessionSummary]?
     let updatedAt: Date
 
     var statePayload: CompanionStatePayload {
@@ -309,6 +320,17 @@ struct CompanionBluetoothSummary: Codable {
                 allowsMultipleSelection: false
             )
         }
+        let sessionPreviews = (sessions ?? []).map {
+            CompanionSessionPreview(
+                sessionId: $0.sessionId,
+                source: $0.source,
+                status: CompanionStatus(rawValue: $0.status) ?? .idle,
+                toolName: $0.toolName,
+                workspaceName: $0.workspaceName,
+                message: $0.message,
+                updatedAt: $0.updatedAt
+            )
+        }
 
         return CompanionStatePayload(
             version: version,
@@ -321,6 +343,7 @@ struct CompanionBluetoothSummary: Codable {
             messages: messages,
             pendingAction: pendingAction,
             question: question,
+            sessions: sessionPreviews,
             updatedAt: updatedAt
         )
     }

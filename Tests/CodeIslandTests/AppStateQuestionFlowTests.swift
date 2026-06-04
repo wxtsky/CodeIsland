@@ -299,7 +299,7 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue.count, 1, "Queue should not be drained by direct answerQuestion")
     }
 
-    // MARK: - Apple Companion question mirror
+    // MARK: - iPhone Buddy question mirror
 
     func testAppleCompanionPayloadMirrorsPendingAskUserQuestion() async throws {
         let appState = AppState()

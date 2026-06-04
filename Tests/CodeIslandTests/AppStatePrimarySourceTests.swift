@@ -80,4 +80,42 @@ final class AppStatePrimarySourceTests: XCTestCase {
         XCTAssertEqual(appState.primarySource, "gemini",
             "When at least one session is running, surface that source not the user default")
     }
+
+    func testAppleCompanionPayloadIncludesMultipleSessionsByPriority() {
+        let appState = AppState()
+        let now = Date()
+
+        var codex = SessionSnapshot()
+        codex.source = "codex"
+        codex.status = .processing
+        codex.currentTool = "Read"
+        codex.cwd = "/tmp/CodeIsland"
+        codex.lastActivity = now
+        codex.addRecentMessage(ChatMessage(isUser: false, text: "正在检查 StandBy 多会话展示"))
+        appState.sessions["codex-1"] = codex
+
+        var claude = SessionSnapshot()
+        claude.source = "claude"
+        claude.status = .waitingQuestion
+        claude.currentTool = "AskUserQuestion"
+        claude.cwd = "/tmp/workspace"
+        claude.lastActivity = now.addingTimeInterval(-3)
+        claude.addRecentMessage(ChatMessage(isUser: true, text: "你想写什么类型的小说？"))
+        appState.sessions["claude-1"] = claude
+
+        var gemini = SessionSnapshot()
+        gemini.source = "gemini"
+        gemini.status = .idle
+        gemini.cwd = "/tmp/notes"
+        gemini.lastActivity = now.addingTimeInterval(-1)
+        appState.sessions["gemini-1"] = gemini
+
+        appState.refreshDerivedState()
+        let payload = appState.appleCompanionStatePayload(sequence: 99)
+
+        XCTAssertEqual(payload.sessions.map(\.sessionId), ["claude-1", "codex-1", "gemini-1"])
+        XCTAssertEqual(payload.sessions[0].status, .waitingQuestion)
+        XCTAssertEqual(payload.sessions[1].source, "codex")
+        XCTAssertEqual(payload.sessions[1].message, "正在检查 StandBy 多会话展示")
+    }
 }

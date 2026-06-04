@@ -66,6 +66,34 @@ public struct AppleCompanionQuestionPayload: Codable, Equatable, Sendable {
     }
 }
 
+public struct AppleCompanionSessionPreview: Codable, Equatable, Sendable {
+    public let sessionId: String?
+    public let source: String
+    public let status: AppleCompanionStatus
+    public let toolName: String?
+    public let workspaceName: String?
+    public let message: String?
+    public let updatedAt: Date
+
+    public init(
+        sessionId: String?,
+        source: String,
+        status: AppleCompanionStatus,
+        toolName: String?,
+        workspaceName: String?,
+        message: String?,
+        updatedAt: Date = Date()
+    ) {
+        self.sessionId = sessionId
+        self.source = source
+        self.status = status
+        self.toolName = toolName
+        self.workspaceName = workspaceName
+        self.message = message
+        self.updatedAt = updatedAt
+    }
+}
+
 public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
     public let version: Int
     public let sequence: UInt64
@@ -77,6 +105,7 @@ public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
     public let messages: [AppleCompanionMessagePreview]
     public let pendingAction: AppleCompanionPendingAction?
     public let question: AppleCompanionQuestionPayload?
+    public let sessions: [AppleCompanionSessionPreview]
     public let updatedAt: Date
 
     public init(
@@ -90,6 +119,7 @@ public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
         messages: [AppleCompanionMessagePreview],
         pendingAction: AppleCompanionPendingAction?,
         question: AppleCompanionQuestionPayload? = nil,
+        sessions: [AppleCompanionSessionPreview] = [],
         updatedAt: Date = Date()
     ) {
         self.version = version
@@ -102,7 +132,39 @@ public struct AppleCompanionStatePayload: Codable, Equatable, Sendable {
         self.messages = messages
         self.pendingAction = pendingAction
         self.question = question
+        self.sessions = sessions
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case sequence
+        case sessionId
+        case source
+        case status
+        case toolName
+        case workspaceName
+        case messages
+        case pendingAction
+        case question
+        case sessions
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        sequence = try container.decode(UInt64.self, forKey: .sequence)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        source = try container.decode(String.self, forKey: .source)
+        status = try container.decode(AppleCompanionStatus.self, forKey: .status)
+        toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
+        workspaceName = try container.decodeIfPresent(String.self, forKey: .workspaceName)
+        messages = try container.decode([AppleCompanionMessagePreview].self, forKey: .messages)
+        pendingAction = try container.decodeIfPresent(AppleCompanionPendingAction.self, forKey: .pendingAction)
+        question = try container.decodeIfPresent(AppleCompanionQuestionPayload.self, forKey: .question)
+        sessions = try container.decodeIfPresent([AppleCompanionSessionPreview].self, forKey: .sessions) ?? []
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }
 

@@ -14,7 +14,7 @@ struct CodeIslandLiveActivityWidget: Widget {
                     AgentBadge(state: context.state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    ExpandedStatusDot(state: context.state)
+                    ExpandedTrailingStatus(state: context.state)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedMessageView(state: context.state)
@@ -24,14 +24,54 @@ struct CodeIslandLiveActivityWidget: Widget {
             } compactTrailing: {
                 CompactStatusView(state: context.state)
             } minimal: {
-                SharedMascotView(source: context.state.source, status: MascotAgentStatus(context.state.status), size: 18)
+                MinimalMascotBadge(state: context.state)
             }
             .keylineTint(statusColor(context.state.status))
         }
     }
 }
 
+private struct MinimalMascotBadge: View {
+    let state: CodeIslandActivityAttributes.ContentState
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(red: 0.09, green: 0.10, blue: 0.12))
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                )
+
+            SharedMascotView(
+                source: state.source,
+                status: MascotAgentStatus(state.status),
+                size: 18
+            )
+        }
+        .frame(width: 34, height: 34)
+        .clipShape(Circle())
+        .contentShape(Circle())
+    }
+}
+
 private struct LockScreenActivityView: View {
+    let state: CodeIslandActivityAttributes.ContentState
+
+    private var sessions: [CodeIslandSessionActivityPreview] {
+        displaySessions(state)
+    }
+
+    var body: some View {
+        if sessions.count > 1 {
+            MultiSessionLockScreenActivityView(state: state, sessions: sessions)
+        } else {
+            SingleSessionLockScreenActivityView(state: state)
+        }
+    }
+}
+
+private struct SingleSessionLockScreenActivityView: View {
     let state: CodeIslandActivityAttributes.ContentState
 
     var body: some View {
@@ -65,27 +105,201 @@ private struct LockScreenActivityView: View {
     }
 }
 
+private struct MultiSessionLockScreenActivityView: View {
+    let state: CodeIslandActivityAttributes.ContentState
+    let sessions: [CodeIslandSessionActivityPreview]
+
+    private var visibleSessions: ArraySlice<CodeIslandSessionActivityPreview> {
+        sessions.prefix(2)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                MultiSessionOverviewBadge(state: state)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CODE ISLAND")
+                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(sessionSummary)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+                CompactSessionCountPill(count: sessions.count, activeCount: state.activeSessionCount)
+            }
+
+            VStack(spacing: 5) {
+                ForEach(visibleSessions) { session in
+                    MultiSessionLockScreenRow(session: session)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var sessionSummary: String {
+        if state.activeSessionCount > 0 {
+            return "\(sessions.count) 个会话 · \(state.activeSessionCount) 个活跃"
+        }
+        return "\(sessions.count) 个会话同步中"
+    }
+}
+
+private struct MultiSessionOverviewBadge: View {
+    let state: CodeIslandActivityAttributes.ContentState
+
+    var body: some View {
+        SharedMascotView(
+            source: state.source,
+            status: MascotAgentStatus(state.status),
+            size: 24
+        )
+        .frame(width: 28, height: 28)
+    }
+}
+
+private struct CompactSessionCountPill: View {
+    let count: Int
+    let activeCount: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            StatusDot(status: activeCount > 0 ? "running" : "idle", size: 7)
+            Text(activeCount > 0 ? "\(activeCount) 活跃" : "\(count) 会话")
+                .font(.system(size: 11, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(0.10), in: Capsule())
+    }
+}
+
+private struct MultiSessionLockScreenRow: View {
+    let session: CodeIslandSessionActivityPreview
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SharedMascotView(
+                source: session.source,
+                status: MascotAgentStatus(session.status),
+                size: 22
+            )
+            .frame(width: 26, height: 26)
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(session.sourceLabel)
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
+                        Text(workspace)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.54))
+                            .lineLimit(1)
+                    }
+                }
+
+                Text(sessionText(session))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.66))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 6)
+
+            Text(session.statusLabel)
+                .font(.system(size: 10, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor(session.status))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(statusColor(session.status).opacity(0.18), in: Capsule())
+        }
+        .frame(height: 38)
+        .padding(.horizontal, 9)
+        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
 private struct ExpandedMessageView: View {
     let state: CodeIslandActivityAttributes.ContentState
 
     var body: some View {
+        if displaySessions(state).count > 1 {
+            ExpandedSessionOverview(state: state)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(state.compactStatusLabel)
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(statusColor(state.status))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(statusColor(state.status).opacity(0.18), in: Capsule())
+                    Text(CompanionDisplayText.workspace(state.workspaceName) ?? "CodeIsland")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let toolName = CompanionDisplayText.tool(state.toolName), !toolName.isEmpty {
+                        Text(toolName)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(toolColor(toolName))
+                            .lineLimit(1)
+                    }
+                    if let progress = state.questionProgress {
+                        Text(progress)
+                            .font(.caption2.weight(.black))
+                            .foregroundStyle(.white.opacity(0.62))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                    }
+                }
+                Text(primaryText(state))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct ExpandedSessionOverview: View {
+    let state: CodeIslandActivityAttributes.ContentState
+
+    private var sessions: [CodeIslandSessionActivityPreview] {
+        displaySessions(state)
+    }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text(state.compactStatusLabel)
+                Text("\(sessions.count) 个会话")
                     .font(.caption2.weight(.black))
-                    .foregroundStyle(statusColor(state.status))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(statusColor(state.status).opacity(0.18), in: Capsule())
-                Text(CompanionDisplayText.workspace(state.workspaceName) ?? "CodeIsland")
-                    .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
-                if let toolName = CompanionDisplayText.tool(state.toolName), !toolName.isEmpty {
-                    Text(toolName)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(toolColor(toolName))
-                        .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.12), in: Capsule())
+                if state.activeSessionCount > 0 {
+                    Text("\(state.activeSessionCount) 活跃")
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.14), in: Capsule())
                 }
                 if let progress = state.questionProgress {
                     Text(progress)
@@ -95,11 +309,10 @@ private struct ExpandedMessageView: View {
                         .padding(.vertical, 3)
                         .background(Color.white.opacity(0.10), in: Capsule())
                 }
+                Spacer(minLength: 0)
             }
-            Text(primaryText(state))
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.78))
-                .lineLimit(2)
+
+            SessionStackView(sessions: sessions, compact: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -111,7 +324,7 @@ private struct CompactAgentView: View {
     var body: some View {
         HStack(spacing: 4) {
             SharedMascotView(source: state.source, status: MascotAgentStatus(state.status), size: 20)
-            Text(state.sourceLabel)
+            Text(displaySessions(state).count > 1 ? "\(displaySessions(state).count)" : state.sourceLabel)
                 .font(.system(size: 10, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -131,13 +344,25 @@ private struct ExpandedStatusDot: View {
     }
 }
 
+private struct ExpandedTrailingStatus: View {
+    let state: CodeIslandActivityAttributes.ContentState
+
+    var body: some View {
+        if displaySessions(state).count > 1 {
+            SessionCountPill(count: displaySessions(state).count, activeCount: state.activeSessionCount)
+        } else {
+            ExpandedStatusDot(state: state)
+        }
+    }
+}
+
 private struct CompactStatusView: View {
     let state: CodeIslandActivityAttributes.ContentState
 
     var body: some View {
         HStack(spacing: 3) {
             StatusDot(status: state.status, size: 6)
-            Text(state.compactStatusLabel)
+            Text(displaySessions(state).count > 1 ? "会话" : state.compactStatusLabel)
                 .font(.system(size: 9, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -171,6 +396,23 @@ private struct AgentBadge: View {
     }
 }
 
+private struct SessionCountPill: View {
+    let count: Int
+    let activeCount: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            StatusDot(status: activeCount > 0 ? "running" : "idle", size: 8)
+            Text(activeCount > 0 ? "\(activeCount) 个活跃" : "\(count) 个会话")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.10), in: Capsule())
+    }
+}
+
 private struct StatusPill: View {
     let state: CodeIslandActivityAttributes.ContentState
 
@@ -184,6 +426,62 @@ private struct StatusPill: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(statusColor(state.status).opacity(0.2), in: Capsule())
+    }
+}
+
+private struct SessionStackView: View {
+    let sessions: [CodeIslandSessionActivityPreview]
+    var compact: Bool
+
+    var body: some View {
+        VStack(spacing: compact ? 4 : 6) {
+            ForEach(sessions.prefix(compact ? 2 : 3)) { session in
+                SessionPreviewRow(session: session, compact: compact)
+            }
+        }
+    }
+}
+
+private struct SessionPreviewRow: View {
+    let session: CodeIslandSessionActivityPreview
+    var compact: Bool
+
+    var body: some View {
+        HStack(spacing: compact ? 6 : 8) {
+            SharedMascotView(
+                source: session.source,
+                status: MascotAgentStatus(session.status),
+                size: compact ? 18 : 22
+            )
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(session.sourceLabel)
+                        .font(.system(size: compact ? 10 : 11, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
+                        Text(workspace)
+                            .font(.system(size: compact ? 9 : 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                }
+                Text(sessionText(session))
+                    .font(.system(size: compact ? 9 : 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Text(session.statusLabel)
+                .font(.system(size: compact ? 9 : 10, weight: .black, design: .rounded))
+                .foregroundStyle(statusColor(session.status))
+                .padding(.horizontal, compact ? 6 : 7)
+                .padding(.vertical, compact ? 3 : 4)
+                .background(statusColor(session.status).opacity(0.16), in: Capsule())
+        }
+        .padding(.horizontal, compact ? 0 : 8)
+        .padding(.vertical, compact ? 0 : 6)
+        .background(compact ? Color.clear : Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -255,6 +553,33 @@ private func primaryText(_ state: CodeIslandActivityAttributes.ContentState) -> 
         return toolName
     }
     return state.statusLabel
+}
+
+private func displaySessions(_ state: CodeIslandActivityAttributes.ContentState) -> [CodeIslandSessionActivityPreview] {
+    guard !state.sessions.isEmpty else {
+        return [
+            CodeIslandSessionActivityPreview(
+                sessionId: nil,
+                source: state.source,
+                status: state.status,
+                toolName: state.toolName,
+                workspaceName: state.workspaceName,
+                message: primaryText(state),
+                updatedAt: state.updatedAt
+            )
+        ]
+    }
+    return state.sessions
+}
+
+private func sessionText(_ session: CodeIslandSessionActivityPreview) -> String {
+    if let message = CompanionDisplayText.message(session.message), !message.isEmpty {
+        return message
+    }
+    if let toolName = CompanionDisplayText.tool(session.toolName), !toolName.isEmpty {
+        return toolName
+    }
+    return session.statusLabel
 }
 
 private func toolColor(_ tool: String) -> Color {

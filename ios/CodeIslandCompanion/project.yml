@@ -9,8 +9,8 @@ settings:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "6SLN844AVD"
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: "1"
-    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "4"
+    MARKETING_VERSION: "1.0.0"
 targets:
   CodeIslandCompanion:
     type: application
@@ -40,6 +40,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion
         INFOPLIST_FILE: CodeIslandCompanion/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
     dependencies:
@@ -77,6 +78,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.Widget
         INFOPLIST_FILE: CodeIslandCompanionWidget/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         SKIP_INSTALL: YES
   CodeIslandWatchApp:
@@ -162,6 +164,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanionUITests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: CodeIslandCompanion
+        TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - target: CodeIslandCompanion
 schemes:

@@ -1,6 +1,6 @@
-# Code Island Apple Companion
+# Code Island Buddy
 
-This is the Xcode project for the Code Island iPhone, Live Activity, and Apple Watch companion.
+This is the Xcode project for the Code Island iPhone, Live Activity, and Apple Watch Buddy.
 
 For the product overview, setup guide, protocol notes, and screenshots, see:
 

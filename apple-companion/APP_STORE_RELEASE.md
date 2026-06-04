@@ -1,6 +1,13 @@
 # Code Island App Store Release Checklist
 
-This checklist covers the iPhone, Live Activity, Dynamic Island, StandBy, Apple Watch app, and watchOS widget companion for Code Island.
+This checklist covers the iPhone, Live Activity, Dynamic Island, StandBy, Apple Watch app, and watchOS widget Buddy for Code Island.
+
+Current public submission target:
+
+- Version: `1.0.0`
+- Build: `4`
+- Primary working directory: `/Users/fengye/workspace/CodeIsland`
+- Xcode project: `ios/CodeIslandCompanion/CodeIslandCompanion.xcodeproj`
 
 ## Before Uploading a Build
 
@@ -19,7 +26,7 @@ This checklist covers the iPhone, Live Activity, Dynamic Island, StandBy, Apple 
 3. Confirm the real Mac path still works:
    - Run the matching Code Island Mac build from this branch.
    - Open Code Island Settings -> Buddy.
-   - Enable Apple Companion advertising.
+   - Enable iPhone Buddy broadcasting.
    - Connect from iPhone and verify state updates.
 
 4. Run local verification:
@@ -38,61 +45,11 @@ swift test --filter AppleCompanionPayloadTests
 
 ## App Store Connect Metadata
 
-Suggested app name:
-
-```text
-Code Island
-```
-
-Suggested subtitle:
-
-```text
-AI agent status on iPhone and Watch
-```
-
-Suggested Chinese subtitle:
-
-```text
-把 Mac 上的 AI 会话带到 iPhone 和手表
-```
-
-Suggested short description:
-
-```text
-Code Island mirrors the current Code Island session from your Mac to iPhone Dynamic Island, Lock Screen, StandBy, and Apple Watch. It helps you keep an eye on agent state, recent messages, tool use, and questions that need attention.
-```
-
-Suggested Chinese description:
-
-```text
-Code Island 是 Mac 端 Code Island 的 iPhone 与 Apple Watch 伴随应用。
-
-它可以把 Mac 上当前 AI agent 的状态同步到 iPhone、灵动岛、锁屏、StandBy 和 Apple Watch。你可以查看当前会话、工具调用、最近动态，以及需要回答的问题；需要处理时，再回到 Mac 继续操作。
-
-应用支持本地网络发现 Mac，并提供演示模式，方便在没有 Mac companion 的情况下预览完整体验。
-```
-
-Suggested keywords:
-
-```text
-AI,agent,developer,Mac,Dynamic Island,StandBy,Apple Watch,productivity
-```
-
-Suggested support URL:
-
-```text
-https://github.com/fengye404/CodeIsland/issues
-```
-
-Suggested marketing URL:
-
-```text
-https://github.com/fengye404/CodeIsland
-```
+Use `apple-companion/APP_STORE_METADATA.md` as the source of truth for name, subtitle, description, keywords, URLs, privacy answers, export compliance notes, and "What's New" text.
 
 Privacy policy:
 
-Publish `apple-companion/PRIVACY_POLICY.md` somewhere public, for example GitHub Pages, and use that public URL in App Store Connect.
+Publish `apple-companion/PRIVACY_POLICY.md` somewhere public, for example GitHub Pages, and use that public URL in App Store Connect. The proposed URL is listed in `apple-companion/APP_STORE_METADATA.md`.
 
 ## App Privacy Answers
 
@@ -103,7 +60,7 @@ Current intended privacy posture:
 - Third-party advertising: none.
 - Account creation: none.
 - Local network: used only to discover and communicate with the user's own Mac running Code Island.
-- Bluetooth: used only as a lightweight local companion signal between the user's own devices.
+- Bluetooth: used only as a lightweight local Buddy signal between the user's own devices.
 
 If new analytics, crash reporting, cloud sync, or third-party SDKs are added later, update these answers before submission.
 
@@ -115,7 +72,7 @@ The app uses Apple's local networking and platform security APIs. It does not im
 
 Use the template in `apple-companion/APP_REVIEW_NOTES.md`.
 
-Important: tell reviewers about `进入演示模式`, because reviewers may not have the matching Mac companion available.
+Important: tell reviewers about `进入演示模式`, because reviewers may not have the matching Mac Buddy available.
 
 ## Final Manual Test Matrix
 

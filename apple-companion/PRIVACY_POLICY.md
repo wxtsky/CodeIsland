@@ -1,8 +1,8 @@
 # Code Island Privacy Policy
 
-Effective date: 2026-05-27
+Effective date: 2026-05-30
 
-Code Island is designed as a local companion for the Code Island Mac app. It mirrors the current session status from your Mac to your iPhone, Live Activity, Dynamic Island, StandBy, and Apple Watch.
+Code Island is designed as a local Buddy for the Code Island Mac app. It mirrors the current session status from your Mac to your iPhone, Live Activity, Dynamic Island, StandBy, and Apple Watch.
 
 ## Data Collection
 
@@ -16,10 +16,10 @@ Code Island uses local network and Bluetooth capabilities to communicate between
 
 - Local network discovery is used to find your Mac running Code Island.
 - MultipeerConnectivity is used to exchange session status and control commands between your iPhone and Mac.
-- Bluetooth may be used as a lightweight local signal for companion status updates.
+- Bluetooth may be used as a lightweight local signal for Buddy status updates.
 - WatchConnectivity is used to sync the latest state from your iPhone to your Apple Watch.
 
-This communication happens locally between your devices. The developer does not operate a backend service for this companion app.
+This communication happens locally between your devices. The developer does not operate a backend service for this Buddy app.
 
 ## Data Shown in the App
 
@@ -31,7 +31,7 @@ The app may display local session information from Code Island, such as:
 - Tool or permission state
 - Questions that need your attention
 
-This information is used to render the companion experience on your devices. It is not sent to the developer.
+This information is used to render the Buddy experience on your devices. It is not sent to the developer.
 
 ## Notifications and Live Activities
 
@@ -43,7 +43,7 @@ Code Island does not track you across apps or websites.
 
 ## Children
 
-Code Island is a developer productivity companion and is not directed to children.
+Code Island is a developer productivity Buddy and is not directed to children.
 
 ## Changes
 

@@ -261,8 +261,58 @@ extension AppState {
             workspaceName: context.workspace,
             messages: messages,
             pendingAction: pendingAction,
-            question: questionPayload
+            question: questionPayload,
+            sessions: appleCompanionSessionPreviews(primarySessionId: sessionId)
         )
+    }
+
+    private func appleCompanionSessionPreviews(primarySessionId: String?) -> [AppleCompanionSessionPreview] {
+        let sorted = sessions.sorted { lhs, rhs in
+            let leftPrimary = lhs.key == primarySessionId
+            let rightPrimary = rhs.key == primarySessionId
+            if leftPrimary != rightPrimary { return leftPrimary }
+
+            let leftPriority = appleCompanionSessionPriority(lhs.value.status)
+            let rightPriority = appleCompanionSessionPriority(rhs.value.status)
+            if leftPriority != rightPriority { return leftPriority > rightPriority }
+
+            return lhs.value.lastActivity > rhs.value.lastActivity
+        }
+
+        return sorted.prefix(5).map { sessionId, session in
+            AppleCompanionSessionPreview(
+                sessionId: sessionId,
+                source: session.source,
+                status: AppleCompanionStatus(session.status),
+                toolName: session.status == .idle ? nil : session.currentTool,
+                workspaceName: session.projectDisplayName,
+                message: appleCompanionSessionMessage(sessionId: sessionId, session: session),
+                updatedAt: session.lastActivity
+            )
+        }
+    }
+
+    private func appleCompanionSessionMessage(sessionId: String, session: SessionSnapshot) -> String? {
+        if let pending = questionQueue.first(where: { ($0.event.sessionId ?? "default") == sessionId }) {
+            return Self.appleCompanionPreviewText(pending.question.question)
+        }
+        if let pending = permissionQueue.first(where: { ($0.event.sessionId ?? "default") == sessionId }) {
+            return Self.appleCompanionPreviewText(pending.event.toolDescription ?? session.toolDescription)
+        }
+        if let text = session.recentMessages.last?.text {
+            return Self.appleCompanionPreviewText(text)
+        }
+        return Self.appleCompanionPreviewText(session.lastAssistantMessage ?? session.lastUserPrompt)
+    }
+
+    private func appleCompanionSessionPriority(_ status: AgentStatus) -> Int {
+        switch status {
+        case .waitingApproval: return 5
+        case .waitingQuestion: return 4
+        case .running: return 3
+        case .processing: return 2
+        case .idle: return 0
+        }
     }
 
     private func appleCompanionQuestionPayload() -> AppleCompanionQuestionPayload? {
