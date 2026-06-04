@@ -133,6 +133,17 @@ iPhone app 首屏提供 `进入演示模式`。它用于 App Store 审核、截�
   </tr>
 </table>
 
+### StandBy
+
+<table>
+  <tr>
+    <td align="center"><strong>横置长消息</strong></td>
+  </tr>
+  <tr>
+    <td><img src="images/iphone-standby-long-message.png" width="520" alt="StandBy long message view"></td>
+  </tr>
+</table>
+
 ### Apple Watch 40mm
 
 <table>
