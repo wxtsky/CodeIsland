@@ -375,16 +375,14 @@ struct ConfigInstaller {
                 ("PreCompact",       5, true),
             ]
         ),
-        // pi — TypeScript extension auto-discovered from ~/.pi/agent/extensions.
+        // Pi — TypeScript extension auto-discovered from ~/.pi/agent/extensions.
         CLIConfig(
-            name: "pi",
+            name: "Pi",
             source: "pi",
-            configPath: ".pi/agent/extensions/codeisland.ts",
-            configKey: "",
+            configPath: ".pi/agent/extensions/codeisland.ts", configKey: "",
             format: .none,
             events: []
-        )
-        ,
+        ),
         // Oh My Pi / OMP — TypeScript extension loaded from ~/.omp/agent/extensions.
         CLIConfig(
             name: "Oh My Pi",

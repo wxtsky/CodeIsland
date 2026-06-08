@@ -2909,10 +2909,14 @@ final class AppState {
         findPids(
             matchingPathSubstrings: [
                 "/pi-coding-agent/",
+                "/.local/bin/pi",
+                "/.local/bin/omp",
                 "/bin/pi",
+                "/bin/omp",
             ],
             argSubstrings: [
                 "pi-coding-agent",
+                "/.local/bin/omp",
             ],
             candidatePids: candidatePids
         )

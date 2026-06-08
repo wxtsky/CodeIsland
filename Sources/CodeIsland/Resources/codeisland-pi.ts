@@ -66,6 +66,11 @@ const ENV_KEYS = [
   "TMUX",
   "TMUX_PANE",
   "KITTY_WINDOW_ID",
+  "CMUX_SURFACE_ID",
+  "CMUX_WORKSPACE_ID",
+  "ZELLIJ_PANE_ID",
+  "ZELLIJ_SESSION_NAME",
+  "WEZTERM_PANE",
   "__CFBundleIdentifier",
 ] as const;
 
@@ -253,18 +258,29 @@ export default function codeislandExtension(pi: ExtensionAPI) {
    * "answered externally" heuristic from auto-denying while the card is visible.
    */
   const pendingPermissionSessions = new Set<string>();
+  /** Sessions for which CodeIsland has already received SessionStart. */
+  const startedSessions = new Set<string>();
+
+  async function ensureSessionStarted(sessionId: string, cwd: string): Promise<void> {
+    const sid = `pi-${sessionId}`;
+    if (startedSessions.has(sid)) return;
+
+    const sessionName = pi.getSessionName();
+    await sendToSocket(
+      base(sessionId, cwd, {
+        hook_event_name: "SessionStart",
+        ...(sessionName ? { session_title: sessionName } : {}),
+      }, tty),
+    );
+    startedSessions.add(sid);
+  }
+
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
-    const sessionName = pi.getSessionName();
-    await sendToSocket(
-      base(sessionId, ctx.cwd, {
-        hook_event_name: "SessionStart",
-        ...(sessionName ? { session_title: sessionName } : {}),
-      }, tty),
-    );
+    await ensureSessionStarted(sessionId, ctx.cwd);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -272,6 +288,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
     await sendToSocket(
       base(sessionId, ctx.cwd, { hook_event_name: "SessionEnd" }, tty),
     );
+    startedSessions.delete(`pi-${sessionId}`);
   });
 
   // ── Agent lifecycle ────────────────────────────────────────────────────────
@@ -279,6 +296,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    await ensureSessionStarted(sessionId, ctx.cwd);
 
     if (pendingPermissionSessions.has(sid)) return;
 
@@ -294,6 +312,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    await ensureSessionStarted(sessionId, ctx.cwd);
 
     if (pendingPermissionSessions.has(sid)) return;
 
@@ -314,6 +333,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    await ensureSessionStarted(sessionId, ctx.cwd);
     const toolName = displayToolName(event.toolName);
 
     // Build a tool_input object appropriate for the tool type.
@@ -377,6 +397,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("tool_result", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    await ensureSessionStarted(sessionId, ctx.cwd);
 
     if (pendingPermissionSessions.has(sid)) return;
 
@@ -389,6 +410,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
 
   pi.on("session_before_compact", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
+    await ensureSessionStarted(sessionId, ctx.cwd);
     await sendToSocket(
       base(sessionId, ctx.cwd, { hook_event_name: "PreCompact" }, tty),
     );
@@ -396,6 +418,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
 
   pi.on("session_compact", async (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
+    await ensureSessionStarted(sessionId, ctx.cwd);
     await sendToSocket(
       base(sessionId, ctx.cwd, { hook_event_name: "PostCompact" }, tty),
     );
