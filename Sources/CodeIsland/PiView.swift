@@ -1,22 +1,22 @@
 import SwiftUI
 import CodeIslandCore
 
-/// PiBot — Pi / Oh My Pi mascot, a tiny mint terminal with a pixel π face.
-/// Green palette nods to the Pi icon; animation stays intentionally simple.
+/// PiBot — Pi / Oh My Pi mascot, a tiny teal terminal with a pixel π face.
+/// Deep teal shell + cyan highlights so it reads as Pi without defaulting to “generic green CLI”.
 struct PiView: View {
     let status: AgentStatus
     var size: CGFloat = 27
     @State private var alive = false
     @Environment(\.mascotSpeed) private var speed
 
-    private static let shellC = Color(red: 0.35, green: 0.83, blue: 0.62)
-    private static let shellDk = Color(red: 0.19, green: 0.58, blue: 0.43)
-    private static let leafC = Color(red: 0.58, green: 0.92, blue: 0.47)
-    private static let faceC = Color(red: 0.07, green: 0.20, blue: 0.14)
+    private static let shellC = Color(red: 0.14, green: 0.49, blue: 0.53)
+    private static let shellDk = Color(red: 0.09, green: 0.30, blue: 0.34)
+    private static let leafC = Color(red: 0.44, green: 0.90, blue: 0.95)
+    private static let faceC = Color(red: 0.05, green: 0.12, blue: 0.13)
     private static let alertC = Color(red: 1.0, green: 0.35, blue: 0.14)
-    private static let kbBase = Color(red: 0.12, green: 0.18, blue: 0.15)
-    private static let kbKey = Color(red: 0.20, green: 0.30, blue: 0.25)
-    private static let kbHi = Color(red: 0.86, green: 1.0, blue: 0.90)
+    private static let kbBase = Color(red: 0.08, green: 0.13, blue: 0.16)
+    private static let kbKey = Color(red: 0.13, green: 0.23, blue: 0.27)
+    private static let kbHi = Color(red: 0.72, green: 0.96, blue: 1.0)
 
     var body: some View {
         ZStack {
