@@ -770,8 +770,7 @@ private struct StandBySessionBoard: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visible = standbyVisibleSessionCount(boardSize: proxy.size)
-            let columns = standbyColumnCount(boardWidth: proxy.size.width)
+            let visible = standbyVisibleSessionCount(boardHeight: proxy.size.height)
             let shown = Array(sessions.prefix(visible))
             let remaining = sessions.count - shown.count
 
@@ -784,20 +783,9 @@ private struct StandBySessionBoard: View {
                     Spacer(minLength: 0)
                 }
 
-                if columns >= 2 {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
-                        spacing: 8
-                    ) {
-                        ForEach(shown) { session in
-                            StandBySessionRow(session: session)
-                        }
-                    }
-                } else {
-                    VStack(spacing: 8) {
-                        ForEach(shown) { session in
-                            StandBySessionRow(session: session)
-                        }
+                VStack(spacing: 8) {
+                    ForEach(shown) { session in
+                        StandBySessionRow(session: session)
                     }
                 }
 
