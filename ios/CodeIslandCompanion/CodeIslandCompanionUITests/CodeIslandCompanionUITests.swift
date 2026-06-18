@@ -40,6 +40,17 @@ final class CodeIslandCompanionUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeMultiSessionShowsBoard() throws {
+        let app = launchApp(mockState: "multi")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        addTeardownBlock { XCUIDevice.shared.orientation = .portrait }
+
+        XCTAssertTrue(app.otherElements["companion.standby.board"].waitForExistence(timeout: 8))
+        let rows = app.otherElements.matching(identifier: "companion.standby.sessionRow")
+        XCTAssertGreaterThanOrEqual(rows.count, 2)
+    }
+
+    @MainActor
     private func launchApp(mockState: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-CodeIslandCompanionMockState", mockState]

@@ -750,8 +750,9 @@ private struct StandByIsland: View {
             }
         }
         .frame(
-            width: min(760, max(0, availableSize.width - 28)),
-            height: max(260, availableSize.height - 24)
+            maxWidth: .infinity,
+            minHeight: 260,
+            maxHeight: .infinity
         )
         .background(IslandShellShape().fill(.black))
         .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
@@ -766,28 +767,50 @@ private struct StandBySessionBoard: View {
     let activeCount: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text("会话")
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(.white)
-                StandByCountBadge(count: sessions.count, activeCount: activeCount)
+        GeometryReader { proxy in
+            let visible = standbyVisibleSessionCount(boardSize: proxy.size)
+            let columns = standbyColumnCount(boardWidth: proxy.size.width)
+            let shown = Array(sessions.prefix(visible))
+            let remaining = sessions.count - shown.count
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Text("会话")
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    StandByCountBadge(count: sessions.count, activeCount: activeCount)
+                    Spacer(minLength: 0)
+                }
+
+                if columns >= 2 {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                        spacing: 8
+                    ) {
+                        ForEach(shown) { session in
+                            StandBySessionRow(session: session)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(shown) { session in
+                            StandBySessionRow(session: session)
+                        }
+                    }
+                }
+
+                if remaining > 0 {
+                    Text("还有 \(remaining) 个会话")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.48))
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 2)
+                        .accessibilityIdentifier("companion.standby.moreSessions")
+                }
+
                 Spacer(minLength: 0)
             }
-
-            VStack(spacing: 8) {
-                ForEach(Array(sessions.prefix(4))) { session in
-                    StandBySessionRow(session: session)
-                }
-            }
-
-            if sessions.count > 4 {
-                Text("还有 \(sessions.count - 4) 个会话")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.48))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 2)
-            }
+            .accessibilityIdentifier("companion.standby.board")
         }
     }
 }
