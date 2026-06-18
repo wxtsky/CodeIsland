@@ -148,56 +148,164 @@ private struct QuestionOptionsView: View {
     let question: CompanionQuestionPayload
     @EnvironmentObject private var connection: CompanionConnection
 
+    @State private var selected: Set<Int> = []
+    @State private var showOther = false
+    @State private var textInput = ""
+
+    private let accent = Color(red: 0.38, green: 0.68, blue: 1.0)
+
     var body: some View {
-        if question.allowsMultipleSelection {
-            Text("多选问题请先在 Mac 上回答")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.52))
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-        } else if question.options.isEmpty {
-            Text("文本回答请先在 Mac 上输入")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.52))
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+        if question.options.isEmpty {
+            // 纯文本题：直接输入并提交
+            VStack(spacing: 8) {
+                answerField(placeholder: "输入你的回答")
+                submitButton(title: "提交回答", enabled: !trimmed.isEmpty) {
+                    connection.sendAnswer(trimmed)
+                }
+            }
+        } else if question.allowsMultipleSelection {
+            LazyVStack(spacing: 7) {
+                ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
+                    optionRow(index: index, option: option, multiSelect: true)
+                }
+                otherToggleRow
+                if showOther {
+                    answerField(placeholder: "其他（请输入）")
+                }
+                submitButton(title: "提交所选", enabled: canSubmitMulti) {
+                    connection.sendAnswer(multiAnswer)
+                }
+            }
         } else {
             LazyVStack(spacing: 7) {
                 ForEach(Array(question.options.enumerated()), id: \.offset) { index, option in
-                    Button {
-                        connection.sendAnswer(option)
-                    } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Text("\(index + 1).")
-                                .font(.system(size: 12, weight: .black, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.38, green: 0.68, blue: 1.0))
-                                .frame(width: 24, alignment: .leading)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(option)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.86))
-                                    .lineLimit(2)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                if question.descriptions.indices.contains(index) {
-                                    Text(question.descriptions[index])
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundStyle(.white.opacity(0.45))
-                                        .lineLimit(2)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-
-                            Spacer(minLength: 0)
+                    optionRow(index: index, option: option, multiSelect: false)
+                }
+                otherToggleRow
+                if showOther {
+                    VStack(spacing: 8) {
+                        answerField(placeholder: "其他（请输入）")
+                        submitButton(title: "提交", enabled: !trimmed.isEmpty) {
+                            connection.sendAnswer(trimmed)
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.07)))
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    private var trimmed: String {
+        textInput.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSubmitMulti: Bool {
+        !selected.isEmpty || (showOther && !trimmed.isEmpty)
+    }
+
+    // 多选答案与 Mac 端 notch 一致：所选项标签按下标排序后用 ", " 拼接，"其他" 文本追加在末尾。
+    private var multiAnswer: String {
+        var parts = selected.sorted().compactMap { question.options.indices.contains($0) ? question.options[$0] : nil }
+        if showOther && !trimmed.isEmpty {
+            parts.append(trimmed)
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    @ViewBuilder
+    private func optionRow(index: Int, option: String, multiSelect: Bool) -> some View {
+        let isSelected = selected.contains(index)
+        Button {
+            if multiSelect {
+                if isSelected { selected.remove(index) } else { selected.insert(index) }
+            } else {
+                connection.sendAnswer(option)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                if multiSelect {
+                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(isSelected ? accent : .white.opacity(0.4))
+                        .frame(width: 24, alignment: .leading)
+                } else {
+                    Text("\(index + 1).")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .foregroundStyle(accent)
+                        .frame(width: 24, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.86))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if question.descriptions.indices.contains(index) {
+                        Text(question.descriptions[index])
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(isSelected ? accent.opacity(0.5) : Color.white.opacity(0.07)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var otherToggleRow: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.15)) { showOther.toggle() }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: showOther ? "chevron.down" : "plus")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(accent)
+                    .frame(width: 24, alignment: .leading)
+                Text("其他…")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func answerField(placeholder: String) -> some View {
+        TextField("", text: $textInput, prompt: Text(placeholder).foregroundColor(.white.opacity(0.4)), axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white)
+            .lineLimit(1...4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.1)))
+            .accessibilityIdentifier("companion.question.textField")
+    }
+
+    private func submitButton(title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? .black : .white.opacity(0.4))
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(enabled ? accent : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityIdentifier("companion.question.submit")
     }
 }
 
@@ -402,6 +510,7 @@ private struct QuestionPromptCard: View {
 
             QuestionOptionsView(question: question)
                 .environmentObject(connection)
+                .id("\(question.index)/\(question.total)·\(question.question)")
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.04, green: 0.05, blue: 0.06)))
