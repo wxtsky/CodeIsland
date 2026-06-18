@@ -122,7 +122,8 @@ private struct PrimaryMessageView: View {
             text: text,
             font: .system(size: 16, weight: .medium),
             color: .white.opacity(state.messages.isEmpty && state.question == nil ? 0.55 : 0.86),
-            lineLimit: state.question == nil ? 5 : 3
+            lineLimit: state.question == nil ? 5 : 3,
+            markdown: true
         )
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -523,7 +524,7 @@ private struct QuestionPromptCard: View {
                 }
             }
 
-            Text(question.question)
+            Text(CompanionDisplayText.inlineMarkdown(question.question))
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white.opacity(0.9))
                 .lineLimit(5)
@@ -777,7 +778,7 @@ private struct MessageStrip: View {
                                 .frame(width: 42, height: 28)
                                 .background(message.role == .user ? Color.white.opacity(0.86) : Color.white.opacity(0.12), in: Capsule())
 
-                            Text(CompanionDisplayText.message(message.text) ?? message.text)
+                            Text(CompanionDisplayText.inlineMarkdown(CompanionDisplayText.message(message.text) ?? message.text))
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.76))
                                 .lineLimit(6)
@@ -838,7 +839,8 @@ private struct StandByIsland: View {
                         ?? "CodeIsland 已连接",
                     font: .system(size: 24, weight: .medium, design: .rounded),
                     color: .white.opacity(0.82),
-                    lineLimit: 4
+                    lineLimit: 4,
+                    markdown: true
                 )
                 .minimumScaleFactor(0.72)
 
@@ -1046,7 +1048,7 @@ private struct StandBySessionRow: View {
                             .lineLimit(1)
                     }
                 }
-                Text(standbySessionText(session))
+                Text(CompanionDisplayText.inlineMarkdown(standbySessionText(session)))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.66))
                     .lineLimit(messageLineLimit)
@@ -1127,21 +1129,27 @@ private struct MorphText: View {
     var font: Font = .system(size: 12)
     var color: Color = .white
     var lineLimit: Int? = 1
+    var markdown: Bool = false
 
     @State private var displayed: String
     @State private var blur: CGFloat = 0
     @State private var generation = 0
 
-    init(text: String, font: Font = .system(size: 12), color: Color = .white, lineLimit: Int? = 1) {
+    init(text: String, font: Font = .system(size: 12), color: Color = .white, lineLimit: Int? = 1, markdown: Bool = false) {
         self.text = text
         self.font = font
         self.color = color
         self.lineLimit = lineLimit
+        self.markdown = markdown
         _displayed = State(initialValue: text)
     }
 
+    private var renderedText: Text {
+        markdown ? Text(CompanionDisplayText.inlineMarkdown(displayed)) : Text(displayed)
+    }
+
     var body: some View {
-        Text(displayed)
+        renderedText
             .font(font)
             .foregroundStyle(color)
             .lineLimit(lineLimit)
