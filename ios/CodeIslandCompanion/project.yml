@@ -159,6 +159,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: CodeIslandCompanionUITests
+      - path: CodeIslandCompanion/StandByLayout.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanionUITests
