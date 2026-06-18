@@ -998,7 +998,7 @@ private struct StandBySessionBoard: View {
                             .font(.system(size: 12, weight: .black, design: .rounded))
                             .foregroundStyle(.white.opacity(0.5))
                         ForEach(group.items) { session in
-                            StandBySessionRow(session: session, messageLineLimit: 1)
+                            StandBySessionRow(session: session, messageLineLimit: standbyMaxMessageLines)
                         }
                     }
                 }
