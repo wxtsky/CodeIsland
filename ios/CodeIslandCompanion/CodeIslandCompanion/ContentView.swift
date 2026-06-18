@@ -1085,9 +1085,7 @@ private struct StandBySessionRow: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         } else {
-                            Text("thinking")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.45))
+                            ThinkingLabel()
                         }
                     }
                 }
@@ -1149,6 +1147,39 @@ private struct SessionTag: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 5).fill(color.opacity(0.12)))
+    }
+}
+
+// 「思考中」标签：一束高光沿文字横向循环扫过（巡逻扫光）。
+private struct ThinkingLabel: View {
+    var text: String = "thinking"
+    private let font = Font.system(size: 12, weight: .medium, design: .monospaced)
+    private let period: TimeInterval = 1.6
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let phase = (timeline.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: period)) / period
+            Text(text)
+                .font(font)
+                .foregroundStyle(.white.opacity(0.35))
+                .overlay {
+                    GeometryReader { geo in
+                        let width = geo.size.width
+                        let band = max(22, width * 0.5)
+                        LinearGradient(
+                            colors: [.clear, .white.opacity(0.95), .clear],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: band)
+                        .offset(x: phase * (width + band) - band)
+                    }
+                    .mask(Text(text).font(font))
+                    .allowsHitTesting(false)
+                }
+        }
+        .fixedSize()
     }
 }
 
