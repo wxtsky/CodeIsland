@@ -40,7 +40,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion
         INFOPLIST_FILE: CodeIslandCompanion/Info.plist
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
     dependencies:
@@ -78,7 +78,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.Widget
         INFOPLIST_FILE: CodeIslandCompanionWidget/Info.plist
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         SKIP_INSTALL: YES
   CodeIslandWatchApp:
@@ -164,7 +164,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanionUITests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: CodeIslandCompanion
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
     dependencies:
       - target: CodeIslandCompanion
 schemes:

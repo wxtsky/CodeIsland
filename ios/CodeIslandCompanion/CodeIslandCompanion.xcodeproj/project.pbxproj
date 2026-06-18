@@ -890,7 +890,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanion.Widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -926,7 +926,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanionUITests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = CodeIslandCompanion;
 			};
 			name = Release;
@@ -944,7 +944,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanionUITests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = CodeIslandCompanion;
 			};
 			name = Debug;
@@ -963,7 +963,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanion;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -996,7 +996,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanion.Widget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -1014,7 +1014,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = top.fengye.CodeIslandCompanion;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
