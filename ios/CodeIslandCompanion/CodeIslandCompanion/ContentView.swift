@@ -893,43 +893,133 @@ private struct StandByIsland: View {
     }
 }
 
+private enum StandByGrouping: CaseIterable {
+    case none, status, cli
+
+    var label: String {
+        switch self {
+        case .none: return "全部"
+        case .status: return "按状态"
+        case .cli: return "按 CLI"
+        }
+    }
+
+    var next: StandByGrouping {
+        let all = Self.allCases
+        let idx = all.firstIndex(of: self) ?? 0
+        return all[(idx + 1) % all.count]
+    }
+}
+
+private struct StandByGroup: Identifiable {
+    let id: String
+    let items: [CompanionSessionPreview]
+}
+
 private struct StandBySessionBoard: View {
     let sessions: [CompanionSessionPreview]
     let activeCount: Int
+    @State private var grouping: StandByGrouping = .none
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = standbySessionBoardLayout(boardHeight: proxy.size.height, sessionCount: sessions.count)
-            let shown = Array(sessions.prefix(layout.visibleCount))
-            let remaining = sessions.count - shown.count
-
             VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Text("会话")
-                        .font(.system(size: 18, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                    StandByCountBadge(count: sessions.count, activeCount: activeCount)
-                    Spacer(minLength: 0)
-                }
+                header
 
-                VStack(spacing: 8) {
-                    ForEach(shown) { session in
-                        StandBySessionRow(session: session, messageLineLimit: layout.messageLineLimit)
-                    }
-                }
-
-                if remaining > 0 {
-                    Text("还有 \(remaining) 个会话")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.48))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 2)
-                        .accessibilityIdentifier("companion.standby.moreSessions")
+                if grouping == .none {
+                    flatAdaptiveList(boardHeight: proxy.size.height)
+                } else {
+                    groupedScrollList
                 }
 
                 Spacer(minLength: 0)
             }
             .accessibilityIdentifier("companion.standby.board")
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("会话")
+                .font(.system(size: 18, weight: .black, design: .rounded))
+                .foregroundStyle(.white)
+            StandByCountBadge(count: sessions.count, activeCount: activeCount)
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { grouping = grouping.next }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "rectangle.3.group")
+                    Text(grouping.label)
+                }
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.72))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.08), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("companion.standby.groupToggle")
+        }
+    }
+
+    // 全部：按高度自适应、不滚动，超出显示「还有 N 个」。
+    @ViewBuilder
+    private func flatAdaptiveList(boardHeight: CGFloat) -> some View {
+        let layout = standbySessionBoardLayout(boardHeight: boardHeight, sessionCount: sessions.count)
+        let shown = Array(sessions.prefix(layout.visibleCount))
+        let remaining = sessions.count - shown.count
+
+        VStack(spacing: 8) {
+            ForEach(shown) { session in
+                StandBySessionRow(session: session, messageLineLimit: layout.messageLineLimit)
+            }
+        }
+
+        if remaining > 0 {
+            Text("还有 \(remaining) 个会话")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.48))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 2)
+                .accessibilityIdentifier("companion.standby.moreSessions")
+        }
+    }
+
+    // 分组（按状态 / CLI）：可滚动，完整展示所有会话。
+    private var groupedScrollList: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(groupedSessions) { group in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(group.id) · \(group.items.count)")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.5))
+                        ForEach(group.items) { session in
+                            StandBySessionRow(session: session, messageLineLimit: 1)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollIndicators(.automatic)
+        .accessibilityIdentifier("companion.standby.groupedScroll")
+    }
+
+    private var groupedSessions: [StandByGroup] {
+        switch grouping {
+        case .none:
+            return [StandByGroup(id: "全部", items: sessions)]
+        case .status:
+            let order: [CompanionStatus] = [.waitingApproval, .waitingQuestion, .running, .processing, .idle]
+            return order.compactMap { status in
+                let items = sessions.filter { $0.status == status }
+                return items.isEmpty ? nil : StandByGroup(id: status.label, items: items)
+            }
+        case .cli:
+            let grouped = Dictionary(grouping: sessions) { $0.source.isEmpty ? "CODEISLAND" : $0.source.uppercased() }
+            return grouped.keys.sorted().map { StandByGroup(id: $0, items: grouped[$0] ?? []) }
         }
     }
 }
