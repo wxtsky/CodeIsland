@@ -1051,19 +1051,16 @@ private struct StandBySessionRow: View {
                     }
                     Spacer(minLength: 6)
                     SessionTag(standbyTimeAgo(session.updatedAt))
-                    if let tool = CompanionDisplayText.tool(session.toolName) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "hammer.fill")
-                                .font(.system(size: 8))
-                            Text(tool)
-                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                        }
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.1)))
-                        .fixedSize()
+                    HStack(spacing: 3) {
+                        CompanionMascotView(source: session.source, status: session.status, size: 12)
+                        Text(CompanionDisplayText.source(session.source))
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     }
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.1)))
+                    .fixedSize()
                 }
 
                 // 消息行：用户最近输入
