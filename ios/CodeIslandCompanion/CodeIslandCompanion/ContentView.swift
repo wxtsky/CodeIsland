@@ -1036,9 +1036,9 @@ private struct StandBySessionRow: View {
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 4) {
-                // 身份行：名称（按状态着色）+ #短id · 工作区 + time-ago
+                // 身份行：项目名（最左、按状态着色）+ #短id … 右侧 time-ago + 工具徽标
                 HStack(spacing: 6) {
-                    Text(session.source.isEmpty ? "CODEISLAND" : session.source.uppercased())
+                    Text(sessionName)
                         .font(.system(size: 15, weight: .black, design: .rounded))
                         .foregroundStyle(statusNameColor)
                         .lineLimit(1)
@@ -1049,18 +1049,21 @@ private struct StandBySessionRow: View {
                             .foregroundStyle(.white.opacity(0.4))
                             .fixedSize()
                     }
-                    if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
-                        Text("·")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.28))
-                        Text(workspace)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
                     Spacer(minLength: 6)
                     SessionTag(standbyTimeAgo(session.updatedAt))
+                    if let tool = CompanionDisplayText.tool(session.toolName) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "hammer.fill")
+                                .font(.system(size: 8))
+                            Text(tool)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        }
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.1)))
+                        .fixedSize()
+                    }
                 }
 
                 // 消息行：用户最近输入
@@ -1070,20 +1073,6 @@ private struct StandBySessionRow: View {
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(messageLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-
-                // 工作指示行：$ 工具 / 思考中（对齐 notch SessionCard）
-                if session.status != .idle {
-                    HStack(spacing: 4) {
-                        Text("$")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
-                        Text(workingText)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.75))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
                 }
             }
         }
@@ -1110,9 +1099,10 @@ private struct StandBySessionRow: View {
         return clean.isEmpty ? nil : String(clean.suffix(4))
     }
 
-    // 工作指示文案：当前工具，否则「思考中」。
-    private var workingText: String {
-        CompanionDisplayText.tool(session.toolName) ?? "思考中…"
+    // 会话名称：项目/工作区名优先，缺省回退来源（对齐 notch 以项目名为标题）。
+    private var sessionName: String {
+        CompanionDisplayText.workspace(session.workspaceName)
+            ?? (session.source.isEmpty ? "CODEISLAND" : session.source.uppercased())
     }
 
     // 待处理状态高亮：审批=橙、提问=蓝；其余不高亮。
