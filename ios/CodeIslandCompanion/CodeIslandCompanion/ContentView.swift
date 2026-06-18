@@ -1071,6 +1071,26 @@ private struct StandBySessionRow: View {
                         .lineLimit(messageLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                // 工作指示行：$ 工具 / $ thinking（对齐 notch SessionCard 底部）
+                if session.status != .idle {
+                    HStack(spacing: 4) {
+                        Text("$")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                        if let tool = CompanionDisplayText.tool(session.toolName) {
+                            Text(tool)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        } else {
+                            Text("thinking")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
+                }
             }
         }
         .padding(.horizontal, 10)

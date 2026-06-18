@@ -1,8 +1,8 @@
 import CoreGraphics
 
-/// 单条会话行（最多 3 行消息）的高度估算：身份行 + 3 行消息 + 内边距。
+/// 单条会话行的高度估算：身份行 + 最多 3 行消息 + 工作指示行 + 内边距。
 /// 用于按看板可用高度决定能完整容纳几条会话。
-let standbySessionRowStride: CGFloat = 92
+let standbySessionRowStride: CGFloat = 100
 
 /// 看板标题区 + 顶部内边距的预留高度。
 let standbySessionBoardHeaderHeight: CGFloat = 44
