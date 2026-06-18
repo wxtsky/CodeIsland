@@ -722,7 +722,7 @@ private struct StandByIsland: View {
                     }
                 }
             }
-            .frame(maxWidth: sessions.count > 1 ? availableSize.width * 0.42 : .infinity, alignment: .leading)
+            .frame(maxWidth: sessions.count > 1 ? availableSize.width * 0.34 : .infinity, alignment: .leading)
             .padding(24)
 
             DividerLine(vertical: true)
