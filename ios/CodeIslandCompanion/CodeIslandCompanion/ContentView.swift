@@ -85,9 +85,11 @@ private struct PortraitIslandView: View {
                     }
                 }
                 .padding(.horizontal, 12)
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
                 .padding(.top, topPadding)
                 .padding(.bottom, max(28, proxy.safeAreaInsets.bottom + 20))
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
+                .frame(minHeight: proxy.size.height, alignment: .top)
             }
             .scrollIndicators(.automatic)
             .scrollBounceBehavior(.basedOnSize)
