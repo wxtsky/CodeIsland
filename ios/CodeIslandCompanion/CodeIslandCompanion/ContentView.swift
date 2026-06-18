@@ -770,8 +770,8 @@ private struct StandBySessionBoard: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visible = standbyVisibleSessionCount(boardHeight: proxy.size.height)
-            let shown = Array(sessions.prefix(visible))
+            let layout = standbySessionBoardLayout(boardHeight: proxy.size.height, sessionCount: sessions.count)
+            let shown = Array(sessions.prefix(layout.visibleCount))
             let remaining = sessions.count - shown.count
 
             VStack(alignment: .leading, spacing: 12) {
@@ -785,7 +785,7 @@ private struct StandBySessionBoard: View {
 
                 VStack(spacing: 8) {
                     ForEach(shown) { session in
-                        StandBySessionRow(session: session)
+                        StandBySessionRow(session: session, messageLineLimit: layout.messageLineLimit)
                     }
                 }
 
@@ -807,6 +807,7 @@ private struct StandBySessionBoard: View {
 
 private struct StandBySessionRow: View {
     let session: CompanionSessionPreview
+    var messageLineLimit: Int = 1
 
     var body: some View {
         HStack(spacing: 10) {
@@ -829,7 +830,8 @@ private struct StandBySessionRow: View {
                 Text(standbySessionText(session))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.66))
-                    .lineLimit(1)
+                    .lineLimit(messageLineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 8)
