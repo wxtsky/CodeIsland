@@ -1031,22 +1031,29 @@ private struct StandBySessionRow: View {
     var messageLineLimit: Int = 1
 
     var body: some View {
-        HStack(spacing: 10) {
-            CompanionMascotView(source: session.source, status: session.status, size: 38)
-                .frame(width: 42, height: 42)
+        HStack(alignment: .center, spacing: 8) {
+            CompanionMascotView(source: session.source, status: session.status, size: 32)
+                .frame(width: 36)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
                     Text(session.source.isEmpty ? "CODEISLAND" : session.source.uppercased())
                         .font(.system(size: 15, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(statusNameColor)
                         .lineLimit(1)
+                        .layoutPriority(2)
                     if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
-                        Text(workspace)
+                        Text("·")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.48))
+                            .foregroundStyle(.white.opacity(0.28))
+                        Text(workspace)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
+                            .truncationMode(.tail)
                     }
+                    Spacer(minLength: 6)
+                    SessionTag(standbyTimeAgo(session.updatedAt))
                 }
                 Text(CompanionDisplayText.inlineMarkdown(standbySessionText(session)))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -1054,17 +1061,21 @@ private struct StandBySessionRow: View {
                     .lineLimit(messageLineLimit)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Spacer(minLength: 8)
-
-            PulseDot(status: session.status)
-                .frame(width: 24, height: 24)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background((highlightTint ?? .white).opacity(highlightTint == nil ? 0.055 : 0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(highlightTint?.opacity(0.55) ?? Color.white.opacity(0.07), lineWidth: highlightTint == nil ? 1 : 1.5))
         .accessibilityIdentifier("companion.standby.sessionRow")
+    }
+
+    // 名称按状态着色，对齐 notch SessionCard：运行/处理=绿，待办=橙，空闲=白。
+    private var statusNameColor: Color {
+        switch session.status {
+        case .processing, .running: return Color(red: 0.3, green: 0.85, blue: 0.4)
+        case .waitingApproval, .waitingQuestion: return Color(red: 1.0, green: 0.6, blue: 0.2)
+        case .idle: return .white
+        }
     }
 
     // 待处理状态高亮：审批=橙、提问=蓝；其余不高亮。
@@ -1075,6 +1086,35 @@ private struct StandBySessionRow: View {
         default: return nil
         }
     }
+}
+
+// 小标签胶囊，对齐 notch SessionCard 的 SessionTag。
+private struct SessionTag: View {
+    let text: String
+    var color: Color = .white.opacity(0.7)
+
+    init(_ text: String, color: Color = .white.opacity(0.7)) {
+        self.text = text
+        self.color = color
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5).fill(color.opacity(0.12)))
+    }
+}
+
+// 相对时间，对齐 notch timeAgo 格式。
+private func standbyTimeAgo(_ date: Date) -> String {
+    let seconds = Int(-date.timeIntervalSinceNow)
+    if seconds < 60 { return "<1m" }
+    if seconds < 3600 { return "\(seconds / 60)m" }
+    if seconds < 86400 { return "\(seconds / 3600)h" }
+    return "\(seconds / 86400)d"
 }
 
 private struct StandByCountBadge: View {
