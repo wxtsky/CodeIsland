@@ -1035,13 +1035,20 @@ private struct StandBySessionRow: View {
             CompanionMascotView(source: session.source, status: session.status, size: 32)
                 .frame(width: 36)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
+                // 身份行：名称（按状态着色）+ #短id · 工作区 + time-ago
                 HStack(spacing: 6) {
                     Text(session.source.isEmpty ? "CODEISLAND" : session.source.uppercased())
                         .font(.system(size: 15, weight: .black, design: .rounded))
                         .foregroundStyle(statusNameColor)
                         .lineLimit(1)
                         .layoutPriority(2)
+                    if let shortId = shortSessionId {
+                        Text("#\(shortId)")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .fixedSize()
+                    }
                     if let workspace = CompanionDisplayText.workspace(session.workspaceName) {
                         Text("·")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -1055,11 +1062,29 @@ private struct StandBySessionRow: View {
                     Spacer(minLength: 6)
                     SessionTag(standbyTimeAgo(session.updatedAt))
                 }
-                Text(CompanionDisplayText.inlineMarkdown(standbySessionText(session)))
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.66))
-                    .lineLimit(messageLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
+
+                // 消息行：用户最近输入
+                if let message = CompanionDisplayText.message(session.message) {
+                    Text(CompanionDisplayText.inlineMarkdown(message))
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(messageLineLimit)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // 工作指示行：$ 工具 / 思考中（对齐 notch SessionCard）
+                if session.status != .idle {
+                    HStack(spacing: 4) {
+                        Text("$")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                        Text(workingText)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
             }
         }
         .padding(.horizontal, 10)
@@ -1076,6 +1101,18 @@ private struct StandBySessionRow: View {
         case .waitingApproval, .waitingQuestion: return Color(red: 1.0, green: 0.6, blue: 0.2)
         case .idle: return .white
         }
+    }
+
+    // 短会话 id（去掉连字符取末 4 位），对齐 notch 的 #id。
+    private var shortSessionId: String? {
+        guard let id = session.sessionId else { return nil }
+        let clean = id.replacingOccurrences(of: "-", with: "")
+        return clean.isEmpty ? nil : String(clean.suffix(4))
+    }
+
+    // 工作指示文案：当前工具，否则「思考中」。
+    private var workingText: String {
+        CompanionDisplayText.tool(session.toolName) ?? "思考中…"
     }
 
     // 待处理状态高亮：审批=橙、提问=蓝；其余不高亮。
@@ -1152,16 +1189,6 @@ private func standbySessions(for state: CompanionStatePayload) -> [CompanionSess
         }
         return lhs.updatedAt > rhs.updatedAt
     }
-}
-
-private func standbySessionText(_ session: CompanionSessionPreview) -> String {
-    if let message = CompanionDisplayText.message(session.message), !message.isEmpty {
-        return message
-    }
-    if let toolName = CompanionDisplayText.tool(session.toolName), !toolName.isEmpty {
-        return toolName
-    }
-    return session.status.label
 }
 
 private struct MorphText: View {
