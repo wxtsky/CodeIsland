@@ -26,6 +26,22 @@ enum CompanionStatus: String, Codable, Hashable {
         case .waitingQuestion: return "问题"
         }
     }
+
+    /// 与 Mac notch 一致的展示优先级：审批 > 提问 > 运行 > 处理 > 空闲。
+    var priority: Int {
+        switch self {
+        case .waitingApproval: return 5
+        case .waitingQuestion: return 4
+        case .running: return 3
+        case .processing: return 2
+        case .idle: return 0
+        }
+    }
+
+    /// 是否为需要用户处理的待办状态（审批 / 提问）。
+    var isPending: Bool {
+        self == .waitingApproval || self == .waitingQuestion
+    }
 }
 
 enum CompanionPendingAction: String, Codable {

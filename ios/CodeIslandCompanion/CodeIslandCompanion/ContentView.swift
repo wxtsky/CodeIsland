@@ -51,8 +51,11 @@ private struct PortraitIslandView: View {
     @EnvironmentObject private var connection: CompanionConnection
     @EnvironmentObject private var liveActivity: LiveActivityController
 
+    private static let pendingAnchor = "companion.pendingCard"
+
     var body: some View {
         GeometryReader { proxy in
+            ScrollViewReader { scroller in
             ScrollView(.vertical) {
                 LazyVStack(spacing: 10) {
                     CompactIslandBar()
@@ -62,6 +65,7 @@ private struct PortraitIslandView: View {
                         LiveIslandCard(state: state)
                             .environmentObject(connection)
                             .environmentObject(liveActivity)
+                            .id(Self.pendingAnchor)
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
 
                         MessageStrip(messages: state.messages)
@@ -95,6 +99,13 @@ private struct PortraitIslandView: View {
             .scrollBounceBehavior(.basedOnSize)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             .accessibilityIdentifier("companion.scroll")
+            .onChange(of: connection.latestState?.pendingAction) { _, newValue in
+                guard newValue != nil else { return }
+                withAnimation(.easeOut(duration: 0.3)) {
+                    scroller.scrollTo(Self.pendingAnchor, anchor: .top)
+                }
+            }
+            }
         }
     }
 }
@@ -466,11 +477,20 @@ private struct LiveIslandCard: View {
             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
         }
         .background(IslandShellShape().fill(.black))
-        .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+        .overlay(IslandShellShape().stroke(pendingTint ?? Color.white.opacity(0.08), lineWidth: pendingTint == nil ? 1 : 1.5))
+        .shadow(color: pendingTint?.opacity(0.35) ?? .black.opacity(0.35), radius: 18, y: 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("CodeIsland 状态")
         .accessibilityIdentifier("companion.statusCard")
+    }
+
+    // 待处理时给卡片描边与光晕：审批=橙、提问=蓝。
+    private var pendingTint: Color? {
+        switch state.pendingAction {
+        case .approval: return .orange
+        case .question: return Color(red: 0.38, green: 0.68, blue: 1.0)
+        case nil: return nil
+        }
     }
 }
 
@@ -950,9 +970,18 @@ private struct StandBySessionRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 1))
+        .background((highlightTint ?? .white).opacity(highlightTint == nil ? 0.055 : 0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(highlightTint?.opacity(0.55) ?? Color.white.opacity(0.07), lineWidth: highlightTint == nil ? 1 : 1.5))
         .accessibilityIdentifier("companion.standby.sessionRow")
+    }
+
+    // 待处理状态高亮：审批=橙、提问=蓝；其余不高亮。
+    private var highlightTint: Color? {
+        switch session.status {
+        case .waitingApproval: return .orange
+        case .waitingQuestion: return Color(red: 0.38, green: 0.68, blue: 1.0)
+        default: return nil
+        }
     }
 }
 
@@ -984,7 +1013,13 @@ private func standbySessions(for state: CompanionStatePayload) -> [CompanionSess
             )
         ]
     }
-    return state.sessions
+    // 待处理项自动聚焦：按状态优先级（审批>提问>运行>处理>空闲）排序，同级按最近更新。
+    return state.sessions.sorted { lhs, rhs in
+        if lhs.status.priority != rhs.status.priority {
+            return lhs.status.priority > rhs.status.priority
+        }
+        return lhs.updatedAt > rhs.updatedAt
+    }
 }
 
 private func standbySessionText(_ session: CompanionSessionPreview) -> String {
