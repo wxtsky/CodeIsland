@@ -4577,7 +4577,7 @@ final class AppState {
     }
 
     /// Read model and last 3 user/assistant messages from a transcript file's tail
-    private nonisolated static func readRecentFromTranscript(path: String) -> (String?, [ChatMessage]) {
+    nonisolated static func readRecentFromTranscript(path: String) -> (String?, [ChatMessage]) {
         guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, []) }
         defer { handle.closeFile() }
 
@@ -4596,10 +4596,15 @@ final class AppState {
         for line in text.components(separatedBy: "\n") {
             guard !line.isEmpty,
                   let lineData = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let message = json["message"] as? [String: Any],
-                  let role = message["role"] as? String
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
             else { continue }
+
+            let type = json["type"] as? String
+            let message = (json["message"] as? [String: Any]) ?? json
+            let role = (message["role"] as? String) ?? type
+
+            guard let role else { continue }
+            let normalizedRole = role.lowercased()
 
             if model == nil, let m = message["model"] as? String, !m.isEmpty {
                 model = m
@@ -4607,22 +4612,43 @@ final class AppState {
 
             // Extract text content
             var textContent: String?
-            if let content = message["content"] as? String, !content.isEmpty {
-                textContent = content
-            } else if let contentArray = message["content"] as? [[String: Any]] {
-                for item in contentArray {
-                    if item["type"] as? String == "text",
-                       let t = item["text"] as? String, !t.isEmpty {
-                        textContent = t
-                        break
+            if normalizedRole == "user" || normalizedRole == "user_input" {
+                if let content = message["content"] as? String {
+                    var text = content
+                    if let startRange = text.range(of: "<USER_REQUEST>"),
+                       let endRange = text.range(of: "</USER_REQUEST>", range: startRange.upperBound..<text.endIndex) {
+                        text = String(text[startRange.upperBound..<endRange.lowerBound])
                     }
+                    textContent = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if let contentArray = message["content"] as? [[String: Any]] {
+                    for item in contentArray {
+                        if item["type"] as? String == "text",
+                           let t = item["text"] as? String, !t.isEmpty {
+                            textContent = t
+                            break
+                        }
+                    }
+                }
+            } else if normalizedRole == "assistant" || normalizedRole == "planner_response" {
+                if let content = message["content"] as? String {
+                    textContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else if let contentArray = message["content"] as? [[String: Any]] {
+                    for item in contentArray {
+                        if item["type"] as? String == "text",
+                           let t = item["text"] as? String, !t.isEmpty {
+                            textContent = t
+                            break
+                        }
+                    }
+                } else if let thinking = message["thinking"] as? String {
+                    textContent = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
             }
 
-            if let text = textContent {
-                if role == "user" {
+            if let text = textContent, !text.isEmpty {
+                if normalizedRole == "user" || normalizedRole == "user_input" {
                     userMessages.append((index, text))
-                } else if role == "assistant" {
+                } else if normalizedRole == "assistant" || normalizedRole == "planner_response" {
                     assistantMessages.append((index, text))
                 }
             }

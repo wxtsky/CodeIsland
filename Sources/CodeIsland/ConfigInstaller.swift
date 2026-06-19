@@ -227,7 +227,7 @@ struct ConfigInstaller {
             events: [
                 ("SessionStart", 10000, false),
                 ("SessionEnd", 10000, false),
-                ("BeforeTool", 10000, false),
+                ("BeforeTool", 86400000, false),
                 ("AfterTool", 10000, false),
                 ("BeforeAgent", 10000, false),
                 ("AfterAgent", 10000, false),
@@ -548,7 +548,7 @@ struct ConfigInstaller {
             // PreInvocation/PostInvocation are pass-through with no internal
             // meaning, so they're omitted. Timeout is in SECONDS (docs default 30).
             return [
-                ("PreToolUse", 5, false),
+                ("PreToolUse", 86400, false),
                 ("PostToolUse", 5, false),
                 ("Stop", 5, false),
             ]
@@ -1228,7 +1228,8 @@ struct ConfigInstaller {
                 // — otherwise long-running PermissionRequest hooks hang the agent (#103).
                 entry = ["matcher": "*", "hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
             case .nested:
-                entry = ["hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
+                let cmd = cli.source == "gemini" ? "\(baseCommand) --event \(event)" : baseCommand
+                entry = ["hooks": [["type": "command", "command": cmd, "timeout": timeout] as [String: Any]]]
             case .flat:
                 entry = ["command": "\(baseCommand) --event \(event)"]
             case .traecli:

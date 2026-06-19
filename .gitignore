@@ -69,3 +69,4 @@ android-watch/**/build/
 skills/
 skills-lock.json
 CLAUDE.md
+build-dir/

@@ -53,6 +53,10 @@ final class GoogleAntigravitySupportTests: XCTestCase {
         XCTAssertEqual(EventNormalizer.normalize("Stop"), "Stop")
     }
 
+    func testBeforeToolNormalizesToPermissionRequest() {
+        XCTAssertEqual(EventNormalizer.normalize("BeforeTool"), "PermissionRequest")
+    }
+
     // MARK: - HookFormat round-trip
 
     func testHookFormatAntigravityNamedRoundTripsThroughStorageValue() {
@@ -110,7 +114,7 @@ final class GoogleAntigravitySupportTests: XCTestCase {
             XCTAssertTrue(command.contains("--event \(event)"))
         }
 
-        // matcher "*" only on the two tool events; omitted for Stop (ignored there).
+        // matcher "*" only on the two tool events; omitted for Stop.
         let preEntry = try XCTUnwrap((wrapper["PreToolUse"] as? [[String: Any]])?.first)
         XCTAssertEqual(preEntry["matcher"] as? String, "*")
         let postEntry = try XCTUnwrap((wrapper["PostToolUse"] as? [[String: Any]])?.first)
@@ -119,9 +123,57 @@ final class GoogleAntigravitySupportTests: XCTestCase {
         XCTAssertNil(stopEntry["matcher"], "Stop ignores matcher; we must not emit one")
     }
 
-    // MARK: - ESP32 mascot folding (Gemini-based → Gemini Buddy slot)
+    func testGoogleAntigravityPreToolUseRoutesToPermission() async throws {
+        let payload: [String: Any] = [
+            "hook_event_name": "PreToolUse",
+            "session_id": "test-sess",
+            "_source": "google-antigravity",
+            "tool_name": "Bash",
+            "tool_input": ["command": "rm -rf foo"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let event = try XCTUnwrap(HookEvent(from: data))
+        
+        let kind = await MainActor.run { HookServer.routeKind(for: event) }
+        XCTAssertEqual(kind, .permission)
+    }
 
-    func testGoogleAntigravityFoldsOntoGeminiMascotSlot() {
-        XCTAssertEqual(MascotID(sourceName: "google-antigravity"), .gemini)
+    func testGeminiSourcePreToolUseRoutesToPermission() async throws {
+        // agy CLI uses --source gemini and sends hook_event_name: "PreToolUse" in
+        // its JSON payload, overriding the --event BeforeTool fallback.
+        let payload: [String: Any] = [
+            "hook_event_name": "PreToolUse",
+            "session_id": "test-gemini-sess",
+            "_source": "gemini",
+            "tool_name": "run_command",
+            "tool_input": ["CommandLine": "rm -rf bar"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        let kind = await MainActor.run { HookServer.routeKind(for: event) }
+        XCTAssertEqual(kind, .permission,
+            "agy CLI (--source gemini) PreToolUse must be treated as a blocking permission event")
+    }
+
+    func testAgyToolCallParsing() throws {
+        let payload: [String: Any] = [
+            "hook_event_name": "PreToolUse",
+            "conversationId": "3ff64dc8-11bd-4f7e-9a97-495badd58069",
+            "_source": "gemini",
+            "toolCall": [
+                "name": "run_command",
+                "args": [
+                    "CommandLine": "ls -la"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        XCTAssertEqual(event.toolName, "run_command")
+        XCTAssertEqual(event.toolInput?["CommandLine"] as? String, "ls -la")
+        XCTAssertEqual(event.toolDescription, "ls -la")
     }
 }
+

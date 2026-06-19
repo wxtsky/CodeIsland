@@ -68,6 +68,42 @@ final class JSONLTailerTests: XCTestCase {
         XCTAssertTrue(result.delta.isEmpty)
     }
 
+    func testScanLinesExtractsAntigravityUserInputWithTags() {
+        let line = """
+        {"type":"USER_INPUT","content":"<USER_REQUEST>\\nhello world\\n</USER_REQUEST>"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastUserPrompt, "hello world")
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesExtractsAntigravityUserInputWithoutTags() {
+        let line = """
+        {"type":"USER_INPUT","content":"hello world"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastUserPrompt, "hello world")
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesExtractsAntigravityPlannerResponseWithContent() {
+        let line = """
+        {"type":"PLANNER_RESPONSE","content":"answer content","thinking":"thought process"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastAssistantMessage, "answer content")
+        XCTAssertNil(result.delta.lastUserPrompt)
+    }
+
+    func testScanLinesExtractsAntigravityPlannerResponseWithOnlyThinking() {
+        let line = """
+        {"type":"PLANNER_RESPONSE","thinking":"thought process"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastAssistantMessage, "thought process")
+        XCTAssertNil(result.delta.lastUserPrompt)
+    }
+
     // MARK: - extractText
 
     func testExtractTextFromPlainString() {

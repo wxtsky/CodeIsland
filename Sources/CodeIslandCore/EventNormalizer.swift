@@ -16,7 +16,7 @@ public enum EventNormalizer {
         case "afterAgentResponse":    return "AfterAgentResponse"
         case "stop":                  return "Stop"
         // Gemini
-        case "BeforeTool":            return "PreToolUse"
+        case "BeforeTool":            return "PermissionRequest"
         case "AfterTool":             return "PostToolUse"
         case "BeforeAgent":           return "SubagentStart"
         case "AfterAgent":            return "SubagentStop"

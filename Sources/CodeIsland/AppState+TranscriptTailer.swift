@@ -9,6 +9,20 @@ extension AppState {
         guard let path = sessions[sessionId]?.transcriptPath, !path.isEmpty else { return }
         if attachedTranscriptPaths[sessionId] == path { return }
         attachedTranscriptPaths[sessionId] = path
+
+        // Backfill messages from the transcript file so recentMessages is populated
+        let (_, messages) = Self.readRecentFromTranscript(path: path)
+        if !messages.isEmpty, var session = sessions[sessionId] {
+            session.recentMessages = messages
+            if let lastUser = messages.last(where: { $0.isUser }) {
+                session.lastUserPrompt = lastUser.text
+            }
+            if let lastAssistant = messages.last(where: { !$0.isUser }) {
+                session.lastAssistantMessage = lastAssistant.text
+            }
+            sessions[sessionId] = session
+        }
+
         transcriptTailer.attach(sessionId: sessionId, filePath: path)
     }
 

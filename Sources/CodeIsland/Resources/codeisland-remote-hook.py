@@ -43,7 +43,7 @@ def _normalize_event(name):
         return "Stop"
     # Gemini
     if name == "BeforeTool":
-        return "PreToolUse"
+        return "PermissionRequest"
     if name == "AfterTool":
         return "PostToolUse"
     if name == "BeforeAgent":
@@ -282,7 +282,23 @@ def main():
     )
     response = _send_event(payload, expects_response)
     if response:
-        print(response)
+        if SOURCE == "google-antigravity" or SOURCE == "gemini":
+            try:
+                res_obj = json.loads(response)
+                behavior = res_obj.get("hookSpecificOutput", {}).get("decision", {}).get("behavior")
+                if behavior in ("allow", "always"):
+                    print(json.dumps({"decision": "allow"}))
+                else:
+                    print(json.dumps({"decision": "deny"}))
+            except Exception:
+                if '"behavior":"allow"' in response or '"behavior":"always"' in response:
+                    print(json.dumps({"decision": "allow"}))
+                elif '"behavior":"deny"' in response:
+                    print(json.dumps({"decision": "deny"}))
+                else:
+                    print(response)
+        else:
+            print(response)
     return 0
 
 

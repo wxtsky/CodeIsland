@@ -82,7 +82,7 @@ class HookServer {
         receiveAll(connection: connection, accumulated: Data())
     }
 
-    private static let maxPayloadSize = 1_048_576  // 1MB safety limit
+    private static let maxPayloadSize = 10_485_760  // 10MB safety limit
 
     /// Recursively receive all data until EOF, then process
     private func receiveAll(connection: NWConnection, accumulated: Data) {
@@ -102,7 +102,8 @@ class HookServer {
                 // Safety: reject oversized payloads
                 if data.count > Self.maxPayloadSize {
                     log.warning("Payload too large (\(data.count) bytes), dropping connection")
-                    connection.cancel()
+                    let denyResponse = Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8)
+                    self.sendResponse(connection: connection, data: denyResponse)
                     return
                 }
 
@@ -232,7 +233,11 @@ class HookServer {
 
     static func routeKind(for event: HookEvent) -> RouteKind {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
-        if normalizedEventName == "PermissionRequest" {
+        let source = event.rawJSON["_source"] as? String
+        let normalizedSource = SessionSnapshot.normalizedSupportedSource(source)
+        // Both gemini (agy) and google-antigravity send PreToolUse; treat both as permission.
+        let isGeminiBasedSource = normalizedSource == "google-antigravity" || normalizedSource == "gemini"
+        if normalizedEventName == "PermissionRequest" || (isGeminiBasedSource && normalizedEventName == "PreToolUse") {
             return .permission
         }
         if normalizedEventName == "Notification", QuestionPayload.from(event: event) != nil {

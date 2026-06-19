@@ -99,7 +99,6 @@ func buildAncestry(startingAt pid: pid_t, maxDepth: Int = 6) -> [(pid: pid_t, ex
 }
 
 func debugLog(_ message: String) {
-    guard ProcessInfo.processInfo.environment["CODEISLAND_DEBUG"] != nil else { return }
     let ts = ISO8601DateFormatter().string(from: Date())
     let line = "[\(ts)] \(message)\n"
     let path = "/tmp/codeisland-bridge.log"
@@ -231,6 +230,9 @@ guard stat(socketPath, &statBuf) == 0, (statBuf.st_mode & S_IFMT) == S_IFSOCK el
 alarm(5)
 let input = FileHandle.standardInput.readDataToEndOfFile()
 alarm(0)  // stdin done, cancel preliminary alarm
+if let inputStr = String(data: input, encoding: .utf8) {
+    debugLog("raw input: \(inputStr)")
+}
 
 guard !input.isEmpty,
       var json = try? JSONSerialization.jsonObject(with: input) as? [String: Any] else {
@@ -391,7 +393,12 @@ guard let sessionId = json["session_id"] as? String, !sessionId.isEmpty else {
 // Event type detection
 let eventName = json["hook_event_name"] as? String ?? ""
 let normalizedEventName = EventNormalizer.normalize(eventName)
+// Gemini CLI (--source gemini) and Google Antigravity (--source google-antigravity) both
+// send PreToolUse in the JSON payload; treat it as a blocking permission event for both.
+let isGeminiBasedSource = sourceTag == "google-antigravity" || sourceTag == "gemini"
+    || effectiveSource == "google-antigravity" || effectiveSource == "gemini"
 let isPermission = normalizedEventName == "PermissionRequest"
+    || (isGeminiBasedSource && normalizedEventName == "PreToolUse")
 let isQuestion = (normalizedEventName == "Notification" || eventName == "afterAgentThought")
     && json["question"] as? String != nil
 let isBlocking = isPermission || isQuestion
@@ -484,10 +491,22 @@ if let supersetPane = env["SUPERSET_PANE_ID"] ?? env["SUPERSET_TERMINAL_ID"], !s
     json["_superset_pane_id"] = supersetPane
 }
 
+// Inject cwd if not already present. Gemini CLI / Google Antigravity hooks do not
+// include a `cwd` field, so CodeIsland cannot resolve the project name and falls back
+// to "Session". Populating it here lets the approval card show the actual folder name.
+if json["cwd"] == nil {
+    json["cwd"] = FileManager.default.currentDirectoryPath
+}
+
 // --- Serialize enriched JSON ---
 guard let enriched = try? JSONSerialization.data(withJSONObject: json) else { exit(0) }
 
 // --- Connect to Unix socket ---
+if isGeminiBasedSource && isPermission {
+    // Delay slightly to give the terminal TTY time to display the prompt
+    // before showing the notch approval card.
+    usleep(250_000)
+}
 let connectTimeoutMs: Int32 = isBlocking ? 3000 : 1000
 guard let sock = connectSocket(socketPath, timeoutMs: connectTimeoutMs) else {
     debugLog("socket connect failed")
@@ -517,9 +536,34 @@ if isBlocking {
 // of NWListener's main-thread handler and the event is lost
 let response = recvAll(sock)
 
-// Blocking events: forward response to stdout for Claude Code
+// Blocking events: forward response to stdout
 if isBlocking && !response.isEmpty {
-    FileHandle.standardOutput.write(response)
+    if sourceTag == "google-antigravity" || effectiveSource == "google-antigravity" || sourceTag == "gemini" || effectiveSource == "gemini" {
+        if let jsonObj = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
+           let hookOutput = jsonObj["hookSpecificOutput"] as? [String: Any],
+           let decisionObj = hookOutput["decision"] as? [String: Any],
+           let behavior = decisionObj["behavior"] as? String {
+            let translatedBehavior = (behavior == "allow" || behavior == "always") ? "allow" : "deny"
+            let responseDict = ["decision": translatedBehavior]
+            if let responseData = try? JSONSerialization.data(withJSONObject: responseDict) {
+                FileHandle.standardOutput.write(responseData)
+            } else {
+                FileHandle.standardOutput.write(response)
+            }
+        } else {
+            // Fallback: search for "allow" or "deny" in raw string to be resilient
+            let responseStr = String(data: response, encoding: .utf8) ?? ""
+            if responseStr.contains("\"behavior\":\"allow\"") || responseStr.contains("\"behavior\":\"always\"") {
+                FileHandle.standardOutput.write(Data("{\"decision\":\"allow\"}".utf8))
+            } else if responseStr.contains("\"behavior\":\"deny\"") {
+                FileHandle.standardOutput.write(Data("{\"decision\":\"deny\"}".utf8))
+            } else {
+                FileHandle.standardOutput.write(response)
+            }
+        }
+    } else {
+        FileHandle.standardOutput.write(response)
+    }
 }
 
 close(sock)
