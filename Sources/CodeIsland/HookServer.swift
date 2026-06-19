@@ -235,9 +235,11 @@ class HookServer {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
         let source = event.rawJSON["_source"] as? String
         let normalizedSource = SessionSnapshot.normalizedSupportedSource(source)
-        // Both gemini (agy) and google-antigravity send PreToolUse; treat both as permission.
+        // Gemini and Google Antigravity prompts for permissions natively via the terminal.
+        // We MUST NOT treat PreToolUse as a permission request, or else the user will be double-prompted
+        // (once in CodeIsland, and again in the terminal) and CodeIsland will ask for approval on safe tools.
         let isGeminiBasedSource = normalizedSource == "google-antigravity" || normalizedSource == "gemini"
-        if normalizedEventName == "PermissionRequest" || (isGeminiBasedSource && normalizedEventName == "PreToolUse") {
+        if normalizedEventName == "PermissionRequest" {
             return .permission
         }
         if normalizedEventName == "Notification", QuestionPayload.from(event: event) != nil {

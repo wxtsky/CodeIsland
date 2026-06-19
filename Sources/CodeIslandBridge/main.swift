@@ -398,7 +398,6 @@ let normalizedEventName = EventNormalizer.normalize(eventName)
 let isGeminiBasedSource = sourceTag == "google-antigravity" || sourceTag == "gemini"
     || effectiveSource == "google-antigravity" || effectiveSource == "gemini"
 let isPermission = normalizedEventName == "PermissionRequest"
-    || (isGeminiBasedSource && normalizedEventName == "PreToolUse")
 let isQuestion = (normalizedEventName == "Notification" || eventName == "afterAgentThought")
     && json["question"] as? String != nil
 let isBlocking = isPermission || isQuestion
