@@ -103,12 +103,26 @@ struct TerminalActivator {
             return
         }
 
-        // When termBundleId is missing and the source has a known desktop app that's
-        // running, prefer the desktop app over possibly-stale TERM_PROGRAM env. This
-        // handles e.g. OpenCode CLI launched from Ghostty but editing in VS Code — without
-        // this, the inherited TERM_PROGRAM=ghostty would jump to the wrong terminal.
-        if session.termBundleId == nil,
-           let nativeBundleId = sourceToNativeAppBundleId[session.source],
+        // --- Host GUI client detection (e.g. OpenChamber embedding OpenCode as a server) ---
+        // When an agent is spawned by a GUI client app — not from a terminal and not the
+        // agent's own desktop app — clicking the session should bring that host client to
+        // front instead of falling through to the terminal or the agent's native desktop
+        // app. Walk the CLI process ancestry looking for the nearest running regular GUI
+        // app that is neither a known terminal nor a known agent-native app; that app is
+        // the host. Generic by design: any current/future client (OpenChamber, …) works
+        // without hardcoding bundle IDs. Runs BEFORE the sourceToNativeAppBundleId branch
+        // below so a coincidentally-running agent desktop app never wins over the real host.
+        if let hostBid = resolveHostClientBundleId(for: session) {
+            activateByBundleId(hostBid)
+            return
+        }
+
+        // When the source has a known desktop app that's running, prefer the desktop
+        // app over the terminal. This handles e.g. OpenCode CLI launched from Ghostty but
+        // editing in VS Code — without this, the inherited TERM_PROGRAM=ghostty would jump
+        // to the wrong terminal. Also covers cases where the terminal bundle ID is present
+        // but the user wants to focus the desktop IDE instead (e.g. opencode → OpenCode).
+        if let nativeBundleId = sourceToNativeAppBundleId[session.source],
            NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == nativeBundleId }) {
             activateByBundleId(nativeBundleId)
             return
@@ -251,6 +265,50 @@ struct TerminalActivator {
         } else {
             bringToFront(termApp)
         }
+    }
+
+    /// Walks the CLI process ancestry looking for the nearest running GUI app that is
+    /// neither a known terminal nor a known agent-native app. Returns its bundle ID, or
+    /// nil when the agent runs in a plain terminal / its own desktop app / under launchd.
+    /// Used to jump back to GUI host clients (e.g. OpenChamber) that embed an agent such
+    /// as OpenCode as a managed server process. The ancestor walk is bounded (≤32 hops)
+    /// and click-driven, so cost is negligible.
+    private static func resolveHostClientBundleId(for session: SessionSnapshot) -> String? {
+        guard let pid = session.cliPid, pid > 0 else { return nil }
+
+        // Bundle IDs that must NEVER be treated as a "host client": known terminals
+        // (handled by tab/window-level switching further down) and agent-native desktop
+        // apps (handled by the nativeAppBundles / sourceToNativeAppBundleId branches).
+        var excluded = Set(knownTerminals.map { $0.bundleId })
+        excluded.formUnion(nativeAppBundles.keys)
+        excluded.formUnion(sourceToNativeAppBundleId.values)
+
+        // Snapshot once; match by processIdentifier while walking up the tree.
+        let regularApps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && $0.bundleIdentifier != nil
+        }
+
+        var current = pid
+        var seen = Set<pid_t>()
+        for _ in 0..<32 {
+            guard current > 1, !seen.contains(current) else { break }
+            seen.insert(current)
+            if let app = regularApps.first(where: { $0.processIdentifier == current }),
+               let bid = app.bundleIdentifier,
+               !excluded.contains(bid) {
+                return bid
+            }
+            guard let ppid = parentPID(of: current), ppid > 1 else { break }
+            current = ppid
+        }
+        return nil
+    }
+
+    private static func parentPID(of pid: pid_t) -> pid_t? {
+        var info = proc_bsdinfo()
+        let ret = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size))
+        guard ret > 0, info.pbi_ppid > 0 else { return nil }
+        return pid_t(info.pbi_ppid)
     }
 
     // MARK: - Ghostty (AppleScript: match by CWD + session ID in title)
