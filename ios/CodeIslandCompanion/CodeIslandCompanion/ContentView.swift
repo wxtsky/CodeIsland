@@ -11,11 +11,16 @@ private enum CodeIslandMotion {
 struct ContentView: View {
     @EnvironmentObject private var connection: CompanionConnection
     @EnvironmentObject private var liveActivity: LiveActivityController
+    @AppStorage(appAppearanceStorageKey) private var appearanceRaw = AppAppearance.system.rawValue
+
+    private var appearance: AppAppearance {
+        AppAppearance(rawValue: appearanceRaw) ?? .system
+    }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .top) {
-                Color(red: 0.015, green: 0.016, blue: 0.018)
+                Color.ciBackground
                     .ignoresSafeArea()
 
                 if proxy.size.width > proxy.size.height, let state = connection.latestState {
@@ -41,7 +46,7 @@ struct ContentView: View {
             .animation(CodeIslandMotion.micro, value: connection.browsing)
         }
         .ignoresSafeArea(.container, edges: .vertical)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(appearance.colorScheme)
         .accessibilityIdentifier("companion.root")
     }
 }
@@ -121,7 +126,7 @@ private struct PrimaryMessageView: View {
         MorphText(
             text: text,
             font: .system(size: 16, weight: .medium),
-            color: .white.opacity(state.messages.isEmpty && state.question == nil ? 0.55 : 0.86),
+            color: .ciForeground.opacity(state.messages.isEmpty && state.question == nil ? 0.55 : 0.86),
             lineLimit: state.question == nil ? 5 : 3,
             markdown: true
         )
@@ -237,7 +242,7 @@ private struct QuestionOptionsView: View {
                 if multiSelect {
                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(isSelected ? accent : .white.opacity(0.4))
+                        .foregroundStyle(isSelected ? accent : .ciForeground.opacity(0.4))
                         .frame(width: 24, alignment: .leading)
                 } else {
                     Text("\(index + 1).")
@@ -249,13 +254,13 @@ private struct QuestionOptionsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(option)
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.86))
+                        .foregroundStyle(.ciForeground.opacity(0.86))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     if question.descriptions.indices.contains(index) {
                         Text(question.descriptions[index])
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.ciForeground.opacity(0.45))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -266,8 +271,8 @@ private struct QuestionOptionsView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(isSelected ? accent.opacity(0.5) : Color.white.opacity(0.07)))
+            .background(Color.ciForeground.opacity(0.055), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(isSelected ? accent.opacity(0.5) : Color.ciForeground.opacity(0.07)))
         }
         .buttonStyle(.plain)
     }
@@ -283,27 +288,27 @@ private struct QuestionOptionsView: View {
                     .frame(width: 24, alignment: .leading)
                 Text("其他…")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.ciForeground.opacity(0.7))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Color.ciForeground.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
     private func answerField(placeholder: String) -> some View {
-        TextField("", text: $textInput, prompt: Text(placeholder).foregroundColor(.white.opacity(0.4)), axis: .vertical)
+        TextField("", text: $textInput, prompt: Text(placeholder).foregroundColor(.ciForeground.opacity(0.4)), axis: .vertical)
             .textFieldStyle(.plain)
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(.ciForeground)
             .lineLimit(1...4)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.1)))
+            .background(Color.ciForeground.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.ciForeground.opacity(0.1)))
             .accessibilityIdentifier("companion.question.textField")
     }
 
@@ -311,9 +316,9 @@ private struct QuestionOptionsView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(enabled ? .black : .white.opacity(0.4))
+                .foregroundStyle(enabled ? .black : .ciForeground.opacity(0.4))
                 .frame(maxWidth: .infinity, minHeight: 40)
-                .background(enabled ? accent : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(enabled ? accent : Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -331,7 +336,7 @@ private struct DiscoveryFill: View {
 
             Text("保持 iPhone 与 Mac 在同一网络，CodeIsland 会持续同步当前状态。")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(.ciForeground.opacity(0.42))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 18)
 
@@ -361,12 +366,12 @@ private struct CompactIslandBar: View {
                 MorphText(
                     text: connection.latestState?.source.uppercased() ?? "CODEISLAND",
                     font: .system(size: 12, weight: .black, design: .rounded),
-                    color: .white
+                    color: .ciForeground
                 )
                 MorphText(
                     text: compactSubtitle,
                     font: .system(size: 10, weight: .medium, design: .monospaced),
-                    color: .white.opacity(0.52)
+                    color: .ciForeground.opacity(0.52)
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,19 +386,21 @@ private struct CompactIslandBar: View {
             } label: {
                 Image(systemName: connection.browsing ? "stop.circle.fill" : "dot.radiowaves.left.and.right")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.86))
+                    .foregroundStyle(.ciForeground.opacity(0.86))
                     .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(connection.browsing ? "停止搜索 Mac" : "搜索 Mac")
             .accessibilityIdentifier("companion.search.toggle")
+
+            AppearanceMenu()
         }
         .padding(.leading, 8)
         .padding(.trailing, 6)
         .frame(height: 46)
-        .background(IslandShellShape().fill(.black))
-        .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(IslandShellShape().fill(Color.ciSurface))
+        .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.38), radius: 16, y: 8)
     }
 
@@ -430,7 +437,7 @@ private struct LiveIslandCard: View {
                     MorphText(
                         text: state.source.isEmpty ? "CodeIsland" : state.source.uppercased(),
                         font: .system(size: 15, weight: .bold, design: .rounded),
-                        color: .white
+                        color: .ciForeground
                     )
                     MorphText(
                         text: CompanionDisplayText.subtitle(
@@ -439,7 +446,7 @@ private struct LiveIslandCard: View {
                             fallback: "Mac 已连接"
                         ),
                         font: .system(size: 12, weight: .medium),
-                        color: .white.opacity(0.58)
+                        color: .ciForeground.opacity(0.58)
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -477,8 +484,8 @@ private struct LiveIslandCard: View {
             .padding(14)
             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
         }
-        .background(IslandShellShape().fill(.black))
-        .overlay(IslandShellShape().stroke(pendingTint ?? Color.white.opacity(0.08), lineWidth: pendingTint == nil ? 1 : 1.5))
+        .background(IslandShellShape().fill(Color.ciSurface))
+        .overlay(IslandShellShape().stroke(pendingTint ?? Color.ciForeground.opacity(0.08), lineWidth: pendingTint == nil ? 1 : 1.5))
         .shadow(color: pendingTint?.opacity(0.35) ?? .black.opacity(0.35), radius: 18, y: 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("CodeIsland 状态")
@@ -517,16 +524,16 @@ private struct QuestionPromptCard: View {
                 if question.total > 1 {
                     Text("\(question.index)/\(question.total)")
                         .font(.caption2.weight(.black))
-                        .foregroundStyle(.white.opacity(0.48))
+                        .foregroundStyle(.ciForeground.opacity(0.48))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
-                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .background(Color.ciForeground.opacity(0.08), in: Capsule())
                 }
             }
 
             Text(CompanionDisplayText.inlineMarkdown(question.question))
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.ciForeground.opacity(0.9))
                 .lineLimit(5)
 
             QuestionOptionsView(question: question)
@@ -534,7 +541,7 @@ private struct QuestionPromptCard: View {
                 .id("\(question.index)/\(question.total)·\(question.question)")
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.04, green: 0.05, blue: 0.06)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.ciForeground.opacity(0.05)))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.orange.opacity(0.24)))
         .accessibilityIdentifier("companion.questionCard")
     }
@@ -550,12 +557,12 @@ private struct DiscoveryIsland: View {
                     MorphText(
                         text: connection.connectedPeer == nil ? "等待 Mac" : "已连接 Mac",
                         font: .system(size: 15, weight: .bold, design: .rounded),
-                        color: .white
+                        color: .ciForeground
                     )
                     MorphText(
                         text: subtitle,
                         font: .system(size: 12, weight: .medium),
-                        color: .white.opacity(0.58)
+                        color: .ciForeground.opacity(0.58)
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -578,7 +585,7 @@ private struct DiscoveryIsland: View {
                             .tint(.green)
                         Text(connection.browsing ? "正在搜索附近的 CodeIsland" : "搜索已停止")
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.72))
+                            .foregroundStyle(.ciForeground.opacity(0.72))
                         Spacer()
                     }
                     .frame(minHeight: 48)
@@ -592,16 +599,16 @@ private struct DiscoveryIsland: View {
                                     .font(.headline)
                                     .foregroundStyle(.green)
                                     .frame(width: 32, height: 32)
-                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .background(Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                                 Text(peer.displayName)
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.ciForeground)
 
                                 Spacer()
 
                                 Image(systemName: "arrow.right")
-                                    .foregroundStyle(.white.opacity(0.5))
+                                    .foregroundStyle(.ciForeground.opacity(0.5))
                             }
                             .frame(minHeight: 48)
                         }
@@ -611,8 +618,8 @@ private struct DiscoveryIsland: View {
             }
             .padding(14)
         }
-        .background(IslandShellShape().fill(.black))
-        .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(IslandShellShape().fill(Color.ciSurface))
+        .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
         .accessibilityIdentifier("companion.discoveryCard")
     }
@@ -736,7 +743,7 @@ private struct LiveActivityInlineButton: View {
                 systemImage: liveActivity.isRunning ? "stop.circle.fill" : "bolt.horizontal.fill"
             )
             .font(.caption.weight(.semibold))
-            .foregroundStyle(liveActivity.isRunning ? .white.opacity(0.62) : Color(red: 0.25, green: 0.76, blue: 1.0).opacity(0.86))
+            .foregroundStyle(liveActivity.isRunning ? .ciForeground.opacity(0.62) : Color(red: 0.25, green: 0.76, blue: 1.0).opacity(0.86))
             .frame(maxWidth: .infinity, minHeight: 34)
         }
         .buttonStyle(.plain)
@@ -752,10 +759,10 @@ private struct MessageStrip: View {
             HStack(spacing: 8) {
                     Text("最近动态")
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(.ciForeground.opacity(0.45))
                     .textCase(.uppercase)
                 Rectangle()
-                    .fill(.white.opacity(0.10))
+                    .fill(.ciForeground.opacity(0.10))
                     .frame(height: 0.5)
             }
 
@@ -764,7 +771,7 @@ private struct MessageStrip: View {
                     PulseDot(status: .idle)
                     Text("等待下一条同步消息")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.ciForeground.opacity(0.5))
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -774,13 +781,13 @@ private struct MessageStrip: View {
                         HStack(alignment: .top, spacing: 12) {
                             Text(message.role.label)
                                 .font(.system(size: 13, weight: .black))
-                                .foregroundStyle(message.role == .user ? .black : .white)
+                                .foregroundStyle(message.role == .user ? Color.ciSurface : Color.ciForeground)
                                 .frame(width: 42, height: 28)
-                                .background(message.role == .user ? Color.white.opacity(0.86) : Color.white.opacity(0.12), in: Capsule())
+                                .background(message.role == .user ? Color.ciForeground.opacity(0.86) : Color.ciForeground.opacity(0.12), in: Capsule())
 
                             Text(CompanionDisplayText.inlineMarkdown(CompanionDisplayText.message(message.text) ?? message.text))
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.76))
+                                .foregroundStyle(.ciForeground.opacity(0.76))
                                 .lineLimit(6)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -793,8 +800,8 @@ private struct MessageStrip: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.045)))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.ciForeground.opacity(0.045)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.ciForeground.opacity(0.06)))
         .accessibilityIdentifier("companion.messages")
     }
 }
@@ -823,7 +830,7 @@ private struct StandByIsland: View {
                         MorphText(
                             text: sessions.count > 1 ? "CODE ISLAND" : (state.source.isEmpty ? "CODEISLAND" : state.source.uppercased()),
                             font: .system(size: 32, weight: .black, design: .rounded),
-                            color: .white
+                            color: .ciForeground
                         )
                         MorphText(
                             text: sessions.count > 1 ? "\(sessions.count) 个会话 · \(activeCount) 个活跃" : state.status.label,
@@ -831,6 +838,10 @@ private struct StandByIsland: View {
                             color: activeCount > 0 ? .green : statusColor(state.status)
                         )
                     }
+
+                    Spacer(minLength: 12)
+
+                    AppearanceMenu()
                 }
 
                 let heroMessage = CompanionDisplayText.message(state.messages.last?.text)
@@ -839,7 +850,7 @@ private struct StandByIsland: View {
                         ?? CompanionDisplayText.workspace(state.workspaceName)
                         ?? "CodeIsland 已连接",
                     font: .system(size: 24, weight: .medium, design: .rounded),
-                    color: .white.opacity(0.82),
+                    color: .ciForeground.opacity(0.82),
                     lineLimit: 4,
                     markdown: heroMessage != nil
                 )
@@ -888,8 +899,8 @@ private struct StandByIsland: View {
             minHeight: 260,
             maxHeight: .infinity
         )
-        .background(IslandShellShape().fill(.black))
-        .overlay(IslandShellShape().stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(IslandShellShape().fill(Color.ciSurface))
+        .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
         .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -945,7 +956,7 @@ private struct StandBySessionBoard: View {
         HStack(spacing: 10) {
             Text("会话")
                 .font(.system(size: 18, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(.ciForeground)
             StandByCountBadge(count: sessions.count, activeCount: activeCount)
             Spacer(minLength: 0)
             Button {
@@ -956,10 +967,10 @@ private struct StandBySessionBoard: View {
                     Text(grouping.label)
                 }
                 .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(.ciForeground.opacity(0.72))
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(Color.white.opacity(0.08), in: Capsule())
+                .background(Color.ciForeground.opacity(0.08), in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("companion.standby.groupToggle")
@@ -982,7 +993,7 @@ private struct StandBySessionBoard: View {
         if remaining > 0 {
             Text("还有 \(remaining) 个会话")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.48))
+                .foregroundStyle(.ciForeground.opacity(0.48))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 2)
                 .accessibilityIdentifier("companion.standby.moreSessions")
@@ -997,7 +1008,7 @@ private struct StandBySessionBoard: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("\(group.id) · \(group.items.count)")
                             .font(.system(size: 12, weight: .black, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(.ciForeground.opacity(0.5))
                         ForEach(group.items) { session in
                             StandBySessionRow(session: session, messageLineLimit: standbyMaxMessageLines)
                         }
@@ -1047,7 +1058,7 @@ private struct StandBySessionRow: View {
                     if let shortId = shortSessionId {
                         Text("#\(shortId)")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(.ciForeground.opacity(0.4))
                             .fixedSize()
                     }
                     Spacer(minLength: 6)
@@ -1057,10 +1068,10 @@ private struct StandBySessionRow: View {
                         Text(CompanionDisplayText.source(session.source))
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     }
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.ciForeground.opacity(0.7))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.ciForeground.opacity(0.1)))
                     .fixedSize()
                 }
 
@@ -1068,7 +1079,7 @@ private struct StandBySessionRow: View {
                 if let message = CompanionDisplayText.message(session.message) {
                     Text(CompanionDisplayText.inlineMarkdown(message))
                         .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(.ciForeground.opacity(0.6))
                         .lineLimit(messageLineLimit)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1082,7 +1093,7 @@ private struct StandBySessionRow: View {
                         if let tool = CompanionDisplayText.tool(session.toolName) {
                             Text(tool)
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.75))
+                                .foregroundStyle(.ciForeground.opacity(0.75))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         } else {
@@ -1094,8 +1105,8 @@ private struct StandBySessionRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background((highlightTint ?? .white).opacity(highlightTint == nil ? 0.055 : 0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(highlightTint?.opacity(0.55) ?? Color.white.opacity(0.07), lineWidth: highlightTint == nil ? 1 : 1.5))
+        .background((highlightTint ?? Color.ciForeground).opacity(highlightTint == nil ? 0.055 : 0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(highlightTint?.opacity(0.55) ?? Color.ciForeground.opacity(0.07), lineWidth: highlightTint == nil ? 1 : 1.5))
         .accessibilityIdentifier("companion.standby.sessionRow")
     }
 
@@ -1104,7 +1115,7 @@ private struct StandBySessionRow: View {
         switch session.status {
         case .processing, .running: return Color(red: 0.3, green: 0.85, blue: 0.4)
         case .waitingApproval, .waitingQuestion: return Color(red: 1.0, green: 0.6, blue: 0.2)
-        case .idle: return .white
+        case .idle: return .ciForeground
         }
     }
 
@@ -1134,9 +1145,9 @@ private struct StandBySessionRow: View {
 // 小标签胶囊，对齐 notch SessionCard 的 SessionTag。
 private struct SessionTag: View {
     let text: String
-    var color: Color = .white.opacity(0.7)
+    var color: Color = .ciForeground.opacity(0.7)
 
-    init(_ text: String, color: Color = .white.opacity(0.7)) {
+    init(_ text: String, color: Color = .ciForeground.opacity(0.7)) {
         self.text = text
         self.color = color
     }
@@ -1163,13 +1174,13 @@ private struct ThinkingLabel: View {
                 .truncatingRemainder(dividingBy: period)) / period
             Text(text)
                 .font(font)
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(.ciForeground.opacity(0.35))
                 .overlay {
                     GeometryReader { geo in
                         let width = geo.size.width
                         let band = max(22, width * 0.5)
                         LinearGradient(
-                            colors: [.clear, .white.opacity(0.95), .clear],
+                            colors: [.clear, .ciForeground.opacity(0.95), .clear],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -1200,10 +1211,10 @@ private struct StandByCountBadge: View {
     var body: some View {
         Text(activeCount > 0 ? "\(activeCount) 活跃" : "\(count) 总计")
             .font(.system(size: 12, weight: .black, design: .rounded))
-            .foregroundStyle(activeCount > 0 ? .green : .white.opacity(0.64))
+            .foregroundStyle(activeCount > 0 ? .green : .ciForeground.opacity(0.64))
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .background((activeCount > 0 ? Color.green : Color.white).opacity(0.12), in: Capsule())
+            .background((activeCount > 0 ? Color.green : Color.ciForeground).opacity(0.12), in: Capsule())
     }
 }
 
@@ -1230,10 +1241,34 @@ private func standbySessions(for state: CompanionStatePayload) -> [CompanionSess
     }
 }
 
+// 外观切换菜单：跟随系统 / 浅色 / 深色。
+private struct AppearanceMenu: View {
+    @AppStorage(appAppearanceStorageKey) private var appearanceRaw = AppAppearance.system.rawValue
+
+    var body: some View {
+        Menu {
+            Picker("外观", selection: $appearanceRaw) {
+                ForEach(AppAppearance.allCases) { mode in
+                    Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
+                }
+            }
+        } label: {
+            Image(systemName: (AppAppearance(rawValue: appearanceRaw) ?? .system).icon)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.ciForeground.opacity(0.86))
+                .frame(width: 38, height: 38)
+                .background(Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("外观")
+        .accessibilityIdentifier("companion.appearance.menu")
+    }
+}
+
 private struct MorphText: View {
     let text: String
     var font: Font = .system(size: 12)
-    var color: Color = .white
+    var color: Color = .ciForeground
     var lineLimit: Int? = 1
     var markdown: Bool = false
 
@@ -1241,7 +1276,7 @@ private struct MorphText: View {
     @State private var blur: CGFloat = 0
     @State private var generation = 0
 
-    init(text: String, font: Font = .system(size: 12), color: Color = .white, lineLimit: Int? = 1, markdown: Bool = false) {
+    init(text: String, font: Font = .system(size: 12), color: Color = .ciForeground, lineLimit: Int? = 1, markdown: Bool = false) {
         self.text = text
         self.font = font
         self.color = color
@@ -1296,7 +1331,7 @@ private struct DividerLine: View {
 
     var body: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.12))
+            .fill(Color.ciForeground.opacity(0.12))
             .frame(width: vertical ? 0.5 : nil, height: vertical ? nil : 0.5)
     }
 }
@@ -1309,11 +1344,11 @@ private struct StatusPill: View {
             PulseDot(status: status)
             Text(status.shortLabel)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(.ciForeground.opacity(0.9))
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.08), in: Capsule())
+        .background(Color.ciForeground.opacity(0.08), in: Capsule())
     }
 }
 
@@ -1323,7 +1358,7 @@ private struct HeaderStatusDot: View {
     var body: some View {
         PulseDot(status: status)
             .frame(width: 30, height: 30)
-            .background(Color.white.opacity(0.07), in: Capsule())
+            .background(Color.ciForeground.opacity(0.07), in: Capsule())
             .accessibilityLabel(status.label)
     }
 }
@@ -1366,7 +1401,7 @@ private struct ConnectionDot: View {
     var body: some View {
         PulseDot(status: active ? .running : (browsing ? .processing : .idle))
         .frame(width: 30, height: 30)
-        .background(Color.white.opacity(0.08), in: Capsule())
+        .background(Color.ciForeground.opacity(0.08), in: Capsule())
         .accessibilityLabel(active ? "Mac 已连接" : (browsing ? "正在搜索 Mac" : "Mac 未连接"))
     }
 }
@@ -1383,10 +1418,10 @@ private struct TinyChip: View {
             Image(systemName: icon)
         }
         .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(.white.opacity(0.64))
+        .foregroundStyle(.ciForeground.opacity(0.64))
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(Color.white.opacity(0.07), in: Capsule())
+        .background(Color.ciForeground.opacity(0.07), in: Capsule())
     }
 }
 
@@ -1403,7 +1438,7 @@ private struct IslandButton: View {
                 .font(.system(size: 13, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
-                .foregroundStyle(tint == .orange ? .black : .white)
+                .foregroundStyle(tint == .orange ? .black : tint)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(buttonBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(tint.opacity(0.42)))
@@ -1437,7 +1472,7 @@ private struct IconIslandButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(tint == .orange ? .black : .white)
+                .foregroundStyle(tint == .orange ? .black : tint)
                 .frame(width: 52, height: 52)
                 .background(tint == .orange ? .orange : tint.opacity(0.22), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(tint.opacity(0.45)))
@@ -1474,9 +1509,9 @@ private struct LiveActivityDiagnosticStrip: View {
             } label: {
                 Label("清理已有实时活动后重试", systemImage: "trash")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.82))
+                    .foregroundStyle(.ciForeground.opacity(0.82))
                     .frame(maxWidth: .infinity, minHeight: 34)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
         }
