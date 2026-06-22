@@ -402,7 +402,7 @@ private struct CompactIslandBar: View {
         .frame(height: 46)
         .background(IslandShellShape().fill(Color.ciSurface))
         .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.38), radius: 16, y: 8)
+        .shadow(color: .ciShadow, radius: 16, y: 8)
     }
 
     private var compactStatus: CompanionStatus {
@@ -487,7 +487,7 @@ private struct LiveIslandCard: View {
         }
         .background(IslandShellShape().fill(Color.ciSurface))
         .overlay(IslandShellShape().stroke(pendingTint ?? Color.ciForeground.opacity(0.08), lineWidth: pendingTint == nil ? 1 : 1.5))
-        .shadow(color: pendingTint?.opacity(0.35) ?? .black.opacity(0.35), radius: 18, y: 10)
+        .shadow(color: pendingTint?.opacity(0.35) ?? .ciShadow, radius: 18, y: 10)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("CodeIsland 状态")
         .accessibilityIdentifier("companion.statusCard")
@@ -621,7 +621,7 @@ private struct DiscoveryIsland: View {
         }
         .background(IslandShellShape().fill(Color.ciSurface))
         .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
+        .shadow(color: .ciShadow, radius: 18, y: 10)
         .accessibilityIdentifier("companion.discoveryCard")
     }
 
@@ -902,7 +902,7 @@ private struct StandByIsland: View {
         )
         .background(IslandShellShape().fill(Color.ciSurface))
         .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.45), radius: 24, y: 14)
+        .shadow(color: .ciShadow, radius: 24, y: 14)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
     }
@@ -1625,6 +1625,14 @@ private enum CITheme {
             ? UIColor(white: 1, alpha: 1)
             : UIColor(red: 0.16, green: 0.13, blue: 0.10, alpha: 1)
     }
+
+    /// 卡片投影：深色用于在近黑背景上拉开层次；浅色仅一抹很淡的阴影，
+    /// 避免在暖白背景上形成明显的深色外框。
+    static let shadow = UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 0, alpha: 0.40)
+            : UIColor(white: 0, alpha: 0.08)
+    }
 }
 
 extension ShapeStyle where Self == Color {
@@ -1632,4 +1640,5 @@ extension ShapeStyle where Self == Color {
     static var ciSurface: Color { Color(CITheme.surface) }
     /// 替换原先的 `.white` 与 `.white.opacity(x)`，透明度沿用不变。
     static var ciForeground: Color { Color(CITheme.foreground) }
+    static var ciShadow: Color { Color(CITheme.shadow) }
 }
