@@ -897,10 +897,6 @@ private struct StandByIsland: View {
             minHeight: 260,
             maxHeight: .infinity
         )
-        .background(IslandShellShape().fill(Color.ciSurface))
-        .overlay(IslandShellShape().stroke(Color.ciForeground.opacity(0.08), lineWidth: 1))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
     }
 }
 
