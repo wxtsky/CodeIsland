@@ -1509,9 +1509,10 @@ private struct LiveActivityDiagnosticStrip: View {
             } label: {
                 Label("清理已有实时活动后重试", systemImage: "trash")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.ciForeground.opacity(0.82))
+                    // 这张通知卡固定为深蓝底（两个主题一致），内部文字保持浅色以保证对比。
+                    .foregroundStyle(.white.opacity(0.82))
                     .frame(maxWidth: .infinity, minHeight: 34)
-                    .background(Color.ciForeground.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
         }
