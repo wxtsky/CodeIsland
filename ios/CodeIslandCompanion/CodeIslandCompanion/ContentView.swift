@@ -1264,6 +1264,14 @@ private struct MorphText: View {
             .animation(CodeIslandMotion.micro, value: blur)
             .onChange(of: text) { _, newText in
                 guard newText != displayed else { return }
+                // 流式增量（前缀增长/回退）直接更新，不做模糊变形，
+                // 避免逐字更新时持续闪烁。仅对“整段换内容”才做变形过渡。
+                if newText.hasPrefix(displayed) || displayed.hasPrefix(newText) {
+                    generation += 1
+                    displayed = newText
+                    if blur != 0 { withAnimation(.easeOut(duration: 0.12)) { blur = 0 } }
+                    return
+                }
                 generation += 1
                 let current = generation
                 withAnimation(.easeOut(duration: 0.1)) { blur = 1 }

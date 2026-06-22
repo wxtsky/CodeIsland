@@ -89,12 +89,18 @@ enum CompanionDisplayText {
     }
 
     /// 行内 markdown 渲染（粗体 / 斜体 / 代码 / 链接），与 Mac notch 一致。
-    /// 只解析行内语法、保留空白；解析失败回退为纯文本。仅用于消息正文与问题等散文内容，
+    /// 只解析行内语法、保留空白。仅用于消息正文与问题等散文内容，
     /// 不要用于来源名 / 工作区 / 工具名（含下划线的路径会被误判为斜体）。
+    ///
+    /// 解析失败、或某些语法（如链接定义、未闭合标签）解析出空内容时，
+    /// 回退为纯文本——避免流式更新过程中内容忽有忽无地闪烁。
     static func inlineMarkdown(_ text: String) -> AttributedString {
-        (try? AttributedString(
+        if let attributed = try? AttributedString(
             markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(text)
+        ), !attributed.characters.isEmpty {
+            return attributed
+        }
+        return AttributedString(text)
     }
 }
