@@ -37,11 +37,6 @@ enum CompanionStatus: String, Codable, Hashable {
         case .idle: return 0
         }
     }
-
-    /// 是否为需要用户处理的待办状态（审批 / 提问）。
-    var isPending: Bool {
-        self == .waitingApproval || self == .waitingQuestion
-    }
 }
 
 enum CompanionPendingAction: String, Codable {

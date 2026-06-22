@@ -833,14 +833,15 @@ private struct StandByIsland: View {
                     }
                 }
 
+                let heroMessage = CompanionDisplayText.message(state.messages.last?.text)
                 MorphText(
-                    text: CompanionDisplayText.message(state.messages.last?.text)
+                    text: heroMessage
                         ?? CompanionDisplayText.workspace(state.workspaceName)
                         ?? "CodeIsland 已连接",
                     font: .system(size: 24, weight: .medium, design: .rounded),
                     color: .white.opacity(0.82),
                     lineLimit: 4,
-                    markdown: true
+                    markdown: heroMessage != nil
                 )
                 .minimumScaleFactor(0.72)
 
