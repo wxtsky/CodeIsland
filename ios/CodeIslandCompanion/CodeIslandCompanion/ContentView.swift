@@ -28,6 +28,8 @@ struct ContentView: View {
                     StandByIsland(state: state, availableSize: proxy.size)
                         .environmentObject(connection)
                         .environmentObject(liveActivity)
+                        // 铺满后仍按安全区内缩，避免与状态栏 / 刘海 / Home 指示条重叠（背景仍满屏）。
+                        .padding(proxy.safeAreaInsets)
                 } else {
                     PortraitIslandView(topPadding: max(86, proxy.safeAreaInsets.top + 8))
                         .environmentObject(connection)
