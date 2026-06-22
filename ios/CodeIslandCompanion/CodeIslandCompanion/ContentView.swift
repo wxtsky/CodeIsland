@@ -20,18 +20,15 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            // 内容尊重安全区（不再忽略），元素自动避开状态栏 / 刘海 / Home 指示条；
+            // 背景由下方 .background 忽略安全区铺满整屏。
             ZStack(alignment: .top) {
-                Color.ciBackground
-                    .ignoresSafeArea()
-
                 if proxy.size.width > proxy.size.height, let state = connection.latestState {
                     StandByIsland(state: state, availableSize: proxy.size)
                         .environmentObject(connection)
                         .environmentObject(liveActivity)
-                        // 铺满后仍按安全区内缩，避免与状态栏 / 刘海 / Home 指示条重叠（背景仍满屏）。
-                        .padding(proxy.safeAreaInsets)
                 } else {
-                    PortraitIslandView(topPadding: max(86, proxy.safeAreaInsets.top + 8))
+                    PortraitIslandView(topPadding: 40)
                         .environmentObject(connection)
                         .environmentObject(liveActivity)
                         .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
@@ -48,7 +45,7 @@ struct ContentView: View {
             .animation(CodeIslandMotion.pop, value: connection.latestState?.status)
             .animation(CodeIslandMotion.micro, value: connection.browsing)
         }
-        .ignoresSafeArea(.container, edges: .vertical)
+        .background(Color.ciBackground.ignoresSafeArea())
         .preferredColorScheme(appearance.colorScheme)
         .accessibilityIdentifier("companion.root")
     }
