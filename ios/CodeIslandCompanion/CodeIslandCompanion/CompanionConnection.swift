@@ -318,12 +318,26 @@ final class CompanionConnection: NSObject, ObservableObject {
         case "multi":
             let now = Date()
             let previews = [
-                CompanionSessionPreview(sessionId: "s1", source: "claude", status: .waitingQuestion, toolName: "AskUserQuestion", workspaceName: "code-island", message: "你想看什么类型的小说？", updatedAt: now),
-                CompanionSessionPreview(sessionId: "s2", source: "codex", status: .processing, toolName: "WebSearch", workspaceName: "apple-companion", message: "正在检索资料", updatedAt: now),
-                CompanionSessionPreview(sessionId: "s3", source: "cursor", status: .running, toolName: "Edit", workspaceName: "ios", message: "正在修改 ContentView", updatedAt: now),
-                CompanionSessionPreview(sessionId: "s4", source: "gemini", status: .waitingApproval, toolName: "Bash", workspaceName: "scripts", message: "请求执行命令", updatedAt: now),
+                CompanionSessionPreview(sessionId: "s1", source: "claude", status: .waitingQuestion, toolName: "AskUserQuestion", workspaceName: "code-island", message: "你想看什么类型的小说？", messages: [
+                    CompanionMessagePreview(role: .user, text: "帮我生成一篇长篇小说"),
+                    CompanionMessagePreview(role: .assistant, text: "好的，先确认**类型**和篇幅。你想看什么类型的小说？")
+                ], updatedAt: now),
+                CompanionSessionPreview(sessionId: "s2", source: "codex", status: .processing, toolName: "WebSearch", workspaceName: "apple-companion", message: "正在检索资料", messages: [
+                    CompanionMessagePreview(role: .user, text: "查一下 SwiftUI `safeAreaInsets` 的用法"),
+                    CompanionMessagePreview(role: .assistant, text: "正在检索资料，稍等。")
+                ], updatedAt: now),
+                CompanionSessionPreview(sessionId: "s3", source: "cursor", status: .running, toolName: "Edit", workspaceName: "ios", message: "正在修改 ContentView", messages: [
+                    CompanionMessagePreview(role: .user, text: "把会话卡改成 notch 风格"),
+                    CompanionMessagePreview(role: .assistant, text: "正在修改 `ContentView.swift`，对齐状态着色与多轮转写。")
+                ], updatedAt: now),
+                CompanionSessionPreview(sessionId: "s4", source: "gemini", status: .waitingApproval, toolName: "Bash", workspaceName: "scripts", message: "请求执行命令", messages: [
+                    CompanionMessagePreview(role: .assistant, text: "请求执行 `npm run build`，是否批准？")
+                ], updatedAt: now),
                 CompanionSessionPreview(sessionId: "s5", source: "kimi", status: .idle, toolName: nil, workspaceName: "docs", message: nil, updatedAt: now),
-                CompanionSessionPreview(sessionId: "s6", source: "qwen", status: .processing, toolName: "Read", workspaceName: "server", message: "读取配置", updatedAt: now)
+                CompanionSessionPreview(sessionId: "s6", source: "qwen", status: .processing, toolName: "Read", workspaceName: "server", message: "读取配置", messages: [
+                    CompanionMessagePreview(role: .user, text: "看下服务端配置"),
+                    CompanionMessagePreview(role: .assistant, text: "正在读取 `config.yaml`…")
+                ], updatedAt: now)
             ]
             return CompanionStatePayload(
                 version: 1,

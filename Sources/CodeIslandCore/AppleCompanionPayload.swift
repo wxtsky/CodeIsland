@@ -73,6 +73,9 @@ public struct AppleCompanionSessionPreview: Codable, Equatable, Sendable {
     public let toolName: String?
     public let workspaceName: String?
     public let message: String?
+    /// 该会话最近若干条消息（含角色），用于在伴侣端逐会话显示多轮转写。
+    /// 向后兼容：旧客户端无此字段时按空数组处理。
+    public let messages: [AppleCompanionMessagePreview]
     public let updatedAt: Date
 
     public init(
@@ -82,6 +85,7 @@ public struct AppleCompanionSessionPreview: Codable, Equatable, Sendable {
         toolName: String?,
         workspaceName: String?,
         message: String?,
+        messages: [AppleCompanionMessagePreview] = [],
         updatedAt: Date = Date()
     ) {
         self.sessionId = sessionId
@@ -90,7 +94,24 @@ public struct AppleCompanionSessionPreview: Codable, Equatable, Sendable {
         self.toolName = toolName
         self.workspaceName = workspaceName
         self.message = message
+        self.messages = messages
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, source, status, toolName, workspaceName, message, messages, updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        source = try c.decode(String.self, forKey: .source)
+        status = try c.decode(AppleCompanionStatus.self, forKey: .status)
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        workspaceName = try c.decodeIfPresent(String.self, forKey: .workspaceName)
+        message = try c.decodeIfPresent(String.self, forKey: .message)
+        messages = try c.decodeIfPresent([AppleCompanionMessagePreview].self, forKey: .messages) ?? []
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }
 

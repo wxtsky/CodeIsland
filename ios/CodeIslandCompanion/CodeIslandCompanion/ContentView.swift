@@ -804,12 +804,16 @@ private struct MessageStrip: View {
 }
 
 // 横屏 hero 的主会话多轮转写，对齐 notch ChatMessageRow（$ 助手 / > 用户）。
+// iPhone（横向紧凑）显示最近 1 条，iPad 显示最近 3 条。
 private struct HeroTranscript: View {
     let messages: [CompanionMessagePreview]
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var maxMessages: Int { sizeClass == .compact ? 1 : 3 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(messages.suffix(3))) { message in
+            ForEach(Array(messages.suffix(maxMessages).enumerated()), id: \.offset) { _, message in
                 HStack(alignment: .top, spacing: 6) {
                     Text(message.role == .user ? ">" : "$")
                         .font(.system(size: 15, weight: .bold, design: .monospaced))
@@ -958,20 +962,30 @@ private struct StandBySessionBoard: View {
     @State private var grouping: StandByGrouping = .none
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(alignment: .leading, spacing: 12) {
-                header
+        VStack(alignment: .leading, spacing: 12) {
+            header
 
-                if grouping == .none {
-                    flatAdaptiveList(boardHeight: proxy.size.height)
-                } else {
-                    groupedScrollList
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(groupedSessions) { group in
+                        VStack(alignment: .leading, spacing: 6) {
+                            if grouping != .none {
+                                Text("\(group.id) · \(group.items.count)")
+                                    .font(.system(size: 12, weight: .black, design: .rounded))
+                                    .foregroundStyle(.ciForeground.opacity(0.5))
+                            }
+                            ForEach(group.items) { session in
+                                StandBySessionRow(session: session)
+                            }
+                        }
+                    }
                 }
-
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .accessibilityIdentifier("companion.standby.board")
+            .scrollIndicators(.automatic)
+            .accessibilityIdentifier("companion.standby.scroll")
         }
+        .accessibilityIdentifier("companion.standby.board")
     }
 
     private var header: some View {
@@ -999,50 +1013,6 @@ private struct StandBySessionBoard: View {
         }
     }
 
-    // 全部：按高度自适应、不滚动，超出显示「还有 N 个」。
-    @ViewBuilder
-    private func flatAdaptiveList(boardHeight: CGFloat) -> some View {
-        let layout = standbySessionBoardLayout(boardHeight: boardHeight, sessionCount: sessions.count)
-        let shown = Array(sessions.prefix(layout.visibleCount))
-        let remaining = sessions.count - shown.count
-
-        VStack(spacing: 8) {
-            ForEach(shown) { session in
-                StandBySessionRow(session: session, messageLineLimit: layout.messageLineLimit)
-            }
-        }
-
-        if remaining > 0 {
-            Text("还有 \(remaining) 个会话")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.ciForeground.opacity(0.48))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 2)
-                .accessibilityIdentifier("companion.standby.moreSessions")
-        }
-    }
-
-    // 分组（按状态 / CLI）：可滚动，完整展示所有会话。
-    private var groupedScrollList: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(groupedSessions) { group in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("\(group.id) · \(group.items.count)")
-                            .font(.system(size: 12, weight: .black, design: .rounded))
-                            .foregroundStyle(.ciForeground.opacity(0.5))
-                        ForEach(group.items) { session in
-                            StandBySessionRow(session: session, messageLineLimit: standbyMaxMessageLines)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollIndicators(.automatic)
-        .accessibilityIdentifier("companion.standby.groupedScroll")
-    }
-
     private var groupedSessions: [StandByGroup] {
         switch grouping {
         case .none:
@@ -1056,6 +1026,38 @@ private struct StandBySessionBoard: View {
         case .cli:
             let grouped = Dictionary(grouping: sessions) { $0.source.isEmpty ? "CODEISLAND" : $0.source.uppercased() }
             return grouped.keys.sorted().map { StandByGroup(id: $0, items: grouped[$0] ?? []) }
+        }
+    }
+}
+
+// 会话卡内的多轮转写（紧凑版），$ 助手 / > 用户，含 markdown。
+// iPhone（横向紧凑）每卡只显示最近 1 条，iPad 显示最近 3 条。
+private struct SessionTranscript: View {
+    let messages: [CompanionMessagePreview]
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var maxMessages: Int { sizeClass == .compact ? 1 : 3 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(messages.suffix(maxMessages).enumerated()), id: \.offset) { _, message in
+                HStack(alignment: .top, spacing: 5) {
+                    Text(message.role == .user ? ">" : "$")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(message.role == .user
+                            ? Color(red: 0.3, green: 0.85, blue: 0.4)
+                            : Color(red: 0.85, green: 0.47, blue: 0.34))
+                    Text(CompanionDisplayText.messageMarkdown(
+                        CompanionDisplayText.message(message.text) ?? message.text,
+                        isUser: message.role == .user
+                    ))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.ciForeground.opacity(0.66))
+                    .lineLimit(message.role == .user ? 1 : 3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
     }
 }
@@ -1097,8 +1099,10 @@ private struct StandBySessionRow: View {
                     .fixedSize()
                 }
 
-                // 消息行：用户最近输入
-                if let message = CompanionDisplayText.message(session.message) {
+                // 多轮转写（每会话最近几条，$ 助手 / > 用户）；旧 Mac 无此数据时回退单条。
+                if !session.messages.isEmpty {
+                    SessionTranscript(messages: session.messages)
+                } else if let message = CompanionDisplayText.message(session.message) {
                     Text(CompanionDisplayText.messageMarkdown(message, isUser: false))
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.ciForeground.opacity(0.6))

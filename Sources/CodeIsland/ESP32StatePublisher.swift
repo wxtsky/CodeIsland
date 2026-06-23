@@ -396,13 +396,19 @@ extension AppState {
         }
 
         return sorted.prefix(5).map { sessionId, session in
-            AppleCompanionSessionPreview(
+            let messages = session.recentMessages.suffix(2).compactMap { message -> AppleCompanionMessagePreview? in
+                let text = Self.appleCompanionPreviewText(message.text)
+                guard !text.isEmpty else { return nil }
+                return AppleCompanionMessagePreview(role: message.isUser ? .user : .assistant, text: text)
+            }
+            return AppleCompanionSessionPreview(
                 sessionId: sessionId,
                 source: session.source,
                 status: AppleCompanionStatus(session.status),
                 toolName: session.status == .idle ? nil : session.currentTool,
                 workspaceName: session.projectDisplayName,
                 message: appleCompanionSessionMessage(sessionId: sessionId, session: session),
+                messages: messages,
                 updatedAt: session.lastActivity
             )
         }
