@@ -782,7 +782,7 @@ private struct MessageStrip: View {
                                 .frame(width: 42, height: 28)
                                 .background(message.role == .user ? Color.ciForeground.opacity(0.86) : Color.ciForeground.opacity(0.12), in: Capsule())
 
-                            Text(CompanionDisplayText.inlineMarkdown(CompanionDisplayText.message(message.text) ?? message.text))
+                            Text(CompanionDisplayText.messageMarkdown(CompanionDisplayText.message(message.text) ?? message.text, isUser: message.role == .user))
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundStyle(.ciForeground.opacity(0.76))
                                 .lineLimit(6)
@@ -1069,7 +1069,7 @@ private struct StandBySessionRow: View {
 
                 // 消息行：用户最近输入
                 if let message = CompanionDisplayText.message(session.message) {
-                    Text(CompanionDisplayText.inlineMarkdown(message))
+                    Text(CompanionDisplayText.messageMarkdown(message, isUser: false))
                         .font(.system(size: 13, weight: .medium, design: .rounded))
                         .foregroundStyle(.ciForeground.opacity(0.6))
                         .lineLimit(messageLineLimit)
@@ -1278,7 +1278,7 @@ private struct MorphText: View {
     }
 
     private var renderedText: Text {
-        markdown ? Text(CompanionDisplayText.inlineMarkdown(displayed)) : Text(displayed)
+        markdown ? Text(CompanionDisplayText.messageMarkdown(displayed, isUser: false)) : Text(displayed)
     }
 
     var body: some View {

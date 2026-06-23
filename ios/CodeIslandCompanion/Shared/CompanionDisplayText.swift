@@ -91,30 +91,116 @@ enum CompanionDisplayText {
     private static var markdownCache: [String: AttributedString] = [:]
     private static let markdownCacheLimit = 128
 
-    /// 行内 markdown 渲染（粗体 / 斜体 / 代码 / 链接），与 Mac notch 一致。
-    /// 只解析行内语法、保留空白。仅用于消息正文与问题等散文内容，
-    /// 不要用于来源名 / 工作区 / 工具名（含下划线的路径会被误判为斜体）。
+    /// 消息正文渲染，与 Mac notch 的 ChatMessageTextFormatter 一致：
+    /// 用户消息按纯文本（不渲染 markdown，避免把输入里的符号当语法）；
+    /// 助手消息先去掉 `::directive{...}` 指令块、合并多余空行，再做行内 markdown。
+    static func messageMarkdown(_ text: String, isUser: Bool) -> AttributedString {
+        isUser ? AttributedString(text) : inlineMarkdown(compactText(stripDirectives(text)))
+    }
+
+    /// 行内 markdown 渲染（粗体 / 斜体 / 代码 / 链接 / ``` 围栏代码块），与 Mac notch 一致。
+    /// 仅用于消息正文与问题等散文内容，不要用于来源名 / 工作区 / 工具名
+    /// （含下划线的路径会被误判为斜体）。
     ///
-    /// 解析失败、或某些语法（如链接定义、未闭合标签）解析出空内容时，回退为纯文本。
     /// 结果按文本缓存：同一段文字始终返回同一个 AttributedString，避免看板被活动会话
     /// 频繁刷新时，静止的空闲会话因重复解析出新实例而被 SwiftUI 反复重绘/动画（闪烁）。
     static func inlineMarkdown(_ text: String) -> AttributedString {
         if let cached = markdownCache[text] {
             return cached
         }
-        let result: AttributedString
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ), !attributed.characters.isEmpty {
-            result = attributed
-        } else {
-            result = AttributedString(text)
-        }
+        let result = text.contains("```")
+            ? renderWithFencedCodeBlocks(text)
+            : renderInlineOnly(text)
         if markdownCache.count >= markdownCacheLimit {
             markdownCache.removeAll(keepingCapacity: true)
         }
         markdownCache[text] = result
         return result
+    }
+
+    /// 行内解析；失败或解析出空内容（链接定义、未闭合标签等）时回退纯文本。
+    private static func renderInlineOnly(_ text: String) -> AttributedString {
+        if let attributed = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ), !attributed.characters.isEmpty {
+            return attributed
+        }
+        return AttributedString(text)
+    }
+
+    /// Apple 的行内解析会把 ``` 当作行内代码定界、折叠围栏代码块并泄漏语言名。
+    /// 按围栏拆分，代码体按纯文本逐行保留，其余按行内 markdown。
+    private static func renderWithFencedCodeBlocks(_ text: String) -> AttributedString {
+        var result = AttributedString()
+        var buffer = ""
+        var inFence = false
+        var hasOutput = false
+
+        func flush() {
+            guard !buffer.isEmpty else { return }
+            let piece = inFence ? AttributedString(buffer) : renderInlineOnly(buffer)
+            if hasOutput { result.append(AttributedString("\n")) }
+            result.append(piece)
+            hasOutput = true
+            buffer = ""
+        }
+
+        for line in text.components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                flush()
+                inFence.toggle()
+                continue
+            }
+            if !buffer.isEmpty { buffer.append("\n") }
+            buffer.append(line)
+        }
+        flush()
+        return result
+    }
+
+    /// 去掉 `::directive{...}`（可能跨行）指令块。
+    private static func stripDirectives(_ text: String) -> String {
+        var result: [String] = []
+        var inDirective = false
+        var braceDepth = 0
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if inDirective {
+                for ch in line {
+                    if ch == "{" { braceDepth += 1 }
+                    if ch == "}" { braceDepth -= 1 }
+                }
+                if braceDepth <= 0 {
+                    inDirective = false
+                    braceDepth = 0
+                }
+                continue
+            }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("::") && trimmed.contains("{") {
+                braceDepth = 0
+                for ch in line {
+                    if ch == "{" { braceDepth += 1 }
+                    if ch == "}" { braceDepth -= 1 }
+                }
+                if braceDepth > 0 { inDirective = true }
+                continue
+            }
+            result.append(String(line))
+        }
+        return result.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 逐行 trim 并合并连续空行。
+    private static func compactText(_ text: String) -> String {
+        text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .reduce(into: [String]()) { acc, line in
+                if line.isEmpty && (acc.last?.isEmpty ?? true) { return }
+                acc.append(line)
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
