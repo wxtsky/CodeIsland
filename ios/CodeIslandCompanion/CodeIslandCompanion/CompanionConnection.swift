@@ -333,7 +333,11 @@ final class CompanionConnection: NSObject, ObservableObject {
                 status: .processing,
                 toolName: "AskUserQuestion",
                 workspaceName: "code-island",
-                messages: baseMessages,
+                messages: [
+                    CompanionMessagePreview(role: .user, text: "帮我把看板的会话卡做成和 notch 一致"),
+                    CompanionMessagePreview(role: .assistant, text: "好的，我会对齐**状态着色**、`#id`、time-ago 和 `$ thinking` 工作行。"),
+                    CompanionMessagePreview(role: .assistant, text: "已提交并推送，横屏 hero 现在显示主会话最近 3 条转写。")
+                ],
                 pendingAction: nil,
                 question: nil,
                 sessions: previews,
