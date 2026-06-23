@@ -681,9 +681,7 @@ private struct CommandRow: View {
                 }
                 .transition(.blurFade.combined(with: .move(edge: .top)))
 
-                if liveActivity.isAvailable {
-                    LiveActivityInlineButton(state: state)
-                }
+                LiveActivityInlineButton(state: state)
             } else {
                 HStack(spacing: 8) {
                     IslandButton(
@@ -695,15 +693,13 @@ private struct CommandRow: View {
                         connection.send(.focus)
                     }
 
-                    if liveActivity.isAvailable {
-                        IslandButton(
-                            title: liveActivity.isRunning ? "更新实时活动" : "开启实时活动",
-                            icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill",
-                            tint: Color(red: 0.25, green: 0.76, blue: 1.0),
-                            accessibilityIdentifier: "companion.liveActivity.primaryButton"
-                        ) {
-                            liveActivity.startOrUpdate(with: state)
-                        }
+                    IslandButton(
+                        title: liveActivity.isRunning ? "更新实时活动" : "开启实时活动",
+                        icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill",
+                        tint: Color(red: 0.25, green: 0.76, blue: 1.0),
+                        accessibilityIdentifier: "companion.liveActivity.primaryButton"
+                    ) {
+                        liveActivity.startOrUpdate(with: state)
                     }
                 }
 
@@ -914,10 +910,8 @@ private struct StandByIsland: View {
                     IconIslandButton(icon: "arrow.up.forward.app.fill", tint: Color(red: 0.35, green: 0.85, blue: 0.45)) {
                         connection.send(.focus)
                     }
-                    if liveActivity.isAvailable {
-                        IconIslandButton(icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
-                            liveActivity.startOrUpdate(with: state)
-                        }
+                    IconIslandButton(icon: liveActivity.isRunning ? "arrow.clockwise" : "bolt.horizontal.fill", tint: Color(red: 0.25, green: 0.76, blue: 1.0)) {
+                        liveActivity.startOrUpdate(with: state)
                     }
                     if state.pendingAction != nil {
                         IconIslandButton(icon: "checkmark", tint: .orange) {
