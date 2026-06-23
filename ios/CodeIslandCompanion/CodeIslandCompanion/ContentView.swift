@@ -803,6 +803,35 @@ private struct MessageStrip: View {
     }
 }
 
+// 横屏 hero 的主会话多轮转写，对齐 notch ChatMessageRow（$ 助手 / > 用户）。
+private struct HeroTranscript: View {
+    let messages: [CompanionMessagePreview]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(messages.suffix(3))) { message in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(message.role == .user ? ">" : "$")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(message.role == .user
+                            ? Color(red: 0.3, green: 0.85, blue: 0.4)
+                            : Color(red: 0.85, green: 0.47, blue: 0.34))
+                    Text(CompanionDisplayText.messageMarkdown(
+                        CompanionDisplayText.message(message.text) ?? message.text,
+                        isUser: message.role == .user
+                    ))
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(.ciForeground.opacity(0.82))
+                    .lineLimit(message.role == .user ? 1 : 4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct StandByIsland: View {
     let state: CompanionStatePayload
     let availableSize: CGSize
@@ -841,17 +870,18 @@ private struct StandByIsland: View {
                     AppearanceMenu()
                 }
 
-                let heroMessage = CompanionDisplayText.message(state.messages.last?.text)
-                MorphText(
-                    text: heroMessage
-                        ?? CompanionDisplayText.workspace(state.workspaceName)
-                        ?? "CodeIsland 已连接",
-                    font: .system(size: 24, weight: .medium, design: .rounded),
-                    color: .ciForeground.opacity(0.82),
-                    lineLimit: 4,
-                    markdown: heroMessage != nil
-                )
-                .minimumScaleFactor(0.72)
+                if !state.messages.isEmpty {
+                    // 主会话多轮转写（对齐 notch：$ 助手 / > 用户）
+                    HeroTranscript(messages: state.messages)
+                } else {
+                    MorphText(
+                        text: CompanionDisplayText.workspace(state.workspaceName) ?? "CodeIsland 已连接",
+                        font: .system(size: 24, weight: .medium, design: .rounded),
+                        color: .ciForeground.opacity(0.82),
+                        lineLimit: 4
+                    )
+                    .minimumScaleFactor(0.72)
+                }
 
                 HStack(spacing: 10) {
                     if let workspaceText = CompanionDisplayText.workspace(state.workspaceName) {
