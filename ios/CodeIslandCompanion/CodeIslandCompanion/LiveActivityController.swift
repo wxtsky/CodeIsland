@@ -18,6 +18,12 @@ final class LiveActivityController: ObservableObject {
         activity != nil
     }
 
+    /// 实时活动是否可用。iPadOS 不支持 ActivityKit 实时活动，用户也可在设置中关闭；
+    /// 不可用时应隐藏相关按钮，避免出现点了无反应的死按钮。
+    var isAvailable: Bool {
+        ActivityAuthorizationInfo().areActivitiesEnabled
+    }
+
     deinit {
         activityStateTask?.cancel()
     }
