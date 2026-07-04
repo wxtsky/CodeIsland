@@ -11,8 +11,10 @@ enum CompanionDisplayText {
             return "CODEX"
         case "gemini":
             return "GEMINI"
-        case "cursor":
+        case "cursor", "cursor-cli":
             return "CURSOR"
+        case "qoder", "qoder-cli":
+            return "QODER"
         case "opencode":
             return "OPENCODE"
         case "qwen":

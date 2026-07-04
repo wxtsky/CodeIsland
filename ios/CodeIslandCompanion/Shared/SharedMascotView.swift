@@ -66,13 +66,13 @@ struct SharedMascotView: View {
                 DexView(status: status, size: size)
             case "gemini":
                 GeminiView(status: status, size: size)
-            case "cursor":
+            case "cursor", "cursor-cli":
                 CursorView(status: status, size: size)
             case "trae", "traecn", "traecli":
                 TraeView(status: status, size: size)
             case "copilot":
                 CopilotView(status: status, size: size)
-            case "qoder":
+            case "qoder", "qoder-cli":
                 QoderView(status: status, size: size)
             case "droid":
                 DroidView(status: status, size: size)
