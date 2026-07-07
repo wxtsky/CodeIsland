@@ -275,6 +275,27 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertTrue(rules.contains(#"decision = "allow""#))
     }
 
+    func testCodexAlwaysAllowEscapesMultilineRuleArguments() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-multiline-rule",
+            toolName: "Bash",
+            toolInput: [
+                "command": "node -e 'console.log(\"a\")\nconsole.log(\"b\")\r\n'"
+            ],
+            source: "codex"
+        )
+
+        let rules = CodexPermissionRules()
+        XCTAssertTrue(rules.persistAlwaysAllowRule(for: event))
+
+        let contents = try readCodeIslandRules(in: codexHome)
+        XCTAssertTrue(contents.contains(#"pattern = ["node", "-e", "console.log(\"a\")\nconsole.log(\"b\")\r\n"]"#))
+        XCTAssertFalse(contents.contains("console.log(\\\"a\\\")\nconsole.log(\\\"b\\\")\r\n"))
+    }
+
     func testCodexAlwaysAllowMCPToolPersistsApprovalModeWithoutUnsupportedUpdatedPermissions() async throws {
         let codexHome = makeTemporaryCodexHome()
         defer { try? FileManager.default.removeItem(at: codexHome) }
