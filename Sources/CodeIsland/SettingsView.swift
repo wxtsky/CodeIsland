@@ -331,7 +331,8 @@ private struct GeneralPage: View {
                 Picker(l10n["language"], selection: $l10n.language) {
                     Text(l10n["system_language"]).tag("system")
                     Text("English").tag("en")
-                    Text("中文").tag("zh")
+                    Text("简体中文").tag("zh")
+                    Text("繁體中文").tag("zh-Hant")
                     Text("Deutsch").tag("de")
                     Text("日本語").tag("ja")
                     Text("한국어").tag("ko")
