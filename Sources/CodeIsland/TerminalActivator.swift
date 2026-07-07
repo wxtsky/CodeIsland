@@ -6,7 +6,9 @@ import CodeIslandCore
 /// Supports tab-level switching for: Ghostty, iTerm2, Terminal.app, WezTerm, kitty.
 /// Falls back to app-level activation for: Alacritty, Warp, Hyper, Tabby, Rio.
 struct TerminalActivator {
-    private static let knownTerminals: [(name: String, bundleId: String)] = [
+    // Internal (not private) so support tests can assert a terminal is recognized,
+    // matching sourceToNativeAppBundleId's visibility. See TeraxSupportTests.
+    static let knownTerminals: [(name: String, bundleId: String)] = [
         ("cmux", "com.cmuxterm.app"),
         ("Ghostty", "com.mitchellh.ghostty"),
         ("iTerm2", "com.googlecode.iterm2"),
@@ -14,6 +16,7 @@ struct TerminalActivator {
         ("Kaku", "fun.tw93.kaku"),
         ("kitty", "net.kovidgoyal.kitty"),
         ("Alacritty", "org.alacritty"),
+        ("Terax", "app.crynta.terax"),
         ("Warp", "dev.warp.Warp-Stable"),
         ("Terminal", "com.apple.Terminal"),
     ]
@@ -165,6 +168,20 @@ struct TerminalActivator {
                 NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == bid })
             })
             activateByBundleId(runningBundle ?? "com.superset.desktop")
+            return
+        }
+
+        // --- Terax (native webview terminal): app-level activation only ---
+        // Like Superset, Terax (app.crynta.terax) is a single-window app whose tabs are
+        // drawn inside a webview. It exports no per-pane env id (only TERAX_TERMINAL /
+        // TERAX_BLOCKS) and ships no URL scheme, AppleScript dictionary, focus CLI, or
+        // native tab shortcut — and its tabs are absent from the accessibility tree — so
+        // per-tab precision is impossible upstream. Without this branch Terax has no
+        // TERM_PROGRAM, so detectRunningTerminal() would misroute the click to whichever
+        // other terminal happens to be running. Bring its window forward (Space-aware,
+        // same as Superset) via bundle id.
+        if session.termBundleId == "app.crynta.terax" || lower == "terax" {
+            activateByBundleId("app.crynta.terax")
             return
         }
 
