@@ -1718,15 +1718,24 @@ private struct SessionListView: View {
                 ("stepfun", "StepFun"),
                 ("workbuddy", "WorkBuddy"),
                 ("hermes", "Hermes"),
+                ("openclaw", "OpenClaw"),
                 ("qwen", "Qwen Code"),
                 ("kimi", "Kimi Code CLI"),
                 ("opencode", "OpenCode"),
+                ("pi", "Pi"),
+                ("kiro", "Kiro"),
+                ("cline", "Cline"),
             ]
             var result: [(String, String?, [String])] = []
             var seen = Set<String>()
             for cli in cliOrder {
                 let ids = sorted.filter { id in
-                    appState.sessions[id]?.source == cli.source
+                    guard let source = appState.sessions[id]?.source else { return false }
+                    if source == cli.source { return true }
+                    // Bundle promoted -cli variants with their IDE group (#248).
+                    if cli.source == "cursor", source == "cursor-cli" { return true }
+                    if cli.source == "qoder", source == "qoder-cli" { return true }
+                    return false
                 }
                 ids.forEach { seen.insert($0) }
                 if !ids.isEmpty {
@@ -2686,11 +2695,13 @@ private let cliIconFiles: [String: String] = [
     "antigravity": "antigravity",
     "google-antigravity": "gemini",
     "cursor": "cursor",
+    "cursor-cli": "cursor",
     "trae": "trae",
     "traecn": "trae",
     "traecli": "trae",
     "copilot": "copilot",
     "qoder": "qoder",
+    "qoder-cli": "qoder",
     "droid": "factory",
     "codebuddy": "codebuddy",
     "codybuddycn": "codebuddy",

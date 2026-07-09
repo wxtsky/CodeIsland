@@ -28,6 +28,54 @@ final class SessionSnapshotTitleTests: XCTestCase {
         XCTAssertEqual(snapshot.projectDisplayName, "CodeIsland")
     }
 
+    func testProjectDisplayNameSkipsClaudeMetadataDir() {
+        var snapshot = SessionSnapshot()
+        snapshot.cwd = "/Users/wangnov/Code/CodeIsland/.claude"
+
+        XCTAssertEqual(snapshot.projectDisplayName, "CodeIsland")
+    }
+
+    func testProjectDisplayNameDoesNotUseHomeUsernameForGlobalClaudeDir() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var snapshot = SessionSnapshot()
+        snapshot.cwd = "\(home)/.claude"
+
+        XCTAssertNotEqual(snapshot.projectDisplayName, (home as NSString).lastPathComponent)
+        XCTAssertEqual(snapshot.projectDisplayName, "Session")
+    }
+
+    func testProjectDisplayNameDecodesCursorProjectsPath() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let homeEncoded = String(home.dropFirst()).replacingOccurrences(of: "/", with: "-")
+        var snapshot = SessionSnapshot()
+        snapshot.cwd = "\(home)/.cursor/projects/\(homeEncoded)-Code-CodeIsland/agent-transcripts"
+
+        XCTAssertEqual(snapshot.projectDisplayName, "CodeIsland")
+    }
+
+    func testProjectDisplayNamePreservesHyphenatedCursorProjectLeaf() throws {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        let projectDir = "\(home)/Code/codeisland-hyphen-display-test"
+        try fm.createDirectory(atPath: projectDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(atPath: projectDir) }
+
+        let homeEncoded = String(home.dropFirst()).replacingOccurrences(of: "/", with: "-")
+        var snapshot = SessionSnapshot()
+        snapshot.cwd = "\(home)/.cursor/projects/\(homeEncoded)-Code-codeisland-hyphen-display-test/agent-transcripts"
+
+        XCTAssertEqual(snapshot.projectDisplayName, "codeisland-hyphen-display-test")
+    }
+
+    func testProjectDisplayNamePeelsMetadataDirFromCursorEncodedPath() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let homeEncoded = String(home.dropFirst()).replacingOccurrences(of: "/", with: "-")
+        var snapshot = SessionSnapshot()
+        snapshot.cwd = "\(home)/.cursor/projects/\(homeEncoded)-Code-CodeIsland-.claude/agent-transcripts"
+
+        XCTAssertEqual(snapshot.projectDisplayName, "CodeIsland")
+    }
+
     func testDisplaySessionIdPrefersProviderSessionId() {
         var snapshot = SessionSnapshot()
         snapshot.providerSessionId = "019d6330-beed-7a13-b61e-cacf03d3cefe"

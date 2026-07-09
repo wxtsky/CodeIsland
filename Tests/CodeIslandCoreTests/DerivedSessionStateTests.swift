@@ -208,6 +208,22 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(source, "codex")
     }
 
+    func testExtractMetadataPrefersWorkspaceRootsOverHomeClaudeCwd() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var sessions: [String: SessionSnapshot] = ["s1": SessionSnapshot()]
+        let event = try decode([
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "_source": "cursor-cli",
+            "cwd": "\(home)/.claude",
+            "workspace_roots": ["/Users/wangnov/Code/CodeIsland"],
+        ])
+
+        extractMetadata(into: &sessions, sessionId: "s1", event: event)
+
+        XCTAssertEqual(sessions["s1"]?.cwd, "/Users/wangnov/Code/CodeIsland")
+    }
+
     private func decode(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
