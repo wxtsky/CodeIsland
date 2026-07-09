@@ -82,6 +82,50 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "cursor-session")))
     }
 
+    func testAfterAgentResponseCompletesCursorCliSource() throws {
+        var session = SessionSnapshot()
+        session.source = "cursor-cli"
+        session.status = .running
+
+        var sessions = ["cursor-cli-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "cursor-cli-session",
+            "_source": "cursor-cli",
+            "text": "Done",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["cursor-cli-session"]?.status, .idle)
+        XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "cursor-cli-session")))
+    }
+
+    func testAfterAgentResponseCompletesQoderCliSource() throws {
+        var session = SessionSnapshot()
+        session.source = "qoder-cli"
+        session.status = .running
+
+        var sessions = ["qoder-cli-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "qoder-cli-session",
+            "_source": "qoder-cli",
+            "text": "Done",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["qoder-cli-session"]?.status, .idle)
+        XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "qoder-cli-session")))
+    }
+
+    func testIdeCompletionSourcesIncludeCliVariants() {
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("cursor-cli"))
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("qoder"))
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("qoder-cli"))
+    }
+
     func testAfterAgentResponseKeepsCLISourceProcessing() throws {
         var session = SessionSnapshot()
         session.source = "claude"

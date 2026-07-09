@@ -40,6 +40,9 @@ public struct SessionSnapshot: Sendable {
 
     public static let ideCompletionSources: Set<String> = [
         "cursor",
+        "cursor-cli",
+        "qoder",
+        "qoder-cli",
         "trae",
         "traecn",
         "codebuddy",

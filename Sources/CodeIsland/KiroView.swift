@@ -89,10 +89,14 @@ struct KiroView: View {
                     let ci = Double(i)
                     let cycle = 3.1 + ci * 0.4
                     let p = max(0, ((t - ci * 1.2).truncatingRemainder(dividingBy: cycle)) / cycle)
+                    let fontSize: CGFloat = max(6, size * CGFloat(0.15 + p * 0.08))
+                    let opacity: Double = p < 0.8 ? 0.55 - ci * 0.15 : (1 - p) * 3 * 0.55
+                    let dx = size * CGFloat(0.14 + ci * 0.05)
+                    let dy = -size * CGFloat(0.14 + p * 0.32)
                     Text("z")
-                        .font(.system(size: max(6, size * CGFloat(0.15 + p * 0.08)), weight: .black, design: .monospaced))
-                        .foregroundStyle(.white.opacity(p < 0.8 ? 0.55 - ci * 0.15 : (1 - p) * 3 * 0.55))
-                        .offset(x: size * CGFloat(0.14 + ci * 0.05), y: -size * CGFloat(0.14 + p * 0.32))
+                        .font(.system(size: fontSize, weight: .black, design: .monospaced))
+                        .foregroundStyle(.white.opacity(opacity))
+                        .offset(x: dx, y: dy)
                 }
             }
         }

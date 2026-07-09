@@ -732,11 +732,13 @@ final class AppState {
         case "codex":      return findCodexPids(candidatePids: candidatePids)
         case "gemini":     return findGeminiPids(candidatePids: candidatePids)
         case "cursor":     return findCursorPids(candidatePids: candidatePids)
+        case "cursor-cli": return findCursorCliPids(candidatePids: candidatePids)
         case "trae":       return findTraePids(candidatePids: candidatePids)
         case "traecn":     return findTraeCNPids(candidatePids: candidatePids)
         case "traecli":   return findTraeCliPids(candidatePids: candidatePids)
         case "copilot":    return findCopilotPids(candidatePids: candidatePids)
         case "qoder":      return findQoderPids(candidatePids: candidatePids)
+        case "qoder-cli":  return findQoderCliPids(candidatePids: candidatePids)
         case "droid":      return findFactoryPids(candidatePids: candidatePids)
         case "codebuddy":  return findCodeBuddyPids(candidatePids: candidatePids)
         case "codybuddycn": return findCodyBuddyCNPids(candidatePids: candidatePids)
@@ -1012,7 +1014,8 @@ final class AppState {
         }
 
         // Detect Cursor YOLO mode once per session (nil = unchecked)
-        if event.rawJSON["_source"] as? String == "cursor",
+        if let source = event.rawJSON["_source"] as? String,
+           (source == "cursor" || source == "cursor-cli"),
            sessions[sessionId]?.isYoloMode == nil {
             sessions[sessionId]?.isYoloMode = Self.detectCursorYoloMode()
         }
@@ -1787,7 +1790,7 @@ final class AppState {
         switch source {
         case "claude":
             return readModelFromTranscript(sessionId: sessionId, cwd: session.cwd)
-        case "qoder":
+        case "qoder", "qoder-cli":
             return readModelFromProjectTranscript(
                 sessionId: sessionId,
                 cwd: session.cwd,
@@ -1815,7 +1818,7 @@ final class AppState {
             return readModelFromCodexStore(cwd: session.cwd, processStart: processStart)
         case "gemini":
             return readModelFromGeminiStore(cwd: session.cwd, processStart: processStart)
-        case "cursor":
+        case "cursor", "cursor-cli":
             return readModelFromCursorStore(cwd: session.cwd, processStart: processStart)
         case "copilot":
             return readModelFromCopilotStore(cwd: session.cwd, processStart: processStart)
@@ -1904,7 +1907,7 @@ final class AppState {
         switch session.source {
         case "codex":
             return codexLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
-        case "qoder":
+        case "qoder", "qoder-cli":
             return qoderLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
         case "codebuddy":
             return codeBuddyLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
@@ -2853,12 +2856,40 @@ final class AppState {
         )
     }
 
+    /// Standalone Cursor CLI agent — must not match the desktop IDE/helper
+    /// processes that `findCursorPids` also covers (#248).
+    private nonisolated static func findCursorCliPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/.local/share/cursor-agent/versions/",
+            ],
+            argSubstrings: ["/cursor-agent/index.js"],
+            candidatePids: candidatePids
+        )
+    }
+
     private nonisolated static func findQoderPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
         findPids(
             matchingPathSubstrings: [
                 "/qoder.app/contents/macos/electron",
                 "/qoder.app/contents/frameworks/qoder helper",
                 "/.qoder/bin/qodercli/",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    /// Standalone Qoder CLI — must not match the desktop IDE/helper (#248).
+    private nonisolated static func findQoderCliPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/.qoder/bin/qodercli/",
+                "/@qoder-ai/qodercli",
+            ],
+            argSubstrings: [
+                "/opt/homebrew/bin/qodercli",
+                "/usr/local/bin/qodercli",
+                "/.local/bin/qodercli",
             ],
             candidatePids: candidatePids
         )
