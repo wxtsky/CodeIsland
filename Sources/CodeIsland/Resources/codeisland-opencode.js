@@ -181,13 +181,13 @@ export default {
         return base(islandSessionId(p.info.id), { hook_event_name: "SessionStart", cwd });
       }
       if (t === "session.deleted" && p.info) {
-        sessions.delete(p.info.id); sessionCwd.delete(p.info.id);
+        sessions.delete(p.info.id); sessionCwd.delete(sessionKey(p.info.id));
         return base(islandSessionId(p.info.id), { hook_event_name: "SessionEnd" });
       }
       if (t === "session.updated" && p.info) {
         if (p.info.directory || p.info.location?.directory) setCwd(p.info.id, p.info.directory || p.info.location?.directory);
         if (p.info.time?.archived) {
-          sessions.delete(p.info.id); sessionCwd.delete(p.info.id);
+          sessions.delete(p.info.id); sessionCwd.delete(sessionKey(p.info.id));
           return base(islandSessionId(p.info.id), { hook_event_name: "SessionEnd" });
         }
         if (p.info.title && !p.info.title.startsWith("New session")) {
