@@ -29,16 +29,20 @@ targets:
       - path: ../../Sources/CodeIsland/GeminiView.swift
       - path: ../../Sources/CodeIsland/HermesView.swift
       - path: ../../Sources/CodeIsland/KimiView.swift
+      - path: ../../Sources/CodeIsland/KiroView.swift
       - path: ../../Sources/CodeIsland/OpenCodeView.swift
+      - path: ../../Sources/CodeIsland/OpenClawView.swift
       - path: ../../Sources/CodeIsland/PixelCharacterView.swift
       - path: ../../Sources/CodeIsland/QoderView.swift
       - path: ../../Sources/CodeIsland/QwenView.swift
       - path: ../../Sources/CodeIsland/StepFunView.swift
       - path: ../../Sources/CodeIsland/TraeView.swift
       - path: ../../Sources/CodeIsland/WorkBuddyView.swift
+      - path: ../../Sources/CodeIsland/MascotTimeline.swift
+      - path: ../../Sources/CodeIsland/MascotMotion.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion
+        PRODUCT_BUNDLE_IDENTIFIER: com.zephyr.CodeIslandCompanion
         INFOPLIST_FILE: CodeIslandCompanion/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -67,16 +71,20 @@ targets:
       - path: ../../Sources/CodeIsland/GeminiView.swift
       - path: ../../Sources/CodeIsland/HermesView.swift
       - path: ../../Sources/CodeIsland/KimiView.swift
+      - path: ../../Sources/CodeIsland/KiroView.swift
       - path: ../../Sources/CodeIsland/OpenCodeView.swift
+      - path: ../../Sources/CodeIsland/OpenClawView.swift
       - path: ../../Sources/CodeIsland/PixelCharacterView.swift
       - path: ../../Sources/CodeIsland/QoderView.swift
       - path: ../../Sources/CodeIsland/QwenView.swift
       - path: ../../Sources/CodeIsland/StepFunView.swift
       - path: ../../Sources/CodeIsland/TraeView.swift
       - path: ../../Sources/CodeIsland/WorkBuddyView.swift
+      - path: ../../Sources/CodeIsland/MascotTimeline.swift
+      - path: ../../Sources/CodeIsland/MascotMotion.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.Widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.zephyr.CodeIslandCompanion.Widget
         INFOPLIST_FILE: CodeIslandCompanionWidget/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
@@ -101,16 +109,20 @@ targets:
       - path: ../../Sources/CodeIsland/GeminiView.swift
       - path: ../../Sources/CodeIsland/HermesView.swift
       - path: ../../Sources/CodeIsland/KimiView.swift
+      - path: ../../Sources/CodeIsland/KiroView.swift
       - path: ../../Sources/CodeIsland/OpenCodeView.swift
+      - path: ../../Sources/CodeIsland/OpenClawView.swift
       - path: ../../Sources/CodeIsland/PixelCharacterView.swift
       - path: ../../Sources/CodeIsland/QoderView.swift
       - path: ../../Sources/CodeIsland/QwenView.swift
       - path: ../../Sources/CodeIsland/StepFunView.swift
       - path: ../../Sources/CodeIsland/TraeView.swift
       - path: ../../Sources/CodeIsland/WorkBuddyView.swift
+      - path: ../../Sources/CodeIsland/MascotTimeline.swift
+      - path: ../../Sources/CodeIsland/MascotMotion.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: com.zephyr.CodeIslandCompanion.watchkitapp
         INFOPLIST_FILE: CodeIslandWatchApp/Info.plist
         CODE_SIGN_ENTITLEMENTS: CodeIslandWatchApp/CodeIslandWatchApp.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -139,16 +151,20 @@ targets:
       - path: ../../Sources/CodeIsland/GeminiView.swift
       - path: ../../Sources/CodeIsland/HermesView.swift
       - path: ../../Sources/CodeIsland/KimiView.swift
+      - path: ../../Sources/CodeIsland/KiroView.swift
       - path: ../../Sources/CodeIsland/OpenCodeView.swift
+      - path: ../../Sources/CodeIsland/OpenClawView.swift
       - path: ../../Sources/CodeIsland/PixelCharacterView.swift
       - path: ../../Sources/CodeIsland/QoderView.swift
       - path: ../../Sources/CodeIsland/QwenView.swift
       - path: ../../Sources/CodeIsland/StepFunView.swift
       - path: ../../Sources/CodeIsland/TraeView.swift
       - path: ../../Sources/CodeIsland/WorkBuddyView.swift
+      - path: ../../Sources/CodeIsland/MascotTimeline.swift
+      - path: ../../Sources/CodeIsland/MascotMotion.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanion.watchkitapp.Widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.zephyr.CodeIslandCompanion.watchkitapp.Widget
         INFOPLIST_FILE: CodeIslandWatchWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: CodeIslandWatchWidget/CodeIslandWatchWidget.entitlements
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
@@ -162,7 +178,7 @@ targets:
       - path: CodeIslandCompanion/StandByLayout.swift
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.fengye.CodeIslandCompanionUITests
+        PRODUCT_BUNDLE_IDENTIFIER: com.zephyr.CodeIslandCompanionUITests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: CodeIslandCompanion
         TARGETED_DEVICE_FAMILY: "1,2"

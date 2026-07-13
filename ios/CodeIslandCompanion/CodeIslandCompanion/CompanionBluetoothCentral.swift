@@ -6,8 +6,8 @@ import os
 final class CompanionBluetoothCentral: NSObject, ObservableObject {
     private static let serviceUUID = CBUUID(string: "6D951BA3-8F41-4C45-9D8A-12085E0D7A10")
     private static let notifyCharacteristicUUID = CBUUID(string: "25C1B67B-E903-4A0C-8A78-3EE8AB7317B7")
-    private static let restoreIdentifier = "top.fengye.CodeIslandCompanion.bluetooth-central"
-    private static let log = Logger(subsystem: "top.fengye.CodeIslandCompanion", category: "bluetooth-central")
+    private static let restoreIdentifier = "com.zephyr.CodeIslandCompanion.bluetooth-central"
+    private static let log = Logger(subsystem: "com.zephyr.CodeIslandCompanion", category: "bluetooth-central")
 
     @Published private(set) var scanning = false
     @Published private(set) var connectedPeripheralName: String?

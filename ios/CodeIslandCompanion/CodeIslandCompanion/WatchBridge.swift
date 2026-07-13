@@ -6,7 +6,7 @@ import os
 final class WatchBridge: NSObject {
     var commandHandler: ((CompanionCommandPayload) -> Void)?
 
-    private static let log = Logger(subsystem: "top.fengye.CodeIslandCompanion", category: "watch-bridge")
+    private static let log = Logger(subsystem: "com.zephyr.CodeIslandCompanion", category: "watch-bridge")
 
     private var latestState: CompanionStatePayload?
     private var activationState: WCSessionActivationState = .notActivated

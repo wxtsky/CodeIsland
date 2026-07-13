@@ -21,6 +21,6 @@
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>top.fengye.CodeIslandCompanion</string>
+	<string>com.zephyr.CodeIslandCompanion</string>
 </dict>
 </plist>

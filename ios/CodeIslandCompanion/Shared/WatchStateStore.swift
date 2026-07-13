@@ -2,7 +2,7 @@ import Foundation
 
 #if os(watchOS)
 enum WatchStateStore {
-    static let appGroupIdentifier = "group.top.fengye.CodeIslandCompanion"
+    static let appGroupIdentifier = "group.com.zephyr.CodeIslandCompanion"
     private static let latestStateKey = "latestCompanionState"
 
     private static let encoder: JSONEncoder = {
