@@ -7,6 +7,29 @@ import CodeIslandCore
 
 private let log = Logger(subsystem: "com.codeisland", category: "AppState")
 
+/// FSEventStream context target. Callbacks hold an unretained pointer to this
+/// box (not `AppState`), and reach the owner only through `weak`, so queued
+/// main-queue deliveries stay safe if `AppState` tears down off the main actor.
+private final class ProjectsWatcherBox: @unchecked Sendable {
+    weak var appState: AppState?
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    func handleChange() {
+        lock.lock()
+        let isCancelled = cancelled
+        lock.unlock()
+        guard !isCancelled else { return }
+        appState?.handleProjectsDirChange()
+    }
+}
+
 struct CodexSubagentMetadata: Equatable, Sendable {
     let parentThreadId: String
     let agentType: String?
@@ -137,7 +160,10 @@ final class AppState {
     }
 
     private var maxHistory: Int { SettingsManager.shared.maxToolHistory }
-    private var cleanupTimer: Timer?
+    /// Torn down from `deinit`, which may run off the main actor (e.g. async
+    /// XCTest ARC). Only mutated on the main actor while `self` is alive.
+    @ObservationIgnored
+    nonisolated(unsafe) private var cleanupTimer: Timer?
     private var autoCollapseTask: Task<Void, Never>?
     private var completionQueue: [String] = []
     /// Mouse must enter the panel before auto-collapse is allowed (prevents instant dismiss)
@@ -148,12 +174,19 @@ final class AppState {
     /// attached. Processes that already had ppid <= 1 at attach time are launchd-managed
     /// daemons (e.g. a Hermes gateway with KeepAlive=true), NOT orphans of a closed
     /// terminal — they must never be terminated by orphan cleanup (#243).
-    private var processMonitors: [String: (source: DispatchSourceProcess, process: ProcessIdentity, attachParentPid: pid_t?)] = [:]
+    /// Cancelled from `deinit` off the main actor.
+    @ObservationIgnored
+    nonisolated(unsafe) private var processMonitors: [String: (source: DispatchSourceProcess, process: ProcessIdentity, attachParentPid: pid_t?)] = [:]
     private var exitingSessions: [String: ProcessIdentity] = [:]
-    private var saveTimer: Timer?
-    private var fsEventStream: FSEventStreamRef?
+    @ObservationIgnored
+    nonisolated(unsafe) private var saveTimer: Timer?
+    @ObservationIgnored
+    nonisolated(unsafe) private var fsEventStream: FSEventStreamRef?
+    @ObservationIgnored
+    nonisolated(unsafe) private var projectsWatcherBox: ProjectsWatcherBox?
     private var lastFSScanTime: Date = .distantPast
-    private var discoveryScanTask: Task<Void, Never>?
+    @ObservationIgnored
+    nonisolated(unsafe) private var discoveryScanTask: Task<Void, Never>?
     private var pendingDiscoveryRescan = false
     private var isShowingCompletion: Bool {
         if case .completionCard = surface { return true }
@@ -181,7 +214,8 @@ final class AppState {
         guard let rid = rotatingSessionId else { return nil }
         return sessions[rid]
     }
-    private var rotationTimer: Timer?
+    @ObservationIgnored
+    nonisolated(unsafe) private var rotationTimer: Timer?
 
     private func startCleanupTimer() {
         guard cleanupTimer == nil else { return }
@@ -2431,19 +2465,21 @@ final class AppState {
         let watchRoots = Self.discoveryWatchRoots()
         guard !watchRoots.isEmpty else { return }
 
+        let box = ProjectsWatcherBox()
+        box.appState = self
+
         var context = FSEventStreamContext()
-        // passUnretained is safe here: the stream is dispatched on .main (same as
-        // @MainActor), so callbacks cannot interleave with deinit. Both
-        // stopSessionDiscovery() and deinit stop/invalidate the stream synchronously
-        // on the main thread before self is deallocated.
-        context.info = Unmanaged.passUnretained(self).toOpaque()
+        // Unretained box is owned by `projectsWatcherBox` until
+        // `tearDownProjectsWatcher()`; the weak back-pointer keeps callbacks
+        // safe across off-main `AppState` deinit.
+        context.info = Unmanaged.passUnretained(box).toOpaque()
 
         let stream = FSEventStreamCreate(
             nil,
             { (_, info, _, _, _, _) in
                 guard let info = info else { return }
-                let appState = Unmanaged<AppState>.fromOpaque(info).takeUnretainedValue()
-                appState.handleProjectsDirChange()
+                let box = Unmanaged<ProjectsWatcherBox>.fromOpaque(info).takeUnretainedValue()
+                box.handleChange()
             },
             &context,
             watchRoots as CFArray,
@@ -2455,12 +2491,13 @@ final class AppState {
         guard let stream = stream else { return }
         FSEventStreamSetDispatchQueue(stream, .main)
         FSEventStreamStart(stream)
+        self.projectsWatcherBox = box
         self.fsEventStream = stream
         log.info("Discovery watcher started on \(watchRoots.joined(separator: ", "))")
     }
 
     /// Called by FSEventStream when a known session-store directory changes.
-    nonisolated private func handleProjectsDirChange() {
+    nonisolated fileprivate func handleProjectsDirChange() {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
             // Debounce: skip if scanned within the last 3 seconds
@@ -3227,12 +3264,7 @@ final class AppState {
     }
 
     func stopSessionDiscovery() {
-        if let stream = fsEventStream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-            fsEventStream = nil
-        }
+        tearDownProjectsWatcher()
         cleanupTimer?.invalidate()
         cleanupTimer = nil
         saveTimer?.invalidate()
@@ -3243,20 +3275,45 @@ final class AppState {
         for key in Array(processMonitors.keys) { stopMonitor(key) }
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            rotationTimer?.invalidate()
-            cleanupTimer?.invalidate()
-            saveTimer?.invalidate()
+    /// Stops the FSEvents watcher on the main queue so Stop/Invalidate cannot
+    /// race a queued callback. Safe to call from `deinit` (any thread).
+    nonisolated private func tearDownProjectsWatcher() {
+        let teardown = { [self] in
+            // Flip cancel before stopping so any already-queued callback no-ops
+            // instead of touching a dying AppState / freed box.
+            projectsWatcherBox?.cancel()
             if let stream = fsEventStream {
                 FSEventStreamStop(stream)
                 FSEventStreamInvalidate(stream)
                 FSEventStreamRelease(stream)
+                fsEventStream = nil
             }
-            discoveryScanTask?.cancel()
-            for (_, monitor) in processMonitors {
-                monitor.source.cancel()
+            let box = projectsWatcherBox
+            projectsWatcherBox = nil
+            // Keep the box alive until after previously queued main-queue
+            // callbacks drain (Invalidate does not flush them).
+            if let box {
+                DispatchQueue.main.async { _ = box }
             }
+        }
+        if Thread.isMainThread {
+            teardown()
+        } else {
+            DispatchQueue.main.sync(execute: teardown)
+        }
+    }
+
+    deinit {
+        // Must not use MainActor.assumeIsolated: async callers (notably XCTest)
+        // can release AppState off the main actor via ARC. Weak-boxed FSEvents
+        // + main-synced stream teardown keep discovery teardown crash-free.
+        rotationTimer?.invalidate()
+        cleanupTimer?.invalidate()
+        saveTimer?.invalidate()
+        tearDownProjectsWatcher()
+        discoveryScanTask?.cancel()
+        for (_, monitor) in processMonitors {
+            monitor.source.cancel()
         }
     }
 
