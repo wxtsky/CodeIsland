@@ -1234,8 +1234,7 @@ final class AppState {
 
         // Closed Task/subagent ids must not surface new permission UI (parity with
         // ensureSubagent refusing late tool hooks after Stop).
-        if let agentId = event.agentId,
-           sessions[sessionId]?.closedSubagentIds.contains(agentId) == true {
+        if shouldSuppressClosedSubagentUI(sessionId: sessionId, agentId: event.agentId) {
             let denyResponse = Data(
                 #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8
             )
@@ -1323,7 +1322,13 @@ final class AppState {
             responseData = Data(response.utf8)
         }
         pending.continuation.resume(returning: responseData)
-        sessions[sessionId]?.status = .running
+        resolveMergedSubagentAfterUI(
+            sessionId: sessionId,
+            agentId: pending.event.agentId,
+            subagentStatus: .running,
+            keepSubagentTool: pending.event.toolName,
+            idleParentWhenNoAgent: false
+        )
 
         showNextPending()
         refreshDerivedState()
@@ -1440,9 +1445,14 @@ final class AppState {
         dismissedPermissionSessionIds.remove(sessionId)
         let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
         pending.continuation.resume(returning: Data(response.utf8))
-        sessions[sessionId]?.status = .idle
-        sessions[sessionId]?.currentTool = nil
-        sessions[sessionId]?.toolDescription = nil
+        // Folded Task deny must not idle the whole parent chat card.
+        resolveMergedSubagentAfterUI(
+            sessionId: sessionId,
+            agentId: pending.event.agentId,
+            subagentStatus: .processing,
+            keepSubagentTool: nil,
+            idleParentWhenNoAgent: true
+        )
 
         if activeSessionId == sessionId {
             activeSessionId = mostActiveSessionId()
@@ -1482,8 +1492,7 @@ final class AppState {
         }
         tryMonitorSession(sessionId)
 
-        if let agentId = event.agentId,
-           sessions[sessionId]?.closedSubagentIds.contains(agentId) == true {
+        if shouldSuppressClosedSubagentUI(sessionId: sessionId, agentId: event.agentId) {
             continuation.resume(returning: Data("{}".utf8))
             return
         }
@@ -1525,8 +1534,7 @@ final class AppState {
         }
         tryMonitorSession(sessionId)
 
-        if let agentId = event.agentId,
-           sessions[sessionId]?.closedSubagentIds.contains(agentId) == true {
+        if shouldSuppressClosedSubagentUI(sessionId: sessionId, agentId: event.agentId) {
             let denyResponse = Data(
                 #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8
             )
@@ -1690,7 +1698,13 @@ final class AppState {
         }
         pending.resolution.resumeHook(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
-        sessions[sessionId]?.status = .processing
+        resolveMergedSubagentAfterUI(
+            sessionId: sessionId,
+            agentId: pending.event.agentId,
+            subagentStatus: .running,
+            keepSubagentTool: nil,
+            idleParentWhenNoAgent: false
+        )
 
         showNextPending()
         refreshDerivedState()
@@ -1760,7 +1774,13 @@ final class AppState {
         }
         pending.resolution.resumeHook(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
-        sessions[sessionId]?.status = .processing
+        resolveMergedSubagentAfterUI(
+            sessionId: sessionId,
+            agentId: pending.event.agentId,
+            subagentStatus: .running,
+            keepSubagentTool: nil,
+            idleParentWhenNoAgent: false
+        )
 
         showNextPending()
         refreshDerivedState()
@@ -1803,7 +1823,13 @@ final class AppState {
             pending.resolution.resumeHook(returning: responseData)
         }
         let sessionId = pending.event.sessionId ?? "default"
-        sessions[sessionId]?.status = .processing
+        resolveMergedSubagentAfterUI(
+            sessionId: sessionId,
+            agentId: pending.event.agentId,
+            subagentStatus: .processing,
+            keepSubagentTool: nil,
+            idleParentWhenNoAgent: false
+        )
 
         showNextPending()
         refreshDerivedState()
@@ -2718,12 +2744,14 @@ final class AppState {
             if parentKey == candidate.sessionId { continue }
 
             // Closed ids may sit on the parent (merge Stop) or the child card
-            // (separate Stop). Keep them on the parent even if we must synthesize it.
+            // (separate Stop). Parent tombstone always wins over a late-running
+            // orphan card — relaunch clears via UserPromptSubmit on the hook path.
             let childClosed = candidate.session.closedSubagentIds
-            let childWasStopped = sessions[parentKey]?.closedSubagentIds.contains(childId) == true
-                || childClosed.contains(childId)
+            let candidateCarriesClosed = childClosed.contains(childId)
                 || childClosed.contains(candidate.sessionId)
-            if childWasStopped {
+            let parentHoldsTombstone = sessions[parentKey]?.closedSubagentIds.contains(childId) == true
+
+            if candidateCarriesClosed || parentHoldsTombstone {
                 if sessions[parentKey] == nil {
                     var parent = SessionSnapshot(startTime: candidate.session.startTime)
                     parent.source = source
@@ -2751,30 +2779,10 @@ final class AppState {
                 continue
             }
 
-            // Idle orphan: drop the card (do not fold as running just because a shared
-            // Cursor IDE `_ppid` is still alive). Still promote a parent tombstone so
-            // late merged PreToolUse cannot revive after AfterAgentResponse→idle.
-            if candidate.session.status == .idle,
-               sessions[parentKey]?.subagents[childId] == nil {
-                if sessions[parentKey] == nil {
-                    var parent = SessionSnapshot(startTime: candidate.session.startTime)
-                    parent.source = source
-                    parent.cwd = candidate.session.cwd
-                    parent.model = candidate.session.model
-                    parent.termApp = candidate.session.termApp
-                    parent.termBundleId = candidate.session.termBundleId
-                    parent.transcriptPath = candidate.session.transcriptPath
-                    parent.providerSessionId = parentId
-                    parent.status = .idle
-                    parent.lastActivity = candidate.session.lastActivity
-                    sessions[parentKey] = parent
-                }
-                promoteCursorClosedIds(
-                    onto: parentKey,
-                    childId: childId,
-                    candidateSessionId: candidate.sessionId,
-                    childClosed: childClosed
-                )
+            // Idle orphan: always drop — never overwrite a live merged Task slot
+            // with an AfterAgentResponse→idle discovery card. Tombstones were
+            // already handled above; plain idle must not invent parents either.
+            if candidate.session.status == .idle {
                 if sessions[candidate.sessionId] != nil {
                     removeSession(candidate.sessionId)
                     didMutate = true
@@ -2866,14 +2874,73 @@ final class AppState {
         status: AgentStatus
     ) {
         guard let agentId else { return }
-        if sessions[sessionId]?.subagents[agentId] == nil {
-            sessions[sessionId]?.subagents[agentId] = SubagentState(
-                agentId: agentId,
-                agentType: "cursor-subagent"
-            )
+        guard var session = sessions[sessionId] else { return }
+        var subagent = session.subagents[agentId]
+            ?? SubagentState(agentId: agentId, agentType: "cursor-subagent")
+        subagent.status = status
+        subagent.lastActivity = Date()
+        session.subagents[agentId] = subagent
+        sessions[sessionId] = session
+    }
+
+    /// After Permission/Question UI resolves for a possibly folded Task.
+    /// With `agent_id`, never idle the parent — even if the subagent slot was
+    /// already removed (Stop race). Uses local copies to avoid exclusivity traps
+    /// when mutating nested `sessions[id].subagents[id]` fields.
+    private func resolveMergedSubagentAfterUI(
+        sessionId: String,
+        agentId: String?,
+        subagentStatus: AgentStatus,
+        keepSubagentTool: String?,
+        idleParentWhenNoAgent: Bool
+    ) {
+        if let agentId {
+            guard var session = sessions[sessionId] else { return }
+            if var subagent = session.subagents[agentId] {
+                subagent.status = subagentStatus
+                if subagentStatus == .processing {
+                    subagent.currentTool = nil
+                    subagent.toolDescription = nil
+                } else if let keepSubagentTool {
+                    subagent.currentTool = keepSubagentTool
+                }
+                session.subagents[agentId] = subagent
+            }
+            let hasNonIdleSubagents = session.subagents.values.contains { $0.status != .idle }
+            if hasNonIdleSubagents {
+                let agentType = session.subagents[agentId]?.agentType ?? "cursor-subagent"
+                session.status = .running
+                session.currentTool = "Agent"
+                if session.toolDescription == nil {
+                    session.toolDescription = agentType
+                }
+            } else {
+                session.status = .processing
+                session.currentTool = nil
+                session.toolDescription = nil
+            }
+            sessions[sessionId] = session
+            return
         }
-        sessions[sessionId]?.subagents[agentId]?.status = status
-        sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
+
+        if idleParentWhenNoAgent {
+            sessions[sessionId]?.status = .idle
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+        } else {
+            sessions[sessionId]?.status = .processing
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+        }
+    }
+
+    /// Suppress Permission/Question UI for Stop'd Tasks: merged `agent_id` tombstones
+    /// or separate-mode self-tombstones (`closedSubagentIds` contains the card id).
+    private func shouldSuppressClosedSubagentUI(sessionId: String, agentId: String?) -> Bool {
+        let closed = sessions[sessionId]?.closedSubagentIds ?? []
+        if let agentId, closed.contains(agentId) { return true }
+        if agentId == nil, closed.contains(sessionId) { return true }
+        return false
     }
 
     /// Parent/child ids when this card's transcript belongs to another Cursor chat.

@@ -216,10 +216,13 @@ final class CursorSessionFoldingTests: XCTestCase {
     }
 
     func testSeparateCursorStopSelfTombstonesSessionId() throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
         let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
         var child = SessionSnapshot()
         child.source = "cursor"
         child.status = .running
+        child.transcriptPath = transcriptPath
         child.cliPid = 12_345
         child.cliStartTime = Date(timeIntervalSince1970: 1_700_000_000)
         var sessions = [childId: child]
@@ -236,6 +239,31 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(sessions[childId]?.closedSubagentIds, [childId])
         XCTAssertNil(sessions[childId]?.cliPid)
         XCTAssertNil(sessions[childId]?.cliStartTime)
+    }
+
+    func testParentCursorStopDoesNotSelfTombstoneOrClearCliPid() throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.transcriptPath = transcriptPath
+        parent.cliPid = 98_765
+        parent.cliStartTime = Date(timeIntervalSince1970: 1_700_000_000)
+        var sessions = [parentId: parent]
+
+        let stopData = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "stop",
+            "session_id": parentId,
+            "_source": "cursor",
+        ] as [String: Any])
+        let stopEvent = try XCTUnwrap(HookEvent(from: stopData))
+        _ = reduceEvent(sessions: &sessions, event: stopEvent, maxHistory: 10)
+
+        XCTAssertEqual(sessions[parentId]?.status, .idle)
+        XCTAssertTrue(sessions[parentId]?.closedSubagentIds.isEmpty == true)
+        XCTAssertEqual(sessions[parentId]?.cliPid, 98_765)
+        XCTAssertEqual(sessions[parentId]?.cliStartTime, Date(timeIntervalSince1970: 1_700_000_000))
     }
 
     func testParentAfterAgentResponseKeepsActiveWhileFoldedTaskRunning() throws {

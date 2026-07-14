@@ -959,10 +959,16 @@ public func reduceEvent(
         } == true
         // Separate-mode Cursor Tasks have no agent_id, so merge later must see
         // this id as closed — otherwise a still-live IDE `_ppid` resuscitates them.
-        // Skip when this is a parent chat that still has folded Tasks running.
+        // Only self-tombstone foldable Task cards (transcript parent ≠ session id),
+        // never the parent chat — that would suppress late Permission UI and wipe
+        // the IDE `_ppid` monitor after a normal turn Stop.
         if !hasActiveSubagents,
            let source = sessions[sessionId]?.source,
-           source == "cursor" || source == "cursor-cli" {
+           source == "cursor" || source == "cursor-cli",
+           CursorSessionFolding.foldTarget(
+               childSessionId: sessionId,
+               transcriptPath: sessions[sessionId]?.transcriptPath
+           ) != nil {
             sessions[sessionId]?.closedSubagentIds.insert(sessionId)
             // Drop process identity so a still-open IDE `_ppid` does not look like
             // a live Task after Stop when the card is later considered for merge.

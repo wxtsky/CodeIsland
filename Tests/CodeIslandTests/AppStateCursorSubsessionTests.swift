@@ -397,7 +397,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .running)
     }
 
-    func testMergeDropsIdleChildAndPromotesTombstoneOntoParent() {
+    func testMergeDropsIdleChildWithoutInventingTombstoneParent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
         defer {
@@ -421,11 +421,8 @@ final class AppStateCursorSubsessionTests: XCTestCase {
 
         XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
         XCTAssertNil(appState.sessions[childId])
-        XCTAssertNotNil(appState.sessions[parentId])
-        XCTAssertTrue(appState.sessions[parentId]?.subagents.isEmpty == true)
-        XCTAssertEqual(appState.sessions[parentId]?.closedSubagentIds, [childId])
-        XCTAssertEqual(appState.sessions[parentId]?.status, .idle)
-        XCTAssertEqual(appState.sessions[parentId]?.transcriptPath, transcriptPath)
+        // Plain idle (AfterAgentResponse) must not synthesize a ghost parent / tombstone.
+        XCTAssertNil(appState.sessions[parentId])
     }
 
     func testStoppedChildWithoutParentKeepsClosedIdsOnSynthesizedParent() {
@@ -495,8 +492,40 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
         XCTAssertNil(appState.sessions[childId])
         XCTAssertTrue(appState.sessions[parentId]?.subagents.isEmpty == true)
-        XCTAssertEqual(appState.sessions[parentId]?.closedSubagentIds, [childId])
+        XCTAssertTrue(appState.sessions[parentId]?.closedSubagentIds.isEmpty == true)
         XCTAssertEqual(appState.sessions[parentId]?.status, .running)
+    }
+
+    func testMergeIdleChildWithOwnTombstonePromotesOntoParent() {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+
+        let appState = AppState()
+        var child = SessionSnapshot()
+        child.source = "cursor"
+        child.status = .idle
+        child.transcriptPath = transcriptPath
+        child.closedSubagentIds = [childId]
+        appState.sessions[childId] = child
+
+        XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
+        XCTAssertNil(appState.sessions[childId])
+        XCTAssertNotNil(appState.sessions[parentId])
+        XCTAssertTrue(appState.sessions[parentId]?.subagents.isEmpty == true)
+        XCTAssertEqual(appState.sessions[parentId]?.closedSubagentIds, [childId])
+        XCTAssertEqual(appState.sessions[parentId]?.status, .idle)
+        XCTAssertEqual(appState.sessions[parentId]?.transcriptPath, transcriptPath)
     }
 
     func testMergeDoesNotResurrectIdleLiveChildAfterSeparateStop() {
@@ -707,18 +736,169 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         ] as [String: Any])
         let event = try XCTUnwrap(HookEvent(from: data))
 
-        let response = await withCheckedContinuation { continuation in
-            appState.handlePermissionRequest(event, continuation: continuation)
-            XCTAssertEqual(appState.sessions[parentId]?.status, .waitingApproval)
-            XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .waitingApproval)
-            XCTAssertEqual(appState.permissionQueue.count, 1)
-            appState.denyPermission()
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
         }
+
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+        XCTAssertEqual(appState.sessions[parentId]?.status, .waitingApproval)
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .waitingApproval)
+
+        appState.handleBuddyControlCommand(.denyCurrentPermission)
+        let response = await responseTask.value
 
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response) as? [String: Any])
         let hook = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
         let decision = try XCTUnwrap(hook["decision"] as? [String: Any])
         XCTAssertEqual(decision["behavior"] as? String, "deny")
         XCTAssertTrue(appState.permissionQueue.isEmpty)
+        // Denying a folded Task must not idle the parent chat.
+        XCTAssertEqual(appState.sessions[parentId]?.status, .running)
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .processing)
+        XCTAssertEqual(appState.sessions[parentId]?.currentTool, "Agent")
+    }
+
+    func testMergeDoesNotOverwriteLiveSubagentWithIdleOrphan() {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.providerSessionId = parentId
+        parent.transcriptPath = transcriptPath
+        var live = SubagentState(agentId: childId, agentType: "cursor-subagent")
+        live.status = .running
+        live.currentTool = "Read"
+        parent.subagents[childId] = live
+        appState.sessions[parentId] = parent
+
+        var orphan = SessionSnapshot()
+        orphan.source = "cursor"
+        orphan.status = .idle
+        orphan.transcriptPath = transcriptPath
+        appState.sessions[childId] = orphan
+
+        XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
+        XCTAssertNil(appState.sessions[childId])
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .running)
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.currentTool, "Read")
+    }
+
+    func testDenyPermissionWithAgentIdButMissingSubagentDoesNotIdleParent() async throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        appState.sessions[parentId] = parent
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PermissionRequest",
+            "session_id": parentId,
+            "_source": "cursor",
+            "agent_id": childId,
+            "tool_name": "Bash",
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+
+        // Simulate Stop removing the Task between enqueue and deny.
+        appState.sessions[parentId]?.subagents.removeValue(forKey: childId)
+        appState.sessions[parentId]?.closedSubagentIds.insert(childId)
+
+        appState.handleBuddyControlCommand(.denyCurrentPermission)
+        _ = await responseTask.value
+
+        XCTAssertTrue(appState.permissionQueue.isEmpty)
+        XCTAssertNotEqual(appState.sessions[parentId]?.status, .idle)
+        XCTAssertEqual(appState.sessions[parentId]?.status, .processing)
+    }
+
+    func testAnswerFoldedQuestionClearsSubagentWaitingQuestion() async throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        appState.sessions[parentId] = parent
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "Notification",
+            "session_id": parentId,
+            "_source": "cursor",
+            "agent_id": childId,
+            "question": "Ship it?",
+            "options": ["Yes", "No"],
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleQuestion(event, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .waitingQuestion)
+
+        appState.answerQuestion("Yes")
+        _ = await responseTask.value
+
+        XCTAssertTrue(appState.questionQueue.isEmpty)
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.status, .running)
+        XCTAssertEqual(appState.sessions[parentId]?.status, .running)
+        XCTAssertEqual(appState.sessions[parentId]?.currentTool, "Agent")
+    }
+
+    func testSeparateSelfTombstoneDeniesPermissionWithoutAgentId() async throws {
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let appState = AppState()
+        var child = SessionSnapshot()
+        child.source = "cursor"
+        child.status = .idle
+        child.closedSubagentIds = [childId]
+        appState.sessions[childId] = child
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PermissionRequest",
+            "session_id": childId,
+            "_source": "cursor",
+            "tool_name": "Bash",
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        let response = await withCheckedContinuation { continuation in
+            appState.handlePermissionRequest(event, continuation: continuation)
+        }
+
+        XCTAssertTrue(appState.permissionQueue.isEmpty)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response) as? [String: Any])
+        let hook = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
+        let decision = try XCTUnwrap(hook["decision"] as? [String: Any])
+        XCTAssertEqual(decision["behavior"] as? String, "deny")
     }
 }
