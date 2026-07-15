@@ -1178,6 +1178,19 @@ private struct ApprovalBar: View {
 
 // MARK: - Question Bar (below notch, auto-expanded)
 
+func makeQuestionBarFreeTextAnswer(
+    question: String,
+    text: String
+) -> AskUserQuestionAnswer? {
+    guard !text.isEmpty else { return nil }
+    return AskUserQuestionAnswer(
+        question: question,
+        answer: text,
+        selectedOptions: [],
+        customInput: text
+    )
+}
+
 private struct QuestionBar: View {
     let question: String
     let options: [String]?
@@ -1189,7 +1202,7 @@ private struct QuestionBar: View {
     let queuePosition: Int
     let queueTotal: Int
     let onAnswer: (String) -> Void
-    let onAnswerMulti: ([(question: String, answer: String)]) -> Void
+    let onAnswerMulti: ([AskUserQuestionAnswer]) -> Void
     let onSkip: () -> Void
 
     @State private var textInput = ""
@@ -1198,7 +1211,7 @@ private struct QuestionBar: View {
 
     // Multi-question wizard state
     @State private var currentQuestionIndex: Int = 0
-    @State private var collectedAnswers: [(question: String, answer: String)] = []
+    @State private var collectedAnswers: [AskUserQuestionAnswer] = []
     @State private var selectedIndices: Set<Int> = []
     @State private var showOtherInput: Bool = false
     @State private var otherText: String = ""
@@ -1303,7 +1316,7 @@ private struct QuestionBar: View {
                                   isSelected: selectedIndex == idx, accent: cyan) {
                             selectedIndex = idx
                             showOtherInput = false
-                            advanceWithAnswer(option)
+                            advanceWithAnswer(option, selectedOptions: [option])
                         }
                     }
                 }
@@ -1324,7 +1337,7 @@ private struct QuestionBar: View {
                             .focused($otherFocused)
                             .onSubmit {
                                 if !item.multiSelect && !otherText.isEmpty {
-                                    advanceWithAnswer(otherText)
+                                    advanceWithAnswer(otherText, customInput: otherText)
                                 }
                             }
                     }
@@ -1352,9 +1365,7 @@ private struct QuestionBar: View {
                     .font(.system(size: 10.5))
                     .foregroundStyle(.white)
                     .focused($isFocused)
-                    .onSubmit {
-                        if !textInput.isEmpty { advanceWithAnswer(textInput) }
-                    }
+                    .onSubmit(submitFreeText)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -1385,7 +1396,15 @@ private struct QuestionBar: View {
                 border: Color.white.opacity(0.12),
                 action: onSkip
             )
-            if item.multiSelect {
+            if item.payload.options?.isEmpty != false {
+                PixelButton(
+                    label: L10n.shared["submit"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: submitFreeText
+                )
+            } else if item.multiSelect {
                 PixelButton(
                     label: L10n.shared["confirm"],
                     fg: .white.opacity(0.95),
@@ -1393,21 +1412,13 @@ private struct QuestionBar: View {
                     border: Color(red: 0.28, green: 0.62, blue: 0.32),
                     action: confirmMultiSelect
                 )
-            } else if item.payload.options == nil || item.payload.options?.isEmpty == true {
-                PixelButton(
-                    label: L10n.shared["submit"],
-                    fg: .white.opacity(0.95),
-                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: { if !textInput.isEmpty { advanceWithAnswer(textInput) } }
-                )
             } else if showOtherInput && !item.multiSelect {
                 PixelButton(
                     label: L10n.shared["submit"],
                     fg: .white.opacity(0.95),
                     bg: Color(red: 0.16, green: 0.38, blue: 0.18),
                     border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: { if !otherText.isEmpty { advanceWithAnswer(otherText) } }
+                    action: { if !otherText.isEmpty { advanceWithAnswer(otherText, customInput: otherText) } }
                 )
             }
         }
@@ -1435,9 +1446,31 @@ private struct QuestionBar: View {
 
     // MARK: - Navigation
 
-    private func advanceWithAnswer(_ answer: String) {
+    private func submitFreeText() {
+        guard let item = currentItem,
+              let answer = makeQuestionBarFreeTextAnswer(
+                  question: item.payload.question,
+                  text: textInput
+              ) else { return }
+        advance(with: answer)
+    }
+
+    private func advanceWithAnswer(
+        _ answer: String,
+        selectedOptions: [String] = [],
+        customInput: String? = nil
+    ) {
         guard let item = currentItem else { return }
-        collectedAnswers.append((question: item.payload.question, answer: answer))
+        advance(with: AskUserQuestionAnswer(
+            question: item.payload.question,
+            answer: answer,
+            selectedOptions: selectedOptions,
+            customInput: customInput
+        ))
+    }
+
+    private func advance(with answer: AskUserQuestionAnswer) {
+        collectedAnswers.append(answer)
 
         if currentQuestionIndex + 1 < allQuestions.count {
             withAnimation(NotchAnimation.micro) {
@@ -1451,14 +1484,17 @@ private struct QuestionBar: View {
 
     private func confirmMultiSelect() {
         guard let item = currentItem, let opts = item.payload.options else { return }
-        var parts: [String] = selectedIndices.sorted().compactMap { idx in
+        let selectedOptions = selectedIndices.sorted().compactMap { idx in
             opts.indices.contains(idx) ? opts[idx] : nil
         }
-        if showOtherInput && !otherText.isEmpty {
-            parts.append(otherText)
-        }
+        let customInput = showOtherInput && !otherText.isEmpty ? otherText : nil
+        let parts = selectedOptions + (customInput.map { [$0] } ?? [])
         guard !parts.isEmpty else { return }
-        advanceWithAnswer(parts.joined(separator: ", "))
+        advanceWithAnswer(
+            parts.joined(separator: ", "),
+            selectedOptions: selectedOptions,
+            customInput: customInput
+        )
     }
 
     private func goBack() {

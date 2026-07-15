@@ -193,7 +193,11 @@ public struct HookEvent {
         // kernel emits {toolCallId, toolName, toolInput} on every tool event).
         // Parsing it keeps zcode permission requests correlated by id so they
         // are never mistaken for orphans and auto-resolved on session activity.
-        self.toolUseId = HookEvent.firstString(in: json, keys: ["tool_use_id", "toolUseId", "toolCallId"])
+        // `_pi_tool_call_id` is the pi/OMP extension's spelling of the same id.
+        self.toolUseId = HookEvent.firstString(
+            in: json,
+            keys: ["tool_use_id", "toolUseId", "toolCallId", "_pi_tool_call_id"]
+        )
             ?? HookEvent.firstString(inNestedDictionary: json, containerKeys: ["tool", "tool_use", "toolUse", "payload", "data"], keys: ["id", "tool_use_id", "toolUseId"])
         self.toolInput = HookEvent.firstDictionary(in: json, keys: ["tool_input", "toolInput", "input", "arguments", "args", "params"])
             ?? HookEvent.firstDictionary(inNestedDictionary: json, containerKeys: ["tool", "payload", "data"], keys: ["input", "tool_input", "toolInput", "arguments", "args", "params"])

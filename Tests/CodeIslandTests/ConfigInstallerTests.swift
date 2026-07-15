@@ -1443,7 +1443,7 @@ hooks:
 
         let contents = try String(contentsOf: ompExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v2"))
+        XCTAssertTrue(contents.contains("// version: v4"))
         XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
         XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
         XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))

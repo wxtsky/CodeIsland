@@ -23,6 +23,16 @@ final class HookEventToolUseIdTests: XCTestCase {
         XCTAssertEqual(event.toolUseId, "toolu_xyz789")
     }
 
+    func testParsesOMPToolCallId() throws {
+        let event = try decode([
+            "hook_event_name": "PermissionRequest",
+            "session_id": "pi-s1",
+            "tool_name": "AskUserQuestion",
+            "_pi_tool_call_id": "omp_call_123"
+        ])
+        XCTAssertEqual(event.toolUseId, "omp_call_123")
+    }
+
     func testParsesNestedToolUseIdInToolContainer() throws {
         let event = try decode([
             "hook_event_name": "PreToolUse",

@@ -60,6 +60,97 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(answers["你更喜欢我用哪种回答风格？"] as? String, "平衡")
     }
 
+    func testStructuredAnswerDetailsPreserveMultiSelectAndCustomInput() async throws {
+        let appState = AppState()
+        var multiQuestion = question(
+            header: "组合选择",
+            text: "请选择多个选项，也可以补充自定义内容",
+            options: ["Alpha, Beta", "Gamma"]
+        )
+        multiQuestion["multiSelect"] = true
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-structured",
+            questions: [multiQuestion],
+            piToolCallId: "omp-structured"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.answerQuestionMulti([
+            AskUserQuestionAnswer(
+                question: "请选择多个选项，也可以补充自定义内容",
+                answer: "Alpha, Beta, Gamma, custom, value",
+                selectedOptions: ["Alpha, Beta", "Gamma"],
+                customInput: "custom, value"
+            ),
+        ])
+
+        let responseData = await responseTask.value
+        let updatedInput = try extractUpdatedInput(from: responseData)
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: Any])
+        XCTAssertEqual(answers["请选择多个选项，也可以补充自定义内容"] as? String, "Alpha, Beta, Gamma, custom, value")
+
+        let details = try XCTUnwrap(updatedInput["_codeislandAnswerDetails"] as? [String: Any])
+        let answerDetails = try XCTUnwrap(details["请选择多个选项，也可以补充自定义内容"] as? [String: Any])
+        XCTAssertEqual(answerDetails["selectedOptions"] as? [String], ["Alpha, Beta", "Gamma"])
+        XCTAssertEqual(answerDetails["customInput"] as? String, "custom, value")
+    }
+
+    func testMultiSelectWithoutOptionsPreservesFreeTextAsCustomInput() async throws {
+        let appState = AppState()
+        var freeTextQuestion = question(
+            header: "补充说明",
+            text: "请填写补充内容",
+            options: []
+        )
+        freeTextQuestion["multiSelect"] = true
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-free-text-multi",
+            questions: [freeTextQuestion],
+            piToolCallId: "omp-free-text-multi"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.answerQuestionMulti([
+            AskUserQuestionAnswer(
+                question: "请填写补充内容",
+                answer: "自由输入",
+                selectedOptions: [],
+                customInput: "自由输入"
+            ),
+        ])
+
+        let responseData = await responseTask.value
+        let updatedInput = try extractUpdatedInput(from: responseData)
+        let details = try XCTUnwrap(updatedInput["_codeislandAnswerDetails"] as? [String: Any])
+        let answerDetails = try XCTUnwrap(details["请填写补充内容"] as? [String: Any])
+        XCTAssertNil(answerDetails["selectedOptions"])
+        XCTAssertEqual(answerDetails["customInput"] as? String, "自由输入")
+    }
+
+    func testQuestionBarFreeTextAnswerPreservesCustomInput() throws {
+        let answer = try XCTUnwrap(
+            makeQuestionBarFreeTextAnswer(question: "请填写补充内容", text: "自由输入")
+        )
+
+        XCTAssertEqual(answer.question, "请填写补充内容")
+        XCTAssertEqual(answer.answer, "自由输入")
+        XCTAssertEqual(answer.selectedOptions, [])
+        XCTAssertEqual(answer.customInput, "自由输入")
+        XCTAssertNil(makeQuestionBarFreeTextAnswer(question: "请填写补充内容", text: ""))
+    }
+
     // MARK: - Single question
 
     func testAskUserQuestionSingleQuestionWorks() async throws {
@@ -79,23 +170,31 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
         await Task.yield()
         appState.answerQuestionMulti([
-            (question: "你希望我主要使用哪种语言回复？", answer: "中文"),
+            AskUserQuestionAnswer(
+                question: "你希望我主要使用哪种语言回复？",
+                answer: "中文",
+                selectedOptions: ["中文"],
+                customInput: nil
+            ),
         ])
 
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
         XCTAssertEqual(answers["你希望我主要使用哪种语言回复？"] as? String, "中文")
+        let updatedInput = try extractUpdatedInput(from: responseData)
+        XCTAssertNil(updatedInput["_codeislandAnswerDetails"])
     }
 
     func testAskUserQuestionOpensQuestionCardWhenSmartSuppressSeesGhosttyFrontmost() async throws {
         UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
         let appState = AppState()
+        appState.questionTerminalFrontmostDetector = { _ in true }
         let sessionId = "s-smart-question"
         var session = SessionSnapshot()
         session.termApp = "Ghostty"
-        session.termBundleId = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        session.termBundleId = "com.mitchellh.ghostty"
         appState.sessions[sessionId] = session
-        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: sessionId), "test setup must model Smart Suppress considering the Ghostty-backed session frontmost")
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: sessionId, isTerminalFrontmost: { _ in true }), "test setup must model Smart Suppress considering the Ghostty-backed session frontmost")
 
         let event = try makeAskUserQuestionEvent(
             sessionId: sessionId,
@@ -127,7 +226,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
     func testAskUserQuestionQueueOpensNextQuestionCardWhenSmartSuppressSeesGhosttyFrontmost() async throws {
         UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
         let appState = AppState()
-        let frontmostBundleId = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        appState.questionTerminalFrontmostDetector = { _ in true }
+        let frontmostBundleId = "com.mitchellh.ghostty"
         let firstSessionId = "s-smart-question-first"
         let secondSessionId = "s-smart-question-second"
         var firstSession = SessionSnapshot()
@@ -138,8 +238,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
         secondSession.termBundleId = frontmostBundleId
         appState.sessions[firstSessionId] = firstSession
         appState.sessions[secondSessionId] = secondSession
-        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: firstSessionId), "test setup must model Smart Suppress considering the first Ghostty-backed session frontmost")
-        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: secondSessionId), "test setup must model Smart Suppress considering the second Ghostty-backed session frontmost")
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: firstSessionId, isTerminalFrontmost: { _ in true }), "test setup must model Smart Suppress considering the first Ghostty-backed session frontmost")
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: secondSessionId, isTerminalFrontmost: { _ in true }), "test setup must model Smart Suppress considering the second Ghostty-backed session frontmost")
 
         let firstEvent = try makeAskUserQuestionEvent(
             sessionId: firstSessionId,
@@ -183,6 +283,147 @@ final class AppStateQuestionFlowTests: XCTestCase {
             surfaceAfterPromotingSecond,
             .questionCard(sessionId: secondSessionId),
             "showNextPending must open the next AskUserQuestion card even when Smart Suppress considers that Ghostty-backed terminal frontmost; otherwise queued OMP questions remain hidden behind the compact badge."
+        )
+    }
+
+    func testPiAskUserQuestionStaysCollapsedWhenSmartSuppressSeesTerminalFrontmost() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        appState.questionTerminalFrontmostDetector = { _ in true }
+        let sessionId = "s-smart-pi-question"
+        var session = SessionSnapshot()
+        session.termApp = "Ghostty"
+        session.termBundleId = "com.mitchellh.ghostty"
+        appState.sessions[sessionId] = session
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: sessionId, isTerminalFrontmost: { _ in true }))
+
+        let event = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "继续吗", text: "需要用户确认下一步吗？", options: ["继续", "停止"])
+            ],
+            piToolCallId: "omp-smart-suppressed",
+            nativeAskRacing: true
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.questionQueue.count, 1)
+        let surfaceAfterRequest = appState.surface
+
+        appState.skipQuestion()
+        _ = await responseTask.value
+
+        XCTAssertEqual(
+            surfaceAfterRequest,
+            .collapsed,
+            "OMP v3 keeps its native ask dialog available in parallel, so Smart Suppress should not force the duplicate CodeIsland card open."
+        )
+    }
+
+    func testPiAndLegacyOmpAskWithoutNativeRaceMarkerOpensWhenTerminalIsFrontmost() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        appState.questionTerminalFrontmostDetector = { _ in true }
+        let sessionId = "s-smart-legacy-pi-question"
+        var session = SessionSnapshot()
+        session.termApp = "Ghostty"
+        session.termBundleId = "com.mitchellh.ghostty"
+        appState.sessions[sessionId] = session
+
+        let event = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "继续吗", text: "需要用户确认下一步吗？", options: ["继续", "停止"])
+            ],
+            piToolCallId: "legacy-pi-blocking-ask"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        let surfaceAfterRequest = appState.surface
+        appState.skipQuestion()
+        _ = await responseTask.value
+
+        XCTAssertEqual(
+            surfaceAfterRequest,
+            .questionCard(sessionId: sessionId),
+            "Pi and legacy OMP block their native prompt while CodeIsland waits, so an unmarked AskUserQuestion must force-open."
+        )
+    }
+
+    func testPiAskUserQuestionQueueKeepsNextCardCollapsedWhenTerminalIsFrontmost() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        appState.questionTerminalFrontmostDetector = { _ in true }
+        let frontmostBundleId = "com.mitchellh.ghostty"
+        let firstSessionId = "s-smart-pi-question-first"
+        let secondSessionId = "s-smart-pi-question-second"
+        var firstSession = SessionSnapshot()
+        firstSession.termApp = "Ghostty"
+        firstSession.termBundleId = frontmostBundleId
+        var secondSession = SessionSnapshot()
+        secondSession.termApp = "Ghostty"
+        secondSession.termBundleId = frontmostBundleId
+        appState.sessions[firstSessionId] = firstSession
+        appState.sessions[secondSessionId] = secondSession
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: firstSessionId, isTerminalFrontmost: { _ in true }))
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: secondSessionId, isTerminalFrontmost: { _ in true }))
+
+        let firstEvent = try makeAskUserQuestionEvent(
+            sessionId: firstSessionId,
+            questions: [
+                question(header: "第一步", text: "先处理第一个问题吗？", options: ["继续", "停止"])
+            ],
+            piToolCallId: "omp-smart-first",
+            nativeAskRacing: true
+        )
+        let secondEvent = try makeAskUserQuestionEvent(
+            sessionId: secondSessionId,
+            questions: [
+                question(header: "第二步", text: "现在处理第二个问题吗？", options: ["继续", "停止"])
+            ],
+            piToolCallId: "omp-smart-second",
+            nativeAskRacing: true
+        )
+
+        let firstResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(firstEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        let secondResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(secondEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        appState.skipQuestion()
+        _ = await firstResponseTask.value
+        await Task.yield()
+        let queueCountAfterPromotingSecond = appState.questionQueue.count
+        let surfaceAfterPromotingSecond = appState.surface
+
+        appState.skipQuestion()
+        _ = await secondResponseTask.value
+
+        XCTAssertEqual(queueCountAfterPromotingSecond, 1)
+        XCTAssertEqual(
+            surfaceAfterPromotingSecond,
+            .collapsed,
+            "Queued OMP questions should keep honoring Smart Suppress after promotion because the native terminal dialog remains usable."
         )
     }
 
@@ -562,7 +803,13 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeAskUserQuestionEvent(sessionId: String, questions: [[String: Any]], source: String? = nil) throws -> HookEvent {
+    private func makeAskUserQuestionEvent(
+        sessionId: String,
+        questions: [[String: Any]],
+        source: String? = nil,
+        piToolCallId: String? = nil,
+        nativeAskRacing: Bool = false
+    ) throws -> HookEvent {
         var payload: [String: Any] = [
             "hook_event_name": "PermissionRequest",
             "session_id": sessionId,
@@ -573,6 +820,13 @@ final class AppStateQuestionFlowTests: XCTestCase {
         ]
         if let source {
             payload["_source"] = source
+        }
+        if let piToolCallId {
+            payload["_source"] = "pi"
+            payload["_pi_tool_call_id"] = piToolCallId
+        }
+        if nativeAskRacing {
+            payload["_codeisland_native_ask_racing"] = true
         }
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {

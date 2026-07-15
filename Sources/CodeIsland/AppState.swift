@@ -124,6 +124,9 @@ final class AppState {
     private(set) var recentHookEvents: [DiagnosticHookEvent] = []
     @ObservationIgnored
     private let maxRecentHookEvents = 100
+    @ObservationIgnored
+    var questionTerminalFrontmostDetector: (SessionSnapshot) -> Bool =
+        TerminalVisibilityDetector.isTerminalFrontmostForSession
 
     func recordHookEvent(
         source: String?,
@@ -1050,10 +1053,18 @@ final class AppState {
     }
 
     private func shouldAutoOpenQuestionSurface(for event: HookEvent) -> Bool {
-        // AskUserQuestion holds the provider/CLI until its continuation resolves,
-        // so there is no parallel terminal prompt for Smart Suppress to defer to.
-        if event.toolName == "AskUserQuestion" { return true }
-        return shouldAutoOpenPendingSurface(for: event.sessionId ?? "default")
+        let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String)
+        let nativeAskIsRacing = event.rawJSON["_codeisland_native_ask_racing"] as? Bool == true
+        // Only OMP v3 explicitly guarantees that its native ask dialog races
+        // CodeIsland. Pi and legacy OMP block here, so hiding their card deadlocks.
+        if event.toolName == "AskUserQuestion",
+           (source != "pi" || !nativeAskIsRacing) {
+            return true
+        }
+        return shouldAutoOpenPendingSurface(
+            for: event.sessionId ?? "default",
+            isTerminalFrontmost: questionTerminalFrontmostDetector
+        )
     }
 
     private func showCompletion(_ sessionId: String) {
@@ -2057,6 +2068,7 @@ final class AppState {
         refreshDerivedState()
     }
 
+<<<<<<< HEAD
     func answerQuestionMulti(
         _ answers: [(question: String, answer: String)],
         expectedSessionId: String? = nil
@@ -2067,6 +2079,23 @@ final class AppState {
             }
             return
         }
+=======
+    func answerQuestionMulti(_ answers: [(question: String, answer: String)]) {
+        answerQuestionMulti(
+            answers.map {
+                AskUserQuestionAnswer(
+                    question: $0.question,
+                    answer: $0.answer,
+                    selectedOptions: [],
+                    customInput: nil
+                )
+            }
+        )
+    }
+
+    func answerQuestionMulti(_ answers: [AskUserQuestionAnswer]) {
+        guard !questionQueue.isEmpty else { return }
+>>>>>>> bca1665 (fix(omp): race native Ask UI with CodeIsland answering)
         // Codex app-server questions reply over the JSON-RPC client, not a hook.
         if questionQueue[index].isCodexAppServer {
             let pending = questionQueue.remove(at: index)
@@ -2091,11 +2120,23 @@ final class AppState {
         let responseData: Data
         if pending.isFromPermission {
             var answersDict: [String: String] = [:]
+            var answerDetails: [String: [String: Any]] = [:]
             if let askState = pending.askUserQuestionState {
                 // Match by position — wizard collects answers in the same order as items
                 for (index, item) in askState.items.enumerated() {
                     if index < answers.count {
-                        answersDict[item.answerKey] = answers[index].answer
+                        let submitted = answers[index]
+                        answersDict[item.answerKey] = submitted.answer
+                        var details: [String: Any] = [:]
+                        if !submitted.selectedOptions.isEmpty {
+                            details["selectedOptions"] = submitted.selectedOptions
+                        }
+                        if let customInput = submitted.customInput {
+                            details["customInput"] = customInput
+                        }
+                        if !details.isEmpty {
+                            answerDetails[item.answerKey] = details
+                        }
                     }
                 }
             } else {
@@ -2106,7 +2147,8 @@ final class AppState {
                 event: pending.event,
                 answers: answersDict,
                 answer: answers.first?.answer,
-                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]]
+                originalQuestions: pending.event.toolInput?["questions"] as? [[String: Any]],
+                answerDetails: answerDetails
             )
             let obj: [String: Any] = [
                 "hookSpecificOutput": [
@@ -2145,7 +2187,8 @@ final class AppState {
         event: HookEvent,
         answers: [String: String],
         answer: String?,
-        originalQuestions: [[String: Any]]?
+        originalQuestions: [[String: Any]]?,
+        answerDetails: [String: [String: Any]] = [:]
     ) -> [String: Any] {
         var updatedInput = event.toolInput ?? [:]
         // `questions` must always be present in updatedInput. Claude Code's
@@ -2161,6 +2204,11 @@ final class AppState {
         // "params must NOT have additional properties", so omit it there.
         if let answer, !Self.isQoderEvent(event) {
             updatedInput["answer"] = answer
+        }
+        if !answerDetails.isEmpty,
+           SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) == "pi",
+           event.toolUseId != nil {
+            updatedInput["_codeislandAnswerDetails"] = answerDetails
         }
         return updatedInput
     }

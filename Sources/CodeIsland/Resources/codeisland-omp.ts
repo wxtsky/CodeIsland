@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v2
+// version: v4
 // OMP-compatible install
 
 /**
@@ -10,11 +10,25 @@
  */
 
 import { execFile, execFileSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { getuid } from "node:process";
-import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
+import type {
+  AgentToolContext,
+  AgentToolResult,
+} from "@oh-my-pi/pi-agent-core";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition,
+} from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
+import type {
+  AskToolDetails,
+  QuestionResult,
+} from "@oh-my-pi/pi-coding-agent/tools/ask";
+import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 
 // ── Socket / bridge constants ─────────────────────────────────────────────────
 
@@ -121,6 +135,12 @@ function sendToSocket(payload: object): Promise<boolean> {
   });
 }
 
+/** Result of a cancellable bridge call: the response promise plus a cancel handle. */
+interface CancellableBridge {
+  promise: Promise<Record<string, unknown> | null>;
+  cancel: () => void;
+}
+
 /**
  * Sends a JSON payload via the bridge binary and waits for CodeIsland's response.
  * Used exclusively for blocking permission/question requests.
@@ -133,34 +153,57 @@ function sendAndWaitResponse(
   payload: object,
   timeoutMs = 30_000,
 ): Promise<Record<string, unknown> | null> {
-  return new Promise((resolve) => {
-    if (!existsSync(BRIDGE_PATH)) {
-      resolve(null);
-      return;
+  return sendAndWaitResponseCancellable(payload, timeoutMs).promise;
+}
+
+/**
+ * Same as {@link sendAndWaitResponse} but exposes a `cancel()` that SIGKILLs
+ * the bridge child process so the caller can abort a pending request when
+ * the answer arrives from another source (e.g. the TUI dialog).
+ */
+function sendAndWaitResponseCancellable(
+  payload: object,
+  timeoutMs = 30_000,
+): CancellableBridge {
+  const { promise, resolve } = Promise.withResolvers<Record<string, unknown> | null>();
+
+  if (!existsSync(BRIDGE_PATH)) {
+    resolve(null);
+    return { promise, cancel: () => {} };
+  }
+
+  let child: ChildProcess | undefined;
+  try {
+    child = execFile(
+      BRIDGE_PATH,
+      [],
+      { timeout: timeoutMs, maxBuffer: 1_048_576 },
+      (error, stdout) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          resolve(null);
+        }
+      },
+    );
+    child.stdin!.write(JSON.stringify(payload));
+    child.stdin!.end();
+  } catch {
+    resolve(null);
+  }
+
+  const cancel = () => {
+    if (child && child.pid) {
+      try { child.kill("SIGKILL"); } catch { /* already dead */ }
     }
-    try {
-      const child = execFile(
-        BRIDGE_PATH,
-        [],
-        { timeout: timeoutMs, maxBuffer: 1_048_576 },
-        (error, stdout) => {
-          if (error) {
-            resolve(null);
-            return;
-          }
-          try {
-            resolve(JSON.parse(stdout));
-          } catch {
-            resolve(null);
-          }
-        },
-      );
-      child.stdin!.write(JSON.stringify(payload));
-      child.stdin!.end();
-    } catch {
-      resolve(null);
-    }
-  });
+    resolve(null);
+  };
+
+  return { promise, cancel };
 }
 
 // ── Event builders ────────────────────────────────────────────────────────────
@@ -220,6 +263,11 @@ function extractLastAssistantText(
 // ── Extension ─────────────────────────────────────────────────────────────────
 
 export default function codeislandExtension(pi: ExtensionAPI) {
+  const askToolRenderer = pi.pi.askToolRenderer;
+
+  class ToolAbortError extends Error {
+    override name = "ToolAbortError";
+  }
   /** TTY path detected once at startup. */
   const tty = detectTty();
 
@@ -247,106 +295,426 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   }
 
 
+  // ── Shadow "ask" tool (#244 v3: native rendering + parallel answering) ─────
+  //
+  // Registers a custom "ask" that races CodeIsland against OMP's own AskTool.
+  // Reusing AskTool keeps terminal rendering, navigation, timeout, speech, and
+  // future OMP behavior in one implementation. The first real answer wins.
+
+  interface RawQuestion {
+    id: string;
+    question: string;
+    header?: string;
+    options: { label: string; description?: string; preview?: string }[];
+    multi?: boolean;
+    recommended?: number;
+  }
+  type CompatibleQuestionResult = QuestionResult & { note?: string };
+  type CompatibleAskToolDetails = AskToolDetails & {
+    note?: string;
+    chatRedirect?: boolean;
+    questions?: string[];
+    results?: CompatibleQuestionResult[];
+  };
+
+  function isPlanModeEnabled(ctx: ExtensionContext): boolean {
+    const entries = ctx.sessionManager.getEntries();
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (entry?.type === "mode_change") return entry.mode === "plan";
+    }
+    return false;
+  }
+
+  function createNativeAskTool(ctx?: ExtensionContext) {
+    const session: ToolSession = {
+      cwd: ctx?.cwd ?? process.cwd(),
+      hasUI: ctx?.hasUI ?? true,
+      getSessionFile: () => ctx?.sessionManager.getSessionFile() ?? null,
+      getSessionSpawns: () => null,
+      settings: pi.pi.settings,
+      getPlanModeState: () => ({
+        enabled: ctx ? isPlanModeEnabled(ctx) : false,
+        planFilePath: "local://PLAN.md",
+      }),
+    };
+    return new pi.pi.AskTool(session);
+  }
+
+  function createNativeAskContext(
+    ctx: ExtensionContext,
+    onAbort: () => void,
+  ): AgentToolContext {
+    return {
+      sessionManager: ctx.sessionManager,
+      modelRegistry: ctx.modelRegistry,
+      model: ctx.model,
+      isIdle: () => ctx.isIdle(),
+      hasQueuedMessages: () => ctx.hasPendingMessages(),
+      abort: onAbort,
+      settings: pi.pi.settings,
+      ui: ctx.ui,
+      hasUI: ctx.hasUI,
+    };
+  }
+
   /**
-   * Forwards an `ask` tool call to CodeIsland as an AskUserQuestion and waits
-   * for the user's on-island answer (#244).
-   *
-   * @returns A block result carrying the answers when the user answered in
-   *          CodeIsland, or `null` when the question should fall through to
-   *          OMP's own TUI dialog (skipped, denied, or CodeIsland not running).
+   * CodeIsland deduplicates repeated question text with `_2`, `_3`… suffixes.
+   * Reproduce that keying so we can translate answers back to OMP question ids.
    */
-  async function forwardAskToCodeIsland(
-    event: { input: Record<string, unknown>; toolCallId: string },
-    ctx: { cwd: string },
-    sessionId: string,
-    sid: string,
-    tty: string | null,
-  ): Promise<{ block: true; reason: string } | null> {
-    const rawQuestions = Array.isArray(event.input.questions)
-      ? (event.input.questions as Array<Record<string, unknown>>)
-      : [];
-    if (rawQuestions.length === 0) return null;
-
-    // Map OMP's ask schema → Claude-style AskUserQuestion input.
-    const questions = rawQuestions.map((q) => {
-      const options = Array.isArray(q.options)
-        ? (q.options as Array<Record<string, unknown>>)
-            .map((o) => ({
-              label: typeof o.label === "string" ? o.label : "",
-              ...(typeof o.description === "string"
-                ? { description: o.description }
-                : {}),
-            }))
-            .filter((o) => o.label.length > 0)
-        : [];
-      return {
-        question: typeof q.question === "string" ? q.question : "Question",
-        ...(typeof q.id === "string" && q.id ? { header: q.id } : {}),
-        multiSelect: q.multi === true,
-        options,
-      };
-    });
-
-    // CodeIsland keys answers by question text, deduping repeats with `_2`,
-    // `_3`… suffixes — reproduce that here so we can translate back to ids.
-    const usedKeys = new Set<string>();
-    const answerKeys = questions.map(({ question }) => {
+  function computeAnswerKeys(questions: { question: string }[]): string[] {
+    const used: Record<string, true> = {};
+    return questions.map(({ question }) => {
       let key = question;
-      if (usedKeys.has(key)) {
+      if (used[key]) {
         let suffix = 2;
-        while (usedKeys.has(`${question}_${suffix}`)) suffix += 1;
+        while (used[`${question}_${suffix}`]) suffix += 1;
         key = `${question}_${suffix}`;
       }
-      usedKeys.add(key);
+      used[key] = true;
       return key;
     });
+  }
 
-    pendingPermissionSessions.add(sid);
-    let response: Record<string, unknown> | null = null;
-    try {
-      response = await sendAndWaitResponse(
+  /** Converts CodeIsland's answer map into typed question results. */
+  function islandAnswersToResults(
+    answers: Record<string, unknown>,
+    answerDetails: Record<string, unknown>,
+    answerKeys: string[],
+    questions: RawQuestion[],
+  ): CompatibleQuestionResult[] {
+    return questions.map((q, i) => {
+      const answerKey = answerKeys[i];
+      const value = answers[answerKey];
+      const optionLabels = q.options.map((o) => o.label);
+      const rawDetails = answerDetails[answerKey];
+      const details = rawDetails && typeof rawDetails === "object"
+        ? rawDetails as Record<string, unknown>
+        : undefined;
+      const detailedSelected = Array.isArray(details?.selectedOptions)
+        ? details.selectedOptions.map(String)
+        : undefined;
+      const detailedCustomInput = typeof details?.customInput === "string"
+        ? details.customInput
+        : undefined;
+      const hasStructuredDetails = detailedSelected !== undefined
+        || detailedCustomInput !== undefined;
+
+      let selectedOptions: string[] = [];
+      let customInput: string | undefined;
+      if (hasStructuredDetails) {
+        selectedOptions = detailedSelected ?? [];
+        customInput = detailedCustomInput;
+      } else if (Array.isArray(value)) {
+        const values = value.map(String);
+        selectedOptions = values.filter((candidate) => optionLabels.includes(candidate));
+        const customValues = values.filter((candidate) => !optionLabels.includes(candidate));
+        if (customValues.length > 0) customInput = customValues.join("\n");
+      } else if (typeof value === "string") {
+        if (optionLabels.includes(value) || q.multi) {
+          // Legacy CodeIsland versions flatten multi-select values into one string.
+          // Keep that value intact rather than guessing at comma boundaries.
+          selectedOptions = [value];
+        } else {
+          customInput = value;
+        }
+      }
+
+      return {
+        id: q.id,
+        question: q.question,
+        options: optionLabels,
+        multi: q.multi ?? false,
+        selectedOptions,
+        ...(customInput !== undefined ? { customInput } : {}),
+      };
+    });
+  }
+
+  /** Mirrors built-in AskTool.formatQuestionResult for CodeIsland answers. */
+  function formatQuestionResult(result: CompatibleQuestionResult): string {
+    const noteSuffix = result.note ? ` (note: ${result.note})` : "";
+    if (result.customInput !== undefined) {
+      return `${result.id}: "${result.customInput}"${noteSuffix}`;
+    }
+    if (result.selectedOptions.length > 0) {
+      const suffix = `${result.timedOut ? " (auto-selected after timeout)" : ""}${noteSuffix}`;
+      return result.multi
+        ? `${result.id}: [${result.selectedOptions.join(", ")}]${suffix}`
+        : `${result.id}: ${result.selectedOptions[0]}${suffix}`;
+    }
+    return `${result.id}: (cancelled)${noteSuffix}`;
+  }
+
+  /** Mirrors built-in AskTool.formatSingleQuestionResponse for CodeIsland answers. */
+  function formatSingleQuestionResponse(result: CompatibleQuestionResult): string {
+    const parts: string[] = [];
+    if (result.selectedOptions.length > 0) {
+      const selectedText = result.multi
+        ? `User selected: ${result.selectedOptions.join(", ")}`
+        : `User selected: ${result.selectedOptions[0]}`;
+      parts.push(result.timedOut ? `${selectedText} (auto-selected after timeout)` : selectedText);
+    }
+    if (result.customInput !== undefined) {
+      parts.push(
+        result.customInput.includes("\n")
+          ? `User provided custom input:\n${result.customInput.split("\n").map((l: string) => `  ${l}`).join("\n")}`
+          : `User provided custom input: ${result.customInput}`,
+      );
+    }
+    if (result.note) {
+      parts.push(
+        result.note.includes("\n")
+          ? `User added note:\n${result.note.split("\n").map((l: string) => `  ${l}`).join("\n")}`
+          : `User added note: ${result.note}`,
+      );
+    }
+    return parts.length > 0 ? parts.join("\n") : "User cancelled the selection";
+  }
+
+  /** Builds an AskTool-compatible result for answers returned by CodeIsland. */
+  function buildAskResult(
+    results: CompatibleQuestionResult[],
+  ): AgentToolResult<CompatibleAskToolDetails> {
+    if (results.length === 1) {
+      const r = results[0];
+      return {
+        content: [{ type: "text", text: formatSingleQuestionResponse(r) }],
+        details: {
+          question: r.question,
+          options: r.options,
+          multi: r.multi,
+          selectedOptions: r.selectedOptions,
+          ...(r.customInput !== undefined ? { customInput: r.customInput } : {}),
+          ...(r.note !== undefined ? { note: r.note } : {}),
+          ...(r.timedOut ? { timedOut: true } : {}),
+        },
+      };
+    }
+    return {
+      content: [{ type: "text", text: `User answers:\n${results.map(formatQuestionResult).join("\n")}` }],
+      details: { results },
+    };
+  }
+
+  /** Gate outcome: a winning source, a genuine failure, or user cancellation. */
+  type GateOutcome =
+    | { source: "island" | "tui"; result: AgentToolResult<CompatibleAskToolDetails> }
+    | { source: "error"; error: unknown }
+    | { source: "cancel" };
+
+  const reservedAskOptionLabels: Record<string, true> = {
+    "Other (type your own)": true,
+    "Chat about this": true,
+    "Next →": true,
+  };
+
+  // Keep the v3 input additions for OMP 16.3.x, whose native Ask schema does
+  // not yet expose header/preview even though its executor accepts the fields.
+  const askOptionParameters = pi.zod.object({
+    label: pi.zod.string(),
+    description: pi.zod.string().optional(),
+    preview: pi.zod.string().optional(),
+  }).refine(
+    (option) => reservedAskOptionLabels[option.label] !== true,
+    { message: "Option label collides with a reserved Ask UI action" },
+  );
+  const askParameters = pi.zod.object({
+    questions: pi.zod.array(
+      pi.zod.object({
+        id: pi.zod.string(),
+        question: pi.zod.string(),
+        header: pi.zod.string().optional(),
+        options: pi.zod.array(askOptionParameters),
+        multi: pi.zod.boolean().optional(),
+        recommended: pi.zod.number().optional(),
+      }),
+    ).min(1),
+  });
+
+  // Reuse the native AskTool's LLM-facing label and description so the shadow
+  // tool preserves OMP's behavioral guidance (default action, check existing
+  // info first, only ask on major tradeoffs, never hand-write "Other", etc.).
+  const nativeAskMetadata = createNativeAskTool();
+
+  const askToolDefinition: ToolDefinition<
+    typeof askParameters,
+    CompatibleAskToolDetails
+  > & {
+    concurrency: "exclusive";
+    mergeCallAndResult: boolean;
+    strict: true;
+    approval: "read";
+  } = {
+    name: "ask",
+    label: nativeAskMetadata.label,
+    description: nativeAskMetadata.description,
+    parameters: askParameters,
+    strict: true,
+    approval: "read",
+    concurrency: "exclusive",
+    mergeCallAndResult: askToolRenderer.mergeCallAndResult,
+    renderCall: askToolRenderer.renderCall,
+    renderResult: askToolRenderer.renderResult,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const sessionId = ctx.sessionManager.getSessionId();
+      const sid = `pi-${sessionId}`;
+      const questions = params.questions;
+
+      if (!ctx.hasUI) {
+        ctx.abort();
+        throw new ToolAbortError("Ask tool requires interactive mode");
+      }
+
+      const islandQuestions = questions.map((question) => ({
+        question: question.question,
+        ...(question.header ? { header: question.header } : {}),
+        multiSelect: question.multi ?? false,
+        options: question.options.map((option) => ({
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+      }));
+      const answerKeys = computeAnswerKeys(questions);
+
+      const tuiAbort = new AbortController();
+      const { promise: settled, resolve: settle } =
+        Promise.withResolvers<GateOutcome>();
+      let islandDone = false;
+      let tuiDone = false;
+      let islandFailed = false;
+      let islandError: unknown;
+      const settleWithoutAnswer = () => {
+        if (!islandDone || !tuiDone) return;
+        if (islandFailed) {
+          settle({ source: "error", error: islandError });
+        } else {
+          settle({ source: "cancel" });
+        }
+      };
+
+      const islandBridge = sendAndWaitResponseCancellable(
         base(sessionId, ctx.cwd, {
           hook_event_name: "PermissionRequest",
           tool_name: "AskUserQuestion",
-          tool_input: { questions },
-          _pi_tool_call_id: event.toolCallId,
+          tool_input: { questions: islandQuestions },
+          _pi_tool_call_id: toolCallId,
+          _codeisland_native_ask_racing: true,
         }, tty),
-        86_400_000, // waiting on a human — same 24h budget as PermissionRequest hooks
+        86_400_000,
       );
-    } finally {
-      pendingPermissionSessions.delete(sid);
-    }
 
-    const decision = (
-      response?.hookSpecificOutput as Record<string, unknown> | undefined
-    )?.decision as Record<string, unknown> | undefined;
-    if (decision?.behavior !== "allow") return null;
+      const handleExternalAbort = () => {
+        islandBridge.cancel();
+        tuiAbort.abort();
+        settle({ source: "cancel" });
+      };
+      if (signal?.aborted) {
+        islandBridge.cancel();
+        ctx.abort();
+        throw new ToolAbortError("Ask tool was cancelled by the user");
+      }
+      signal?.addEventListener("abort", handleExternalAbort, { once: true });
 
-    const updatedInput = decision.updatedInput as
-      | Record<string, unknown>
-      | undefined;
-    const answers = (updatedInput?.answers ?? {}) as Record<string, unknown>;
+      pendingPermissionSessions.add(sid);
 
-    const lines = rawQuestions.map((q, i) => {
-      const id = typeof q.id === "string" && q.id ? q.id : `q${i + 1}`;
-      const value = answers[answerKeys[i]];
-      const text = Array.isArray(value)
-        ? value.map(String).join(", ")
-        : typeof value === "string"
-          ? value
-          : "";
-      return `${id}: ${text || "(no answer)"}`;
-    });
+      const islandPromise = islandBridge.promise.then(
+        (response): CompatibleQuestionResult[] | null => {
+          const decision = (
+            response?.hookSpecificOutput as Record<string, unknown> | undefined
+          )?.decision as Record<string, unknown> | undefined;
+          if (decision?.behavior !== "allow") return null;
+          const updatedInput = decision.updatedInput as
+            | Record<string, unknown>
+            | undefined;
+          const answers = (updatedInput?.answers ?? {}) as Record<string, unknown>;
+          const answerDetails = (
+            updatedInput?._codeislandAnswerDetails ?? {}
+          ) as Record<string, unknown>;
+          return islandAnswersToResults(
+            answers,
+            answerDetails,
+            answerKeys,
+            questions,
+          );
+        },
+      );
 
-    return {
-      block: true,
-      reason:
-        "The user already answered these questions through the CodeIsland desktop app. " +
-        "Their answers:\n" +
-        lines.join("\n") +
-        "\nDo not ask again — proceed using these answers.",
-    };
-  }
+      const nativeAsk = createNativeAskTool(ctx);
+      const nativeContext = createNativeAskContext(
+        ctx,
+        // Native cancellation belongs to only one side of the race. The real
+        // agent is aborted below only after both answer sources have cancelled.
+        () => undefined,
+      );
+      const tuiPromise = nativeAsk.execute(
+        toolCallId,
+        params,
+        tuiAbort.signal,
+        onUpdate,
+        nativeContext,
+      ).catch((error: unknown): AgentToolResult<AskToolDetails> | null => {
+        if (
+          tuiAbort.signal.aborted
+          || (error instanceof Error && error.name === "ToolAbortError")
+        ) {
+          return null;
+        }
+        throw error;
+      });
+
+      islandPromise.then(
+        (results) => {
+          islandDone = true;
+          if (results && results.length > 0) {
+            tuiAbort.abort();
+            settle({ source: "island", result: buildAskResult(results) });
+          } else {
+            settleWithoutAnswer();
+          }
+        },
+        (error: unknown) => {
+          islandDone = true;
+          islandFailed = true;
+          islandError = error;
+          settleWithoutAnswer();
+        },
+      );
+
+      tuiPromise.then(
+        (result) => {
+          tuiDone = true;
+          if (result) {
+            islandBridge.cancel();
+            settle({ source: "tui", result });
+          } else {
+            settleWithoutAnswer();
+          }
+        },
+        (error: unknown) => {
+          tuiDone = true;
+          // Genuine native AskTool failure (not cancellation) — no point
+          // waiting for the island side; cancel it and propagate now.
+          islandBridge.cancel();
+          settle({ source: "error", error });
+        },
+      );
+
+      try {
+        const winner = await settled;
+        if (winner.source === "error") throw winner.error;
+        if (winner.source === "cancel") {
+          ctx.abort();
+          throw new ToolAbortError("Ask tool was cancelled by the user");
+        }
+        return winner.result;
+      } finally {
+        signal?.removeEventListener("abort", handleExternalAbort);
+        pendingPermissionSessions.delete(sid);
+      }
+    },
+  };
+  pi.registerTool(askToolDefinition);
 
   // ── Session lifecycle ──────────────────────────────────────────────────────
 
@@ -417,18 +785,6 @@ export default function codeislandExtension(pi: ExtensionAPI) {
     if (event.toolName === "edit" || event.toolName === "write") {
       const path = event.input.path as string | undefined;
       if (path) toolInput.file_path = path;
-    }
-
-    // `ask` tool → mirror the question into CodeIsland's question UI (#244).
-    // tool_call fires BEFORE the TUI dialog opens and OMP awaits this handler,
-    // so we can hold the tool, let the user answer on the island (or watch/
-    // phone), and feed the answers back by blocking the tool with a result
-    // message. Skip/deny or an unreachable CodeIsland falls through to OMP's
-    // own TUI dialog — graceful degradation, never a lost question.
-    if (event.toolName === "ask") {
-      const answered = await forwardAskToCodeIsland(event, ctx, sessionId, sid, tty);
-      if (answered) return answered;
-      return undefined;
     }
 
     // Dangerous bash → send blocking PermissionRequest via bridge.

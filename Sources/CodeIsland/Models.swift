@@ -14,6 +14,13 @@ struct AskUserQuestionItem {
     let multiSelect: Bool
 }
 
+struct AskUserQuestionAnswer {
+    let question: String
+    let answer: String
+    let selectedOptions: [String]
+    let customInput: String?
+}
+
 struct AskUserQuestionState {
     let items: [AskUserQuestionItem]
     var answers: [String: String]
