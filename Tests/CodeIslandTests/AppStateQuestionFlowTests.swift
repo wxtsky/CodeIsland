@@ -427,6 +427,71 @@ final class AppStateQuestionFlowTests: XCTestCase {
         )
     }
 
+    func testPromotedOmpAskCollapsesVisibleNonOmpQuestionCardWhenSmartSuppressed() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        appState.questionTerminalFrontmostDetector = { _ in true }
+        let legacySessionId = "s-smart-legacy-first"
+        let ompSessionId = "s-smart-omp-second"
+        var legacySession = SessionSnapshot()
+        legacySession.termApp = "Ghostty"
+        legacySession.termBundleId = "com.mitchellh.ghostty"
+        var ompSession = SessionSnapshot()
+        ompSession.termApp = "Ghostty"
+        ompSession.termBundleId = "com.mitchellh.ghostty"
+        appState.sessions[legacySessionId] = legacySession
+        appState.sessions[ompSessionId] = ompSession
+
+        // Legacy Pi ask (no race marker) — must force-open.
+        let legacyEvent = try makeAskUserQuestionEvent(
+            sessionId: legacySessionId,
+            questions: [
+                question(header: "旧版", text: "旧版 OMP 会阻塞吗？", options: ["是", "否"])
+            ],
+            piToolCallId: "legacy-pi-1"
+        )
+        // OMP v4 ask (with race marker) — should be Smart Suppressed.
+        let ompEvent = try makeAskUserQuestionEvent(
+            sessionId: ompSessionId,
+            questions: [
+                question(header: "新版", text: "新版 OMP 是否并行？", options: ["是", "否"])
+            ],
+            piToolCallId: "omp-racing-2",
+            nativeAskRacing: true
+        )
+
+        let legacyResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(legacyEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        // Legacy question must have forced the card open.
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: legacySessionId))
+
+        let ompResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(ompEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        // Skip the legacy question — the OMP question should be promoted.
+        appState.skipQuestion()
+        _ = await legacyResponseTask.value
+        await Task.yield()
+        let surfaceAfterPromotion = appState.surface
+
+        appState.skipQuestion()
+        _ = await ompResponseTask.value
+
+        XCTAssertEqual(
+            surfaceAfterPromotion,
+            .collapsed,
+            "A Smart Suppress decision must replace the previous question-card surface when a queued OMP ask is promoted."
+        )
+    }
+
     // MARK: - Skip returns deny
 
     func testSkipAskUserQuestionReturnsDeny() async throws {

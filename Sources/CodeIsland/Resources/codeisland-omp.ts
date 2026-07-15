@@ -580,18 +580,6 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       const tuiAbort = new AbortController();
       const { promise: settled, resolve: settle } =
         Promise.withResolvers<GateOutcome>();
-      let islandDone = false;
-      let tuiDone = false;
-      let islandFailed = false;
-      let islandError: unknown;
-      const settleWithoutAnswer = () => {
-        if (!islandDone || !tuiDone) return;
-        if (islandFailed) {
-          settle({ source: "error", error: islandError });
-        } else {
-          settle({ source: "cancel" });
-        }
-      };
 
       const islandBridge = sendAndWaitResponseCancellable(
         base(sessionId, ctx.cwd, {
@@ -641,12 +629,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       );
 
       const nativeAsk = createNativeAskTool(ctx);
-      const nativeContext = createNativeAskContext(
-        ctx,
-        // Native cancellation belongs to only one side of the race. The real
-        // agent is aborted below only after both answer sources have cancelled.
-        () => undefined,
-      );
+      const nativeContext = createNativeAskContext(ctx, () => undefined);
       const tuiPromise = nativeAsk.execute(
         toolCallId,
         params,
@@ -663,38 +646,40 @@ export default function codeislandExtension(pi: ExtensionAPI) {
         throw error;
       });
 
+      // Any side finishing (answer, skip, cancel, or failure) immediately
+      // cancels the other and settles. settle() is a no-op after the first
+      // call (Promise resolver semantics), so concurrent completions are safe.
       islandPromise.then(
         (results) => {
-          islandDone = true;
           if (results && results.length > 0) {
             tuiAbort.abort();
             settle({ source: "island", result: buildAskResult(results) });
           } else {
-            settleWithoutAnswer();
+            // Island skipped/denied — cancel the TUI dialog immediately.
+            tuiAbort.abort();
+            settle({ source: "cancel" });
           }
         },
         (error: unknown) => {
-          islandDone = true;
-          islandFailed = true;
-          islandError = error;
-          settleWithoutAnswer();
+          tuiAbort.abort();
+          settle({ source: "error", error });
         },
       );
 
       tuiPromise.then(
         (result) => {
-          tuiDone = true;
           if (result) {
             islandBridge.cancel();
             settle({ source: "tui", result });
           } else {
-            settleWithoutAnswer();
+            // TUI cancelled — cancel the island bridge immediately so we do
+            // not wait 24h for a card the user may not be able to reach
+            // (e.g. Smart Suppress collapsed it).
+            islandBridge.cancel();
+            settle({ source: "cancel" });
           }
         },
         (error: unknown) => {
-          tuiDone = true;
-          // Genuine native AskTool failure (not cancellation) — no point
-          // waiting for the island side; cancel it and propagate now.
           islandBridge.cancel();
           settle({ source: "error", error });
         },

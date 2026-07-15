@@ -2338,6 +2338,12 @@ final class AppState {
             activeSessionId = sid
             if shouldAutoOpenQuestionSurface(for: next.event) {
                 surface = .questionCard(sessionId: sid)
+            } else if case .questionCard = surface {
+                // Smart Suppress wants this card collapsed (e.g. an OMP ask
+                // whose terminal dialog is racing). Fold an inherited
+                // question-card surface so the promoted card does not render
+                // expanded on top of the previous question's surface.
+                surface = .collapsed
             }
             return true
         } else if !completionQueue.isEmpty {
