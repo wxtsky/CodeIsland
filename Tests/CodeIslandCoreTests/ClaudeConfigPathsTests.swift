@@ -1,0 +1,89 @@
+import XCTest
+@testable import CodeIslandCore
+
+final class ClaudeConfigPathsTests: XCTestCase {
+    private let home = "/Users/tester"
+
+    /// Nothing exists anywhere → the historical `~/.claude` default.
+    func testFallsBackToDotClaudeWhenNothingSet() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil, environment: nil, homeDir: home, fileExists: { _ in false })
+        XCTAssertEqual(result, "/Users/tester/.claude")
+    }
+
+    /// The regression this resolver exists for: a user with a custom CLAUDE_CONFIG_DIR
+    /// was silently scanned at ~/.claude, which is empty, so no sessions ever appeared.
+    func testEnvironmentVariableWins() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil,
+            environment: "/Users/tester/.config/claude-code",
+            homeDir: home,
+            fileExists: { _ in false })
+        XCTAssertEqual(result, "/Users/tester/.config/claude-code")
+    }
+
+    /// The preference must outrank the environment — it is the only channel that
+    /// survives a Finder launch, where no shell environment is inherited.
+    func testPreferenceOutranksEnvironment() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: "/explicit/dir",
+            environment: "/env/dir",
+            homeDir: home,
+            fileExists: { _ in true })
+        XCTAssertEqual(result, "/explicit/dir")
+    }
+
+    /// With no preference and no environment (the Finder case), a populated
+    /// ~/.config/claude-code is auto-detected instead of defaulting to ~/.claude.
+    func testProbesXDGDirectoryWhenPopulated() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil, environment: nil, homeDir: home,
+            fileExists: { $0 == "/Users/tester/.config/claude-code/projects" })
+        XCTAssertEqual(result, "/Users/tester/.config/claude-code")
+    }
+
+    /// An empty ~/.config/claude-code (created by some other tool) must not shadow
+    /// a real ~/.claude.
+    func testEmptyXDGDirectoryDoesNotShadowDotClaude() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil, environment: nil, homeDir: home,
+            fileExists: { $0 == "/Users/tester/.config/claude-code" })
+        XCTAssertEqual(result, "/Users/tester/.claude")
+    }
+
+    func testEmptyAndWhitespaceValuesAreIgnored() {
+        XCTAssertNil(ClaudeConfigPaths.normalized("", homeDir: home))
+        XCTAssertNil(ClaudeConfigPaths.normalized("   ", homeDir: home))
+        XCTAssertNil(ClaudeConfigPaths.normalized(nil, homeDir: home))
+    }
+
+    func testTildeExpansionAndTrailingSlashes() {
+        XCTAssertEqual(ClaudeConfigPaths.normalized("~", homeDir: home), home)
+        XCTAssertEqual(
+            ClaudeConfigPaths.normalized("~/.config/claude-code", homeDir: home),
+            "/Users/tester/.config/claude-code")
+        XCTAssertEqual(ClaudeConfigPaths.normalized("/a/b///", homeDir: home), "/a/b")
+        XCTAssertEqual(ClaudeConfigPaths.normalized("  /a/b  ", homeDir: home), "/a/b")
+    }
+
+    /// CLAUDE_CONFIG_DIR may hold a colon-separated list; the first entry is the
+    /// writable config dir, matching Claude Code's own behavior.
+    func testColonSeparatedListTakesFirstEntry() {
+        XCTAssertEqual(
+            ClaudeConfigPaths.normalized("/first/dir:/second/dir", homeDir: home),
+            "/first/dir")
+    }
+
+    func testDisplayPathCollapsesHomePrefix() {
+        XCTAssertEqual(
+            ClaudeConfigPaths.displayPath("/Users/tester/.claude/settings.json", homeDir: home),
+            "~/.claude/settings.json")
+        XCTAssertEqual(
+            ClaudeConfigPaths.displayPath("/opt/elsewhere/settings.json", homeDir: home),
+            "/opt/elsewhere/settings.json")
+        // A different user's home that merely shares a prefix must not be collapsed.
+        XCTAssertEqual(
+            ClaudeConfigPaths.displayPath("/Users/tester2/.claude", homeDir: home),
+            "/Users/tester2/.claude")
+    }
+}
