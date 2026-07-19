@@ -49,11 +49,19 @@ public enum ClaudeConfigPaths {
             preference: pref,
             environment: env,
             homeDir: home,
-            fileExists: { FileManager.default.fileExists(atPath: $0) }
+            directoryExists: defaultDirectoryExists
         )
         cachedKey = key
         cachedValue = resolved
         return resolved
+    }
+
+    /// The real filesystem probe used by `configDir`. Exposed so the file-vs-directory
+    /// distinction is testable — `resolve` takes it injected, which abstracts it away.
+    static func defaultDirectoryExists(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+        return exists && isDir.boolValue
     }
 
     /// Canonical NFC form of a path, for comparing two paths for identity.
@@ -88,7 +96,7 @@ public enum ClaudeConfigPaths {
         preference: String?,
         environment: String?,
         homeDir: String,
-        fileExists: (String) -> Bool
+        directoryExists: (String) -> Bool
     ) -> String {
         if let pref = normalized(preference, homeDir: homeDir) { return pref }
         if let env = normalized(environment, homeDir: homeDir) { return env }
@@ -97,10 +105,10 @@ public enum ClaudeConfigPaths {
         // So a live ~/.claude must win over the XDG probe, or a stale ~/.config/claude-code
         // would silently repoint us away from the directory Claude Code actually reads.
         let dotClaude = homeDir + "/.claude"
-        if isLiveConfigDir(dotClaude, fileExists: fileExists) { return dotClaude }
+        if isLiveConfigDir(dotClaude, directoryExists: directoryExists) { return dotClaude }
 
         let xdg = homeDir + "/.config/claude-code"
-        if isLiveConfigDir(xdg, fileExists: fileExists) { return xdg }
+        if isLiveConfigDir(xdg, directoryExists: directoryExists) { return xdg }
 
         return dotClaude
     }
@@ -119,8 +127,10 @@ public enum ClaudeConfigPaths {
     /// creates that file, so treating it as evidence would let us manufacture the very
     /// signal we then read back — an empty `~/.claude` containing nothing but a
     /// CodeIsland-written `settings.json` would outrank the user's real config dir forever.
-    static func isLiveConfigDir(_ path: String, fileExists: (String) -> Bool) -> Bool {
-        fileExists(path + "/projects")
+    /// Note this asks whether `projects` is a DIRECTORY, not merely that the path
+    /// exists — a stray regular file of that name must not mark a config dir live.
+    static func isLiveConfigDir(_ path: String, directoryExists: (String) -> Bool) -> Bool {
+        directoryExists(path + "/projects")
     }
 
     /// Trims, expands `~`, and drops any trailing slash. Returns nil for empty input.

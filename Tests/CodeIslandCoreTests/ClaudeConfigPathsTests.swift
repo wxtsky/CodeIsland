@@ -7,7 +7,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
     /// Nothing exists anywhere → the historical `~/.claude` default.
     func testFallsBackToDotClaudeWhenNothingSet() {
         let result = ClaudeConfigPaths.resolve(
-            preference: nil, environment: nil, homeDir: home, fileExists: { _ in false })
+            preference: nil, environment: nil, homeDir: home, directoryExists: { _ in false })
         XCTAssertEqual(result, "/Users/tester/.claude")
     }
 
@@ -18,7 +18,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
             preference: nil,
             environment: "/Users/tester/.config/claude-code",
             homeDir: home,
-            fileExists: { _ in false })
+            directoryExists: { _ in false })
         XCTAssertEqual(result, "/Users/tester/.config/claude-code")
     }
 
@@ -29,7 +29,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
             preference: "/explicit/dir",
             environment: "/env/dir",
             homeDir: home,
-            fileExists: { _ in true })
+            directoryExists: { _ in true })
         XCTAssertEqual(result, "/explicit/dir")
     }
 
@@ -38,7 +38,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
     func testProbesXDGDirectoryWhenPopulated() {
         let result = ClaudeConfigPaths.resolve(
             preference: nil, environment: nil, homeDir: home,
-            fileExists: { $0 == "/Users/tester/.config/claude-code/projects" })
+            directoryExists: { $0 == "/Users/tester/.config/claude-code/projects" })
         XCTAssertEqual(result, "/Users/tester/.config/claude-code")
     }
 
@@ -47,7 +47,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
     func testEmptyXDGDirectoryDoesNotShadowDotClaude() {
         let result = ClaudeConfigPaths.resolve(
             preference: nil, environment: nil, homeDir: home,
-            fileExists: { $0 == "/Users/tester/.config/claude-code" })
+            directoryExists: { $0 == "/Users/tester/.config/claude-code" })
         XCTAssertEqual(result, "/Users/tester/.claude")
     }
 
@@ -57,7 +57,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
     func testLiveDotClaudeOutranksPopulatedXDGDirectory() {
         let result = ClaudeConfigPaths.resolve(
             preference: nil, environment: nil, homeDir: home,
-            fileExists: { $0 == "/Users/tester/.claude/projects"
+            directoryExists: { $0 == "/Users/tester/.claude/projects"
                        || $0 == "/Users/tester/.config/claude-code/projects" })
         XCTAssertEqual(result, "/Users/tester/.claude")
     }
@@ -67,7 +67,7 @@ final class ClaudeConfigPathsTests: XCTestCase {
     func testSettingsJsonAloneDoesNotMarkDirectoryLive() {
         let result = ClaudeConfigPaths.resolve(
             preference: nil, environment: nil, homeDir: home,
-            fileExists: { $0 == "/Users/tester/.claude/settings.json"
+            directoryExists: { $0 == "/Users/tester/.claude/settings.json"
                        || $0 == "/Users/tester/.config/claude-code/projects" })
         XCTAssertEqual(result, "/Users/tester/.config/claude-code")
     }
@@ -83,8 +83,31 @@ final class ClaudeConfigPathsTests: XCTestCase {
         // A bad preference must not win — resolution continues down the chain.
         let result = ClaudeConfigPaths.resolve(
             preference: "relative/typo", environment: nil, homeDir: home,
-            fileExists: { $0 == "/Users/tester/.config/claude-code/projects" })
+            directoryExists: { $0 == "/Users/tester/.config/claude-code/projects" })
         XCTAssertEqual(result, "/Users/tester/.config/claude-code")
+    }
+
+    /// A stray regular FILE named `projects` must not mark a config dir live. This
+    /// exercises the REAL filesystem probe against a real temp tree — asserting it via
+    /// the injected `directoryExists` would prove nothing, since the injection is
+    /// precisely what abstracts the file-vs-directory distinction away.
+    func testRegularFileNamedProjectsIsNotTreatedAsLive() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("ccp-" + UUID().uuidString)
+        let asDir = root.appendingPathComponent("dir")
+        let asFile = root.appendingPathComponent("file")
+        try fm.createDirectory(at: asDir.appendingPathComponent("projects"),
+                               withIntermediateDirectories: true)
+        try fm.createDirectory(at: asFile, withIntermediateDirectories: true)
+        try Data("not a directory".utf8)
+            .write(to: asFile.appendingPathComponent("projects"))
+        defer { try? fm.removeItem(at: root) }
+
+        XCTAssertTrue(ClaudeConfigPaths.isLiveConfigDir(
+            asDir.path, directoryExists: ClaudeConfigPaths.defaultDirectoryExists))
+        XCTAssertFalse(ClaudeConfigPaths.isLiveConfigDir(
+            asFile.path, directoryExists: ClaudeConfigPaths.defaultDirectoryExists),
+            "a regular file named projects must not mark the dir live")
     }
 
     func testEmptyAndWhitespaceValuesAreIgnored() {

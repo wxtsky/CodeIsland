@@ -105,30 +105,12 @@ def _normalize_event(name):
     return name
 
 
-def _claude_config_dir():
-    # Mirrors ClaudeConfigPaths / RemoteInstaller.claude_config_dir: $CLAUDE_CONFIG_DIR
-    # when usable, else whichever of ~/.claude or ~/.config/claude-code actually holds
-    # projects/ (preferring ~/.claude, which is Claude Code's own default).
-    home = os.path.expanduser("~")
-    env = (os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
-    if env:
-        env = os.path.expanduser(env).rstrip("/") or "/"
-        if env.startswith("/") and env != "/":
-            return env
-    dot_claude = os.path.join(home, ".claude")
-    if os.path.isdir(os.path.join(dot_claude, "projects")):
-        return dot_claude
-    xdg = os.path.join(home, ".config", "claude-code")
-    if os.path.isdir(os.path.join(xdg, "projects")):
-        return xdg
-    return dot_claude
-
-
 def _claude_jsonl_path(session_id, cwd):
     if not session_id or not cwd:
         return None
+    home = os.path.expanduser("~")
     project_dir = cwd.replace("/", "-").replace(".", "-")
-    path = os.path.join(_claude_config_dir(), "projects", project_dir, f"{session_id}.jsonl")
+    path = os.path.join(home, ".claude", "projects", project_dir, f"{session_id}.jsonl")
     return path if os.path.exists(path) else None
 
 

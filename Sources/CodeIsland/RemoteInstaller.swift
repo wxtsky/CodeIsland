@@ -144,7 +144,6 @@ import pathlib
 import shutil
 import os
 import re
-import unicodedata
 
 home = pathlib.Path.home()
 hook_path = home / ".codeisland" / "codeisland-remote-hook.py"
@@ -531,35 +530,8 @@ def _merge_traecli_hooks(contents, cmd):
         merged += "\\n"
     return merged
 
-def claude_config_dir():
-    # Mirrors ClaudeConfigPaths on the macOS side, including its input validation:
-    # $CLAUDE_CONFIG_DIR wins (only when usable), then a ~/.claude that Claude Code
-    # actually populated, then the XDG-style location. projects/ is the only reliable
-    # liveness marker — settings.json may be one we wrote ourselves.
-    # Returns (path, resolved_from_env).
-    env = (os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
-    if env:
-        env = os.path.expanduser(env).rstrip("/") or "/"
-        # Reject anything that cannot be a config dir. A relative value would resolve
-        # against the SSH session's cwd and we would silently write hooks there.
-        if env.startswith("/") and env != "/":
-            return pathlib.Path(unicodedata.normalize("NFC", env)), True
-    dot_claude = home / ".claude"
-    if (dot_claude / "projects").exists():
-        return dot_claude, False
-    xdg = home / ".config" / "claude-code"
-    if (xdg / "projects").exists():
-        return xdg, False
-    return dot_claude, False
-
 def install_claude():
-    claude_root, from_env = claude_config_dir()
-    # Only treat `claude` on PATH as licence to CREATE a config dir when we know where
-    # it belongs (an explicit $CLAUDE_CONFIG_DIR). Otherwise resolution merely fell
-    # through to the ~/.claude default, and creating it would plant a stale directory
-    # the user's Claude Code never reads — and which the local sweep cannot reach.
-    if not claude_root.exists() and not from_env:
-        return "Claude skipped"
+    claude_root = home / ".claude"
     if not claude_root.exists() and shutil.which("claude") is None:
         return "Claude skipped"
 
