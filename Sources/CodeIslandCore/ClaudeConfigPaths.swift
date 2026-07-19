@@ -33,8 +33,6 @@ public enum ClaudeConfigPaths {
     /// The `settings.json` that holds hook configuration.
     public static func settingsPath() -> String { configDir() + "/settings.json" }
 
-    public static var defaultConfigDir: String { NSHomeDirectory() + "/.claude" }
-
     /// Pure resolution core — all inputs injected so the fallback chain is testable
     /// without touching UserDefaults, the environment, or the real filesystem.
     public static func resolve(
@@ -65,17 +63,19 @@ public enum ClaudeConfigPaths {
     }
 
     /// Trims, expands `~`, and drops any trailing slash. Returns nil for empty input.
-    /// `$CLAUDE_CONFIG_DIR` may hold a colon-separated list; Claude Code treats the first
-    /// entry as the writable config dir, so we do the same.
+    ///
+    /// `$CLAUDE_CONFIG_DIR` holds a single path — Claude Code reads it verbatim and does
+    /// not treat it as a `PATH`-style list, so no separator splitting happens here. That
+    /// matters on APFS, where `:` is legal in a filename.
+    ///
+    /// Claude Code normalizes the path to Unicode NFC before use; we match that so a
+    /// decomposed path (as some macOS APIs hand back) still resolves to the same directory.
     static func normalized(_ raw: String?, homeDir: String) -> String? {
         var value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if let separator = value.firstIndex(of: ":") {
-            value = String(value[value.startIndex..<separator])
-        }
         guard !value.isEmpty else { return nil }
-        if value == "~" { return homeDir }
+        if value == "~" { return homeDir.precomposedStringWithCanonicalMapping }
         if value.hasPrefix("~/") { value = homeDir + "/" + value.dropFirst(2) }
         while value.count > 1 && value.hasSuffix("/") { value.removeLast() }
-        return value
+        return value.precomposedStringWithCanonicalMapping
     }
 }

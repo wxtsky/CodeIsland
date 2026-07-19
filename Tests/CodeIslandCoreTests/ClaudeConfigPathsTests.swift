@@ -66,12 +66,20 @@ final class ClaudeConfigPathsTests: XCTestCase {
         XCTAssertEqual(ClaudeConfigPaths.normalized("  /a/b  ", homeDir: home), "/a/b")
     }
 
-    /// CLAUDE_CONFIG_DIR may hold a colon-separated list; the first entry is the
-    /// writable config dir, matching Claude Code's own behavior.
-    func testColonSeparatedListTakesFirstEntry() {
+    /// CLAUDE_CONFIG_DIR is a single path, not a PATH-style list. `:` is legal in an
+    /// APFS filename, so splitting on it would silently truncate a valid directory.
+    func testColonIsPreservedAsPartOfPath() {
         XCTAssertEqual(
-            ClaudeConfigPaths.normalized("/first/dir:/second/dir", homeDir: home),
-            "/first/dir")
+            ClaudeConfigPaths.normalized("/Users/tester/AI:ML/claude", homeDir: home),
+            "/Users/tester/AI:ML/claude")
+    }
+
+    /// Claude Code normalizes its config path to NFC; matching that keeps a decomposed
+    /// path (what some macOS APIs return) resolving to the same directory.
+    func testUnicodePathsAreNormalizedToNFC() {
+        let decomposed = "/Users/tester/Cafe\u{0301}/claude"   // e + combining acute
+        let precomposed = "/Users/tester/Caf\u{00E9}/claude"   // é
+        XCTAssertEqual(ClaudeConfigPaths.normalized(decomposed, homeDir: home), precomposed)
     }
 
     func testDisplayPathCollapsesHomePrefix() {
