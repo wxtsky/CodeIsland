@@ -751,9 +751,15 @@ struct ConfigInstaller {
         try? fm.removeItem(atPath: legacyBridgePath)
         try? fm.removeItem(atPath: legacyHookScriptPath)
 
+        // A previous install may have created the config dir after the last resolution
+        // was memoized, so re-resolve before deciding what is stale.
+        ClaudeConfigPaths.invalidateCache()
+
         // Drop hook entries orphaned at a config dir we no longer resolve to, so the
-        // old copy cannot keep firing alongside the new one.
+        // old copy cannot keep firing alongside the new one. Runs BEFORE the per-CLI
+        // install below, so entries written this pass are never swept.
         cleanStaleClaudeHooks(fm: fm)
+        rememberResolvedClaudeDir()
 
         // Install hook script + bridge binary (shared by all CLIs)
         installHookScript(fm: fm)
@@ -813,28 +819,63 @@ struct ConfigInstaller {
     /// preference, exports `$CLAUDE_CONFIG_DIR`, or upgrades into the XDG rung). Hook
     /// entries left at the old location would otherwise keep firing while being
     /// unreachable by uninstall — install and uninstall must stay symmetric.
+    /// Where the last install actually wrote Claude hooks. Without this, a config dir
+    /// reached via the preference or `$CLAUDE_CONFIG_DIR` is unrecoverable once the
+    /// resolution changes: it is not one of the two home candidates, so nothing would
+    /// ever sweep it and its entries would fire forever against a deleted hook script.
+    static let lastResolvedClaudeDirKey = "claude_config_dir_last_installed"
+
     private static func staleClaudeConfigDirs() -> [String] {
-        let resolved = ClaudeConfigPaths.configDir()
+        let resolved = ClaudeConfigPaths.canonical(ClaudeConfigPaths.configDir())
         let home = NSHomeDirectory()
-        return [home + "/.claude", home + "/.config/claude-code"].filter { $0 != resolved }
+        var candidates = [home + "/.claude", home + "/.config/claude-code"]
+        if let last = UserDefaults.standard.string(forKey: lastResolvedClaudeDirKey) {
+            candidates.append(last)
+        }
+        // Compare canonically: configDir() is NFC-normalized while the literals above
+        // are not, so a decomposed home path could otherwise let the *resolved* dir slip
+        // through the filter and be swept — deleting the hooks we just installed.
+        var seen = Set<String>()
+        return candidates
+            .map(ClaudeConfigPaths.canonical)
+            .filter { $0 != resolved && seen.insert($0).inserted }
+    }
+
+    /// Record where hooks were just installed, so a later resolution change can find them.
+    private static func rememberResolvedClaudeDir() {
+        UserDefaults.standard.set(
+            ClaudeConfigPaths.canonical(ClaudeConfigPaths.configDir()),
+            forKey: lastResolvedClaudeDirKey)
     }
 
     /// Strip CodeIsland hook entries from Claude `settings.json` files outside the
     /// currently resolved config dir. Only touches files that actually carry our
     /// marker, so an unrelated user settings.json is never rewritten.
     static func cleanStaleClaudeHooks(fm: FileManager) {
-        guard let claude = builtInCLIs.first(where: { $0.source == "claude" }) else { return }
         for dir in staleClaudeConfigDirs() {
-            var stale = claude
-            stale.rootOverride = { dir }
-            let path = stale.fullPath
-            guard fm.fileExists(atPath: path),
-                  let data = fm.contents(atPath: path),
-                  let text = String(data: data, encoding: .utf8),
-                  text.contains("codeisland")
-            else { continue }
-            uninstallHooks(cli: stale, fm: fm)
+            cleanClaudeHooks(inDir: dir, fm: fm)
         }
+    }
+
+    /// Strip CodeIsland hook entries from the Claude `settings.json` in `dir`.
+    ///
+    /// No-op unless the file exists AND carries our marker, so an unrelated user
+    /// `settings.json` sitting in a candidate directory is never rewritten. Returns
+    /// whether the file was modified. Split out from `cleanStaleClaudeHooks` so this
+    /// destructive path is directly testable against a temporary directory.
+    @discardableResult
+    static func cleanClaudeHooks(inDir dir: String, fm: FileManager) -> Bool {
+        guard let claude = builtInCLIs.first(where: { $0.source == "claude" }) else { return false }
+        var stale = claude
+        stale.rootOverride = { dir }
+        let path = stale.fullPath
+        guard fm.fileExists(atPath: path),
+              let data = fm.contents(atPath: path),
+              let text = String(data: data, encoding: .utf8),
+              text.contains("codeisland")
+        else { return false }
+        uninstallHooks(cli: stale, fm: fm)
+        return true
     }
 
     static func uninstall() {

@@ -11,8 +11,11 @@ import Foundation
 /// Resolution order:
 ///   1. `claude_config_dir` user preference (Settings → set explicitly)
 ///   2. `$CLAUDE_CONFIG_DIR` (present when launched from a shell)
-///   3. `~/.config/claude-code`, if it looks like a real config dir
-///   4. `~/.claude`
+///   3. `~/.claude`, when populated — Claude Code's own default must not be shadowed
+///   4. `~/.config/claude-code`, when populated
+///   5. `~/.claude`
+///
+/// Rungs 3–4 test for `projects/` specifically; see `isLiveConfigDir`.
 public enum ClaudeConfigPaths {
     /// UserDefaults key backing the Settings field.
     public static let preferenceKey = "claude_config_dir"
@@ -51,6 +54,17 @@ public enum ClaudeConfigPaths {
         cachedKey = key
         cachedValue = resolved
         return resolved
+    }
+
+    /// Canonical NFC form of a path, for comparing two paths for identity.
+    ///
+    /// `configDir()` returns an NFC-normalized value, so a caller comparing it against a
+    /// hand-built literal (`home + "/.claude"`) can get a false mismatch when the home
+    /// path contains decomposed Unicode. Note that Swift's `==` on String compares by
+    /// canonical equivalence and would mask this — the hazard is real only where paths
+    /// are compared as bytes or used to key a filesystem operation.
+    public static func canonical(_ path: String) -> String {
+        path.precomposedStringWithCanonicalMapping
     }
 
     /// Drop the memoized resolution. Call after creating or moving a config directory

@@ -115,7 +115,14 @@ final class ClaudeConfigPathsTests: XCTestCase {
     func testUnicodePathsAreNormalizedToNFC() {
         let decomposed = "/Users/tester/Cafe\u{0301}/claude"   // e + combining acute
         let precomposed = "/Users/tester/Caf\u{00E9}/claude"   // é
-        XCTAssertEqual(ClaudeConfigPaths.normalized(decomposed, homeDir: home), precomposed)
+
+        let result = try? XCTUnwrap(ClaudeConfigPaths.normalized(decomposed, homeDir: home))
+
+        // Compare BYTES, not Strings. Swift's == on String uses canonical equivalence,
+        // so `decomposed == precomposed` is already true and an XCTAssertEqual here
+        // would pass even if the normalization were deleted entirely.
+        XCTAssertEqual(Array((result ?? "").utf8), Array(precomposed.utf8))
+        XCTAssertNotEqual(Array((result ?? "").utf8), Array(decomposed.utf8))
     }
 
     func testDisplayPathCollapsesHomePrefix() {
