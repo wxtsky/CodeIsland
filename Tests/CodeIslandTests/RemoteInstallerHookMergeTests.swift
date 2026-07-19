@@ -30,6 +30,9 @@ final class RemoteInstallerHookMergeTests: XCTestCase {
         environment["HOME"] = sandboxHome.path
         // Keep the script away from any real Codex home configured in the caller env.
         environment.removeValue(forKey: "CODEX_HOME")
+        // Same for Claude: the script now honors $CLAUDE_CONFIG_DIR, which would escape
+        // the sandboxed HOME and write hooks into the developer's real config dir.
+        environment.removeValue(forKey: "CLAUDE_CONFIG_DIR")
         process.environment = environment
 
         let stdin = Pipe()

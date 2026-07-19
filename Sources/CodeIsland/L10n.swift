@@ -833,6 +833,10 @@ final class L10n: ObservableObject {
         "excluded_hook_cwd_title": "忽略指定路径的 Hook",
         "excluded_hook_cwd_desc": "用逗号分隔的子串。任何 hook 事件的工作目录如果包含其中之一就会被静默丢弃 —— 适合过滤 claude-mem 等后台插件。示例：.claude-mem,.cache/agents",
         "excluded_hook_cwd_placeholder": "例如 .claude-mem,.cache/agents",
+        "claude_config_dir_title": "Claude Code 配置目录",
+        "claude_config_dir_desc": "Claude Code 存放 projects/ 和 settings.json 的位置。留空则自动检测（先 $CLAUDE_CONFIG_DIR，再 ~/.config/claude-code，最后 ~/.claude）。如果你使用自定义的 CLAUDE_CONFIG_DIR，请在此设置——从访达启动的应用不会继承 shell 环境变量。修改后请重启 CodeIsland。",
+        "claude_config_dir_placeholder": "自动检测",
+        "claude_config_dir_resolved": "当前使用：%@",
 
         // Webhook 转发
         "webhook_title": "Webhook 转发",
@@ -1173,6 +1177,10 @@ final class L10n: ObservableObject {
         "excluded_hook_cwd_title": "忽略指定路徑的 Hook",
         "excluded_hook_cwd_desc": "以逗號分隔的子字串。任何 hook 事件的工作目錄如果包含其中之一就會被靜默丟棄 —— 適合過濾 claude-mem 等背景外掛。範例：.claude-mem,.cache/agents",
         "excluded_hook_cwd_placeholder": "例如 .claude-mem,.cache/agents",
+        "claude_config_dir_title": "Claude Code 設定目錄",
+        "claude_config_dir_desc": "Claude Code 存放 projects/ 和 settings.json 的位置。留空則自動偵測（先 $CLAUDE_CONFIG_DIR，再 ~/.config/claude-code，最後 ~/.claude）。若你使用自訂的 CLAUDE_CONFIG_DIR，請在此設定——從 Finder 啟動的應用程式不會繼承 shell 環境變數。修改後請重新啟動 CodeIsland。",
+        "claude_config_dir_placeholder": "自動偵測",
+        "claude_config_dir_resolved": "目前使用：%@",
 
         // Webhook 轉發
         "webhook_title": "Webhook 轉發",

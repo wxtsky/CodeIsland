@@ -51,6 +51,42 @@ final class ClaudeConfigPathsTests: XCTestCase {
         XCTAssertEqual(result, "/Users/tester/.claude")
     }
 
+    /// Claude Code has no XDG rung — it reads $CLAUDE_CONFIG_DIR or ~/.claude. So when
+    /// BOTH are populated and nothing points elsewhere, ~/.claude must win, or a stale
+    /// XDG dir would silently repoint us away from what Claude Code actually reads.
+    func testLiveDotClaudeOutranksPopulatedXDGDirectory() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil, environment: nil, homeDir: home,
+            fileExists: { $0 == "/Users/tester/.claude/projects"
+                       || $0 == "/Users/tester/.config/claude-code/projects" })
+        XCTAssertEqual(result, "/Users/tester/.claude")
+    }
+
+    /// A settings.json alone must NOT mark a dir live — CodeIsland's own hook installer
+    /// writes that file, so counting it would let us manufacture the signal we read back.
+    func testSettingsJsonAloneDoesNotMarkDirectoryLive() {
+        let result = ClaudeConfigPaths.resolve(
+            preference: nil, environment: nil, homeDir: home,
+            fileExists: { $0 == "/Users/tester/.claude/settings.json"
+                       || $0 == "/Users/tester/.config/claude-code/projects" })
+        XCTAssertEqual(result, "/Users/tester/.config/claude-code")
+    }
+
+    /// A typo'd or relative value must fall through to auto-detect rather than being
+    /// taken literally — the hook installer would otherwise create the bogus directory
+    /// and report success while Claude Code read somewhere else.
+    func testUnusableValuesFallThroughToAutoDetect() {
+        XCTAssertNil(ClaudeConfigPaths.normalized("claude-config", homeDir: home))
+        XCTAssertNil(ClaudeConfigPaths.normalized("./claude", homeDir: home))
+        XCTAssertNil(ClaudeConfigPaths.normalized("/", homeDir: home))
+
+        // A bad preference must not win — resolution continues down the chain.
+        let result = ClaudeConfigPaths.resolve(
+            preference: "relative/typo", environment: nil, homeDir: home,
+            fileExists: { $0 == "/Users/tester/.config/claude-code/projects" })
+        XCTAssertEqual(result, "/Users/tester/.config/claude-code")
+    }
+
     func testEmptyAndWhitespaceValuesAreIgnored() {
         XCTAssertNil(ClaudeConfigPaths.normalized("", homeDir: home))
         XCTAssertNil(ClaudeConfigPaths.normalized("   ", homeDir: home))

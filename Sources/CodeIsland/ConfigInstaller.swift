@@ -751,6 +751,10 @@ struct ConfigInstaller {
         try? fm.removeItem(atPath: legacyBridgePath)
         try? fm.removeItem(atPath: legacyHookScriptPath)
 
+        // Drop hook entries orphaned at a config dir we no longer resolve to, so the
+        // old copy cannot keep firing alongside the new one.
+        cleanStaleClaudeHooks(fm: fm)
+
         // Install hook script + bridge binary (shared by all CLIs)
         installHookScript(fm: fm)
         installBridgeBinary(fm: fm)
@@ -803,6 +807,36 @@ struct ConfigInstaller {
         return ok
     }
 
+    /// Claude config dirs we may have written hooks into under a *previous* resolution.
+    ///
+    /// The resolved dir can change between install and uninstall (the user fills in the
+    /// preference, exports `$CLAUDE_CONFIG_DIR`, or upgrades into the XDG rung). Hook
+    /// entries left at the old location would otherwise keep firing while being
+    /// unreachable by uninstall — install and uninstall must stay symmetric.
+    private static func staleClaudeConfigDirs() -> [String] {
+        let resolved = ClaudeConfigPaths.configDir()
+        let home = NSHomeDirectory()
+        return [home + "/.claude", home + "/.config/claude-code"].filter { $0 != resolved }
+    }
+
+    /// Strip CodeIsland hook entries from Claude `settings.json` files outside the
+    /// currently resolved config dir. Only touches files that actually carry our
+    /// marker, so an unrelated user settings.json is never rewritten.
+    static func cleanStaleClaudeHooks(fm: FileManager) {
+        guard let claude = builtInCLIs.first(where: { $0.source == "claude" }) else { return }
+        for dir in staleClaudeConfigDirs() {
+            var stale = claude
+            stale.rootOverride = { dir }
+            let path = stale.fullPath
+            guard fm.fileExists(atPath: path),
+                  let data = fm.contents(atPath: path),
+                  let text = String(data: data, encoding: .utf8),
+                  text.contains("codeisland")
+            else { continue }
+            uninstallHooks(cli: stale, fm: fm)
+        }
+    }
+
     static func uninstall() {
         let fm = FileManager.default
         try? fm.removeItem(atPath: hookScriptPath)
@@ -810,6 +844,8 @@ struct ConfigInstaller {
         // Also clean up legacy paths (#32)
         try? fm.removeItem(atPath: legacyBridgePath)
         try? fm.removeItem(atPath: legacyHookScriptPath)
+        // Remove entries orphaned at a previously-resolved config dir
+        cleanStaleClaudeHooks(fm: fm)
 
         for cli in allCLIs {
             if cli.source == "traecli" {

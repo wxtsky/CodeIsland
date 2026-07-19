@@ -530,8 +530,23 @@ def _merge_traecli_hooks(contents, cmd):
         merged += "\\n"
     return merged
 
+def claude_config_dir():
+    # Mirrors ClaudeConfigPaths on the macOS side: $CLAUDE_CONFIG_DIR wins, then a
+    # ~/.claude that Claude Code actually populated, then the XDG-style location.
+    # projects/ is the only reliable liveness marker — settings.json may be ours.
+    env = (os.environ.get("CLAUDE_CONFIG_DIR") or "").strip()
+    if env:
+        return pathlib.Path(os.path.expanduser(env))
+    dot_claude = home / ".claude"
+    if (dot_claude / "projects").exists():
+        return dot_claude
+    xdg = home / ".config" / "claude-code"
+    if (xdg / "projects").exists():
+        return xdg
+    return dot_claude
+
 def install_claude():
-    claude_root = home / ".claude"
+    claude_root = claude_config_dir()
     if not claude_root.exists() and shutil.which("claude") is None:
         return "Claude skipped"
 
