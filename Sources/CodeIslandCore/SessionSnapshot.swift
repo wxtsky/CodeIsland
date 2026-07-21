@@ -180,6 +180,12 @@ public struct SessionSnapshot: Sendable {
             "qoder work": "qoderwork",
             "kimi-cli": "kimi",
             "kimicli": "kimi",
+            "kimi-code": "kimi",
+            "kimicode": "kimi",
+            "kimi_code": "kimi",
+            "kimi-code-cli": "kimi",
+            "kimicodecli": "kimi",
+            "kimi_code_cli": "kimi",
             "kiro-cli": "kiro",
             "kirocli": "kiro",
             "codebuddycn": "codybuddycn",
@@ -290,7 +296,7 @@ public struct SessionSnapshot: Sendable {
     static let agentMetadataDirNames: Set<String> = [
         ".claude", ".cursor", ".codex", ".gemini", ".qoder", ".qoderwork",
         ".trae", ".trae-cn", ".kiro", ".copilot", ".factory", ".codebuddy",
-        ".codybuddycn", ".stepfun", ".workbuddy", ".hermes", ".kimi",
+        ".codybuddycn", ".stepfun", ".workbuddy", ".hermes", ".kimi", ".kimi-code",
         ".pi", ".omp", ".qwen", ".zcode", ".openclaw", ".codeisland",
     ]
 

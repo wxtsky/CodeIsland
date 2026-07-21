@@ -2281,6 +2281,7 @@ final class AppState {
             ("cursor", "\(home)/.cursor/projects"),
             ("copilot", "\(home)/.copilot/session-state"),
             ("opencode", "\(home)/.local/share/opencode"),
+            ("kimi", "\(home)/.kimi-code/sessions"),
             ("kimi", "\(home)/.kimi/sessions"),
         ]
         let fm = FileManager.default
@@ -3239,12 +3240,14 @@ final class AppState {
     private nonisolated static func findKimiPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
         findPids(
             matchingPathSubstrings: [
+                "/.kimi-code/bin/kimi",
                 "/.local/bin/kimi",
                 "/.local/share/uv/tools/kimi-cli/",
             ],
             argSubstrings: [
                 "/kimi-cli/",
                 "kimi_cli",
+                "/.kimi-code/",
             ],
             candidatePids: candidatePids
         )
@@ -3278,8 +3281,10 @@ final class AppState {
 
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fm = FileManager.default
-        let sessionsBase = "\(home)/.kimi/sessions"
-        guard fm.fileExists(atPath: sessionsBase) else { return [] }
+        // Modern kimi-code + legacy kimi-cli session roots.
+        let sessionsBases = ["\(home)/.kimi-code/sessions", "\(home)/.kimi/sessions"]
+            .filter { fm.fileExists(atPath: $0) }
+        guard !sessionsBases.isEmpty else { return [] }
 
         var results: [DiscoveredSession] = []
         var seenSessionIds: Set<String> = []
@@ -3287,50 +3292,120 @@ final class AppState {
         for pid in kimiPids {
             guard let cwd = getCwd(for: pid), !cwd.isEmpty, !isSubagentWorktree(cwd) else { continue }
             let processStart = getProcessStartTime(pid)
-            let workdirHash = md5Hash(of: cwd)
-            let workdirPath = "\(sessionsBase)/\(workdirHash)"
-            guard fm.fileExists(atPath: workdirPath),
-                  let sessionDirs = try? fm.contentsOfDirectory(atPath: workdirPath) else { continue }
 
-            var bestPath: String?
-            var bestDate = Date.distantPast
-            var bestSessionId: String?
-
-            for sessionId in sessionDirs {
-                let wirePath = "\(workdirPath)/\(sessionId)/wire.jsonl"
-                guard fm.fileExists(atPath: wirePath),
-                      let attrs = try? fm.attributesOfItem(atPath: wirePath),
-                      let modified = attrs[.modificationDate] as? Date,
-                      modified > bestDate else { continue }
-                if let start = processStart, modified < start.addingTimeInterval(-10) {
-                    continue
-                }
-                bestPath = wirePath
-                bestDate = modified
-                bestSessionId = sessionId
+            // Prefer kimi-code session_index.jsonl (workDir → sessionDir mapping).
+            if let indexed = discoverKimiCodeSessionFromIndex(
+                home: home,
+                cwd: cwd,
+                pid: pid,
+                processStart: processStart,
+                fm: fm
+            ), !seenSessionIds.contains(indexed.sessionId) {
+                seenSessionIds.insert(indexed.sessionId)
+                results.append(indexed)
+                continue
             }
 
-            guard let path = bestPath, let sessionId = bestSessionId else { continue }
-            let freshnessLimit: TimeInterval = processStart != nil ? -300 : -30
-            if bestDate.timeIntervalSinceNow < freshnessLimit { continue }
+            // Legacy kimi-cli: ~/.kimi/sessions/<md5(cwd)>/<sessionId>/wire.jsonl
+            let workdirHash = md5Hash(of: cwd)
+            for sessionsBase in sessionsBases {
+                let workdirPath = "\(sessionsBase)/\(workdirHash)"
+                guard fm.fileExists(atPath: workdirPath),
+                      let sessionDirs = try? fm.contentsOfDirectory(atPath: workdirPath) else { continue }
 
-            let (_, messages) = readRecentFromKimiTranscript(path: path)
-            guard !seenSessionIds.contains(sessionId) else { continue }
-            seenSessionIds.insert(sessionId)
+                var bestPath: String?
+                var bestDate = Date.distantPast
+                var bestSessionId: String?
 
-            results.append(DiscoveredSession(
-                sessionId: sessionId,
-                cwd: cwd,
-                tty: nil,
-                model: nil,
-                pid: pid,
-                modifiedAt: bestDate,
-                recentMessages: messages,
-                source: "kimi"
-            ))
+                for sessionId in sessionDirs {
+                    let wirePath = "\(workdirPath)/\(sessionId)/wire.jsonl"
+                    guard fm.fileExists(atPath: wirePath),
+                          let attrs = try? fm.attributesOfItem(atPath: wirePath),
+                          let modified = attrs[.modificationDate] as? Date,
+                          modified > bestDate else { continue }
+                    if let start = processStart, modified < start.addingTimeInterval(-10) {
+                        continue
+                    }
+                    bestPath = wirePath
+                    bestDate = modified
+                    bestSessionId = sessionId
+                }
+
+                guard let path = bestPath, let sessionId = bestSessionId else { continue }
+                let freshnessLimit: TimeInterval = processStart != nil ? -300 : -30
+                if bestDate.timeIntervalSinceNow < freshnessLimit { continue }
+
+                let (_, messages) = readRecentFromKimiTranscript(path: path)
+                guard !seenSessionIds.contains(sessionId) else { continue }
+                seenSessionIds.insert(sessionId)
+
+                results.append(DiscoveredSession(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    tty: nil,
+                    model: nil,
+                    pid: pid,
+                    modifiedAt: bestDate,
+                    recentMessages: messages,
+                    source: "kimi"
+                ))
+                break
+            }
         }
 
         return results
+    }
+
+    /// kimi-code tracks sessions in `~/.kimi-code/session_index.jsonl` with
+    /// `{ sessionId, sessionDir, workDir }` — workdir folders are no longer md5(cwd).
+    private nonisolated static func discoverKimiCodeSessionFromIndex(
+        home: String,
+        cwd: String,
+        pid: pid_t,
+        processStart: Date?,
+        fm: FileManager
+    ) -> DiscoveredSession? {
+        let indexPath = "\(home)/.kimi-code/session_index.jsonl"
+        guard fm.fileExists(atPath: indexPath),
+              let data = fm.contents(atPath: indexPath),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+
+        var best: (sessionId: String, sessionDir: String, modified: Date)?
+        for line in text.components(separatedBy: "\n") where !line.isEmpty {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let workDir = json["workDir"] as? String,
+                  workDir == cwd,
+                  let sessionId = json["sessionId"] as? String,
+                  let sessionDir = json["sessionDir"] as? String
+            else { continue }
+
+            let statePath = "\(sessionDir)/state.json"
+            let stampPath = fm.fileExists(atPath: statePath) ? statePath : sessionDir
+            guard let attrs = try? fm.attributesOfItem(atPath: stampPath),
+                  let modified = attrs[.modificationDate] as? Date else { continue }
+            if let start = processStart, modified < start.addingTimeInterval(-10) {
+                continue
+            }
+            if best == nil || modified > best!.modified {
+                best = (sessionId, sessionDir, modified)
+            }
+        }
+
+        guard let match = best else { return nil }
+        let freshnessLimit: TimeInterval = processStart != nil ? -300 : -30
+        if match.modified.timeIntervalSinceNow < freshnessLimit { return nil }
+
+        return DiscoveredSession(
+            sessionId: match.sessionId,
+            cwd: cwd,
+            tty: nil,
+            model: nil,
+            pid: pid,
+            modifiedAt: match.modified,
+            recentMessages: [],
+            source: "kimi"
+        )
     }
 
     private nonisolated static func readRecentFromKimiTranscript(path: String) -> (String?, [ChatMessage]) {
