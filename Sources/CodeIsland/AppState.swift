@@ -3281,10 +3281,10 @@ final class AppState {
 
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fm = FileManager.default
-        // Modern kimi-code + legacy kimi-cli session roots.
+        // Legacy kimi-cli hashes cwd under sessions/; kimi-code may only need
+        // session_index.jsonl, so do not bail when these dirs are absent.
         let sessionsBases = ["\(home)/.kimi-code/sessions", "\(home)/.kimi/sessions"]
             .filter { fm.fileExists(atPath: $0) }
-        guard !sessionsBases.isEmpty else { return [] }
 
         var results: [DiscoveredSession] = []
         var seenSessionIds: Set<String> = []
@@ -3396,6 +3396,15 @@ final class AppState {
         let freshnessLimit: TimeInterval = processStart != nil ? -300 : -30
         if match.modified.timeIntervalSinceNow < freshnessLimit { return nil }
 
+        // kimi-code keeps the transcript under agents/main/wire.jsonl.
+        let wirePath = "\(match.sessionDir)/agents/main/wire.jsonl"
+        let messages: [ChatMessage]
+        if fm.fileExists(atPath: wirePath) {
+            messages = readRecentFromKimiTranscript(path: wirePath).1
+        } else {
+            messages = []
+        }
+
         return DiscoveredSession(
             sessionId: match.sessionId,
             cwd: cwd,
@@ -3403,7 +3412,7 @@ final class AppState {
             model: nil,
             pid: pid,
             modifiedAt: match.modified,
-            recentMessages: [],
+            recentMessages: messages,
             source: "kimi"
         )
     }
