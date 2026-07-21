@@ -1,0 +1,131 @@
+<Window x:Class="CodeIsland.Windows.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CodeIsland Settings" Width="860" Height="600"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" Foreground="#FFE8E8EB" ResizeMode="CanResizeWithGrip"
+        MinWidth="720" MinHeight="500" FontFamily="Cascadia Mono, Consolas">
+    <Window.Resources>
+        <SolidColorBrush x:Key="Surface" Color="#FF0D0D0E"/>
+        <SolidColorBrush x:Key="Raised" Color="#FF171719"/>
+        <SolidColorBrush x:Key="Border" Color="#FF303034"/>
+        <SolidColorBrush x:Key="Green" Color="#FF39E46E"/>
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="#FFE8E8EB"/><Setter Property="FontSize" Value="13"/></Style>
+        <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#FFE8E8EB"/><Setter Property="FontSize" Value="13"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF141416"/><Setter Property="Foreground" Value="#FFF1F1F3"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Green}"/><Setter Property="BorderBrush" Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="10,7"/><Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#FF141416"/><Setter Property="Foreground" Value="#FFF1F1F3"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/><Setter Property="Padding" Value="9,6"/><Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="#FF141416"/><Setter Property="Foreground" Value="#FFF1F1F3"/><Setter Property="Padding" Value="10,7"/></Style>
+        <Style TargetType="Button">
+            <Setter Property="Foreground" Value="#FFDADADF"/><Setter Property="Background" Value="#FF19191B"/>
+            <Setter Property="BorderBrush" Value="#FF343438"/><Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="13,7"/><Setter Property="FontFamily" Value="Cascadia Mono, Consolas"/>
+            <Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+                <Border x:Name="buttonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="buttonBorder" Property="Background" Value="#FF213226"/><Setter TargetName="buttonBorder" Property="BorderBrush" Value="{StaticResource Green}"/></Trigger>
+                    <Trigger Property="IsPressed" Value="True"><Setter TargetName="buttonBorder" Property="Background" Value="#FF102417"/></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="TitleButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="40"/><Setter Property="Height" Value="34"/><Setter Property="Padding" Value="0"/>
+            <Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/><Setter Property="FontSize" Value="14"/>
+        </Style>
+        <Style TargetType="TabControl"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="#FF8B8B91"/><Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="14,9"/><Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
+                <Border x:Name="tab" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="0,0,0,2" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{StaticResource Green}"/><Setter TargetName="tab" Property="Background" Value="#FF151517"/><Setter TargetName="tab" Property="BorderBrush" Value="{StaticResource Green}"/></Trigger>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="#FFE8E8EB"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="#FF09090A"/><Setter Property="Foreground" Value="#FFE5E5E8"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Border}"/><Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="RowBackground" Value="#FF0D0D0E"/><Setter Property="AlternatingRowBackground" Value="#FF131315"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#FF252528"/><Setter Property="VerticalGridLinesBrush" Value="#FF252528"/>
+            <Setter Property="RowHeight" Value="45"/><Setter Property="ColumnHeaderHeight" Value="38"/>
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#FF171719"/><Setter Property="Foreground" Value="#FFB8B8BE"/>
+            <Setter Property="BorderBrush" Value="#FF303034"/><Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="10,0"/><Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0,0,1,1"/><Setter Property="BorderBrush" Value="#FF252528"/>
+            <Setter Property="Padding" Value="8,0"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#FF183321"/><Setter Property="Foreground" Value="White"/></Trigger></Style.Triggers>
+        </Style>
+        <Style TargetType="DataGridRow"><Setter Property="Foreground" Value="#FFE5E5E8"/><Setter Property="BorderThickness" Value="0"/></Style>
+    </Window.Resources>
+
+    <Border Background="#FF000000" BorderBrush="#FF303034" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="66"/></Grid.RowDefinitions>
+            <Grid Background="#FF09090A" MouseLeftButtonDown="OnTitleBarMouseDown">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="15,0">
+                    <Image x:Name="TitleAppIcon" Width="27" Height="27" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    <TextBlock Text="CODEISLAND / SETTINGS" FontWeight="Bold" FontSize="14" Foreground="#FFEFEFF1" VerticalAlignment="Center" Margin="11,0,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,6,0" VerticalAlignment="Center">
+                    <Button Style="{StaticResource TitleButton}" Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize"/>
+                    <Button Style="{StaticResource TitleButton}" Content="&#xE8BB;" Foreground="#FFFF626A" Click="OnWindowClose" ToolTip="Close"/>
+                </StackPanel>
+            </Grid>
+
+            <TabControl Grid.Row="1" Margin="14,8,14,0">
+                <TabItem Header="GENERAL"><StackPanel Margin="18">
+                    <TextBlock Text="LANGUAGE" FontWeight="Bold" Foreground="#FF9A9AA0"/><ComboBox x:Name="LanguageBox" Width="230" HorizontalAlignment="Left" Margin="0,8,0,18"><ComboBoxItem Content="System" Tag="system"/><ComboBoxItem Content="简体中文" Tag="zh-CN"/><ComboBoxItem Content="English" Tag="en-US"/></ComboBox>
+                    <CheckBox x:Name="LaunchAtLoginBox" Content="Launch CodeIsland when I sign in" Margin="0,0,0,20"/>
+                    <TextBlock Text="DISPLAY" FontWeight="Bold" Foreground="#FF9A9AA0"/><ComboBox x:Name="DisplayModeBox" Width="230" HorizontalAlignment="Left" Margin="0,8,0,18"><ComboBoxItem Content="Primary display" Tag="primary"/><ComboBoxItem Content="Display under cursor" Tag="cursor"/></ComboBox>
+                    <TextBlock x:Name="GeneralStatus" Text="Settings are stored in your roaming AppData folder." Foreground="#FF85858C"/>
+                </StackPanel></TabItem>
+                <TabItem Header="BEHAVIOR"><StackPanel Margin="18">
+                    <TextBlock Text="SESSION CLEANUP (MINUTES)" FontWeight="Bold" Foreground="#FF9A9AA0"/><TextBox x:Name="CleanupMinutesBox" Width="130" HorizontalAlignment="Left" Margin="0,8,0,20"/>
+                    <CheckBox x:Name="HideInFullscreenBox" Content="Hide panel in full-screen applications" Margin="0,0,0,12"/>
+                    <TextBlock Text="Inactive sessions are removed automatically after this period." Foreground="#FF85858C"/>
+                </StackPanel></TabItem>
+                <TabItem Header="APPEARANCE"><Grid Margin="18"><Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="52"/></Grid.RowDefinitions>
+                    <TextBlock Text="Maximum visible sessions" VerticalAlignment="Center"/><TextBox x:Name="MaxSessionsBox" Grid.Column="1" Margin="7"/>
+                    <TextBlock Grid.Row="1" Text="Event history limit" VerticalAlignment="Center"/><TextBox x:Name="HistoryLimitBox" Grid.Row="1" Grid.Column="1" Margin="7"/>
+                </Grid></TabItem>
+                <TabItem Header="SOUND"><StackPanel Margin="18"><CheckBox x:Name="SoundEnabledBox" Content="Play sounds for session events"/><TextBlock Text="Sounds are played for start, approval, completion and error events." Foreground="#FF85858C" Margin="0,14,0,0"/></StackPanel></TabItem>
+                <TabItem Header="HOOKS"><Grid Margin="14"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Button Content="REFRESH" Click="OnRefreshHooks" Width="105" HorizontalAlignment="Left"/>
+                    <DataGrid x:Name="HooksGrid" Grid.Row="1" Margin="0,12,0,0" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" AlternationCount="2">
+                        <DataGrid.Columns><DataGridTextColumn Header="TOOL" Binding="{Binding Tool.DisplayName}" Width="130"/><DataGridCheckBoxColumn Header="EXE" Binding="{Binding HasExecutable}" Width="60"/><DataGridCheckBoxColumn Header="HOOK" Binding="{Binding HookInstalled}" Width="65"/><DataGridCheckBoxColumn Header="HEALTH" Binding="{Binding IsHealthy}" Width="75"/><DataGridTextColumn Header="STATUS" Binding="{Binding Problem}" Width="*"/><DataGridTemplateColumn Header="ACTIONS" Width="225"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><Button Content="INSTALL" Tag="{Binding Tool}" Click="OnInstallHook" Padding="7,4" Margin="0,0,4,0"/><Button Content="REPAIR" Tag="{Binding Tool}" Click="OnRepairHook" Padding="7,4" Margin="0,0,4,0"/><Button Content="REMOVE" Tag="{Binding Tool}" Click="OnUninstallHook" Padding="7,4"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn></DataGrid.Columns>
+                    </DataGrid><TextBlock x:Name="HookOperationStatus" Grid.Row="2" Foreground="#FF85858C" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                </Grid></TabItem>
+                <TabItem Header="SHORTCUTS"><Grid Margin="18"><Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="260"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="52"/><RowDefinition Height="52"/><RowDefinition Height="52"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <TextBlock Text="Toggle panel" VerticalAlignment="Center"/><TextBox x:Name="ToggleShortcutBox" Grid.Column="1" Margin="7"/><TextBlock Grid.Row="1" Text="Approve request" VerticalAlignment="Center"/><TextBox x:Name="ApproveShortcutBox" Grid.Row="1" Grid.Column="1" Margin="7"/><TextBlock Grid.Row="2" Text="Deny request" VerticalAlignment="Center"/><TextBox x:Name="DenyShortcutBox" Grid.Row="2" Grid.Column="1" Margin="7"/><TextBlock x:Name="ShortcutStatus" Grid.Row="3" Grid.ColumnSpan="2" Foreground="#FF85858C" Margin="0,13,0,0" Text="Format: Ctrl+Shift+I, Alt+Shift+A, or Win+Ctrl+D"/>
+                </Grid></TabItem>
+                <TabItem Header="ABOUT"><StackPanel Margin="18"><Image x:Name="AboutAppIcon" Width="72" Height="72" HorizontalAlignment="Left" RenderOptions.BitmapScalingMode="NearestNeighbor"/><TextBlock Text="CODEISLAND FOR WINDOWS" FontSize="21" FontWeight="Bold" Foreground="{StaticResource Green}" Margin="0,14,0,0"/><TextBlock Text="Version 0.1.0" Margin="0,8,0,0"/><TextBlock Text="Real-time AI coding agent status panel." Foreground="#FF85858C" Margin="0,14,0,0"/><TextBlock Text="MIT License" Margin="0,18,0,0"/></StackPanel></TabItem>
+            </TabControl>
+
+            <Grid Grid.Row="2" Background="#FF09090A" Margin="0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0"><Button Content="IMPORT" Click="OnImport" Margin="0,0,7,0"/><Button Content="EXPORT" Click="OnExport" Margin="0,0,7,0"/><Button Content="DEFAULTS" Click="OnDefaults"/></StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0"><Button Content="CANCEL" Click="OnCancel" Margin="0,0,8,0"/><Button Content="SAVE" Click="OnSave" IsDefault="True" Foreground="{StaticResource Green}" BorderBrush="{StaticResource Green}"/></StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

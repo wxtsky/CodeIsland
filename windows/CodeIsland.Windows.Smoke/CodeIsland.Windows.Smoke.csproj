@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodeIsland.Windows\CodeIsland.Windows.csproj" />
+    <ProjectReference Include="..\CodeIsland.Core\CodeIsland.Core.csproj" />
+    <ProjectReference Include="..\CodeIsland.Ipc\CodeIsland.Ipc.csproj" />
+    <ProjectReference Include="..\CodeIsland.Bluetooth\CodeIsland.Bluetooth.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

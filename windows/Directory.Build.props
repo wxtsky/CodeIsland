@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>12</LangVersion>
+    <Version>0.1.0</Version>
+    <Authors>CodeIsland Windows Contributors</Authors>
+    <RepositoryUrl>https://github.com/wxtsky/CodeIsland</RepositoryUrl>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,38 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["windows-v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build and test
+        shell: pwsh
+        run: |
+          dotnet build CodeIsland.Windows/CodeIsland.Windows.csproj -c Release
+          dotnet build CodeIsland.Bridge/CodeIsland.Bridge.csproj -c Release
+          dotnet run --project CodeIsland.Windows.Smoke/CodeIsland.Windows.Smoke.csproj -c Release
+      - name: Package
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1
+      - name: Verify package
+        shell: pwsh
+        run: |
+          $manifest = Get-Content artifacts/release-manifest.json -Raw | ConvertFrom-Json
+          $archive = Join-Path artifacts $manifest.archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.sha256) { throw "Archive hash mismatch" }
+          if (-not (Test-Path artifacts/staging/CodeIsland.Windows.exe)) { throw "Desktop executable missing" }
+          if (-not (Test-Path artifacts/staging/CodeIsland.Bridge.exe)) { throw "Bridge executable missing" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codeisland-windows
+          path: |
+            artifacts/*.zip
+            artifacts/release-manifest.json

@@ -1,0 +1,10 @@
+{
+  "eventId": "fixture-event-1",
+  "sessionId": "fixture-session-1",
+  "agent": "codex",
+  "type": "session_start",
+  "timestamp": "2026-07-17T06:00:00Z",
+  "workingDirectory": "E:\\Demo\\CodexStatus",
+  "title": "IPC integration fixture",
+  "text": "Session connected"
+}

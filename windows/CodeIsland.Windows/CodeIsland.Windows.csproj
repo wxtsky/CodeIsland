@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodeIsland.Core\CodeIsland.Core.csproj" />
+    <ProjectReference Include="..\CodeIsland.Ipc\CodeIsland.Ipc.csproj" />
+    <ProjectReference Include="..\CodeIsland.Hooks\CodeIsland.Hooks.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\source\*.gif" Link="source\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\source\codeisland.png" Link="source\codeisland.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\source\codeisland.ico" Link="source\codeisland.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>..\source\codeisland.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>
