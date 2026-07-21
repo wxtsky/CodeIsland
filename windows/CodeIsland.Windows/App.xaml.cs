@@ -34,6 +34,7 @@ public partial class App : Application
     private readonly NotificationSoundManager _sounds = new();
     private readonly SettingsStore _settingsStore = new();
     private SettingsWindow? _settingsWindow;
+    private ContextMenuStrip? _trayMenu;
     private readonly AppLogger _logger = new();
     public DesktopSessionStore Sessions { get; private set; } = null!;
     private AppSettings _settings = new();
@@ -106,14 +107,7 @@ public partial class App : Application
             Visible = true,
             Text = "CodeIsland"
         };
-        var menu = TrayMenuFactory.Create();
-        menu.Items.Add("打开面板", null, (_, _) => ShowPanel());
-        menu.Items.Add("收起面板", null, (_, _) => _window.Hide());
-        menu.Items.Add("设置", null, (_, _) => OpenSettings());
-        menu.Items.Add("导出诊断", null, (_, _) => ExportDiagnostics());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("退出", null, (_, _) => RequestExit());
-        _tray.ContextMenuStrip = menu;
+        RebuildTrayMenu();
         _tray.DoubleClick += (_, _) => ShowPanel();
         if (e.Args.Contains("--settings", StringComparer.OrdinalIgnoreCase)) OpenSettings();
         base.OnStartup(e);
@@ -187,12 +181,21 @@ public partial class App : Application
         _settings = settings;
         _sounds.Enabled = settings.SoundEnabled;
         L10n.Apply(Resources, settings.Language);
+        RebuildTrayMenu();
         _window?.ApplySettings(settings);
         if (!settings.HideInFullscreen && _fullscreenSuppressed && _window is not null)
         {
             _window.Show();
             _fullscreenSuppressed = false;
         }
+    }
+
+    private void RebuildTrayMenu()
+    {
+        if (_tray is null) return;
+        _trayMenu?.Dispose();
+        _trayMenu = TrayMenuFactory.Create(_settings.Language, ShowPanel, () => _window?.Hide(), OpenSettings, ExportDiagnostics, RequestExit);
+        _tray.ContextMenuStrip = _trayMenu;
     }
 
     private void UpdateFullscreenVisibility()

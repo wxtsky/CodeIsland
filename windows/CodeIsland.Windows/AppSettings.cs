@@ -3,7 +3,7 @@ namespace CodeIsland.Windows;
 public sealed record AppSettings
 {
     public int Version { get; init; } = 1;
-    public string Language { get; init; } = "system";
+    public string Language { get; init; } = "zh-CN";
     public string DisplayMode { get; init; } = "primary";
     public bool LaunchAtLogin { get; init; }
     public bool SoundEnabled { get; init; } = true;

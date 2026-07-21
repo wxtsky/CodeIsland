@@ -14,7 +14,7 @@ using (var appIcon = new System.Drawing.Bitmap(appIconPath))
 var appIcoPath = Path.Combine(AppContext.BaseDirectory, "source", "codeisland.ico");
 using (var appIco = new System.Drawing.Icon(appIcoPath))
     Require(appIco.Width == 256 && appIco.Height == 256, "Application ICO must contain the 256px pixel icon.");
-using (var trayMenu = TrayMenuFactory.Create())
+using (var trayMenu = TrayMenuFactory.Create("en-US", () => { }, () => { }, () => { }, () => { }, () => { }))
 {
     trayMenu.Items.Add("Open panel");
     Require(trayMenu.BackColor == System.Drawing.Color.FromArgb(8, 8, 9)
