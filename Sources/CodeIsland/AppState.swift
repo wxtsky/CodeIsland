@@ -3417,7 +3417,10 @@ final class AppState {
         )
     }
 
-    private nonisolated static func readRecentFromKimiTranscript(path: String) -> (String?, [ChatMessage]) {
+    /// Parse recent chat turns from a Kimi wire.jsonl transcript.
+    /// Supports legacy kimi-cli (`message.type = TurnBegin|ContentPart|TurnEnd`)
+    /// and kimi-code (`turn.prompt` / `context.append_message` / `content.part`).
+    internal nonisolated static func readRecentFromKimiTranscript(path: String) -> (String?, [ChatMessage]) {
         guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, []) }
         defer { handle.closeFile() }
 
@@ -3431,59 +3434,91 @@ final class AppState {
         var previousUserText: String?
         var previousAssistantText: String = ""
 
+        func flushTurn() {
+            if let userText = previousUserText, !userText.isEmpty {
+                messages.append(ChatMessage(isUser: true, text: userText))
+                if !previousAssistantText.isEmpty {
+                    messages.append(ChatMessage(isUser: false, text: previousAssistantText))
+                }
+            }
+            previousUserText = nil
+            previousAssistantText = ""
+        }
+
+        func textParts(from value: Any?) -> String {
+            let parts: [[String: Any]]
+            if let typed = value as? [[String: Any]] {
+                parts = typed
+            } else if let anyParts = value as? [Any] {
+                parts = anyParts.compactMap { $0 as? [String: Any] }
+            } else {
+                return ""
+            }
+            return parts.compactMap { part -> String? in
+                if let type = part["type"] as? String, type != "text" { return nil }
+                return part["text"] as? String
+            }.joined()
+        }
+
         for line in text.components(separatedBy: "\n") where !line.isEmpty {
             guard let lineData = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let message = json["message"] as? [String: Any],
-                  let type = message["type"] as? String
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
             else { continue }
 
-            switch type {
-            case "TurnBegin":
-                if let userText = previousUserText, !userText.isEmpty {
-                    messages.append(ChatMessage(isUser: true, text: userText))
-                    if !previousAssistantText.isEmpty {
-                        messages.append(ChatMessage(isUser: false, text: previousAssistantText))
+            // Legacy kimi-cli envelope: { "message": { "type": "TurnBegin"|... } }
+            if let message = json["message"] as? [String: Any],
+               let type = message["type"] as? String {
+                switch type {
+                case "TurnBegin":
+                    flushTurn()
+                    if let payload = message["payload"] as? [String: Any] {
+                        previousUserText = textParts(from: payload["user_input"])
+                    }
+                case "ContentPart":
+                    if let payload = message["payload"] as? [String: Any],
+                       payload["type"] as? String == "text",
+                       let textContent = payload["text"] as? String {
+                        previousAssistantText += textContent
+                    }
+                case "TurnEnd":
+                    flushTurn()
+                default:
+                    break
+                }
+                continue
+            }
+
+            // kimi-code wire protocol (v1.4+).
+            switch json["type"] as? String {
+            case "turn.prompt":
+                flushTurn()
+                previousUserText = textParts(from: json["input"])
+            case "context.append_message":
+                if let message = json["message"] as? [String: Any],
+                   message["role"] as? String == "user" {
+                    let userText = textParts(from: message["content"])
+                    if !userText.isEmpty {
+                        // Prefer turn.prompt when both exist for the same turn;
+                        // only start a turn here if we don't already have one open.
+                        if previousUserText == nil {
+                            previousUserText = userText
+                        }
                     }
                 }
-                previousUserText = nil
-                previousAssistantText = ""
-                if let payload = message["payload"] as? [String: Any],
-                   let userInput = payload["user_input"] as? [[String: Any]] {
-                    let texts = userInput.compactMap { part -> String? in
-                        guard part["type"] as? String == "text" else { return nil }
-                        return part["text"] as? String
-                    }
-                    previousUserText = texts.joined()
-                }
-            case "ContentPart":
-                if let payload = message["payload"] as? [String: Any],
-                   payload["type"] as? String == "text",
-                   let textContent = payload["text"] as? String {
+            case "context.append_loop_event":
+                if let event = json["event"] as? [String: Any],
+                   event["type"] as? String == "content.part",
+                   let part = event["part"] as? [String: Any],
+                   part["type"] as? String == "text",
+                   let textContent = part["text"] as? String {
                     previousAssistantText += textContent
                 }
-            case "TurnEnd":
-                if let userText = previousUserText, !userText.isEmpty {
-                    messages.append(ChatMessage(isUser: true, text: userText))
-                    if !previousAssistantText.isEmpty {
-                        messages.append(ChatMessage(isUser: false, text: previousAssistantText))
-                    }
-                }
-                previousUserText = nil
-                previousAssistantText = ""
             default:
                 break
             }
         }
 
-        // flush final turn
-        if let userText = previousUserText, !userText.isEmpty {
-            messages.append(ChatMessage(isUser: true, text: userText))
-            if !previousAssistantText.isEmpty {
-                messages.append(ChatMessage(isUser: false, text: previousAssistantText))
-            }
-        }
-
+        flushTurn()
         return (nil, Array(messages.suffix(3)))
     }
 

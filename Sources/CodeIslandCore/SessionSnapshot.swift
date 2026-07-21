@@ -1262,15 +1262,44 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     }
 }
 
+/// Pull a non-empty string from a hook JSON value.
+/// Supports plain strings and content-part arrays such as Kimi Code CLI's
+/// `prompt: [{ "type": "text", "text": "..." }]`.
+private func stringFromHookJSONValue(_ value: Any?) -> String? {
+    if let value = value as? String {
+        // Trim only to detect empty / whitespace-only payloads; return the
+        // original value so callers preserve any leading/trailing
+        // whitespace inside code-snippet prompts and multi-line content.
+        return value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty
+            ? nil : value
+    }
+
+    let parts: [[String: Any]]
+    if let typed = value as? [[String: Any]] {
+        parts = typed
+    } else if let anyParts = value as? [Any] {
+        parts = anyParts.compactMap { $0 as? [String: Any] }
+        if parts.isEmpty { return nil }
+    } else {
+        return nil
+    }
+
+    let texts = parts.compactMap { part -> String? in
+        if let type = part["type"] as? String, type != "text" { return nil }
+        guard let text = part["text"] as? String,
+              !text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return text
+    }
+    let joined = texts.joined()
+    return joined.isEmpty ? nil : joined
+}
+
 private func firstStringFromDict(_ dict: [String: Any], keys: [String]) -> String? {
     for key in keys {
-        if let value = dict[key] as? String {
-            // Trim only to detect empty / whitespace-only payloads; return the
-            // original value so callers preserve any leading/trailing
-            // whitespace inside code-snippet prompts and multi-line content.
-            if !value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
-                return value
-            }
+        if let value = stringFromHookJSONValue(dict[key]) {
+            return value
         }
     }
     return nil
