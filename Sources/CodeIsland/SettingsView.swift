@@ -331,7 +331,8 @@ private struct GeneralPage: View {
                 Picker(l10n["language"], selection: $l10n.language) {
                     Text(l10n["system_language"]).tag("system")
                     Text("English").tag("en")
-                    Text("中文").tag("zh")
+                    Text("简体中文").tag("zh")
+                    Text("繁體中文").tag("zh-Hant")
                     Text("Deutsch").tag("de")
                     Text("日本語").tag("ja")
                     Text("한국어").tag("ko")
@@ -380,7 +381,9 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
-    @AppStorage(SettingsKey.autoExpandOnCompletion) private var autoExpandOnCompletion = SettingsDefaults.autoExpandOnCompletion
+    // Seeded through the migration shim so a legacy autoExpandOnCompletion=false
+    // shows up as "off" here; writes go to the new key via onChange.
+    @State private var completionStyle: String = AppState.completionStyle().rawValue
     @AppStorage(SettingsKey.pluginSessionMode) private var pluginSessionMode = SettingsDefaults.pluginSessionMode
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
@@ -448,12 +451,19 @@ private struct BehaviorPage: View {
                     isOn: $autoCollapseAfterSessionJump,
                     animation: .clickJumpCollapse
                 )
-                BehaviorToggleRow(
-                    title: l10n["auto_expand_on_completion"],
-                    desc: l10n["auto_expand_on_completion_desc"],
-                    isOn: $autoExpandOnCompletion,
-                    animation: .smartSuppress
-                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Picker(l10n["completion_notification"], selection: $completionStyle) {
+                        Text(l10n["completion_style_expand"]).tag(AppState.CompletionStyle.expand.rawValue)
+                        Text(l10n["completion_style_glance"]).tag(AppState.CompletionStyle.glance.rawValue)
+                        Text(l10n["completion_style_off"]).tag(AppState.CompletionStyle.off.rawValue)
+                    }
+                    .onChange(of: completionStyle) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: SettingsKey.completionNotificationStyle)
+                    }
+                    Text(l10n["completion_notification_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
                 BehaviorToggleRow(
                     title: l10n["haptic_on_hover"],
                     desc: l10n["haptic_on_hover_desc"],
@@ -818,6 +828,8 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
+    @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
+    @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
@@ -905,6 +917,18 @@ private struct AppearancePage: View {
                 }
                 Toggle(l10n["show_agent_details"], isOn: $showAgentDetails)
                 Toggle(l10n["show_tool_status"], isOn: $showToolStatus)
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_git_branch"], isOn: $showGitBranch)
+                    Text(l10n["show_git_branch_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_usage_stats"], isOn: $showUsageStats)
+                    Text(l10n["show_usage_stats_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -1017,6 +1041,7 @@ private struct MascotsPage: View {
         ("TraeCNBot", "traecn", "Trae CN", Color(red: 0.96, green: 0.31, blue: 0.0)),
         ("CopilotBot", "copilot", "GitHub Copilot", Color(red: 0.35, green: 0.75, blue: 0.95)),
         ("QoderBot", "qoder", "Qoder", Color(red: 0.165, green: 0.859, blue: 0.361)),
+        ("QoderBot", "qoderwork", "QoderWork", Color(red: 0.165, green: 0.859, blue: 0.361)),
         ("Droid", "droid", "Factory", Color(red: 0.835, green: 0.416, blue: 0.149)),
         ("Buddy", "codebuddy", "CodeBuddy", Color(red: 0.424, green: 0.302, blue: 1.0)),
         ("BuddyCN", "codybuddycn", "CodyBuddyCN", Color(red: 0.424, green: 0.302, blue: 1.0)),
@@ -1137,6 +1162,27 @@ private struct SoundPage: View {
     @AppStorage(SettingsKey.soundApprovalNeeded) private var soundApprovalNeeded = SettingsDefaults.soundApprovalNeeded
     @AppStorage(SettingsKey.soundPromptSubmit) private var soundPromptSubmit = SettingsDefaults.soundPromptSubmit
     @AppStorage(SettingsKey.soundBoot) private var soundBoot = SettingsDefaults.soundBoot
+    @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
+    @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
+    @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
+
+    /// DatePicker works in wall-clock Dates; storage is minutes since midnight.
+    private func timeBinding(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding<Date>(
+            get: {
+                Calendar.current.date(
+                    bySettingHour: minutes.wrappedValue / 60,
+                    minute: minutes.wrappedValue % 60,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
+            },
+            set: { date in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+                minutes.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+            }
+        )
+    }
 
     var body: some View {
         Form {
@@ -1181,6 +1227,30 @@ private struct SoundPage: View {
 
                 Section(l10n["system_section"]) {
                     SoundEventRow(title: l10n["boot_sound"], subtitle: l10n["boot_sound_desc"], soundName: "8bit_boot", isOn: $soundBoot)
+                }
+
+                Section {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(l10n["quiet_hours"], isOn: $quietHoursEnabled)
+                        Text(l10n["quiet_hours_desc"])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if quietHoursEnabled {
+                        HStack(spacing: 16) {
+                            DatePicker(
+                                l10n["quiet_hours_start"],
+                                selection: timeBinding($quietHoursStart),
+                                displayedComponents: .hourAndMinute
+                            )
+                            DatePicker(
+                                l10n["quiet_hours_end"],
+                                selection: timeBinding($quietHoursEnd),
+                                displayedComponents: .hourAndMinute
+                            )
+                        }
+                        .datePickerStyle(.field)
+                    }
                 }
             }
         }

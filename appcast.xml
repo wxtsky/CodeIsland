@@ -8,6 +8,19 @@
     <description>Most recent CodeIsland updates</description>
     <language>en</language>
     <item>
+      <title>Version 1.0.30</title>
+      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.30</link>
+      <sparkle:version>1.0.30</sparkle:version>
+      <sparkle:shortVersionString>1.0.30</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 10 Jul 2026 03:00:03 +0000</pubDate>
+      <enclosure
+        url="https://github.com/wxtsky/CodeIsland/releases/download/v1.0.30/CodeIsland.dmg"
+        sparkle:edSignature="3H12QBkwqigGYj8WLweowVEu85Ks3WYzKHFEvaq9dj+H0zN2dCcM8vU+hzId91PbEDtjdf3EIL2McPOzcZMODg=="
+        length="9961309"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 1.0.29</title>
       <link>https://github.com/wxtsky/CodeIsland/releases/tag/v1.0.29</link>
       <sparkle:version>1.0.29</sparkle:version>

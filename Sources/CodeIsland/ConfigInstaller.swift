@@ -54,6 +54,14 @@ enum HookFormat {
     /// names are Claude-style PascalCase (PreToolUse/PostToolUse/Stop), and a
     /// `matcher` is emitted only for the two tool events (#215).
     case antigravityNamed
+    /// ZCode (Z.ai) Electron desktop app — user-level ~/.zcode/cli/config.json
+    /// wrapping hooks in `{enabled: Bool, events: {EventName: [{hooks:[{type,
+    /// command}]}]}}`. Event names use a STRICT 7-name schema (SessionStart,
+    /// UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse,
+    /// PostToolUseFailure, Stop) — any other key silently drops the whole
+    /// `hooks` config on load. `hooks.enabled` must be explicit; no hot-reload,
+    /// so edits require a ZCode restart (#245).
+    case zcode
 
     var storageValue: String {
         switch self {
@@ -69,6 +77,7 @@ enum HookFormat {
         case .cline: return "cline"
         case .hermes: return "hermes"
         case .antigravityNamed: return "antigravityNamed"
+        case .zcode: return "zcode"
         }
     }
 
@@ -86,6 +95,7 @@ enum HookFormat {
         case "cline": self = .cline
         case "hermes": self = .hermes
         case "antigravitynamed": self = .antigravityNamed
+        case "zcode": self = .zcode
         default: return nil
         }
     }
@@ -144,6 +154,7 @@ struct ConfigInstaller {
     private static let bridgeCommand = codeislandDir + "/codeisland-bridge"
     private static let traecliConfigPath = NSHomeDirectory() + "/.trae/traecli.yaml"
     private static let hermesConfigPath = NSHomeDirectory() + "/.hermes/config.yaml"
+    private static let zcodeConfigPath = NSHomeDirectory() + "/.zcode/cli/config.json"
     private static let piAgentDir = NSHomeDirectory() + "/.pi/agent"
     private static let piExtensionDir = NSHomeDirectory() + "/.pi/agent/extensions"
     private static let piExtensionPath = NSHomeDirectory() + "/.pi/agent/extensions/codeisland.ts"
@@ -287,6 +298,16 @@ struct ConfigInstaller {
         CLIConfig(
             name: "Qoder", source: "qoder",
             configPath: ".qoder/settings.json", configKey: "hooks",
+            format: .claude,
+            events: defaultEvents(for: .claude)
+        ),
+        // QoderWork — Qoder's standalone desktop assistant app (not the IDE).
+        // Claude-format hooks, but user-level ~/.qoderwork/settings.json ONLY
+        // (no project-level config) and no hot reload: the user must restart
+        // QoderWork after install/uninstall for hook changes to apply (#249).
+        CLIConfig(
+            name: "QoderWork", source: "qoderwork",
+            configPath: ".qoderwork/settings.json", configKey: "hooks",
             format: .claude,
             events: defaultEvents(for: .claude)
         ),
@@ -448,6 +469,15 @@ struct ConfigInstaller {
             configKey: "",
             format: .none,
             events: []
+        ),
+        // ZCode (Z.ai) — Electron desktop app, NOT a Claude Code fork. Reads
+        // hooks from ~/.zcode/cli/config.json (strict event whitelist, no
+        // hot-reload — see `.zcode` HookFormat doc for details) (#245).
+        CLIConfig(
+            name: "ZCode", source: "zcode",
+            configPath: ".zcode/cli/config.json", configKey: "hooks",
+            format: .zcode,
+            events: defaultEvents(for: .zcode)
         )
     ]
 
@@ -574,6 +604,19 @@ struct ConfigInstaller {
                 ("PreToolUse", 86400, false),
                 ("PostToolUse", 5, false),
                 ("Stop", 5, false),
+            ]
+        case .zcode:
+            // ZCode's 7-name schema legally includes PermissionRequest, but its
+            // approve/deny decision-response semantics are unconfirmed — a
+            // long-timeout blocking hook there risks stalling the user's agent.
+            // MVP registers only status-observation events (#245).
+            return [
+                ("SessionStart", 5, false),
+                ("UserPromptSubmit", 5, true),
+                ("PreToolUse", 5, false),
+                ("PostToolUse", 5, true),
+                ("PostToolUseFailure", 5, true),
+                ("Stop", 5, true),
             ]
         }
     }
@@ -720,6 +763,8 @@ struct ConfigInstaller {
                 if !installTraecliHooks(fm: fm) { ok = false }
             } else if cli.format == .hermes {
                 if !installHermesHooks(fm: fm) { ok = false }
+            } else if cli.format == .zcode {
+                if !installZcodeHooks(fm: fm) { ok = false }
             } else if cli.source == "pi" || cli.source == "omp" || cli.source == "openclaw" {
                 continue
             } else {
@@ -769,6 +814,8 @@ struct ConfigInstaller {
                 uninstallTraecliHooks(fm: fm)
             } else if cli.format == .hermes {
                 uninstallHermesHooks(fm: fm)
+            } else if cli.format == .zcode {
+                uninstallZcodeHooks(fm: fm)
             } else if cli.source == "pi" {
                 uninstallPiExtension(fm: fm)
             } else if cli.source == "omp" {
@@ -798,6 +845,7 @@ struct ConfigInstaller {
         if source == "openclaw" { return isOpenclawPluginInstalled(fm: FileManager.default) }
         if source == "traecli" { return isTraecliHooksInstalled(fm: FileManager.default) }
         if source == "hermes" { return isHermesHooksInstalled(fm: FileManager.default) }
+        if source == "zcode" { return isZcodeHooksInstalled(fm: FileManager.default) }
         if source == "cline" {
             guard let cli = allCLIs.first(where: { $0.source == "cline" }) else { return false }
             return isClineHooksInstalled(cli: cli, fm: FileManager.default)
@@ -825,6 +873,9 @@ struct ConfigInstaller {
             return fm.fileExists(atPath: NSHomeDirectory() + "/.gemini/config")
                 || fm.fileExists(atPath: NSHomeDirectory() + "/.gemini/antigravity-cli")
         }
+        // ZCode's config lives one level below the app's real root (~/.zcode/cli/),
+        // so detect against the root itself rather than cli.dirPath (#245).
+        if source == "zcode" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.zcode") }
         guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
         return FileManager.default.fileExists(atPath: cli.dirPath)
     }
@@ -863,6 +914,8 @@ struct ConfigInstaller {
                 return installTraecliHooks(fm: fm)
             } else if cli.format == .hermes {
                 return installHermesHooks(fm: fm)
+            } else if cli.format == .zcode {
+                return installZcodeHooks(fm: fm)
             } else {
                 installExternalHooks(cli: cli, fm: fm)
                 if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
@@ -880,6 +933,8 @@ struct ConfigInstaller {
                     uninstallTraecliHooks(fm: fm)
                 } else if cli.format == .hermes {
                     uninstallHermesHooks(fm: fm)
+                } else if cli.format == .zcode {
+                    uninstallZcodeHooks(fm: fm)
                 } else {
                     uninstallHooks(cli: cli, fm: fm)
                 }
@@ -905,6 +960,9 @@ struct ConfigInstaller {
                 dirExists = fm.fileExists(atPath: piAgentDir)
             } else if cli.source == "omp" {
                 dirExists = fm.fileExists(atPath: ompAgentDir)
+            } else if cli.format == .zcode {
+                // Config lives one level below the app's real root (#245).
+                dirExists = fm.fileExists(atPath: NSHomeDirectory() + "/.zcode")
             } else {
                 dirExists = fm.fileExists(atPath: cli.dirPath)
             }
@@ -919,6 +977,13 @@ struct ConfigInstaller {
             if cli.format == .hermes {
                 if isHermesHooksInstalled(fm: fm) { continue }
                 if installHermesHooks(fm: fm) {
+                    repaired.append(cli.name)
+                }
+                continue
+            }
+            if cli.format == .zcode {
+                if isZcodeHooksInstalled(fm: fm) { continue }
+                if installZcodeHooks(fm: fm) {
                     repaired.append(cli.name)
                 }
                 continue
@@ -1284,6 +1349,10 @@ struct ConfigInstaller {
             case .hermes:
                 // Hermes uses a dedicated YAML installer (installHermesHooks);
                 // never reaches the JSON external-hook path.
+                return false
+            case .zcode:
+                // ZCode uses a dedicated installer (installZcodeHooks) for its
+                // {enabled, events} wrapper; never reaches this generic path.
                 return false
             case .kiroAgent:
                 // Kiro entries: { command, matcher: "*", timeout_ms }. Caller declares
@@ -2007,6 +2076,151 @@ struct ConfigInstaller {
 
         let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
         return removeManagedHermesHooks(from: normalized) != normalized
+    }
+
+    // MARK: - ZCode config.json (#245)
+    //
+    // ZCode (Z.ai) is an Electron desktop app — NOT a Claude Code fork. Hooks
+    // live under `hooks: {enabled, events}`, where `events` maps event names
+    // to Claude/nested-shaped entries ({hooks: [{type, command}]}) — the same
+    // shape `containsOurHook` / `removeManagedHookEntries` already understand,
+    // so those generic helpers apply unchanged to the `events` sub-dict. The
+    // event-name schema is STRICT: any key outside `zcodeAllowedEvents`
+    // silently drops the WHOLE `hooks` config on load — never write outside
+    // that whitelist. No hot-reload; a ZCode restart is required after any
+    // config.json edit.
+
+    /// The only 7 event names ZCode's schema accepts. Writing anything else
+    /// causes the entire `hooks` config to be silently discarded on load —
+    /// always filter against this before writing an event key.
+    static let zcodeAllowedEvents: Set<String> = [
+        "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest",
+        "PostToolUse", "PostToolUseFailure", "Stop",
+    ]
+
+    /// The bridge command we inject for ZCode hooks (path quoted if it has spaces).
+    private static func zcodeInjectedCommand() -> String {
+        let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
+        return "\(quotedBridge) --source zcode"
+    }
+
+    /// Parse a JSON/JSONC string directly (no filesystem access) — the string
+    /// counterpart to `parseJSONFile`, used by the pure merge/remove functions
+    /// below so they're testable without touching the real ~/.zcode path.
+    private static func parseJSONString(_ text: String) -> [String: Any]? {
+        guard let data = stripJSONComments(text).data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// Build the merged `hooks: {enabled, events}` document from raw file text
+    /// (seeds a fresh `{}` document when `contents` is empty), dropping stale
+    /// managed entries first so re-running is idempotent. Returns `contents`
+    /// unchanged if it fails to parse as a JSON object — never clobber
+    /// unparseable user data (#89).
+    static func mergeZcodeHooks(into contents: String) -> String {
+        let isEmpty = contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let baseText = isEmpty ? "{}\n" : contents
+        guard let root = parseJSONString(baseText) else { return contents }
+
+        var hooksRoot = root["hooks"] as? [String: Any] ?? [:]
+        var events = removeManagedHookEntries(from: hooksRoot["events"] as? [String: Any] ?? [:])
+
+        let command = zcodeInjectedCommand()
+        for (event, _, _) in defaultEvents(for: .zcode) where zcodeAllowedEvents.contains(event) {
+            var entries = events[event] as? [[String: Any]] ?? []
+            entries.append(["hooks": [["type": "command", "command": command] as [String: Any]]])
+            events[event] = entries
+        }
+
+        // `enabled` is the user's master switch over ALL their hooks — never
+        // flip an explicit false (that would silently re-arm every third-party
+        // hook command they turned off). Our hooks stay dormant in that case.
+        if hooksRoot["enabled"] == nil {
+            hooksRoot["enabled"] = true
+        }
+        hooksRoot["events"] = events
+
+        return JSONMinimalEditor.setTopLevelValue(in: baseText, key: "hooks", value: hooksRoot) ?? contents
+    }
+
+    /// Remove only our managed entries from the ZCode `hooks.events` map; drop
+    /// now-empty event keys, and drop the whole `hooks` key if nothing but our
+    /// own `enabled`/`events` scaffolding remains (never leave `{"enabled":
+    /// true, "events": {}}` behind).
+    static func removeManagedZcodeHooks(from contents: String) -> String {
+        guard let root = parseJSONString(contents),
+              var hooksRoot = root["hooks"] as? [String: Any]
+        else { return contents }
+
+        var events = hooksRoot["events"] as? [String: Any] ?? [:]
+        var didRemove = false
+        for (event, value) in events {
+            guard let entries = value as? [[String: Any]] else { continue }
+            let cleaned = entries.filter { !containsOurHook($0) }
+            if cleaned.count != entries.count { didRemove = true }
+            if cleaned.isEmpty {
+                events.removeValue(forKey: event)
+            } else {
+                events[event] = cleaned
+            }
+        }
+        guard didRemove else { return contents }
+        hooksRoot["events"] = events
+
+        // Nothing of ours — or the user's — left under `hooks`: drop the whole
+        // key instead of leaving empty scaffolding behind.
+        let hooksIsFullyOurs = events.isEmpty && hooksRoot.keys.allSatisfy { $0 == "enabled" || $0 == "events" }
+        if hooksIsFullyOurs {
+            return JSONMinimalEditor.deleteTopLevelKey(in: contents, key: "hooks") ?? contents
+        }
+        return JSONMinimalEditor.setTopLevelValue(in: contents, key: "hooks", value: hooksRoot) ?? contents
+    }
+
+    @discardableResult
+    private static func installZcodeHooks(fm: FileManager) -> Bool {
+        let zcodeRoot = NSHomeDirectory() + "/.zcode"
+        // Only write when ZCode is actually present on this machine.
+        guard fm.fileExists(atPath: zcodeRoot) else { return true }
+        let configDir = (zcodeConfigPath as NSString).deletingLastPathComponent
+        if !fm.fileExists(atPath: configDir) {
+            try? fm.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+        }
+
+        var original = ""
+        if fm.fileExists(atPath: zcodeConfigPath) {
+            guard let data = fm.contents(atPath: zcodeConfigPath),
+                  let decoded = String(data: data, encoding: .utf8) else { return false }
+            original = decoded
+        }
+        // Refuse to touch unparseable files (#89 safety guard).
+        if !original.isEmpty, parseJSONString(original) == nil { return false }
+
+        let merged = mergeZcodeHooks(into: original)
+        guard let data = merged.data(using: .utf8) else { return false }
+        do {
+            try data.write(to: URL(fileURLWithPath: zcodeConfigPath), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func uninstallZcodeHooks(fm: FileManager) {
+        guard fm.fileExists(atPath: zcodeConfigPath),
+              let original = try? String(contentsOfFile: zcodeConfigPath, encoding: .utf8)
+        else { return }
+
+        let cleaned = removeManagedZcodeHooks(from: original)
+        guard cleaned != original, let data = cleaned.data(using: .utf8) else { return }
+        try? data.write(to: URL(fileURLWithPath: zcodeConfigPath), options: .atomic)
+    }
+
+    private static func isZcodeHooksInstalled(fm: FileManager) -> Bool {
+        guard fm.fileExists(atPath: zcodeConfigPath),
+              let contents = try? String(contentsOfFile: zcodeConfigPath, encoding: .utf8)
+        else { return false }
+
+        return removeManagedZcodeHooks(from: contents) != contents
     }
 
     // MARK: - Codex config.toml

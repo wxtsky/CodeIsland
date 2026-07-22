@@ -528,6 +528,21 @@ private struct CompactRightWing: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
+    @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
+    @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
+    @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
+
+    /// Re-evaluated on every re-render; the compact bar redraws often enough
+    /// that the moon appears/disappears close to the window edges.
+    private var inQuietHours: Bool {
+        guard soundEnabled, quietHoursEnabled else { return false }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        return SoundManager.isInQuietHours(
+            minutesSinceMidnight: (c.hour ?? 0) * 60 + (c.minute ?? 0),
+            start: quietHoursStart,
+            end: quietHoursEnd
+        )
+    }
 
     private var displaySessionId: String? {
         appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -550,6 +565,23 @@ private struct CompactRightWing: View {
                     NSApplication.shared.terminate(nil)
                 }
             } else {
+                // Quiet hours active — explains why event sounds are silent.
+                if inQuietHours {
+                    Image(systemName: "moon.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .help(l10n["quiet_hours"])
+                }
+
+                // Glance completion dot — an agent finished while collapsed;
+                // cleared as soon as the panel expands.
+                if appState.glanceCompletionActive {
+                    Circle()
+                        .fill(Color(red: 0.4, green: 1.0, blue: 0.5))
+                        .frame(width: 7, height: 7)
+                        .shadow(color: Color(red: 0.4, green: 1.0, blue: 0.5).opacity(0.7), radius: 3)
+                }
+
                 // Pending approval/question badge
                 if appState.status == .waitingApproval || appState.status == .waitingQuestion {
                     Image(systemName: "bell.fill")
@@ -1670,6 +1702,7 @@ private struct SessionListView: View {
     var onlySessionId: String? = nil
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
+    @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
         if let only = onlySessionId, appState.sessions[only] != nil {
@@ -1712,21 +1745,32 @@ private struct SessionListView: View {
                 ("traecli", "Trae CLI"),
                 ("copilot", "Copilot"),
                 ("qoder", "Qoder"),
+                ("qoderwork", "QoderWork"),
                 ("droid", "Factory"),
                 ("codebuddy", "CodeBuddy"),
                 ("codybuddycn", "CodyBuddyCN"),
                 ("stepfun", "StepFun"),
                 ("workbuddy", "WorkBuddy"),
                 ("hermes", "Hermes"),
+                ("openclaw", "OpenClaw"),
                 ("qwen", "Qwen Code"),
                 ("kimi", "Kimi Code CLI"),
                 ("opencode", "OpenCode"),
+                ("pi", "Pi"),
+                ("kiro", "Kiro"),
+                ("cline", "Cline"),
+                ("zcode", "ZCode"),
             ]
             var result: [(String, String?, [String])] = []
             var seen = Set<String>()
             for cli in cliOrder {
                 let ids = sorted.filter { id in
-                    appState.sessions[id]?.source == cli.source
+                    guard let source = appState.sessions[id]?.source else { return false }
+                    if source == cli.source { return true }
+                    // Bundle promoted -cli variants with their IDE group (#248).
+                    if cli.source == "cursor", source == "cursor-cli" { return true }
+                    if cli.source == "qoder", source == "qoder-cli" { return true }
+                    return false
                 }
                 ids.forEach { seen.insert($0) }
                 if !ids.isEmpty {
@@ -1792,20 +1836,84 @@ private struct SessionListView: View {
         }
         .padding(.vertical, 4)
 
-        if needsScroll {
-            ThinScrollView(maxHeight: CGFloat(maxVisibleSessions) * 90) {
+        VStack(spacing: 0) {
+            if needsScroll {
+                ThinScrollView(maxHeight: CGFloat(maxVisibleSessions) * 90) {
+                    content
+                }
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 0, bottomLeadingRadius: 20,
+                        bottomTrailingRadius: 20, topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                )
+            } else {
                 content
             }
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 0, bottomLeadingRadius: 20,
-                    bottomTrailingRadius: 20, topTrailingRadius: 0,
-                    style: .continuous
-                )
-            )
-        } else {
-            content
+
+            // Full session list only — the completion card stays focused on
+            // the finished session.
+            if showUsageStats, onlySessionId == nil, let usage = appState.claudeUsage,
+               !(usage.last5h.isEmpty && usage.today.isEmpty) {
+                UsageFooterLine(usage: usage)
+            }
         }
+    }
+}
+
+/// Token totals from the local Claude transcripts — "in" is billed input
+/// (input + cache writes); cache reads live in the tooltip.
+private struct UsageFooterLine: View {
+    let usage: ClaudeUsageScanner.Snapshot
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "gauge.with.needle")
+                .font(.system(size: 9, weight: .semibold))
+            Text("Claude")
+                .fontWeight(.semibold)
+            Text("5h \(compact(usage.last5h))")
+            Text("·")
+                .foregroundStyle(.white.opacity(0.25))
+            Text("\(l10n["usage_today"]) \(compact(usage.today))")
+            Spacer()
+            UsageSparkline(buckets: usage.hourlyOutputTokens)
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.45))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .help(detail)
+    }
+
+    private func compact(_ t: ClaudeUsageTotals) -> String {
+        "\(ClaudeUsageScanner.formatTokens(t.inputTokens + t.cacheCreationTokens))↑ \(ClaudeUsageScanner.formatTokens(t.outputTokens))↓"
+    }
+
+    private var detail: String {
+        func line(_ label: String, _ t: ClaudeUsageTotals) -> String {
+            "\(label): in \(ClaudeUsageScanner.formatTokens(t.inputTokens)) · out \(ClaudeUsageScanner.formatTokens(t.outputTokens)) · cache write \(ClaudeUsageScanner.formatTokens(t.cacheCreationTokens)) · cache read \(ClaudeUsageScanner.formatTokens(t.cacheReadTokens))"
+        }
+        return line("5h", usage.last5h) + "\n" + line(l10n["usage_today"], usage.today)
+    }
+}
+
+/// Trailing-hours output-token activity, one 2.5pt bar per hour (right = now).
+private struct UsageSparkline: View {
+    let buckets: [Int]
+
+    var body: some View {
+        let peak = max(buckets.max() ?? 0, 1)
+        HStack(alignment: .bottom, spacing: 1.5) {
+            ForEach(Array(buckets.enumerated()), id: \.offset) { _, value in
+                RoundedRectangle(cornerRadius: 0.75)
+                    .fill(.white.opacity(value == 0 ? 0.12 : 0.45))
+                    .frame(width: 2.5, height: max(1.5, CGFloat(value) / CGFloat(peak) * 10))
+            }
+        }
+        .frame(height: 10, alignment: .bottom)
     }
 }
 
@@ -1853,6 +1961,7 @@ private struct SessionIdentityLine: View {
     let sessionFontSize: CGFloat
     let sessionColor: Color
     let dividerColor: Color
+    @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
 
     private var displaySessionId: String { session.displaySessionId(sessionId: sessionId) }
 
@@ -1866,6 +1975,19 @@ private struct SessionIdentityLine: View {
                 color: projectColor
             )
             .layoutPriority(2)
+
+            if showGitBranch, let branch = session.gitBranch {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: max(sessionFontSize - 1, 8), weight: .semibold))
+                    Text(session.gitIsWorktree ? "\(branch) ⧉" : branch)
+                        .font(.system(size: sessionFontSize, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundStyle(sessionColor.opacity(0.85))
+                .layoutPriority(1)
+            }
 
             if let sessionLabel = session.sessionLabel {
                 Text("#\(sessionLabel)")
@@ -2686,11 +2808,14 @@ private let cliIconFiles: [String: String] = [
     "antigravity": "antigravity",
     "google-antigravity": "gemini",
     "cursor": "cursor",
+    "cursor-cli": "cursor",
     "trae": "trae",
     "traecn": "trae",
     "traecli": "trae",
     "copilot": "copilot",
     "qoder": "qoder",
+    "qoder-cli": "qoder",
+    "qoderwork": "qoder",
     "droid": "factory",
     "codebuddy": "codebuddy",
     "codybuddycn": "codebuddy",
@@ -2703,6 +2828,10 @@ private let cliIconFiles: [String: String] = [
     "omp": "pi",
     "opencode": "opencode",
     "cline": "cline",
+    // Rendered from the in-house pixel mascots via
+    // MascotRenderHarness/testRenderCliIcons (MASCOT_ICON_DIR=…).
+    "kiro": "kiro",
+    "openclaw": "openclaw",
 ]
 
 private var cliIconCache: [String: NSImage] = [:]
@@ -2713,9 +2842,45 @@ func cliIcon(source: String, size: CGFloat = 16) -> NSImage? {
     guard let filename = cliIconFiles[source],
           let url = Bundle.appModule.url(forResource: filename, withExtension: "png", subdirectory: "Resources/cli-icons"),
           let image = NSImage(contentsOf: url)
-    else { return nil }
+    else {
+        // No asset (new integrations, custom CLIs): draw a monogram tile so
+        // every row in the settings CLI list still gets an icon.
+        let fallback = monogramIcon(for: source, size: size)
+        cliIconCache[key] = fallback
+        return fallback
+    }
     image.size = NSSize(width: size, height: size)
     cliIconCache[key] = image
+    return image
+}
+
+/// Rounded tile with the source's first letter; hue derived from the source
+/// name so distinct CLIs get stable, distinct colors.
+private func monogramIcon(for source: String, size: CGFloat) -> NSImage {
+    let letter = String(source.trimmingCharacters(in: CharacterSet(charactersIn: ".")).prefix(1)).uppercased()
+    // Deterministic hash — Swift's hashValue is seeded per launch and would
+    // repaint the tile a different color every run.
+    let stableHash = source.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7FFF_FFFF }
+    let hue = Double(stableHash % 360) / 360.0
+    let scale: CGFloat = 4  // draw at 4x so small sizes stay crisp
+    let px = size * scale
+    let image = NSImage(size: NSSize(width: px, height: px), flipped: false) { rect in
+        let bg = NSColor(hue: hue, saturation: 0.55, brightness: 0.72, alpha: 1)
+        NSBezierPath(roundedRect: rect.insetBy(dx: px * 0.02, dy: px * 0.02),
+                     xRadius: px * 0.22, yRadius: px * 0.22).addClip()
+        bg.setFill()
+        rect.fill()
+        let font = NSFont.systemFont(ofSize: px * 0.58, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white,
+        ]
+        let text = NSAttributedString(string: letter, attributes: attrs)
+        let textSize = text.size()
+        text.draw(at: NSPoint(x: (px - textSize.width) / 2, y: (px - textSize.height) / 2))
+        return true
+    }
+    image.size = NSSize(width: size, height: size)
     return image
 }
 

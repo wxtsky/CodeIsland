@@ -247,7 +247,7 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         case "cursor", "cursor-cli":                 self = .cursor
         case "copilot":                              self = .copilot
         case "trae", "traecn", "traecli":            self = .trae
-        case "qoder", "qoder-cli":                   self = .qoder
+        case "qoder", "qoder-cli", "qoderwork":      self = .qoder
         case "droid":                                self = .droid
         case "codebuddy", "codybuddycn":             self = .codebuddy
         case "stepfun":                              self = .stepfun

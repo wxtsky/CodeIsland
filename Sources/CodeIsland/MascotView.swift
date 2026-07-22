@@ -35,7 +35,7 @@ struct MascotView: View {
                 TraeView(status: status, size: size)
             case "copilot":
                 CopilotView(status: status, size: size)
-            case "qoder", "qoder-cli":
+            case "qoder", "qoder-cli", "qoderwork":
                 QoderView(status: status, size: size)
             case "droid":
                 DroidView(status: status, size: size)

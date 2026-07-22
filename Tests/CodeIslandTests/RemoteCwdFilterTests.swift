@@ -40,11 +40,58 @@ final class RemoteCwdFilterTests: XCTestCase {
         XCTAssertFalse(HookServer.remoteEventPassesCwdFilter(cwd: "", filterCSV: "/home/me"))
     }
 
+    func testWorkspaceRootsPassFilterWhenCwdIsUnhelpful() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertTrue(HookServer.remoteEventPassesCwdFilter(
+            cwd: "\(home)/.claude",
+            workspaceRoots: ["/home/me/projects/api"],
+            filterCSV: "/home/me/projects"
+        ))
+        XCTAssertFalse(HookServer.remoteEventPassesCwdFilter(
+            cwd: "\(home)/.claude",
+            workspaceRoots: ["/home/colleague/projects/api"],
+            filterCSV: "/home/me/projects"
+        ))
+    }
+
     func testEntriesAreTrimmed() {
         XCTAssertTrue(HookServer.remoteEventPassesCwdFilter(
             cwd: "/data/work/x",
             filterCSV: " /data/work , /other "
         ))
+    }
+
+    // MARK: remoteEventBypassesCwdFilter
+
+    func testLifecycleHooksBypassFilterForTrackedSessions() {
+        let tracked: Set<String> = ["sess-1"]
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "SessionEnd", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "stop", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "PermissionRequest", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "Notification", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "AfterAgentResponse", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertTrue(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "afterAgentResponse", sessionId: "sess-1", trackedSessionIds: tracked))
+    }
+
+    func testLifecycleBypassRequiresTrackedSession() {
+        XCTAssertFalse(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "SessionEnd", sessionId: "other-user", trackedSessionIds: ["sess-1"]))
+        XCTAssertFalse(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "SessionEnd", sessionId: nil, trackedSessionIds: ["sess-1"]))
+    }
+
+    func testNonLifecycleHooksDoNotBypassFilter() {
+        let tracked: Set<String> = ["sess-1"]
+        XCTAssertFalse(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "PreToolUse", sessionId: "sess-1", trackedSessionIds: tracked))
+        XCTAssertFalse(HookServer.remoteEventBypassesCwdFilter(
+            eventName: "SessionStart", sessionId: "sess-1", trackedSessionIds: tracked))
     }
 
     // MARK: RemoteHost model compatibility

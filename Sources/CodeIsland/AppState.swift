@@ -104,7 +104,32 @@ final class AppState {
     var pendingQuestion: QuestionRequest? { questionQueue.first }
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
-    var surface: IslandSurface = .collapsed
+    var surface: IslandSurface = .collapsed {
+        didSet {
+            // Any expansion counts as "seen" for the glance completion dot.
+            if surface.isExpanded, glanceCompletionActive {
+                glanceDismissTask?.cancel()
+                glanceCompletionActive = false
+            }
+            if surface.isExpanded {
+                refreshClaudeUsageIfStale()
+            }
+        }
+    }
+
+    /// Local-transcript token usage shown in the session-list footer.
+    /// Refreshed lazily on panel expansion (no resident timer, no API calls).
+    var claudeUsage: ClaudeUsageScanner.Snapshot?
+    private var usageScanInFlight = false
+    /// Incremental parse state — round-trips through each detached scan so
+    /// growing transcripts are only read past their last consumed offset.
+    private var usageFileCache = ClaudeUsageScanner.FileCache()
+
+    /// Glance completion mode: an agent finished while the pill was collapsed —
+    /// light the dot instead of expanding. Cleared when the user expands the
+    /// panel, with a long failsafe so a missed dot never lingers forever.
+    var glanceCompletionActive = false
+    private var glanceDismissTask: Task<Void, Never>?
 
     var justCompletedSessionId: String? {
         if case .completionCard(let id) = surface { return id }
@@ -418,6 +443,10 @@ final class AppState {
         case "trae":       return path.contains("/trae.app/contents/")
         case "traecn":     return path.contains("/trae.app/contents/") || path.contains("/traecn.app/contents/")
         case "qoder":      return path.contains("/qoder.app/contents/")
+        // QoderWork desktop app (#249) — bundle id undocumented; the standard
+        // /Applications/QoderWork.app layout is assumed, pending real-install
+        // verification.
+        case "qoderwork":  return path.contains("/qoderwork.app/contents/")
         case "droid":      return path.contains("/factory.app/contents/")
         case "codebuddy":  return path.contains("/codebuddy.app/contents/")
         case "codybuddycn": return path.contains("/codebuddycn.app/contents/") || path.contains("/codebuddy.app/contents/")
@@ -434,6 +463,7 @@ final class AppState {
         case "hermes":      return path.contains("/hermes.app/contents/")
         // Claude Code Desktop (#211): local Code-tab sessions live inside Claude.app.
         case "claude":      return path.contains("/claude.app/contents/")
+        case "zcode":       return path.contains("/zcode.app/contents/")
         default:           return false
         }
     }
@@ -732,11 +762,14 @@ final class AppState {
         case "codex":      return findCodexPids(candidatePids: candidatePids)
         case "gemini":     return findGeminiPids(candidatePids: candidatePids)
         case "cursor":     return findCursorPids(candidatePids: candidatePids)
+        case "cursor-cli": return findCursorCliPids(candidatePids: candidatePids)
         case "trae":       return findTraePids(candidatePids: candidatePids)
         case "traecn":     return findTraeCNPids(candidatePids: candidatePids)
         case "traecli":   return findTraeCliPids(candidatePids: candidatePids)
         case "copilot":    return findCopilotPids(candidatePids: candidatePids)
         case "qoder":      return findQoderPids(candidatePids: candidatePids)
+        case "qoder-cli":  return findQoderCliPids(candidatePids: candidatePids)
+        case "qoderwork":  return findQoderWorkPids(candidatePids: candidatePids)
         case "droid":      return findFactoryPids(candidatePids: candidatePids)
         case "codebuddy":  return findCodeBuddyPids(candidatePids: candidatePids)
         case "codybuddycn": return findCodyBuddyCNPids(candidatePids: candidatePids)
@@ -750,15 +783,42 @@ final class AppState {
         case "kimi":       return findKimiPids(candidatePids: candidatePids)
         case "pi":         return findPiPids(candidatePids: candidatePids)
         case "cline":      return findClinePids(candidatePids: candidatePids)
+        case "zcode":      return findZcodePids(candidatePids: candidatePids)
         default:           return []
         }
     }
 
+    enum CompletionStyle: String {
+        case expand, glance, off
+    }
+
+    /// Three-way completion notification style. Migration: the pre-glance
+    /// boolean `autoExpandOnCompletion` (#146) maps false → .off; anything
+    /// else (including "never set", which registers as true) → .expand.
+    nonisolated static func completionStyle(defaults: UserDefaults = .standard) -> CompletionStyle {
+        if let raw = defaults.string(forKey: SettingsKey.completionNotificationStyle),
+           let style = CompletionStyle(rawValue: raw) {
+            return style
+        }
+        if defaults.object(forKey: SettingsKey.autoExpandOnCompletion) != nil,
+           defaults.bool(forKey: SettingsKey.autoExpandOnCompletion) == false {
+            return .off
+        }
+        return .expand
+    }
+
     private func enqueueCompletion(_ sessionId: String) {
-        // Behavior setting (#146): respect "Auto-expand on agent completion".
-        // When disabled the panel stays compact — status indicators still
-        // update, but no completion card pops down.
-        guard UserDefaults.standard.bool(forKey: SettingsKey.autoExpandOnCompletion) else { return }
+        switch Self.completionStyle() {
+        case .off:
+            // Panel stays compact — status indicators still update, but no
+            // completion card pops down (#146).
+            return
+        case .glance:
+            flashGlanceCompletionIndicator()
+            return
+        case .expand:
+            break
+        }
 
         // Don't queue duplicates
         if completionQueue.contains(sessionId) || justCompletedSessionId == sessionId { return }
@@ -769,6 +829,62 @@ final class AppState {
         } else {
             // Show immediately
             showCompletion(sessionId)
+        }
+    }
+
+    /// Prewarm at launch so the footer doesn't pop in (and shift panel height)
+    /// on the first expansion.
+    func refreshClaudeUsageIfStale() {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.showUsageStats) else { return }
+        guard !usageScanInFlight else { return }
+        if let scannedAt = claudeUsage?.scannedAt, Date().timeIntervalSince(scannedAt) < 120 { return }
+        usageScanInFlight = true
+        let cacheCopy = usageFileCache
+        Task.detached(priority: .utility) {
+            var cache = cacheCopy
+            let snapshot = ClaudeUsageScanner.scan(cache: &cache)
+            await MainActor.run { [weak self] in
+                self?.claudeUsage = snapshot
+                self?.usageFileCache = cache
+                self?.usageScanInFlight = false
+            }
+        }
+    }
+
+    /// Last unresolved-branch probe per session — keeps `gitBranch == nil`
+    /// (non-repo cwds, SessionStart snapshot rebuilds) from probing on every event.
+    private var gitBranchCheckedAt: [String: Date] = [:]
+
+    /// Branch resolution runs detached: .git probing on a dead network mount
+    /// must never beachball the main actor. Triggers on cwd changes, at Stop
+    /// (the turn may have switched branches), and while unresolved (throttled).
+    private func maybeRefreshGitBranch(for sessionId: String, cwdBefore: String?, normalizedEventName: String) {
+        guard let session = sessions[sessionId],
+              session.remoteHostId == nil,
+              let cwd = session.cwd else { return }
+        let unresolvedDue = session.gitBranch == nil
+            && Date().timeIntervalSince(gitBranchCheckedAt[sessionId] ?? .distantPast) > 60
+        guard cwd != cwdBefore || normalizedEventName == "Stop" || unresolvedDue else { return }
+        gitBranchCheckedAt[sessionId] = Date()
+        Task.detached(priority: .utility) {
+            let info = GitBranchReader.read(cwd: cwd)
+            await MainActor.run { [weak self] in
+                guard let self, var s = self.sessions[sessionId], s.cwd == cwd else { return }
+                s.gitBranch = info?.branch
+                s.gitIsWorktree = info?.isWorktree ?? false
+                self.sessions[sessionId] = s
+            }
+        }
+    }
+
+    private func flashGlanceCompletionIndicator() {
+        guard !surface.isExpanded else { return }  // user is already looking
+        glanceCompletionActive = true
+        glanceDismissTask?.cancel()
+        glanceDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000_000)
+            guard !Task.isCancelled else { return }
+            glanceCompletionActive = false
         }
     }
 
@@ -785,6 +901,13 @@ final class AppState {
         guard let session = sessions[sessionId],
               (session.termApp != nil || session.termBundleId != nil) else { return true }
         return !isTerminalFrontmost(session)
+    }
+
+    private func shouldAutoOpenQuestionSurface(for event: HookEvent) -> Bool {
+        // AskUserQuestion holds the provider/CLI until its continuation resolves,
+        // so there is no parallel terminal prompt for Smart Suppress to defer to.
+        if event.toolName == "AskUserQuestion" { return true }
+        return shouldAutoOpenPendingSurface(for: event.sessionId ?? "default")
     }
 
     private func showCompletion(_ sessionId: String) {
@@ -964,6 +1087,7 @@ final class AppState {
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
         let prevStatus = sessions[sessionId]?.status
         let wasWaiting = prevStatus == .waitingApproval || prevStatus == .waitingQuestion
+        let cwdBeforeReduce = sessions[sessionId]?.cwd
 
         // Cache PreToolUse payloads so downstream events sharing tool_use_id can be
         // correlated, and drain queue entries whose agent already moved on.
@@ -975,6 +1099,10 @@ final class AppState {
         resolveOrphanPermissionsOnActivity(event)
 
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory)
+
+        // After reduce: remoteHostId is authoritative (extractMetadata just ran),
+        // so a remote session can never probe the local filesystem here.
+        maybeRefreshGitBranch(for: sessionId, cwdBefore: cwdBeforeReduce, normalizedEventName: normalizedEventName)
 
         // Backfill model after metadata extraction. Hooks are inconsistent across providers,
         // so retry with a cooldown instead of giving up permanently on the first miss.
@@ -1012,7 +1140,8 @@ final class AppState {
         }
 
         // Detect Cursor YOLO mode once per session (nil = unchecked)
-        if event.rawJSON["_source"] as? String == "cursor",
+        if let source = event.rawJSON["_source"] as? String,
+           (source == "cursor" || source == "cursor-cli"),
            sessions[sessionId]?.isYoloMode == nil {
             sessions[sessionId]?.isYoloMode = Self.detectCursorYoloMode()
         }
@@ -1465,7 +1594,7 @@ final class AppState {
 
         if questionQueue.count == 1 {
             activeSessionId = sessionId
-            if shouldAutoOpenPendingSurface(for: sessionId) {
+            if shouldAutoOpenQuestionSurface(for: event) {
                 withAnimation(NotchAnimation.open) {
                     surface = .questionCard(sessionId: sessionId)
                 }
@@ -1711,7 +1840,7 @@ final class AppState {
         } else if let next = questionQueue.first {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
-            if shouldAutoOpenPendingSurface(for: sid) {
+            if shouldAutoOpenQuestionSurface(for: next.event) {
                 surface = .questionCard(sessionId: sid)
             }
             return true
@@ -1787,7 +1916,7 @@ final class AppState {
         switch source {
         case "claude":
             return readModelFromTranscript(sessionId: sessionId, cwd: session.cwd)
-        case "qoder":
+        case "qoder", "qoder-cli":
             return readModelFromProjectTranscript(
                 sessionId: sessionId,
                 cwd: session.cwd,
@@ -1815,7 +1944,7 @@ final class AppState {
             return readModelFromCodexStore(cwd: session.cwd, processStart: processStart)
         case "gemini":
             return readModelFromGeminiStore(cwd: session.cwd, processStart: processStart)
-        case "cursor":
+        case "cursor", "cursor-cli":
             return readModelFromCursorStore(cwd: session.cwd, processStart: processStart)
         case "copilot":
             return readModelFromCopilotStore(cwd: session.cwd, processStart: processStart)
@@ -1904,7 +2033,7 @@ final class AppState {
         switch session.source {
         case "codex":
             return codexLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
-        case "qoder":
+        case "qoder", "qoder-cli":
             return qoderLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
         case "codebuddy":
             return codeBuddyLatestFinishedTurnTimestamp(sessionId: sessionId, session: session)
@@ -2087,6 +2216,8 @@ final class AppState {
             }
             sessions[p.sessionId] = snapshot
             refreshProviderTitle(for: p.sessionId)
+            // Branch is re-read, not persisted — it may have changed between runs.
+            maybeRefreshGitBranch(for: p.sessionId, cwdBefore: nil, normalizedEventName: "SessionStart")
             // Reattach exit monitoring without changing the restored idle/running snapshot.
             tryMonitorSession(p.sessionId)
         }
@@ -2853,12 +2984,53 @@ final class AppState {
         )
     }
 
+    /// Standalone Cursor CLI agent — must not match the desktop IDE/helper
+    /// processes that `findCursorPids` also covers (#248).
+    private nonisolated static func findCursorCliPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/.local/share/cursor-agent/versions/",
+            ],
+            argSubstrings: ["/cursor-agent/index.js"],
+            candidatePids: candidatePids
+        )
+    }
+
     private nonisolated static func findQoderPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
         findPids(
             matchingPathSubstrings: [
                 "/qoder.app/contents/macos/electron",
                 "/qoder.app/contents/frameworks/qoder helper",
                 "/.qoder/bin/qodercli/",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    /// Standalone Qoder CLI — must not match the desktop IDE/helper (#248).
+    private nonisolated static func findQoderCliPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/.qoder/bin/qodercli/",
+                "/@qoder-ai/qodercli",
+            ],
+            argSubstrings: [
+                "/opt/homebrew/bin/qodercli",
+                "/usr/local/bin/qodercli",
+                "/.local/bin/qodercli",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    /// QoderWork desktop app (#249). Bundle layout is assumed from the standard
+    /// /Applications/QoderWork.app install — no public bundle id / binary name
+    /// docs, pending real-install verification. "/qoderwork.app/" never collides
+    /// with the IDE's "/qoder.app/" substrings.
+    private nonisolated static func findQoderWorkPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/qoderwork.app/contents/",
             ],
             candidatePids: candidatePids
         )
@@ -3034,6 +3206,17 @@ final class AppState {
             argSubstrings: [
                 "/.local/bin/hermes",
                 "/.hermes/",
+            ],
+            candidatePids: candidatePids
+        )
+    }
+
+    // Electron app (.dmg distribution) — packaged executable path unverified
+    // on a real machine; best-effort guess pending field report (#245).
+    private nonisolated static func findZcodePids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        findPids(
+            matchingPathSubstrings: [
+                "/zcode.app/contents/",
             ],
             candidatePids: candidatePids
         )

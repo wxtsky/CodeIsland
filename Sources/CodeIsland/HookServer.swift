@@ -145,13 +145,45 @@ class HookServer {
     /// Empty filter = allow everything (previous behavior). With a filter set,
     /// events must carry a cwd containing one of the entries; events without a
     /// cwd are dropped too — on a shared account they can't be attributed.
-    nonisolated static func remoteEventPassesCwdFilter(cwd: String?, filterCSV: String) -> Bool {
+    nonisolated static func remoteEventPassesCwdFilter(
+        cwd: String?,
+        workspaceRoots: [String]? = nil,
+        filterCSV: String
+    ) -> Bool {
         let hasPattern = filterCSV
             .split(separator: ",", omittingEmptySubsequences: false)
             .contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         guard hasPattern else { return true }
-        guard let cwd, !cwd.isEmpty else { return false }
-        return cwdMatchesAnyPattern(cwd, patternsCSV: filterCSV)
+        if let cwd, !cwd.isEmpty, cwdMatchesAnyPattern(cwd, patternsCSV: filterCSV) {
+            return true
+        }
+        if let roots = workspaceRoots {
+            for root in roots where !root.isEmpty {
+                if cwdMatchesAnyPattern(root, patternsCSV: filterCSV) {
+                    return true
+                }
+            }
+        }
+        // No cwd or workspace root matched — on a shared account they can't be attributed.
+        return false
+    }
+
+    /// Remote cwd allow-lists drop hooks from other users' directories on shared
+    /// SSH accounts (#240). Lifecycle and blocking hooks for sessions we already
+    /// track must still flow through — otherwise SessionEnd/Stop never tears
+    /// sessions down and PermissionRequest/Notification stall the remote agent.
+    nonisolated static func remoteEventBypassesCwdFilter(
+        eventName: String,
+        sessionId: String?,
+        trackedSessionIds: Set<String>
+    ) -> Bool {
+        guard let sessionId, trackedSessionIds.contains(sessionId) else { return false }
+        switch EventNormalizer.normalize(eventName) {
+        case "SessionEnd", "Stop", "SubagentStop", "PermissionRequest", "Notification", "AfterAgentResponse":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Looks up the configured cwd filter for a remote host id. Nil when the
@@ -451,7 +483,16 @@ class HookServer {
         // account every user's hooks reach every connected client — scope this
         // panel to the configured working directories and drop the rest.
         if let filterCSV = Self.remoteCwdFilter(for: event),
-           !Self.remoteEventPassesCwdFilter(cwd: event.rawJSON["cwd"] as? String, filterCSV: filterCSV) {
+           !Self.remoteEventPassesCwdFilter(
+               cwd: event.rawJSON["cwd"] as? String,
+               workspaceRoots: event.rawJSON["workspace_roots"] as? [String],
+               filterCSV: filterCSV
+           ),
+           !Self.remoteEventBypassesCwdFilter(
+               eventName: event.eventName,
+               sessionId: event.sessionId,
+               trackedSessionIds: Set(appState.sessions.keys)
+           ) {
             sendResponse(connection: connection, data: Data("{}".utf8))
             return
         }

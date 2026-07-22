@@ -32,6 +32,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appState?.removeRemoteSessions(hostId: hostId)
         }
 
+        // Prewarm the usage footer off the launch path — first panel expansion
+        // then shows data immediately instead of popping in a beat later.
+        Task { @MainActor [weak appState] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            appState?.refreshClaudeUsageIfStale()
+        }
+
         // Hook installation does subprocess version detection plus disk I/O —
         // keep it off the main thread so app launch isn't blocked even when a
         // CLI binary hangs. See #139.

@@ -21,6 +21,7 @@ public struct SessionSnapshot: Sendable {
         "copilot",
         "qoder",
         "qoder-cli",
+        "qoderwork",
         "droid",
         "codebuddy",
         "codybuddycn",
@@ -36,10 +37,14 @@ public struct SessionSnapshot: Sendable {
         "pi",
         "kiro",
         "cline",
+        "zcode",
     ]
 
     public static let ideCompletionSources: Set<String> = [
         "cursor",
+        "cursor-cli",
+        "qoder",
+        "qoder-cli",
         "trae",
         "traecn",
         "codebuddy",
@@ -119,6 +124,10 @@ public struct SessionSnapshot: Sendable {
     public var remoteHostName: String?
     /// nil = unchecked, false = not YOLO, true = YOLO
     public var isYoloMode: Bool?
+    /// Checked-out git branch for cwd; refreshed on cwd changes and Stop
+    /// (a turn may have switched branches). nil for non-repo and remote cwds.
+    public var gitBranch: String?
+    public var gitIsWorktree: Bool = false
 
     public init(startTime: Date = Date()) {
         self.startTime = startTime
@@ -165,6 +174,10 @@ public struct SessionSnapshot: Sendable {
             "cursoragent": "cursor-cli",
             "cursorcli": "cursor-cli",
             "qodercli": "qoder-cli",
+            // QoderWork — Qoder's standalone desktop assistant app (not the
+            // IDE); own hooks file at ~/.qoderwork/settings.json (#249).
+            "qoder-work": "qoderwork",
+            "qoder work": "qoderwork",
             "kimi-cli": "kimi",
             "kimicli": "kimi",
             "kiro-cli": "kiro",
@@ -180,6 +193,8 @@ public struct SessionSnapshot: Sendable {
             "omp": "pi",
             "oh-my-pi": "pi",
             "oh my pi": "pi",
+            "z-code": "zcode",
+            "z code": "zcode",
         ]
         let canonical = aliases[normalized] ?? normalized
         let dynamicSupportedSources = supportedSources.union(loadCustomSources())
@@ -265,17 +280,169 @@ public struct SessionSnapshot: Sendable {
 
     /// Display name: project folder, or short session ID
     public var displayName: String {
-        if let cwd = cwd {
-            let last = (cwd as NSString).lastPathComponent
-            // If last component is a timestamp/numeric ID (e.g. CodeBuddy "20260406010126"),
-            // show the parent directory name instead
-            if last.count >= 8 && last.allSatisfy(\.isNumber) {
-                let parent = ((cwd as NSString).deletingLastPathComponent as NSString).lastPathComponent
-                if !parent.isEmpty && parent != "/" { return parent }
+        guard let cwd = cwd else { return "Session" }
+        return Self.resolvedProjectDisplayName(from: cwd)
+    }
+
+    /// Directory names that are agent metadata, not user projects. Only these
+    /// exact dot-dirs are peeled / treated as unhelpful — legitimate dot-named
+    /// repos (.dotfiles, .config, .emacs.d) must keep their own name.
+    static let agentMetadataDirNames: Set<String> = [
+        ".claude", ".cursor", ".codex", ".gemini", ".qoder", ".qoderwork",
+        ".trae", ".trae-cn", ".kiro", ".copilot", ".factory", ".codebuddy",
+        ".codybuddycn", ".stepfun", ".workbuddy", ".hermes", ".kimi",
+        ".pi", ".omp", ".qwen", ".zcode", ".openclaw", ".codeisland",
+    ]
+
+    /// Resolve a human project folder label from a cwd path.
+    static func resolvedProjectDisplayName(from cwd: String) -> String {
+        var name = displayNameLeafFromCursorProjectsPath(cwd)
+            ?? (cwd as NSString).lastPathComponent
+
+        // Agent metadata dirs (.claude, .cursor) are not project names (#248).
+        if Self.agentMetadataDirNames.contains(name) {
+            if let peeled = peelProjectNameBeforeMetadataDir(in: cwd, leaf: name) {
+                name = peeled
+            } else if isUnhelpfulHookCwd(cwd) {
+                return "Session"
             }
-            return last
         }
-        return "Session"
+
+        if isHomeDirectoryPath(cwd) || isHomeDirectoryBasename(name, for: cwd) {
+            return "Session"
+        }
+
+        if name.count >= 8 && name.allSatisfy(\.isNumber) {
+            let parent = ((cwd as NSString).deletingLastPathComponent as NSString).lastPathComponent
+            if !parent.isEmpty && parent != "/" && !isHomeDirectoryBasename(parent, for: cwd) {
+                return parent
+            }
+        }
+        return name
+    }
+
+    /// Cursor stores projects under `~/.cursor/projects/<encoded>/…` where slashes
+    /// in the original workspace path become hyphens. Literal hyphens inside a
+    /// folder name are preserved, so naive full-path reversal is ambiguous — walk
+    /// hyphen segments from the right until the reconstructed path exists.
+    /// Decode results are memoized: displayName is evaluated on every SwiftUI
+    /// render of every session card, and the walk below stats the filesystem.
+    /// NSCache is thread-safe and evicts under memory pressure.
+    private static let cursorLeafCache = NSCache<NSString, NSString>()
+
+    static func displayNameLeafFromCursorProjectsPath(_ cwd: String) -> String? {
+        if let cached = cursorLeafCache.object(forKey: cwd as NSString) {
+            return cached.length == 0 ? nil : (cached as String)
+        }
+        let result = computeDisplayNameLeafFromCursorProjectsPath(cwd)
+        cursorLeafCache.setObject((result ?? "") as NSString, forKey: cwd as NSString)
+        return result
+    }
+
+    private static func computeDisplayNameLeafFromCursorProjectsPath(_ cwd: String) -> String? {
+        let marker = "/.cursor/projects/"
+        guard let range = cwd.range(of: marker) else { return nil }
+        let encoded = cwd[range.upperBound...].split(separator: "/").first.map(String.init) ?? ""
+        guard !encoded.isEmpty else { return nil }
+
+        let homeEncoded = homeDirectoryProjectEncoded()
+        let projectEncoded: String
+        if encoded.hasPrefix(homeEncoded + "-") {
+            projectEncoded = String(encoded.dropFirst(homeEncoded.count + 1))
+        } else if encoded == homeEncoded {
+            return nil
+        } else {
+            projectEncoded = encoded
+        }
+        guard !projectEncoded.isEmpty else { return nil }
+
+        let parts = projectEncoded.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.isEmpty else { return nil }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let fm = FileManager.default
+        // Prefer the longest leaf whose prefix reconstructs to a real directory.
+        for k in stride(from: parts.count - 1, through: 0, by: -1) {
+            let leaf = parts[k...].joined(separator: "-")
+            guard !leaf.isEmpty else { continue }
+            if k == 0 {
+                return leaf
+            }
+            let relative = parts[..<k].joined(separator: "/") + "/" + leaf
+            if fm.fileExists(atPath: "\(home)/\(relative)") {
+                return leaf
+            }
+        }
+        return parts.last
+    }
+
+    /// When cwd sits inside a metadata dir, or a Cursor-encoded leaf is one, peel
+    /// back to the real project folder name.
+    static func peelProjectNameBeforeMetadataDir(in cwd: String, leaf: String) -> String? {
+        guard Self.agentMetadataDirNames.contains(leaf) else { return nil }
+
+        if cwd.contains("/.cursor/projects/") {
+            let marker = "/.cursor/projects/"
+            guard let range = cwd.range(of: marker) else { return nil }
+            let encoded = cwd[range.upperBound...].split(separator: "/").first.map(String.init) ?? ""
+            if let peeled = peelEncodedProjectTailBeforeMetadataDir(encoded) {
+                return peeled
+            }
+        }
+
+        let parent = ((cwd as NSString).deletingLastPathComponent as NSString).lastPathComponent
+        let parentPath = (cwd as NSString).deletingLastPathComponent
+        if !parent.isEmpty && parent != "/",
+           !isHomeDirectoryPath(parentPath),
+           !parent.contains("/.cursor/projects/"),
+           !looksLikeCursorEncodedDir(parent) {
+            return parent
+        }
+        return nil
+    }
+
+    /// Hook/bridge cwd values that carry no project identity — getcwd() inside
+    /// `~/.claude` or at `$HOME` must not block workspace_roots / transcript_path.
+    static func isUnhelpfulHookCwd(_ cwd: String) -> Bool {
+        if isHomeDirectoryPath(cwd) { return true }
+        let last = (cwd as NSString).lastPathComponent
+        guard Self.agentMetadataDirNames.contains(last) else { return false }
+        return isHomeDirectoryPath((cwd as NSString).deletingLastPathComponent)
+    }
+
+    static func isHomeDirectoryPath(_ path: String) -> Bool {
+        let home = (FileManager.default.homeDirectoryForCurrentUser.path as NSString).standardizingPath
+        return (path as NSString).standardizingPath == home
+    }
+
+    static func isHomeDirectoryBasename(_ name: String, for cwd: String) -> Bool {
+        name == (FileManager.default.homeDirectoryForCurrentUser.path as NSString).lastPathComponent
+            && (isHomeDirectoryPath(cwd) || isUnhelpfulHookCwd(cwd))
+    }
+
+    static func peelEncodedProjectTailBeforeMetadataDir(_ encoded: String) -> String? {
+        let homeEncoded = homeDirectoryProjectEncoded()
+        let projectEncoded: String
+        if encoded.hasPrefix(homeEncoded + "-") {
+            projectEncoded = String(encoded.dropFirst(homeEncoded.count + 1))
+        } else {
+            projectEncoded = encoded
+        }
+        let parts = projectEncoded.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 2, let last = parts.last,
+              Self.agentMetadataDirNames.contains(last) else { return nil }
+        let peeled = parts[parts.count - 2]
+        return peeled.isEmpty ? nil : peeled
+    }
+
+    private static func looksLikeCursorEncodedDir(_ name: String) -> Bool {
+        name.contains("-") && !name.hasPrefix(".")
+    }
+
+    private static func homeDirectoryProjectEncoded() -> String {
+        var home = FileManager.default.homeDirectoryForCurrentUser.path
+        if home.hasPrefix("/") { home = String(home.dropFirst()) }
+        return home.replacingOccurrences(of: "/", with: "-")
     }
 
     public func displayTitle(sessionId: String) -> String {
@@ -340,6 +507,7 @@ public struct SessionSnapshot: Sendable {
         case "traecli": return "Traecli"
         case "qoder": return "Qoder"
         case "qoder-cli": return "Qoder CLI"
+        case "qoderwork": return "QoderWork"
         case "droid": return "Factory"
         case "codebuddy": return "CodeBuddy"
         case "codybuddycn": return "CodyBuddyCN"
@@ -355,6 +523,7 @@ public struct SessionSnapshot: Sendable {
         case "pi": return "Pi"
         case "kiro": return "Kiro"
         case "cline": return "Cline"
+        case "zcode": return "ZCode"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {
                 return customName
@@ -961,22 +1130,38 @@ private func applyEnvMetadata(into sessions: inout [String: SessionSnapshot], se
 }
 
 public func extractMetadata(into sessions: inout [String: SessionSnapshot], sessionId: String, event: HookEvent) {
-    if let cwd = event.rawJSON["cwd"] as? String, !cwd.isEmpty {
+    let eventCwd = event.rawJSON["cwd"] as? String
+    if let cwd = eventCwd, !cwd.isEmpty,
+       !SessionSnapshot.isUnhelpfulHookCwd(cwd) {
         sessions[sessionId]?.cwd = cwd
-    } else if sessions[sessionId]?.cwd == nil,
-              let roots = event.rawJSON["workspace_roots"] as? [String],
-              let first = roots.first, !first.isEmpty {
+    }
+    if sessions[sessionId]?.cwd == nil
+        || SessionSnapshot.isUnhelpfulHookCwd(sessions[sessionId]?.cwd ?? ""),
+       let roots = event.rawJSON["workspace_roots"] as? [String],
+       let first = roots.first, !first.isEmpty {
         sessions[sessionId]?.cwd = first
-    } else if sessions[sessionId]?.cwd == nil,
-              let tp = event.rawJSON["transcript_path"] as? String, !tp.isEmpty {
+    } else if sessions[sessionId]?.cwd == nil
+        || SessionSnapshot.isUnhelpfulHookCwd(sessions[sessionId]?.cwd ?? ""),
+              let tp = event.rawJSON["transcript_path"] as? String,
+              tp.contains("/.cursor/projects/") {
         // Cursor: extract project dir from transcript_path
         // e.g. ~/.cursor/projects/<project>/agent-transcripts/... → ~/.cursor/projects/<project>
+        // Must stay Cursor-scoped: Claude transcripts also contain a "projects"
+        // component (~/.claude/projects/<encoded>/…) that is not a workspace.
         let parts = tp.split(separator: "/")
         if let idx = parts.firstIndex(of: "projects"), idx + 1 < parts.count {
             let projectName = String(parts[idx + 1])
             sessions[sessionId]?.cwd = "/\(parts[...idx].joined(separator: "/"))/\(projectName)"
         }
+    } else if sessions[sessionId]?.cwd == nil, let cwd = eventCwd, !cwd.isEmpty {
+        // Last resort: an unhelpful cwd ($HOME, ~/.claude) still beats nil —
+        // transcript-based model lookup keys off it, and the display layer
+        // already renders these paths as "Session".
+        sessions[sessionId]?.cwd = cwd
     }
+    // Git branch resolution is NOT done here: this reducer runs on the main
+    // actor and .git probing can block on network mounts. AppState refreshes
+    // it asynchronously after reduce (maybeRefreshGitBranch).
     if let model = event.rawJSON["model"] as? String, !model.isEmpty {
         sessions[sessionId]?.model = model
     }

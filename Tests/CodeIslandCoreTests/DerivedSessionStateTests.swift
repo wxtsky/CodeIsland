@@ -82,6 +82,50 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "cursor-session")))
     }
 
+    func testAfterAgentResponseCompletesCursorCliSource() throws {
+        var session = SessionSnapshot()
+        session.source = "cursor-cli"
+        session.status = .running
+
+        var sessions = ["cursor-cli-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "cursor-cli-session",
+            "_source": "cursor-cli",
+            "text": "Done",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["cursor-cli-session"]?.status, .idle)
+        XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "cursor-cli-session")))
+    }
+
+    func testAfterAgentResponseCompletesQoderCliSource() throws {
+        var session = SessionSnapshot()
+        session.source = "qoder-cli"
+        session.status = .running
+
+        var sessions = ["qoder-cli-session": session]
+        let event = try decode([
+            "hook_event_name": "afterAgentResponse",
+            "session_id": "qoder-cli-session",
+            "_source": "qoder-cli",
+            "text": "Done",
+        ])
+
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions["qoder-cli-session"]?.status, .idle)
+        XCTAssertTrue(effects.contains(.enqueueCompletion(sessionId: "qoder-cli-session")))
+    }
+
+    func testIdeCompletionSourcesIncludeCliVariants() {
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("cursor-cli"))
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("qoder"))
+        XCTAssertTrue(SessionSnapshot.ideCompletionSources.contains("qoder-cli"))
+    }
+
     func testAfterAgentResponseKeepsCLISourceProcessing() throws {
         var session = SessionSnapshot()
         session.source = "claude"
@@ -162,6 +206,58 @@ final class DerivedSessionStateTests: XCTestCase {
         ])
 
         XCTAssertEqual(source, "codex")
+    }
+
+    func testExtractMetadataPrefersWorkspaceRootsOverHomeClaudeCwd() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let workspace = "/tmp/codeisland-workspace"
+        var sessions: [String: SessionSnapshot] = ["s1": SessionSnapshot()]
+        let event = try decode([
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "_source": "cursor-cli",
+            "cwd": "\(home)/.claude",
+            "workspace_roots": [workspace],
+        ])
+
+        extractMetadata(into: &sessions, sessionId: "s1", event: event)
+
+        XCTAssertEqual(sessions["s1"]?.cwd, workspace)
+    }
+
+    /// A Claude transcript path also contains a "projects" component
+    /// (~/.claude/projects/<encoded>/…) — it must not hijack cwd. The home
+    /// cwd itself is kept as a last resort so model lookup keeps working.
+    func testExtractMetadataKeepsHomeCwdForClaudeTranscripts() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var sessions: [String: SessionSnapshot] = ["s1": SessionSnapshot()]
+        let event = try decode([
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "_source": "claude",
+            "cwd": home,
+            "transcript_path": "\(home)/.claude/projects/-Users-someone/abc123.jsonl",
+        ])
+
+        extractMetadata(into: &sessions, sessionId: "s1", event: event)
+
+        XCTAssertEqual(sessions["s1"]?.cwd, home)
+    }
+
+    func testExtractMetadataStillDecodesCursorTranscriptPath() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        var sessions: [String: SessionSnapshot] = ["s1": SessionSnapshot()]
+        let event = try decode([
+            "hook_event_name": "PreToolUse",
+            "session_id": "s1",
+            "_source": "cursor-cli",
+            "cwd": "\(home)/.claude",
+            "transcript_path": "\(home)/.cursor/projects/enc-proj/agent-transcripts/t.jsonl",
+        ])
+
+        extractMetadata(into: &sessions, sessionId: "s1", event: event)
+
+        XCTAssertEqual(sessions["s1"]?.cwd, "\(home)/.cursor/projects/enc-proj")
     }
 
     private func decode(_ payload: [String: Any]) throws -> HookEvent {

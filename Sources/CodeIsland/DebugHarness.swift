@@ -181,8 +181,9 @@ enum DebugHarness {
         s1.lastUserPrompt = "Build the dashboard page"
         s1.addRecentMessage(ChatMessage(isUser: true, text: "Build the dashboard page"))
         s1.termApp = "Ghostty"
+        s1.gitBranch = "main"
 
-        // Session 2: Codex idle
+        // Session 2: Codex idle, on a linked worktree branch
         var s2 = SessionSnapshot()
         s2.status = .idle
         s2.cwd = "/Users/dev/backend"
@@ -192,6 +193,8 @@ enum DebugHarness {
         s2.lastAssistantMessage = "Refactored the query planner to use a cost-based optimizer."
         s2.addRecentMessage(ChatMessage(isUser: true, text: "Optimize the query planner"))
         s2.addRecentMessage(ChatMessage(isUser: false, text: "Refactored the query planner."))
+        s2.gitBranch = "feat/query-planner"
+        s2.gitIsWorktree = true
 
         // Session 3: Cursor processing
         var s3 = SessionSnapshot()
@@ -205,6 +208,26 @@ enum DebugHarness {
         state.sessions["preview-multi-2"] = s2
         state.sessions["preview-multi-3"] = s3
         state.activeSessionId = "preview-multi-1"
+
+        // Usage footer + sparkline under the session list.
+        var fiveH = ClaudeUsageTotals()
+        fiveH.inputTokens = 182_000
+        fiveH.outputTokens = 96_500
+        fiveH.cacheCreationTokens = 240_000
+        fiveH.cacheReadTokens = 12_400_000
+        fiveH.messageCount = 118
+        var today = ClaudeUsageTotals()
+        today.inputTokens = 410_000
+        today.outputTokens = 233_000
+        today.cacheCreationTokens = 512_000
+        today.cacheReadTokens = 30_100_000
+        today.messageCount = 402
+        state.claudeUsage = ClaudeUsageScanner.Snapshot(
+            last5h: fiveH,
+            today: today,
+            hourlyOutputTokens: [0, 0, 4200, 18_000, 9500, 0, 22_000, 41_000, 12_000, 30_500, 52_000, 17_500],
+            scannedAt: Date()
+        )
     }
 
     private static func applyBusy(to state: AppState) {

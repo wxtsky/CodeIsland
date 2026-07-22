@@ -1,9 +1,25 @@
 import XCTest
+import AppKit
 @testable import CodeIsland
 import CodeIslandCore
 
 @MainActor
 final class AppStateQuestionFlowTests: XCTestCase {
+    private var savedSmartSuppress: Any?
+
+    override func setUp() {
+        super.setUp()
+        savedSmartSuppress = UserDefaults.standard.object(forKey: SettingsKey.smartSuppress)
+    }
+
+    override func tearDown() {
+        if let savedSmartSuppress {
+            UserDefaults.standard.set(savedSmartSuppress, forKey: SettingsKey.smartSuppress)
+        } else {
+            UserDefaults.standard.removeObject(forKey: SettingsKey.smartSuppress)
+        }
+        super.tearDown()
+    }
 
     // MARK: - Multi-question answers
 
@@ -69,6 +85,105 @@ final class AppStateQuestionFlowTests: XCTestCase {
         let responseData = await responseTask.value
         let answers = try extractAnswers(from: responseData)
         XCTAssertEqual(answers["你希望我主要使用哪种语言回复？"] as? String, "中文")
+    }
+
+    func testAskUserQuestionOpensQuestionCardWhenSmartSuppressSeesGhosttyFrontmost() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        let sessionId = "s-smart-question"
+        var session = SessionSnapshot()
+        session.termApp = "Ghostty"
+        session.termBundleId = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        appState.sessions[sessionId] = session
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: sessionId), "test setup must model Smart Suppress considering the Ghostty-backed session frontmost")
+
+        let event = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "继续吗", text: "需要用户确认下一步吗？", options: ["继续", "停止"])
+            ]
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.questionQueue.count, 1)
+        let surfaceAfterRequest = appState.surface
+
+        appState.skipQuestion()
+        _ = await responseTask.value
+
+        XCTAssertEqual(
+            surfaceAfterRequest,
+            .questionCard(sessionId: sessionId),
+            "AskUserQuestion must open its card even when Smart Suppress considers the Ghostty-backed terminal frontmost; otherwise OMP waits on CodeIsland while the native terminal dialog is blocked."
+        )
+    }
+
+    func testAskUserQuestionQueueOpensNextQuestionCardWhenSmartSuppressSeesGhosttyFrontmost() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        let appState = AppState()
+        let frontmostBundleId = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        let firstSessionId = "s-smart-question-first"
+        let secondSessionId = "s-smart-question-second"
+        var firstSession = SessionSnapshot()
+        firstSession.termApp = "Ghostty"
+        firstSession.termBundleId = frontmostBundleId
+        var secondSession = SessionSnapshot()
+        secondSession.termApp = "Ghostty"
+        secondSession.termBundleId = frontmostBundleId
+        appState.sessions[firstSessionId] = firstSession
+        appState.sessions[secondSessionId] = secondSession
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: firstSessionId), "test setup must model Smart Suppress considering the first Ghostty-backed session frontmost")
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: secondSessionId), "test setup must model Smart Suppress considering the second Ghostty-backed session frontmost")
+
+        let firstEvent = try makeAskUserQuestionEvent(
+            sessionId: firstSessionId,
+            questions: [
+                question(header: "第一步", text: "先处理第一个问题吗？", options: ["继续", "停止"])
+            ]
+        )
+        let secondEvent = try makeAskUserQuestionEvent(
+            sessionId: secondSessionId,
+            questions: [
+                question(header: "第二步", text: "现在处理第二个问题吗？", options: ["继续", "停止"])
+            ]
+        )
+
+        let firstResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(firstEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        let secondResponseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(secondEvent, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        let queueCountAfterEnqueue = appState.questionQueue.count
+
+        appState.skipQuestion()
+        _ = await firstResponseTask.value
+        await Task.yield()
+        let queueCountAfterPromotingSecond = appState.questionQueue.count
+        let surfaceAfterPromotingSecond = appState.surface
+
+        appState.skipQuestion()
+        _ = await secondResponseTask.value
+
+        XCTAssertEqual(queueCountAfterEnqueue, 2)
+        XCTAssertEqual(queueCountAfterPromotingSecond, 1)
+        XCTAssertEqual(
+            surfaceAfterPromotingSecond,
+            .questionCard(sessionId: secondSessionId),
+            "showNextPending must open the next AskUserQuestion card even when Smart Suppress considers that Ghostty-backed terminal frontmost; otherwise queued OMP questions remain hidden behind the compact badge."
+        )
     }
 
     // MARK: - Skip returns deny

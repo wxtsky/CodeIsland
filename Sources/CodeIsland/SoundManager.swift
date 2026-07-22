@@ -31,6 +31,7 @@ class SoundManager {
     /// Called from AppState.handleEvent() to trigger appropriate sounds
     func handleEvent(_ eventName: String) {
         guard defaults.bool(forKey: SettingsKey.soundEnabled) else { return }
+        guard !quietHoursActive else { return }
         guard let entry = Self.eventSounds.first(where: { $0.event == eventName }) else { return }
         guard defaults.bool(forKey: entry.key) else { return }
         play(entry.sound)
@@ -39,8 +40,35 @@ class SoundManager {
     /// Play boot sound on app launch
     func playBoot() {
         guard defaults.bool(forKey: SettingsKey.soundEnabled) else { return }
+        guard !quietHoursActive else { return }
         guard defaults.bool(forKey: SettingsKey.soundBoot) else { return }
         play("8bit_boot")
+    }
+
+    /// Quiet-hours window test. Half-open [start, end) in minutes since
+    /// midnight; start > end spans midnight; start == end never mutes (an
+    /// all-day window would just be the master sound toggle).
+    nonisolated static func isInQuietHours(minutesSinceMidnight m: Int, start: Int, end: Int) -> Bool {
+        guard start != end else { return false }
+        if start < end { return m >= start && m < end }
+        return m >= start || m < end
+    }
+
+    /// Settings previews stay audible: only event-driven sounds are gated.
+    private var quietHoursActive: Bool {
+        guard defaults.bool(forKey: SettingsKey.quietHoursEnabled) else { return false }
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        return Self.isInQuietHours(
+            minutesSinceMidnight: (comps.hour ?? 0) * 60 + (comps.minute ?? 0),
+            start: storedMinutes(SettingsKey.quietHoursStart, default: SettingsDefaults.quietHoursStart),
+            end: storedMinutes(SettingsKey.quietHoursEnd, default: SettingsDefaults.quietHoursEnd)
+        )
+    }
+
+    /// integer(forKey:) collapses "never set" to 0 (midnight) — fall back to
+    /// the SettingsDefaults the UI shows instead.
+    private func storedMinutes(_ key: String, default def: Int) -> Int {
+        defaults.object(forKey: key) == nil ? def : defaults.integer(forKey: key)
     }
 
     /// Preview a specific sound (used by settings UI play buttons)

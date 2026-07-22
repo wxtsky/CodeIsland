@@ -1,5 +1,47 @@
 # Changelog
 
+## [v1.0.30] - 2026-07-10
+
+### English
+- Add ZCode (Z.ai) integration — hooks written silently to ~/.zcode/cli/config.json with a strict event-name whitelist; restart ZCode after enabling (#245, thanks @JamesJian-tech for the plugin-structure intel)
+- Add QoderWork integration — Qoder's standalone desktop assistant, Claude-format hooks in ~/.qoderwork/settings.json; restart QoderWork after enabling (#249)
+- Add Traditional Chinese (zh-Hant) localization, hand-tuned Taiwan wording for all 287 strings (#251, thanks @hongyinull)
+- Add Quiet Hours — mute all event sounds inside a configured window (spans midnight); a small moon on the collapsed pill explains the silence
+- Add git branch / worktree indicator on session cards (⎇ branch, ⧉ for linked worktrees) — made for parallel-worktree agent workflows
+- Add Glance completion mode — on completion, light a green dot on the collapsed island instead of expanding; clears the moment you expand (three-way setting: expand / glance / off)
+- Add Claude token-usage footer under the session list — 5-hour and today windows aggregated from local transcripts (no API calls) with a 12-hour activity sparkline and cache-detail tooltip
+- Add Terax terminal click-to-jump (#253, thanks @wangmian0)
+- Complete cursor-cli / qoder-cli routing: dedicated process matching, real project names for Cursor sessions, grouped under their IDEs in the CLI tab; remote cwd filters honor workspace_roots and never drop lifecycle/approval hooks of tracked sessions (#248/#240/#255, thanks @zephyr110)
+- Every CLI row in settings now has an icon — pixel-mascot icons for Kiro & OpenClaw, deterministic monogram tiles for the rest (including custom CLIs)
+- Fix Codex "Always Allow" writing broken Starlark rules for multiline commands — newlines are now escaped, existing broken files need the bad rule removed once (#250/#252, thanks @hexsean)
+- Fix blocking AskUserQuestion cards staying collapsed under Smart Suppress — OMP (and every provider) waits on the island, so the card now always opens (#256, thanks @haixing23)
+- Fix legitimate dot-named repos (.dotfiles, .config) displaying their parent folder's name
+- Fix remote SSH sessions showing the local machine's git branch when directory layouts match
+- Fix zellij-inside-Terax losing precise pane focus on click-to-jump
+- Fix the ZCode installer flipping a user's explicit hooks master switch back on
+- Usage scanning is incremental (per-file byte offsets) — day-long multi-MB transcripts are read once, not on every panel expansion
+- Claude sessions running in $HOME keep model detection; Cursor project-path decoding moved off the render path
+
+### 中文
+- 新增 ZCode（智谱 Z.ai）集成——hooks 静默写入 ~/.zcode/cli/config.json，严格事件名白名单防御；勾选后需重启 ZCode 生效（#245，感谢 @JamesJian-tech 提供插件结构情报）
+- 新增 QoderWork 集成——Qoder 生态的独立桌面助手，Claude 格式 hooks 写入 ~/.qoderwork/settings.json；勾选后需重启 QoderWork（#249）
+- 新增繁体中文本地化，287 条文案逐条采用台湾用语校对（#251，感谢 @hongyinull）
+- 新增「静默时段」——设定时间段内静音全部音效（支持跨午夜）；静默期间收起的岛上会显示小月亮说明为何无声
+- 会话卡片新增 Git 分支 / worktree 指示器（⎇ 分支名，linked worktree 附 ⧉ 标记）——为并行 worktree 跑多 agent 的工作流而生
+- 新增 Glance 完成模式——任务完成时不弹面板，只在收起的岛上亮起绿点，展开即熄灭（完成提醒三选一：展开 / 绿点 / 无动作）
+- 会话列表底部新增 Claude 用量统计——本地 transcript 聚合 5 小时窗口与今日用量（零网络请求），附 12 小时活动迷你柱状图与缓存明细悬浮提示
+- 新增 Terax 终端点击跳转（#253，感谢 @wangmian0）
+- 补全 cursor-cli / qoder-cli 路由：独立进程匹配、Cursor 会话显示真实项目名、CLI 分组归入所属 IDE；远程目录过滤识别 workspace_roots，且不再误拦已跟踪会话的生命周期/审批 hook（#248/#240/#255，感谢 @zephyr110）
+- 设置里每个 CLI 行都有图标了——Kiro 与 OpenClaw 使用像素吉祥物图标，其余（含自定义 CLI）使用稳定配色的首字母图标
+- 修复 Codex「始终允许」对多行命令写出损坏的 Starlark 规则——换行符现已转义，已损坏的规则文件需手动删除坏段一次（#250/#252，感谢 @hexsean）
+- 修复智能抑制下阻塞式 AskUserQuestion 卡片不展开——OMP（及所有 provider）都在等岛上作答，卡片现在始终弹出（#256，感谢 @haixing23）
+- 修复合法的 dot 开头仓库（.dotfiles、.config）显示成父目录名的问题
+- 修复远程 SSH 会话在两端目录结构相同时显示本机 Git 分支的问题
+- 修复 Terax 内运行 zellij 时点击跳转丢失精确 pane 聚焦的问题
+- 修复 ZCode 安装器会把用户显式关闭的 hooks 总开关重新打开的问题
+- 用量扫描改为增量式（按文件记录字节偏移）——日级长会话的大 transcript 只读一次，不再每次展开面板重读
+- 在 $HOME 下直接运行的 Claude 会话保留模型识别；Cursor 项目路径解码移出渲染路径
+
 ## [v1.0.29] - 2026-07-06
 
 ### English
