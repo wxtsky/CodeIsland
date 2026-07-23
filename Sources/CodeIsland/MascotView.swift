@@ -28,6 +28,8 @@ struct MascotView: View {
             switch resolved {
             case "codex":
                 DexView(status: status, size: size)
+            case "grok":
+                GrokView(status: status, size: size)
             case "gemini", "google-antigravity":
                 // Google Antigravity is Gemini-based — reuse the Gemini mascot.
                 GeminiView(status: status, size: size)

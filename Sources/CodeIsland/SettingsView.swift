@@ -1049,6 +1049,7 @@ private struct MascotsPage: View {
     private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
         ("Clawd", "claude", "Claude Code", Color(red: 0.871, green: 0.533, blue: 0.427)),
         ("Dex", "codex", "Codex (OpenAI)", Color(red: 0.92, green: 0.92, blue: 0.93)),
+        ("Grok", "grok", "Grok CLI", Color.white),
         ("Gemini", "gemini", "Gemini CLI", Color(red: 0.278, green: 0.588, blue: 0.894)),
         ("CursorBot", "cursor", "Cursor", Color(red: 0.96, green: 0.31, blue: 0.0)),
         ("TraeBot", "trae", "Trae", Color(red: 0.96, green: 0.31, blue: 0.0)),

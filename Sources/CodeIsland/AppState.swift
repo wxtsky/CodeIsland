@@ -924,6 +924,7 @@ final class AppState {
         case "google-antigravity": return findGoogleAntigravityPids(candidatePids: candidatePids)
         case "workbuddy":  return findWorkBuddyPids(candidatePids: candidatePids)
         case "hermes":     return findHermesPids(candidatePids: candidatePids)
+        case "grok":       return findGrokPids(candidatePids: candidatePids)
         case "qwen":       return findQwenPids(candidatePids: candidatePids)
         case "kimi":       return findKimiPids(candidatePids: candidatePids)
         case "pi":         return findPiPids(candidatePids: candidatePids)
@@ -2396,6 +2397,8 @@ final class AppState {
             return readModelFromCopilotStore(cwd: session.cwd, processStart: processStart)
         case "opencode":
             return readModelFromOpenCodeStore(cwd: session.cwd, processStart: processStart)
+        case "grok":
+            return readModelFromGrokStore(cwd: session.cwd, processStart: processStart)
         default:
             return nil
         }
@@ -2596,6 +2599,11 @@ final class AppState {
         }
     }
 
+    private nonisolated static func readModelFromGrokStore(cwd: String?, processStart: Date?) -> String? {
+        guard let cwd else { return nil }
+        return findRecentGrokSession(cwd: cwd, after: processStart)?.model
+    }
+
     // MARK: - Session Discovery (FSEventStream + process scan)
     // MARK: - Session Persistence
 
@@ -2748,6 +2756,9 @@ final class AppState {
         if ConfigInstaller.isEnabled(source: "kimi") {
             discovered.append(contentsOf: findActiveKimiSessions(candidatePids: candidatePids))
         }
+        if ConfigInstaller.isEnabled(source: "grok") {
+            discovered.append(contentsOf: findActiveGrokSessions(candidatePids: candidatePids))
+        }
         if ConfigInstaller.isEnabled(source: "cline") {
             discovered.append(contentsOf: findActiveClineSessions(candidatePids: candidatePids))
         }
@@ -2768,6 +2779,7 @@ final class AppState {
             ("opencode", "\(home)/.local/share/opencode"),
             ("kimi", "\(home)/.kimi-code/sessions"),
             ("kimi", "\(home)/.kimi/sessions"),
+            ("grok", "\(ConfigInstaller.grokHome())/sessions"),
         ]
         let fm = FileManager.default
         var roots = candidates.compactMap { source, path -> String? in
@@ -4510,6 +4522,13 @@ final class AppState {
         )
     }
 
+    private nonisolated static func findGrokPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        (candidatePids ?? allProcessIds()).filter { pid in
+            guard let path = executablePath(for: pid) else { return false }
+            return CLIProcessResolver.sourceMatchesExecutablePath(path, source: "grok")
+        }
+    }
+
     private nonisolated static func findPiPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
         findPids(
             matchingPathSubstrings: [
@@ -4824,6 +4843,239 @@ final class AppState {
 
         flushTurn()
         return (nil, Array(messages.suffix(3)))
+    }
+
+    /// Grok percent-encodes the full cwd into a single directory component,
+    /// including `/` as `%2F` (for example `/Users/me` -> `%2FUsers%2Fme`).
+    nonisolated static func grokEncodedCwd(_ cwd: String) -> String? {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return cwd.addingPercentEncoding(withAllowedCharacters: allowed)
+    }
+
+    private struct GrokSessionCandidate {
+        let sessionId: String
+        let directory: String
+        let model: String?
+        let createdAt: Date?
+        let activityAt: Date
+    }
+
+    /// Score a metadata session against a live Grok process. Grok's native
+    /// hooks are authoritative once a turn starts; discovery is only a recovery
+    /// path, so it must prefer missing a late `/new` over attaching a completed
+    /// one-shot session to an unrelated long-lived process in the same cwd.
+    nonisolated static func grokSessionProcessMatchScore(
+        createdAt: Date?,
+        activityAt: Date,
+        processStart: Date?,
+        now: Date = Date()
+    ) -> TimeInterval? {
+        guard let processStart else {
+            let age = now.timeIntervalSince(activityAt)
+            guard age >= -10, age <= 30 else { return nil }
+            return 1_000 + max(age, 0)
+        }
+
+        guard activityAt >= processStart.addingTimeInterval(-10) else { return nil }
+
+        if let createdAt {
+            let creationDelta = createdAt.timeIntervalSince(processStart)
+            if abs(creationDelta) <= 120 {
+                return abs(creationDelta)
+            }
+
+            // A resumed session was created before this process. Accept it only
+            // while its first recovered activity is still close to launch.
+            if createdAt < processStart {
+                let activityDelta = activityAt.timeIntervalSince(processStart)
+                if activityDelta >= -10, activityDelta <= 120 {
+                    return 300 + abs(activityDelta)
+                }
+            }
+            return nil
+        }
+
+        let activityDelta = activityAt.timeIntervalSince(processStart)
+        guard activityDelta >= -10, activityDelta <= 120 else { return nil }
+        return 600 + abs(activityDelta)
+    }
+
+    /// Produce a one-to-one mapping for Grok processes that share a cwd. The
+    /// newest viable session is assigned first and prefers its closest process
+    /// start. An augmenting path may move an earlier assignment to its next-best
+    /// process when that is required to keep another viable session visible.
+    nonisolated static func matchGrokSessionsToProcesses(
+        processes: [(pid: pid_t, startedAt: Date?)],
+        sessions: [(id: String, createdAt: Date?, activityAt: Date)],
+        now: Date = Date()
+    ) -> [String: pid_t] {
+        typealias Edge = (pid: pid_t, score: TimeInterval)
+        let orderedSessions = sessions.sorted { lhs, rhs in
+            if lhs.activityAt != rhs.activityAt {
+                return lhs.activityAt > rhs.activityAt
+            }
+            return lhs.id < rhs.id
+        }
+        var edgesBySession: [String: [Edge]] = [:]
+
+        for session in orderedSessions where edgesBySession[session.id] == nil {
+            edgesBySession[session.id] = processes.compactMap { process in
+                guard let score = grokSessionProcessMatchScore(
+                    createdAt: session.createdAt,
+                    activityAt: session.activityAt,
+                    processStart: process.startedAt,
+                    now: now
+                ) else { return nil }
+                return (process.pid, score)
+            }.sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score < rhs.score
+                }
+                return lhs.pid < rhs.pid
+            }
+        }
+
+        var sessionByPid: [pid_t: String] = [:]
+
+        func assign(_ sessionId: String, visitedPids: inout Set<pid_t>) -> Bool {
+            guard let edges = edgesBySession[sessionId] else { return false }
+
+            // Preserve earlier (newer) choices when this session has an unused
+            // viable PID of its own.
+            if let freeEdge = edges.first(where: {
+                !visitedPids.contains($0.pid) && sessionByPid[$0.pid] == nil
+            }) {
+                visitedPids.insert(freeEdge.pid)
+                sessionByPid[freeEdge.pid] = sessionId
+                return true
+            }
+
+            // Otherwise find an augmenting path: move the current owner to its
+            // next-best PID, then claim the newly released one.
+            for edge in edges where visitedPids.insert(edge.pid).inserted {
+                guard let displacedSession = sessionByPid[edge.pid] else {
+                    sessionByPid[edge.pid] = sessionId
+                    return true
+                }
+                if assign(displacedSession, visitedPids: &visitedPids) {
+                    sessionByPid[edge.pid] = sessionId
+                    return true
+                }
+            }
+            return false
+        }
+
+        var attemptedSessions: Set<String> = []
+        for session in orderedSessions where attemptedSessions.insert(session.id).inserted {
+            var visitedPids: Set<pid_t> = []
+            _ = assign(session.id, visitedPids: &visitedPids)
+        }
+
+        return Dictionary(uniqueKeysWithValues: sessionByPid.map { ($0.value, $0.key) })
+    }
+
+    private nonisolated static func grokSessionCandidates(
+        cwd: String,
+        fm: FileManager = .default
+    ) -> [GrokSessionCandidate] {
+        guard let encodedCwd = grokEncodedCwd(cwd) else { return [] }
+        let cwdDirectory = "\(ConfigInstaller.grokHome())/sessions/\(encodedCwd)"
+        guard let sessionDirectories = try? fm.contentsOfDirectory(atPath: cwdDirectory) else { return [] }
+
+        var candidates: [GrokSessionCandidate] = []
+        for directoryName in sessionDirectories {
+            let directory = "\(cwdDirectory)/\(directoryName)"
+            let summaryPath = "\(directory)/summary.json"
+            guard let data = fm.contents(atPath: summaryPath),
+                  let summary = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let info = summary["info"] as? [String: Any],
+                  let summaryCwd = info["cwd"] as? String,
+                  summaryCwd == cwd else { continue }
+
+            let sessionId = (info["id"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? directoryName
+            let createdAt = (summary["created_at"] as? String).flatMap(parseISO8601Timestamp)
+            let timestamps = ["last_active_at", "updated_at", "created_at"]
+                .compactMap { summary[$0] as? String }
+                .compactMap(parseISO8601Timestamp)
+            var activityAt = timestamps.max() ?? .distantPast
+
+            // File mtimes catch a turn that has started writing events before
+            // summary.json has been refreshed.
+            for filename in ["summary.json", "events.jsonl", "updates.jsonl", "chat_history.jsonl"] {
+                let path = "\(directory)/\(filename)"
+                if let attrs = try? fm.attributesOfItem(atPath: path),
+                   let modified = attrs[.modificationDate] as? Date,
+                   modified > activityAt {
+                    activityAt = modified
+                }
+            }
+
+            candidates.append(GrokSessionCandidate(
+                sessionId: sessionId,
+                directory: directory,
+                model: (summary["current_model_id"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                createdAt: createdAt,
+                activityAt: activityAt
+            ))
+        }
+        return candidates
+    }
+
+    private nonisolated static func findRecentGrokSession(
+        cwd: String,
+        after processStart: Date?,
+        fm: FileManager = .default
+    ) -> GrokSessionCandidate? {
+        grokSessionCandidates(cwd: cwd, fm: fm)
+            .filter {
+                grokSessionProcessMatchScore(
+                    createdAt: $0.createdAt,
+                    activityAt: $0.activityAt,
+                    processStart: processStart
+                ) != nil
+            }
+            .max { $0.activityAt < $1.activityAt }
+    }
+
+    private nonisolated static func findActiveGrokSessions(candidatePids: [pid_t]? = nil) -> [DiscoveredSession] {
+        let grokPids = findGrokPids(candidatePids: candidatePids)
+        guard !grokPids.isEmpty else { return [] }
+
+        let fm = FileManager.default
+        let liveProcesses = grokPids.compactMap { pid -> (pid: pid_t, cwd: String, startedAt: Date?)? in
+            guard let cwd = getCwd(for: pid), !cwd.isEmpty, !isSubagentWorktree(cwd) else { return nil }
+            return (pid, cwd, getProcessStartTime(pid))
+        }
+        let processGroups = Dictionary(grouping: liveProcesses) { $0.cwd }
+
+        var results: [DiscoveredSession] = []
+        for (cwd, processes) in processGroups {
+            let candidates = grokSessionCandidates(cwd: cwd, fm: fm)
+            let assignments = matchGrokSessionsToProcesses(
+                processes: processes.map { ($0.pid, $0.startedAt) },
+                sessions: candidates.map { ($0.sessionId, $0.createdAt, $0.activityAt) }
+            )
+
+            for candidate in candidates {
+                guard let pid = assignments[candidate.sessionId] else { continue }
+                let chatPath = "\(candidate.directory)/chat_history.jsonl"
+                let hasChat = fm.fileExists(atPath: chatPath)
+                let messages = hasChat ? readRecentFromTranscript(path: chatPath).1 : []
+                results.append(DiscoveredSession(
+                    sessionId: candidate.sessionId,
+                    cwd: cwd,
+                    tty: nil,
+                    model: candidate.model,
+                    pid: pid,
+                    modifiedAt: candidate.activityAt,
+                    recentMessages: messages,
+                    source: "grok",
+                    transcriptPath: hasChat ? chatPath : nil
+                ))
+            }
+        }
+        return results
     }
 
     private nonisolated static func findCopilotPids(candidatePids: [pid_t]? = nil) -> [pid_t] {

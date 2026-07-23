@@ -2875,6 +2875,7 @@ private let cliIconFiles: [String: String] = [
     "stepfun": "stepfun",
     "workbuddy": "workbuddy",
     "hermes": "hermes",
+    "grok": "grok",
     "qwen": "qwen",
     "kimi": "kimi",
     "pi": "pi",

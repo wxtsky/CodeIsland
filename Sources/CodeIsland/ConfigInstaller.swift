@@ -237,6 +237,25 @@ struct ConfigInstaller {
         return "~/.kimi-code/config.toml"
     }
 
+    // MARK: - Grok Build home resolution
+
+    /// Resolve Grok Build's config/session root. Grok documents `GROK_HOME`
+    /// as the override for the default `~/.grok` directory.
+    static func grokHome() -> String {
+        let raw = (ProcessInfo.processInfo.environment["GROK_HOME"] ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty else { return NSHomeDirectory() + "/.grok" }
+        if raw == "~" { return NSHomeDirectory() }
+        if raw.hasPrefix("~/") { return NSHomeDirectory() + "/" + raw.dropFirst(2) }
+        return raw
+    }
+
+    static func displayGrokPath(filename: String) -> String {
+        let raw = (ProcessInfo.processInfo.environment["GROK_HOME"] ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        return raw.isEmpty ? "~/.grok/\(filename)" : "$GROK_HOME/\(filename)"
+    }
+
     // MARK: - All supported CLIs
 
     private static let builtInCLIs: [CLIConfig] = [
@@ -453,6 +472,17 @@ struct ConfigInstaller {
             configPath: ".hermes/config.yaml", configKey: "hooks",
             format: .hermes,
             events: defaultEvents(for: .hermes)
+        ),
+        // Grok Build CLI — native global hooks are standalone JSON files under
+        // $GROK_HOME/hooks. Use `.nested` rather than the Claude format because
+        // Grok rejects `matcher` on lifecycle events such as SessionStart/Stop.
+        CLIConfig(
+            name: "Grok CLI", source: "grok",
+            configPath: "hooks/codeisland.json", configKey: "hooks",
+            format: .nested,
+            events: GrokHookForwardingPolicy.managedHookEvents.map { ($0, 5, false) },
+            rootOverride: { ConfigInstaller.grokHome() },
+            displayPathOverride: { ConfigInstaller.displayGrokPath(filename: "hooks/codeisland.json") }
         ),
         // Qwen Code — timeout in milliseconds
         CLIConfig(
@@ -971,6 +1001,7 @@ struct ConfigInstaller {
         if source == "pi" { return FileManager.default.fileExists(atPath: piAgentDir) }
         if source == "omp" { return FileManager.default.fileExists(atPath: ompAgentDir) }
         if source == "openclaw" { return FileManager.default.fileExists(atPath: openclawDir) }
+        if source == "grok" { return FileManager.default.fileExists(atPath: grokHome()) }
         if source == "copilot" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.copilot") }
         if source == "cline" {
             let fm = FileManager.default
@@ -1069,6 +1100,10 @@ struct ConfigInstaller {
             let dirExists: Bool
             if cli.format == .copilot {
                 dirExists = fm.fileExists(atPath: NSHomeDirectory() + "/.copilot")
+            } else if cli.source == "grok" {
+                // The hooks directory does not exist on a fresh Grok install;
+                // its parent $GROK_HOME is the installation marker.
+                dirExists = fm.fileExists(atPath: grokHome())
             } else if cli.source == "pi" {
                 dirExists = fm.fileExists(atPath: piAgentDir)
             } else if cli.source == "omp" {
@@ -1377,6 +1412,15 @@ struct ConfigInstaller {
         if cli.format == .copilot {
             // Copilot: check root ~/.copilot exists, create hooks subdir if needed
             let rootDir = NSHomeDirectory() + "/.copilot"
+            guard fm.fileExists(atPath: rootDir) else { return true }
+            if !fm.fileExists(atPath: cli.dirPath) {
+                try? fm.createDirectory(atPath: cli.dirPath, withIntermediateDirectories: true)
+            }
+        } else if cli.source == "grok" {
+            // Grok discovers every JSON file in $GROK_HOME/hooks. A managed
+            // install may not have created that subdirectory yet, so gate on
+            // its existing root and create only the hooks child directory.
+            let rootDir = (cli.dirPath as NSString).deletingLastPathComponent
             guard fm.fileExists(atPath: rootDir) else { return true }
             if !fm.fileExists(atPath: cli.dirPath) {
                 try? fm.createDirectory(atPath: cli.dirPath, withIntermediateDirectories: true)

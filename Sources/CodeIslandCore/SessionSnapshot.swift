@@ -31,6 +31,7 @@ public struct SessionSnapshot: Sendable {
         "google-antigravity",
         "workbuddy",
         "hermes",
+        "grok",
         "openclaw",
         "qwen",
         "kimi",
@@ -236,6 +237,10 @@ public struct SessionSnapshot: Sendable {
             "hermes-agents": "hermes",
             "hermes agent": "hermes",
             "hermes agents": "hermes",
+            "grok-cli": "grok",
+            "grokcli": "grok",
+            "grok-build": "grok",
+            "grok build": "grok",
             // OpenClaw (openclaw.ai) — personal-assistant Gateway daemon,
             // formerly branded Clawdbot. Keep the old name as an alias so
             // events from a not-yet-renamed install land on the same source.
@@ -287,6 +292,7 @@ public struct SessionSnapshot: Sendable {
         if canonical.hasPrefix("antigravity") { return "antigravity" }
         if canonical.hasPrefix("workbuddy") { return "workbuddy" }
         if canonical.hasPrefix("hermes") { return "hermes" }
+        if canonical.hasPrefix("grok") { return "grok" }
         if canonical.hasPrefix("openclaw") { return "openclaw" }
         if canonical.hasPrefix("qwen") { return "qwen" }
         if canonical.hasPrefix("kiro") { return "kiro" }
@@ -371,7 +377,7 @@ public struct SessionSnapshot: Sendable {
         ".claude", ".cursor", ".codex", ".gemini", ".qoder", ".qoderwork",
         ".trae", ".trae-cn", ".kiro", ".copilot", ".factory", ".codebuddy",
         ".codybuddycn", ".stepfun", ".workbuddy", ".hermes", ".kimi", ".kimi-code",
-        ".pi", ".omp", ".qwen", ".zcode", ".openclaw", ".codeisland",
+        ".grok", ".pi", ".omp", ".qwen", ".zcode", ".openclaw", ".codeisland",
     ]
 
     /// Resolve a human project folder label from a cwd path.
@@ -597,6 +603,7 @@ public struct SessionSnapshot: Sendable {
         case "google-antigravity": return "Google Antigravity"
         case "workbuddy": return "WorkBuddy"
         case "hermes": return "Hermes"
+        case "grok": return "Grok CLI"
         case "openclaw": return "OpenClaw"
         case "qwen": return "Qwen Code"
         case "kimi": return "Kimi Code CLI"

@@ -22,6 +22,15 @@ public enum CLIProcessResolver {
                 || lowercasedPath.contains("/qwen-code ")
         case "gemini":
             return lowercasedPath.hasSuffix("/gemini") || lowercasedPath.contains("/gemini ")
+        case "grok":
+            // Managed Grok installs execute the versioned binary directly from
+            // $GROK_HOME/downloads (e.g. grok-0.2.106-macos-aarch64), while
+            // package-manager installs may expose a plain `.../bin/grok`.
+            let basename = (lowercasedPath as NSString).lastPathComponent
+            return basename == "grok"
+                || (basename.hasPrefix("grok-")
+                    && (lowercasedPath.contains("/.grok/downloads/")
+                        || lowercasedPath.contains("/grok/downloads/")))
         case "cursor-cli":
             // Cursor's CLI agent installs to ~/.local/share/cursor-agent/versions/<v>/cursor-agent
             // and is also referenced by /cursor-agent/index.js when invoked via Node.

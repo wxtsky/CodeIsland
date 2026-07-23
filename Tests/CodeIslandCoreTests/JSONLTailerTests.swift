@@ -141,6 +141,18 @@ final class JSONLTailerTests: XCTestCase {
         XCTAssertFalse(result.delta.isEmpty)
     }
 
+    func testScanLinesExtractsGrokChatHistoryRows() {
+        let lines = [
+            #"{"type":"user","content":[{"type":"text","text":"build it"}]}"#,
+            #"{"type":"assistant","content":"done","model_id":"grok-code"}"#,
+        ].joined(separator: "\n") + "\n"
+
+        let result = JSONLTailer.scanLines(Data(lines.utf8))
+
+        XCTAssertEqual(result.delta.lastUserPrompt, "build it")
+        XCTAssertEqual(result.delta.lastAssistantMessage, "done")
+    }
+
     // MARK: - extractText
 
     func testExtractTextFromPlainString() {

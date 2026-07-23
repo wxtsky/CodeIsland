@@ -221,6 +221,18 @@ if let idx = args.firstIndex(of: "--event"), idx + 1 < args.count {
 // Quick exit: skip if CODEISLAND_SKIP is set
 guard env["CODEISLAND_SKIP"] == nil else { exit(0) }
 
+// Grok Build imports ~/.claude and ~/.cursor hooks for compatibility in
+// addition to its own $GROK_HOME/hooks files. Once the dedicated CodeIsland
+// Grok hook is installed, forwarding those imported copies would deliver every
+// lifecycle event two or three times (and can mislabel it as Claude/Cursor).
+// Grok injects these variables for every hook subprocess, so keep only the
+// explicitly managed `--source grok` invocation in that runtime. Keep this
+// decision in CodeIslandCore so the production gate is directly testable.
+let isGrokRuntime = GrokHookForwardingPolicy.isGrokRuntime(environment: env)
+if !GrokHookForwardingPolicy.shouldForward(source: sourceTag, environment: env) {
+    exit(0)
+}
+
 // Quick exit: socket doesn't exist or isn't a socket
 var statBuf = stat()
 guard stat(socketPath, &statBuf) == 0, (statBuf.st_mode & S_IFMT) == S_IFSOCK else { exit(0) }
@@ -237,6 +249,25 @@ if let inputStr = String(data: input, encoding: .utf8) {
 guard !input.isEmpty,
       var json = try? JSONSerialization.jsonObject(with: input) as? [String: Any] else {
     exit(0)
+}
+
+// Grok normally includes these camelCase fields on stdin. The environment
+// fallbacks cover hook variants and make the bridge resilient to truncated
+// passive payloads without inventing a PID-based session identifier.
+if isGrokRuntime {
+    if json["hookEventName"] == nil,
+       let event = nonEmptyString(env["GROK_HOOK_EVENT"]) {
+        json["hookEventName"] = event
+    }
+    if json["sessionId"] == nil,
+       let sessionId = nonEmptyString(env["GROK_SESSION_ID"]) {
+        json["sessionId"] = sessionId
+    }
+    if json["cwd"] == nil,
+       let workspaceRoot = nonEmptyString(json["workspaceRoot"])
+            ?? nonEmptyString(env["GROK_WORKSPACE_ROOT"]) {
+        json["cwd"] = workspaceRoot
+    }
 }
 
 // Generic compatibility: accept common camelCase aliases from third-party forks
@@ -272,6 +303,35 @@ if json["session_id"] == nil {
 // tailer + cwd inference). Bridge the alias when only the camelCase form exists.
 if json["transcript_path"] == nil, let tp = nonEmptyString(json["transcriptPath"]) {
     json["transcript_path"] = tp
+}
+
+// Grok's hook payload does not carry a transcript path. Its documented session
+// layout is deterministic, and chat_history.jsonl uses the user/assistant row
+// shapes already understood by CodeIsland's incremental tailer.
+if isGrokRuntime,
+   json["transcript_path"] == nil,
+   let sessionId = nonEmptyString(json["session_id"]),
+   let cwd = nonEmptyString(json["cwd"]) {
+    var allowed = CharacterSet.alphanumerics
+    allowed.insert(charactersIn: "-._~")
+    if let encodedCwd = cwd.addingPercentEncoding(withAllowedCharacters: allowed) {
+        let rawHome = nonEmptyString(env["GROK_HOME"])
+        let grokHome: String
+        if let rawHome {
+            if rawHome == "~" {
+                grokHome = FileManager.default.homeDirectoryForCurrentUser.path
+            } else if rawHome.hasPrefix("~/") {
+                grokHome = FileManager.default.homeDirectoryForCurrentUser.path
+                    + "/" + rawHome.dropFirst(2)
+            } else {
+                grokHome = rawHome
+            }
+        } else {
+            grokHome = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".grok").path
+        }
+        json["transcript_path"] = "\(grokHome)/sessions/\(encodedCwd)/\(sessionId)/chat_history.jsonl"
+    }
 }
 
 // Copilot CLI adaptation: its stdin JSON lacks session_id and hook_event_name.

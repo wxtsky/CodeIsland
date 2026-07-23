@@ -38,6 +38,10 @@ public enum EventNormalizer {
         case "post_tool_use":         return "PostToolUse"
         case "post_tool_use_failure": return "PostToolUseFailure"
         case "permission_request":    return "PermissionRequest"
+        case "permission_denied":     return "PermissionDenied"
+        // Grok emits StopFailure when a turn ends on an API error. It is still
+        // terminal for Island state, so fold both wire spellings onto Stop.
+        case "stop_failure", "StopFailure": return "Stop"
         case "subagent_start":        return "SubagentStart"
         case "subagent_stop":         return "SubagentStop"
         case "pre_compact":           return "PreCompact"

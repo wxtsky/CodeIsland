@@ -129,6 +129,7 @@ private struct MascotContactSheet: View {
     static func routedMascot(source: String, status: MascotAgentStatus, size: CGFloat) -> some View {
         switch source {
         case "codex": DexView(status: status, size: size)
+        case "grok": GrokView(status: status, size: size)
         case "gemini": GeminiView(status: status, size: size)
         case "cursor": CursorView(status: status, size: size)
         case "trae": TraeView(status: status, size: size)
