@@ -3,12 +3,16 @@ import AppKit
 import SwiftUI
 import CodeIslandCore
 
+enum CodexAppServerExitStrategy: Equatable {
+    case reconnectPreservingSessions
+    case stopAndRemoveSessions
+}
+
 extension AppState {
     /// Session ID prefix applied to Codex threads surfaced via the app-server.
-    /// The rollout-file discovery path uses the raw UUID; the `codexapp:` prefix
-    /// keeps the two channels' session namespaces disjoint so a user running
-    /// Codex Desktop AND Codex CLI simultaneously doesn't see them collapse.
-    static let codexAppSessionPrefix = "codexapp:"
+    /// Desktop app-server, rollout fallback, and state-DB discovery all use this
+    /// prefix; Codex CLI keeps the raw UUID so the two modes remain distinct.
+    nonisolated static let codexAppSessionPrefix = "codexapp:"
     // Plain `let` constants — nonisolated so NSWorkspace notification
     // handlers on background queues can read them without Swift 6
     // Sendable warnings.
@@ -54,6 +58,8 @@ extension AppState {
     }
 
     func stopCodexAppServerWatcher() {
+        codexAppServerReconnectTask?.cancel()
+        codexAppServerReconnectTask = nil
         if let observers = codexAppServerObservers {
             let center = NSWorkspace.shared.notificationCenter
             for observer in observers { center.removeObserver(observer) }
@@ -66,16 +72,20 @@ extension AppState {
 
     private func startCodexAppServerClientIfPossible() {
         guard codexAppServerClient == nil else { return }
-        guard let executable = Self.codexAppServerExecutableURL() else { return }
+        guard let executable = Self.codexAppServerExecutableURL() else {
+            scheduleCodexAppServerReconnect()
+            return
+        }
 
         let client = CodexAppServerClient(executableURL: executable)
         client.onMessage = { [weak self] message in
             Task { @MainActor in self?.handleCodexAppServerMessage(message) }
         }
-        client.onExit = { [weak self] _ in
+        client.onExit = { [weak self, weak client] _ in
             Task { @MainActor in
-                self?.codexAppServerClient = nil
-                self?.removeCodexAppServerSessions()
+                guard let self, let client,
+                      self.codexAppServerClient === client else { return }
+                self.handleCodexAppServerExit()
             }
         }
 
@@ -85,9 +95,91 @@ extension AppState {
             try client.initializeHandshake(clientName: "CodeIsland", clientVersion: version)
         } catch {
             client.stop()
+            scheduleCodexAppServerReconnect()
             return
         }
         codexAppServerClient = client
+    }
+
+    nonisolated static func codexAppServerExitStrategy(
+        hostRunning: Bool,
+        watcherActive: Bool
+    ) -> CodexAppServerExitStrategy {
+        hostRunning && watcherActive
+            ? .reconnectPreservingSessions
+            : .stopAndRemoveSessions
+    }
+
+    private func handleCodexAppServerExit() {
+        codexAppServerClient = nil
+        let hostRunning = NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == AppState.codexAppBundleId
+        }
+        switch Self.codexAppServerExitStrategy(
+            hostRunning: hostRunning,
+            watcherActive: codexAppServerObservers != nil
+        ) {
+        case .reconnectPreservingSessions:
+            // Preserve state-backed cards, refresh immediately, and restore the
+            // live JSON-RPC channel with capped exponential backoff.
+            invalidateCodexAppServerQuestionsAfterDisconnect()
+            requestCodexDesktopDiscoveryScan()
+            scheduleCodexAppServerReconnect()
+        case .stopAndRemoveSessions:
+            codexAppServerReconnectTask?.cancel()
+            codexAppServerReconnectTask = nil
+            removeCodexAppServerSessions()
+        }
+    }
+
+    /// A server->client request belongs to the exact client process that issued
+    /// it and is not replayed onto a replacement connection. Remove only those
+    /// dead-channel questions; hook-backed queues retain their continuations.
+    func invalidateCodexAppServerQuestionsAfterDisconnect() {
+        let affectedSessionIds = Set(questionQueue.compactMap { request in
+            request.isCodexAppServer ? request.event.sessionId : nil
+        })
+        guard !affectedSessionIds.isEmpty else { return }
+        questionQueue.removeAll { $0.isCodexAppServer }
+        for sessionId in affectedSessionIds {
+            guard sessions[sessionId]?.status == .waitingQuestion else { continue }
+            sessions[sessionId]?.status = .processing
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+        }
+        showNextPending()
+        refreshDerivedState()
+    }
+
+    private func scheduleCodexAppServerReconnect() {
+        guard codexAppServerObservers != nil,
+              codexAppServerReconnectTask == nil else { return }
+
+        codexAppServerReconnectTask = Task { @MainActor [weak self] in
+            var delay: UInt64 = 500_000_000
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled, let self else { return }
+                guard self.codexAppServerObservers != nil else {
+                    self.codexAppServerReconnectTask = nil
+                    return
+                }
+                guard NSWorkspace.shared.runningApplications.contains(where: {
+                    $0.bundleIdentifier == AppState.codexAppBundleId
+                }) else {
+                    self.codexAppServerReconnectTask = nil
+                    self.removeCodexAppServerSessions()
+                    return
+                }
+
+                self.startCodexAppServerClientIfPossible()
+                if self.codexAppServerClient != nil {
+                    self.codexAppServerReconnectTask = nil
+                    return
+                }
+                delay = min(delay * 2, 10_000_000_000)
+            }
+        }
     }
 
     static func codexAppServerExecutableURL(
@@ -118,17 +210,19 @@ extension AppState {
     }
 
     private func stopCodexAppServerClient() {
-        codexAppServerClient?.stop()
+        codexAppServerReconnectTask?.cancel()
+        codexAppServerReconnectTask = nil
+        let client = codexAppServerClient
         codexAppServerClient = nil
+        client?.stop()
         removeCodexAppServerSessions()
     }
 
     private func removeCodexAppServerSessions() {
         let stale = sessions.keys.filter { $0.hasPrefix(AppState.codexAppSessionPrefix) }
         for id in stale {
-            sessions.removeValue(forKey: id)
+            removeSession(id)
         }
-        refreshDerivedState()
     }
 
     // MARK: - Notification dispatch
@@ -315,6 +409,7 @@ extension AppState {
         guard let thread = params["thread"]?.asObject else { return }
         guard let threadId = thread["id"]?.asString else { return }
         let sessionId = AppState.codexAppSessionPrefix + threadId
+        closedCodexAppThreads.removeValue(forKey: threadId)
 
         var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())
         snapshot.source = "codex"
@@ -354,9 +449,8 @@ extension AppState {
     private func applyCodexThreadClosedNotification(params: [String: AnyCodableLike]) {
         guard let threadId = params["threadId"]?.asString else { return }
         let sessionId = AppState.codexAppSessionPrefix + threadId
-        sessions.removeValue(forKey: sessionId)
-        detachTranscriptTailer(sessionId: sessionId)
-        refreshDerivedState()
+        closedCodexAppThreads[threadId] = Date()
+        removeSession(sessionId)
     }
 
     /// Map a ThreadStatus union onto our flat AgentStatus enum. Shared between the

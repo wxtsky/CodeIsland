@@ -360,7 +360,7 @@ class HookServer {
         return AppState.codexSubagentMetadata(inTranscriptPath: path)
     }
 
-    private func codexNativeSubsessionParentId(from raw: [String: Any]) -> String? {
+    func codexNativeSubsessionParentId(from raw: [String: Any]) -> String? {
         guard (raw["_via_plugin"] as? Bool) != true,
               SessionSnapshot.normalizedSupportedSource(raw["_source"] as? String) == "codex",
               let childSessionId = Self.rawSessionId(from: raw) else {
@@ -368,7 +368,10 @@ class HookServer {
         }
 
         if let metadata = Self.codexSubagentMetadata(from: raw),
-           let parentSessionId = appState.findSessionId(providerSessionId: metadata.parentThreadId) {
+           let parentSessionId = appState.findCodexParentSessionId(
+               providerSessionId: metadata.parentThreadId,
+               childTermBundleId: raw["_term_bundle"] as? String
+           ) {
             return parentSessionId
         }
 

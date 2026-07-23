@@ -31,6 +31,15 @@ public struct ConversationTailDelta: Equatable, Sendable {
     public let turnStatus: ConversationTurnStatus?
     public let hasActivity: Bool
     public let cursorQuestion: CursorQuestionSignal?
+    /// Identifies the exact tailer attachment that produced this delta.
+    ///
+    /// AppState uses this to reject a callback that crossed an actor hop after
+    /// the session was detached and re-created with the same provider id.
+    /// Optional for source compatibility with synthetic/test deltas.
+    public let attachmentToken: UUID?
+    /// File path paired with `attachmentToken`; an additional guard against
+    /// applying a delta after the session switched rollout files.
+    public let filePath: String?
 
     public init(
         sessionId: String,
@@ -38,7 +47,9 @@ public struct ConversationTailDelta: Equatable, Sendable {
         lastAssistantMessage: String?,
         turnStatus: ConversationTurnStatus? = nil,
         hasActivity: Bool = false,
-        cursorQuestion: CursorQuestionSignal? = nil
+        cursorQuestion: CursorQuestionSignal? = nil,
+        attachmentToken: UUID? = nil,
+        filePath: String? = nil
     ) {
         self.sessionId = sessionId
         self.lastUserPrompt = lastUserPrompt
@@ -46,6 +57,8 @@ public struct ConversationTailDelta: Equatable, Sendable {
         self.turnStatus = turnStatus
         self.hasActivity = hasActivity
         self.cursorQuestion = cursorQuestion
+        self.attachmentToken = attachmentToken
+        self.filePath = filePath
     }
 
     /// A delta only carries signal when at least one field is non-nil.
@@ -77,8 +90,19 @@ public final class JSONLTailer: @unchecked Sendable {
         var inode: ino_t
         var pendingFragment: Data
         var source: DispatchSourceFileSystemObject
+        let generation: UInt64
+        let attachmentToken: UUID
 
-        init(sessionId: String, filePath: String, fd: Int32, offset: off_t, inode: ino_t, source: DispatchSourceFileSystemObject) {
+        init(
+            sessionId: String,
+            filePath: String,
+            fd: Int32,
+            offset: off_t,
+            inode: ino_t,
+            source: DispatchSourceFileSystemObject,
+            generation: UInt64,
+            attachmentToken: UUID
+        ) {
             self.sessionId = sessionId
             self.filePath = filePath
             self.fd = fd
@@ -86,18 +110,25 @@ public final class JSONLTailer: @unchecked Sendable {
             self.inode = inode
             self.pendingFragment = Data()
             self.source = source
+            self.generation = generation
+            self.attachmentToken = attachmentToken
         }
     }
 
     private let queue: DispatchQueue
     private let onDelta: DeltaHandler
+    private let replacementReattachDelay: DispatchTimeInterval
     private var watches: [String: Watch] = [:]
+    private var desiredFilePaths: [String: String] = [:]
+    private var generations: [String: UInt64] = [:]
 
     public init(
         queue: DispatchQueue = DispatchQueue(label: "com.codeisland.jsonl-tailer"),
+        replacementReattachDelay: DispatchTimeInterval = .milliseconds(50),
         onDelta: @escaping DeltaHandler
     ) {
         self.queue = queue
+        self.replacementReattachDelay = replacementReattachDelay
         self.onDelta = onDelta
     }
 
@@ -109,23 +140,41 @@ public final class JSONLTailer: @unchecked Sendable {
 
     // MARK: - Public API
 
-    public func attach(sessionId: String, filePath: String) {
+    @discardableResult
+    public func attach(sessionId: String, filePath: String) -> UUID {
+        let attachmentToken = UUID()
         queue.async { [weak self] in
-            self?.detachOnQueue(sessionId: sessionId)
-            self?.attachOnQueue(sessionId: sessionId, filePath: filePath, initialOffset: nil)
+            guard let self else { return }
+            let generation = self.advanceGenerationOnQueue(sessionId: sessionId)
+            self.desiredFilePaths[sessionId] = filePath
+            self.detachOnQueue(sessionId: sessionId)
+            self.attachOnQueue(
+                sessionId: sessionId,
+                filePath: filePath,
+                initialOffset: nil,
+                generation: generation,
+                attachmentToken: attachmentToken
+            )
         }
+        return attachmentToken
     }
 
     public func detach(sessionId: String) {
         queue.async { [weak self] in
-            self?.detachOnQueue(sessionId: sessionId)
+            guard let self else { return }
+            self.desiredFilePaths.removeValue(forKey: sessionId)
+            _ = self.advanceGenerationOnQueue(sessionId: sessionId)
+            self.detachOnQueue(sessionId: sessionId)
         }
     }
 
     public func detachAll() {
         queue.async { [weak self] in
             guard let self else { return }
-            for key in Array(self.watches.keys) {
+            let sessionIds = Set(self.watches.keys).union(self.desiredFilePaths.keys)
+            self.desiredFilePaths.removeAll()
+            for key in sessionIds {
+                _ = self.advanceGenerationOnQueue(sessionId: key)
                 self.detachOnQueue(sessionId: key)
             }
         }
@@ -137,7 +186,23 @@ public final class JSONLTailer: @unchecked Sendable {
 
     // MARK: - Watch lifecycle
 
-    private func attachOnQueue(sessionId: String, filePath: String, initialOffset: off_t?) {
+    private func advanceGenerationOnQueue(sessionId: String) -> UInt64 {
+        let generation = (generations[sessionId] ?? 0) &+ 1
+        generations[sessionId] = generation
+        return generation
+    }
+
+    private func attachOnQueue(
+        sessionId: String,
+        filePath: String,
+        initialOffset: off_t?,
+        generation: UInt64,
+        attachmentToken: UUID
+    ) {
+        guard desiredFilePaths[sessionId] == filePath,
+              generations[sessionId] == generation else {
+            return
+        }
         let fd = open(filePath, O_RDONLY | O_NONBLOCK)
         guard fd >= 0 else { return }
         var fileStat = stat()
@@ -158,7 +223,9 @@ public final class JSONLTailer: @unchecked Sendable {
             fd: fd,
             offset: offset,
             inode: fileStat.st_ino,
-            source: source
+            source: source,
+            generation: generation,
+            attachmentToken: attachmentToken
         )
 
         source.setEventHandler { [weak self] in
@@ -182,6 +249,12 @@ public final class JSONLTailer: @unchecked Sendable {
     // MARK: - Event handling
 
     private func handleEvents(_ events: DispatchSource.FileSystemEvent, watch: Watch) {
+        guard watches[watch.sessionId] === watch,
+              desiredFilePaths[watch.sessionId] == watch.filePath,
+              generations[watch.sessionId] == watch.generation else {
+            return
+        }
+
         // A rotate or delete means the file has been replaced underneath us (e.g. /clear).
         // Re-attach from a fresh fd so future writes reach our handler.
         if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
@@ -189,8 +262,14 @@ public final class JSONLTailer: @unchecked Sendable {
             let sid = watch.sessionId
             detachOnQueue(sessionId: sid)
             // Give the writer a moment to finish writing the new file before we reopen.
-            queue.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self] in
-                self?.attachOnQueue(sessionId: sid, filePath: path, initialOffset: 0)
+            queue.asyncAfter(deadline: .now() + replacementReattachDelay) { [weak self] in
+                self?.attachOnQueue(
+                    sessionId: sid,
+                    filePath: path,
+                    initialOffset: 0,
+                    generation: watch.generation,
+                    attachmentToken: watch.attachmentToken
+                )
             }
             return
         }
@@ -202,7 +281,13 @@ public final class JSONLTailer: @unchecked Sendable {
                 let path = watch.filePath
                 let sid = watch.sessionId
                 detachOnQueue(sessionId: sid)
-                attachOnQueue(sessionId: sid, filePath: path, initialOffset: 0)
+                attachOnQueue(
+                    sessionId: sid,
+                    filePath: path,
+                    initialOffset: 0,
+                    generation: watch.generation,
+                    attachmentToken: watch.attachmentToken
+                )
                 return
             }
             if fileStat.st_size < watch.offset {
@@ -233,7 +318,9 @@ public final class JSONLTailer: @unchecked Sendable {
                 lastAssistantMessage: scan.delta.lastAssistantMessage,
                 turnStatus: scan.delta.turnStatus,
                 hasActivity: scan.delta.hasActivity,
-                cursorQuestion: scan.delta.cursorQuestion
+                cursorQuestion: scan.delta.cursorQuestion,
+                attachmentToken: watch.attachmentToken,
+                filePath: watch.filePath
             )
             onDelta(delta)
         }

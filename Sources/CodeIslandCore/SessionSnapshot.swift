@@ -1193,9 +1193,16 @@ public func reduceEvent(
         if let remoteHostName = event.rawJSON["_remote_host_name"] as? String, !remoteHostName.isEmpty {
             sessions[sessionId]?.remoteHostName = remoteHostName
         }
-        if let providerSessionId = event.rawJSON["session_id"] as? String, !providerSessionId.isEmpty,
-           sessions[sessionId]?.isRemote == true {
-            sessions[sessionId]?.providerSessionId = providerSessionId
+        if let providerSessionId = event.rawJSON["session_id"] as? String,
+           !providerSessionId.isEmpty,
+           sessions[sessionId]?.isRemote == true
+                || (sessions[sessionId]?.source == "codex"
+                    && sessions[sessionId]?.termBundleId == "com.openai.codex") {
+            let isCodexDesktop = sessions[sessionId]?.source == "codex"
+                && sessions[sessionId]?.termBundleId == "com.openai.codex"
+            sessions[sessionId]?.providerSessionId = isCodexDesktop
+                ? normalizedCodexDesktopProviderSessionId(providerSessionId)
+                : providerSessionId
         }
         if let sessionTitle = event.rawJSON["session_title"] as? String,
            !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1509,15 +1516,27 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     if let remoteHostName = event.rawJSON["_remote_host_name"] as? String, !remoteHostName.isEmpty {
         sessions[sessionId]?.remoteHostName = remoteHostName
     }
-    if sessions[sessionId]?.isRemote == true,
-       let providerSessionId = event.rawJSON["session_id"] as? String,
-       !providerSessionId.isEmpty {
-        sessions[sessionId]?.providerSessionId = providerSessionId
+    if let providerSessionId = event.rawJSON["session_id"] as? String,
+       !providerSessionId.isEmpty,
+       sessions[sessionId]?.isRemote == true
+            || (sessions[sessionId]?.source == "codex"
+                && sessions[sessionId]?.termBundleId == "com.openai.codex") {
+        let isCodexDesktop = sessions[sessionId]?.source == "codex"
+            && sessions[sessionId]?.termBundleId == "com.openai.codex"
+        sessions[sessionId]?.providerSessionId = isCodexDesktop
+            ? normalizedCodexDesktopProviderSessionId(providerSessionId)
+            : providerSessionId
     }
     if let sessionTitle = event.rawJSON["session_title"] as? String,
        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         sessions[sessionId]?.sessionTitle = sessionTitle
     }
+}
+
+private func normalizedCodexDesktopProviderSessionId(_ sessionId: String) -> String {
+    let prefix = "codexapp:"
+    guard sessionId.hasPrefix(prefix) else { return sessionId }
+    return String(sessionId.dropFirst(prefix.count))
 }
 
 /// Pull a non-empty string from a hook JSON value.

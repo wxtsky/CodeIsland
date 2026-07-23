@@ -251,6 +251,69 @@ final class JSONLTailerTests: XCTestCase {
         XCTAssertEqual(callCount.value, 1)
     }
 
+    func testDetachCancelsDelayedReattachAfterFileReplacement() throws {
+        let url = temporaryFileURL()
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".old")
+        try Data("".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: backup)
+        }
+
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            replacementReattachDelay: .milliseconds(500),
+            onDelta: { _ in }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+
+        try FileManager.default.moveItem(at: url, to: backup)
+        try Data("".utf8).write(to: url)
+        // Wait for the rename handler to remove the old watch. The injected
+        // delay leaves a deterministic window before its reopen block runs.
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 0 })
+        tailer.detach(sessionId: "s1")
+        Thread.sleep(forTimeInterval: 0.6)
+
+        XCTAssertEqual(tailer.activeSessionCount, 0)
+    }
+
+    func testFileReplacementReattachesWhenSessionRemainsDesired() throws {
+        let url = temporaryFileURL()
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".old")
+        try Data("".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: backup)
+        }
+
+        let replacementDelta = expectation(description: "replacement file delta delivered")
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            replacementReattachDelay: .milliseconds(200),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "after-rotate" {
+                    replacementDelta.fulfill()
+                }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+
+        try FileManager.default.moveItem(at: url, to: backup)
+        try Data("".utf8).write(to: url)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 0 })
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+        try appendToFile(url: url, content: assistantLine(text: "after-rotate") + "\n")
+
+        wait(for: [replacementDelta], timeout: 2)
+        XCTAssertEqual(tailer.activeSessionCount, 1)
+        tailer.detach(sessionId: "s1")
+    }
+
     // MARK: - Integration: offset accounting across partial writes (#278)
 
     /// A JSONL line flushed in two chunks (no newline in the first) must be
@@ -403,6 +466,19 @@ final class JSONLTailerTests: XCTestCase {
         try handle.seekToEnd()
         try handle.write(contentsOf: Data(content.utf8))
         try handle.close()
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        pollInterval: TimeInterval = 0.005,
+        _ predicate: () -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if predicate() { return true }
+            Thread.sleep(forTimeInterval: pollInterval)
+        } while Date() < deadline
+        return predicate()
     }
 }
 

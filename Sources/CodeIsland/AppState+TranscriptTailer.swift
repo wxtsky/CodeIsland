@@ -88,7 +88,10 @@ extension AppState {
             }
         }
 
-        transcriptTailer.attach(sessionId: sessionId, filePath: path)
+        attachedTranscriptTokens[sessionId] = transcriptTailer.attach(
+            sessionId: sessionId,
+            filePath: path
+        )
     }
 
     /// Backfill freshness bound for flipping a session into the display-only
@@ -166,42 +169,22 @@ extension AppState {
         }
     }
 
-    private nonisolated static func latestCodexTurnStatus(path: String) -> ConversationTurnStatus? {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { handle.closeFile() }
-
-        // A long Codex turn can place its task_started event well before the
-        // final 128 KB after emitting large reasoning/tool rows. Scan in chunks
-        // so startup state recovery remains bounded in memory without missing
-        // that event.
-        handle.seek(toFileOffset: 0)
-        let chunkSize = 64 * 1024
-        var pendingFragment = Data()
-        var latestStatus: ConversationTurnStatus?
-
-        while true {
-            let chunk = handle.readData(ofLength: chunkSize)
-            if chunk.isEmpty { break }
-
-            let result = JSONLTailer.scanLines(pendingFragment + chunk)
-            pendingFragment = result.trailingFragment
-            if let turnStatus = result.delta.turnStatus {
-                latestStatus = turnStatus
-            }
-        }
-
-        return latestStatus
-    }
-
     /// Stop watching a session's transcript. Called when the session is removed or
     /// when a new transcript path supersedes an older one.
     func detachTranscriptTailer(sessionId: String) {
         attachedTranscriptPaths.removeValue(forKey: sessionId)
+        attachedTranscriptTokens.removeValue(forKey: sessionId)
         transcriptTailer.detach(sessionId: sessionId)
     }
 
     /// Apply an incremental update produced by the tailer. Runs on the main actor.
     func applyTranscriptDelta(_ delta: ConversationTailDelta) {
+        if let attachmentToken = delta.attachmentToken {
+            guard attachedTranscriptTokens[delta.sessionId] == attachmentToken,
+                  attachedTranscriptPaths[delta.sessionId] == delta.filePath else {
+                return
+            }
+        }
         guard var session = sessions[delta.sessionId] else { return }
         var mutated = false
 

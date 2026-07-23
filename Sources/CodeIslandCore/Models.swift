@@ -165,6 +165,15 @@ public struct HookEvent {
            let remoteHostId = json["_remote_host_id"] as? String,
            !remoteHostId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             self.sessionId = "remote:\(remoteHostId):\(rawSessionId)"
+        } else if let rawSessionId,
+                  (json["_source"] as? String)?.lowercased() == "codex",
+                  json["_term_bundle"] as? String == "com.openai.codex" {
+            // Codex Desktop hooks, app-server notifications, rollout discovery,
+            // and state-DB polling must all address one card. Keep the provider's
+            // raw id in rawJSON for title lookup and persisted providerSessionId.
+            self.sessionId = rawSessionId.hasPrefix("codexapp:")
+                ? rawSessionId
+                : "codexapp:\(rawSessionId)"
         } else {
             self.sessionId = rawSessionId
         }
