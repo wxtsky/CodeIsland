@@ -31,7 +31,7 @@ foreach ($name in @("CodeIsland.Bridge.exe", "CodeIsland.Bridge.dll", "CodeIslan
     Copy-Item -LiteralPath (Join-Path $bridgeStaging $name) -Destination (Join-Path $staging $name) -Force
 }
 
-$version = "0.1.0"
+$version = "0.2.1"
 $zip = Join-Path $artifacts "CodeIsland-Windows-$version-$Runtime.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -CompressionLevel Optimal

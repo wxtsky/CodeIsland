@@ -1,24 +1,40 @@
-name: Windows Release
+name: Windows
 
 on:
   workflow_dispatch:
   push:
-    tags: ["windows-v*"]
+    paths: ["windows/**"]
+  pull_request:
+    paths: ["windows/**"]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Build and test
+      - name: Restore dependencies
+        shell: pwsh
+        run: dotnet restore CodeIsland.Windows.sln
+      - name: Run unit tests
+        shell: pwsh
+        run: dotnet test CodeIsland.Core.Tests/CodeIsland.Core.Tests.csproj -c Release --no-restore
+      - name: Build applications
         shell: pwsh
         run: |
-          dotnet build CodeIsland.Windows/CodeIsland.Windows.csproj -c Release
-          dotnet build CodeIsland.Bridge/CodeIsland.Bridge.csproj -c Release
-          dotnet run --project CodeIsland.Windows.Smoke/CodeIsland.Windows.Smoke.csproj -c Release
+          dotnet build CodeIsland.Windows/CodeIsland.Windows.csproj -c Release --no-restore
+          dotnet build CodeIsland.Bridge/CodeIsland.Bridge.csproj -c Release --no-restore
+      - name: Run smoke tests
+        shell: pwsh
+        run: dotnet run --project CodeIsland.Windows.Smoke/CodeIsland.Windows.Smoke.csproj -c Release --no-restore
       - name: Package
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1
@@ -34,5 +50,5 @@ jobs:
         with:
           name: codeisland-windows
           path: |
-            artifacts/*.zip
-            artifacts/release-manifest.json
+            windows/artifacts/*.zip
+            windows/artifacts/release-manifest.json

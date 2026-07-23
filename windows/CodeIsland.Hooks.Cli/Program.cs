@@ -86,6 +86,8 @@ if (command == "self-test")
         var geminiEntry = geminiRoot["hooks"]?[gemini.Events[0]]?[0]?.AsObject();
         Require(geminiEntry is not null && !geminiEntry.ContainsKey("matcher"),
             "Gemini native hooks must use the matcher-free event-map format.");
+        Require(gemini.TimeoutUnit == HookTimeoutUnit.Milliseconds,
+            "Gemini CLI hook timeouts must use the native milliseconds unit.");
         Require(geminiEntry?["hooks"]?[0]?["timeout"]?.GetValue<int>() == 10000,
             "Gemini native hook timeout must be expressed in milliseconds.");
         Require(File.ReadAllText(geminiConfig).Contains("oauth", StringComparison.Ordinal),

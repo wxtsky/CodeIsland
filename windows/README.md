@@ -55,7 +55,7 @@ Event coverage depends on the hook API exposed by each tool and may vary between
 
 ### Release package
 
-1. Download `CodeIsland-Windows-0.1.0-win-x64.zip` from the release artifacts.
+1. Download `CodeIsland-Windows-0.2.1-win-x64.zip` from the release artifacts.
 2. Extract the entire ZIP to a permanent folder.
 3. Run `CodeIsland.Windows.exe`.
 4. Open **Settings → Hooks**, then install or repair the hooks for the detected tools.

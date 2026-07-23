@@ -17,7 +17,7 @@ public sealed class DiagnosticsExporter
         var summary = new
         {
             generatedAtUtc = DateTimeOffset.UtcNow,
-            applicationVersion = "0.1.0",
+            applicationVersion = "0.2.1",
             operatingSystem = Environment.OSVersion.VersionString,
             runtime = Environment.Version.ToString(),
             processArchitecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),

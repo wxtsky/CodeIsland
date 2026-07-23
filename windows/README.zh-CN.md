@@ -55,7 +55,7 @@ CodeIsland for Windows 是一款置顶显示的紧凑型 AI 编程智能体状�
 
 ### 使用发布包
 
-1. 下载发布产物中的 `CodeIsland-Windows-0.1.0-win-x64.zip`。
+1. 下载发布产物中的 `CodeIsland-Windows-0.2.1-win-x64.zip`。
 2. 将 ZIP 完整解压到固定目录。
 3. 运行 `CodeIsland.Windows.exe`。
 4. 打开 **设置 → Hooks**，为检测到的工具安装或修复 Hook。
