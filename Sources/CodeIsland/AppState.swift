@@ -1055,8 +1055,8 @@ final class AppState {
     private func shouldAutoOpenQuestionSurface(for event: HookEvent) -> Bool {
         let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String)
         let nativeAskIsRacing = event.rawJSON["_codeisland_native_ask_racing"] as? Bool == true
-        // Only OMP v3 explicitly guarantees that its native ask dialog races
-        // CodeIsland. Pi and legacy OMP block here, so hiding their card deadlocks.
+        // Marker-enabled OMP explicitly guarantees that its native ask dialog
+        // races CodeIsland. Pi and legacy OMP block here, so hiding their card deadlocks.
         if event.toolName == "AskUserQuestion",
            (source != "pi" || !nativeAskIsRacing) {
             return true

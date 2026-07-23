@@ -322,7 +322,7 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(
             surfaceAfterRequest,
             .collapsed,
-            "OMP v3 keeps its native ask dialog available in parallel, so Smart Suppress should not force the duplicate CodeIsland card open."
+            "Marker-enabled OMP keeps its native ask dialog available in parallel, so Smart Suppress should not force the duplicate CodeIsland card open."
         )
     }
 

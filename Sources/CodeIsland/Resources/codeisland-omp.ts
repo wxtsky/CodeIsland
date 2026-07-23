@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v4
+// version: v6
 // OMP-compatible install
 
 /**
@@ -260,6 +260,105 @@ function extractLastAssistantText(
     .trim();
 }
 
+export interface AskRaceSettlement<T> {
+  promise: Promise<T>;
+  settle: (value: T, cancelLoser: () => void) => boolean;
+}
+
+/**
+ * First-writer-wins settlement gate for the native Ask / CodeIsland race.
+ *
+ * JavaScript runs adjacent promise callbacks serially, so flipping the guard
+ * before cancelling the loser makes settlement idempotent even when both
+ * answers arrive in the same event-loop turn. Loser cancellation is best
+ * effort: a cancellation cleanup failure must not replace the user's answer.
+ */
+export function createAskRaceSettlement<T>(): AskRaceSettlement<T> {
+  const { promise, resolve } = Promise.withResolvers<T>();
+  let isSettled = false;
+
+  return {
+    promise,
+    settle(value, cancelLoser) {
+      if (isSettled) return false;
+      isSettled = true;
+      try {
+        cancelLoser();
+      } catch {
+        // Cancellation is cleanup; the winning answer remains authoritative.
+      }
+      resolve(value);
+      return true;
+    },
+  };
+}
+
+interface RawQuestion {
+  id: string;
+  question: string;
+  header?: string;
+  options: { label: string; description?: string; preview?: string }[];
+  multi?: boolean;
+  recommended?: number;
+}
+
+export function mapAskQuestionsToCodeIsland(questions: RawQuestion[]) {
+  return questions.map((question) => ({
+    question: question.question,
+    header: question.header || question.id,
+    multiSelect: question.multi ?? false,
+    options: question.options.map((option) => ({
+      label: option.label,
+      ...(option.description ? { description: option.description } : {}),
+    })),
+  }));
+}
+
+export type ClassifiedCodeIslandAskResponse =
+  | { kind: "unavailable" }
+  | { kind: "denied" }
+  | { kind: "allowed"; updatedInput: Record<string, unknown> };
+
+function isValidAnswerValue(value: unknown): boolean {
+  if (typeof value === "string") return value.length > 0;
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((item) => typeof item === "string" && item.length > 0);
+}
+
+export function classifyCodeIslandAskResponse(
+  response: Record<string, unknown> | null,
+  expectedAnswerKeys?: readonly string[],
+): ClassifiedCodeIslandAskResponse {
+  if (response === null) return { kind: "unavailable" };
+
+  const decision = (
+    response.hookSpecificOutput as Record<string, unknown> | undefined
+  )?.decision as Record<string, unknown> | undefined;
+  if (decision?.behavior === "deny") return { kind: "denied" };
+  if (decision?.behavior !== "allow") return { kind: "unavailable" };
+
+  const updatedInput = decision.updatedInput;
+  if (!updatedInput || typeof updatedInput !== "object" || Array.isArray(updatedInput)) {
+    return { kind: "unavailable" };
+  }
+  const answers = (updatedInput as Record<string, unknown>).answers;
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
+    return { kind: "unavailable" };
+  }
+  const answerMap = answers as Record<string, unknown>;
+  const answerValues = expectedAnswerKeys
+    ? expectedAnswerKeys.map((key) => answerMap[key])
+    : Object.values(answerMap);
+  if (answerValues.length === 0 || answerValues.some((value) => !isValidAnswerValue(value))) {
+    return { kind: "unavailable" };
+  }
+  return {
+    kind: "allowed",
+    updatedInput: updatedInput as Record<string, unknown>,
+  };
+}
+
 // ── Extension ─────────────────────────────────────────────────────────────────
 
 export default function codeislandExtension(pi: ExtensionAPI) {
@@ -301,14 +400,6 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   // Reusing AskTool keeps terminal rendering, navigation, timeout, speech, and
   // future OMP behavior in one implementation. The first real answer wins.
 
-  interface RawQuestion {
-    id: string;
-    question: string;
-    header?: string;
-    options: { label: string; description?: string; preview?: string }[];
-    multi?: boolean;
-    recommended?: number;
-  }
   type CompatibleQuestionResult = QuestionResult & { note?: string };
   type CompatibleAskToolDetails = AskToolDetails & {
     note?: string;
@@ -566,20 +657,11 @@ export default function codeislandExtension(pi: ExtensionAPI) {
         throw new ToolAbortError("Ask tool requires interactive mode");
       }
 
-      const islandQuestions = questions.map((question) => ({
-        question: question.question,
-        ...(question.header ? { header: question.header } : {}),
-        multiSelect: question.multi ?? false,
-        options: question.options.map((option) => ({
-          label: option.label,
-          ...(option.description ? { description: option.description } : {}),
-        })),
-      }));
+      const islandQuestions = mapAskQuestionsToCodeIsland(questions);
       const answerKeys = computeAnswerKeys(questions);
 
       const tuiAbort = new AbortController();
-      const { promise: settled, resolve: settle } =
-        Promise.withResolvers<GateOutcome>();
+      const race = createAskRaceSettlement<GateOutcome>();
 
       const islandBridge = sendAndWaitResponseCancellable(
         base(sessionId, ctx.cwd, {
@@ -593,9 +675,10 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       );
 
       const handleExternalAbort = () => {
-        islandBridge.cancel();
-        tuiAbort.abort();
-        settle({ source: "cancel" });
+        race.settle({ source: "cancel" }, () => {
+          islandBridge.cancel();
+          tuiAbort.abort();
+        });
       };
       if (signal?.aborted) {
         islandBridge.cancel();
@@ -607,17 +690,14 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       pendingPermissionSessions.add(sid);
 
       const islandPromise = islandBridge.promise.then(
-        (response): CompatibleQuestionResult[] | null => {
-          const decision = (
-            response?.hookSpecificOutput as Record<string, unknown> | undefined
-          )?.decision as Record<string, unknown> | undefined;
-          if (decision?.behavior !== "allow") return null;
-          const updatedInput = decision.updatedInput as
-            | Record<string, unknown>
-            | undefined;
-          const answers = (updatedInput?.answers ?? {}) as Record<string, unknown>;
+        (response): CompatibleQuestionResult[] | null | undefined => {
+          const classified = classifyCodeIslandAskResponse(response, answerKeys);
+          if (classified.kind === "unavailable") return undefined;
+          if (classified.kind === "denied") return null;
+
+          const answers = (classified.updatedInput.answers ?? {}) as Record<string, unknown>;
           const answerDetails = (
-            updatedInput?._codeislandAnswerDetails ?? {}
+            classified.updatedInput._codeislandAnswerDetails ?? {}
           ) as Record<string, unknown>;
           return islandAnswersToResults(
             answers,
@@ -646,47 +726,39 @@ export default function codeislandExtension(pi: ExtensionAPI) {
         throw error;
       });
 
-      // Any side finishing (answer, skip, cancel, or failure) immediately
-      // cancels the other and settles. settle() is a no-op after the first
-      // call (Promise resolver semantics), so concurrent completions are safe.
+      // A real answer, explicit deny, native failure, or cancellation settles
+      // once and cancels the other side. Only an unavailable/invalid bridge is
+      // a fallback signal that leaves OMP's native Ask UI alive.
       islandPromise.then(
         (results) => {
-          if (results && results.length > 0) {
-            tuiAbort.abort();
-            settle({ source: "island", result: buildAskResult(results) });
-          } else {
-            // Island skipped/denied — cancel the TUI dialog immediately.
-            tuiAbort.abort();
-            settle({ source: "cancel" });
+          if (results === null) {
+            race.settle({ source: "cancel" }, () => tuiAbort.abort());
+          } else if (results && results.length > 0) {
+            race.settle(
+              { source: "island", result: buildAskResult(results) },
+              () => tuiAbort.abort(),
+            );
           }
         },
-        (error: unknown) => {
-          tuiAbort.abort();
-          settle({ source: "error", error });
+        () => {
+          // Bridge/parsing failure also falls back to OMP's native Ask UI.
         },
       );
 
       tuiPromise.then(
         (result) => {
-          if (result) {
-            islandBridge.cancel();
-            settle({ source: "tui", result });
-          } else {
-            // TUI cancelled — cancel the island bridge immediately so we do
-            // not wait 24h for a card the user may not be able to reach
-            // (e.g. Smart Suppress collapsed it).
-            islandBridge.cancel();
-            settle({ source: "cancel" });
-          }
+          const outcome: GateOutcome = result
+            ? { source: "tui", result }
+            : { source: "cancel" };
+          race.settle(outcome, () => islandBridge.cancel());
         },
         (error: unknown) => {
-          islandBridge.cancel();
-          settle({ source: "error", error });
+          race.settle({ source: "error", error }, () => islandBridge.cancel());
         },
       );
 
       try {
-        const winner = await settled;
+        const winner = await race.promise;
         if (winner.source === "error") throw winner.error;
         if (winner.source === "cancel") {
           ctx.abort();

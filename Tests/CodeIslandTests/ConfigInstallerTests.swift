@@ -1425,6 +1425,49 @@ hooks:
         XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
     }
 
+    func testOutdatedOmpExtensionsAreRewrittenToCurrentVersion() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ompAgentDir = tempDir.appendingPathComponent(".omp/agent")
+        let ompExtensionDir = ompAgentDir.appendingPathComponent("extensions")
+        let ompExtensionPath = ompExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: ompExtensionDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        for version in ["v2", "v3", "v4", "v5"] {
+            try """
+            // CodeIsland pi extension
+            // version: \(version)
+            import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent/extensibility/extensions/types";
+            """.write(to: ompExtensionPath, atomically: true, encoding: .utf8)
+
+            XCTAssertFalse(
+                ConfigInstaller.isOmpExtensionInstalled(
+                    ompExtensionPath: ompExtensionPath.path,
+                    fm: fm
+                ),
+                "The \(version) extension is stale and must be replaced."
+            )
+            XCTAssertTrue(
+                ConfigInstaller.installOmpExtension(
+                    ompAgentDir: ompAgentDir.path,
+                    ompExtensionDir: ompExtensionDir.path,
+                    ompExtensionPath: ompExtensionPath.path,
+                    fm: fm
+                )
+            )
+
+            let rewritten = try String(contentsOf: ompExtensionPath)
+            XCTAssertTrue(rewritten.contains("// version: v6"))
+            XCTAssertTrue(
+                ConfigInstaller.isOmpExtensionInstalled(
+                    ompExtensionPath: ompExtensionPath.path,
+                    fm: fm
+                )
+            )
+        }
+    }
+
     func testInstallOmpExtensionWritesBundledExtensionWhenOmpAgentDirExists() throws {
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -1443,7 +1486,7 @@ hooks:
 
         let contents = try String(contentsOf: ompExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v4"))
+        XCTAssertTrue(contents.contains("// version: v6"))
         XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
         XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
         XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
