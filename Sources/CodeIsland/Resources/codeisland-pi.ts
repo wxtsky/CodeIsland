@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v2
+// version: v3
 
 /**
  * @fileoverview CodeIsland Integration Extension.
@@ -28,7 +28,15 @@
  *   Dangerous bash commands (`rm -rf`, `sudo`, `chmod 777`) are intercepted and
  *   sent as a blocking PermissionRequest via the codeisland-bridge binary. The
  *   extension waits for CodeIsland's decision and returns allow/block accordingly.
- *   This replaces the built-in permission-gate.ts when CodeIsland is active.
+ *
+ *   On allow, it records the toolCallId on globalThis.__codeislandAllowedToolCalls
+ *   so a co-installed permission-gate.ts can skip its terminal Yes/No dialog
+ *   (avoids double confirmation). On timeout / unreachable CodeIsland, no marker
+ *   is set and permission-gate remains the fallback prompt.
+ *
+ *   Note: pi runs every extension tool_call handler; only `{ block: true }` short-
+ *   circuits. An island allow alone does not disable permission-gate — the marker
+ *   is the coordination point. See companion skip check in permission-gate.ts.
  *
  * Installation:
  *   Drop this file in ~/.pi/agent/extensions/ — it is auto-discovered.
@@ -490,7 +498,19 @@ export default function codeislandExtension(pi: ExtensionAPI) {
         return { block: true, reason: "Blocked by CodeIsland" };
       }
 
-      // Approved — fall through to normal PreToolUse event below.
+      // Island allow: mark this tool call so permission-gate skips the TUI prompt.
+      // Only mark explicit allow — timeout / null must still fall through to the gate.
+      if (behavior?.behavior === "allow" && event.toolCallId) {
+        const g = globalThis as typeof globalThis & {
+          __codeislandAllowedToolCalls?: Set<string>;
+        };
+        if (!g.__codeislandAllowedToolCalls) {
+          g.__codeislandAllowedToolCalls = new Set();
+        }
+        g.__codeislandAllowedToolCalls.add(event.toolCallId);
+      }
+
+      // Approved or unreachable — fall through to PreToolUse / permission-gate.
     }
 
     // Non-blocking PreToolUse for all other tool calls.
