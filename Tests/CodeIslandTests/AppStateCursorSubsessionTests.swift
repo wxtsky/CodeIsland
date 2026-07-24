@@ -271,7 +271,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         parent.status = .processing
         parent.providerSessionId = parentId
         parent.transcriptPath = transcriptPath
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         appState.sessions[parentId] = parent
 
         var staleChild = SessionSnapshot()
@@ -317,7 +317,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         child.status = .running
         child.currentTool = "Shell"
         child.transcriptPath = transcriptPath
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         appState.sessions[childId] = child
 
         XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
@@ -445,7 +445,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         child.source = "cursor"
         child.status = .running
         child.transcriptPath = transcriptPath
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         appState.sessions[childId] = child
 
         XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
@@ -516,7 +516,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         child.source = "cursor"
         child.status = .idle
         child.transcriptPath = transcriptPath
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         appState.sessions[childId] = child
 
         XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
@@ -556,7 +556,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         child.status = .idle
         child.transcriptPath = transcriptPath
         // Separate-mode Stop self-tombstone + live IDE `_ppid` must not revive as running.
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         child.cliPid = getpid()
         appState.sessions[childId] = child
 
@@ -629,7 +629,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         appState.sessions[parentId] = parent
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -660,7 +660,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         appState.sessions[parentId] = parent
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -689,7 +689,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         appState.sessions[parentId] = parent
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -828,7 +828,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
 
         // Simulate Stop removing the Task between enqueue and deny.
         appState.sessions[parentId]?.subagents.removeValue(forKey: childId)
-        appState.sessions[parentId]?.closedSubagentIds.insert(childId)
+        appState.sessions[parentId]?.recordClosedSubagentId(childId)
 
         appState.handleBuddyControlCommand(.denyCurrentPermission)
         _ = await responseTask.value
@@ -880,7 +880,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         var child = SessionSnapshot()
         child.source = "cursor"
         child.status = .idle
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         appState.sessions[childId] = child
 
         let data = try JSONSerialization.data(withJSONObject: [

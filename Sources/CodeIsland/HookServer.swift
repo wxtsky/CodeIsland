@@ -313,7 +313,47 @@ class HookServer {
     private static let sourceMarkerBytes = Data(#""_source""#.utf8)
     private static let codexMarkerBytes = Data("codex".utf8)
     private static let cursorTranscriptMarkerBytes = Data("agent-transcripts".utf8)
-    private static let cursorSourceMarkerBytes = Data("cursor".utf8)
+    private static let cursorSourceExactBytes = Data(#""_source":"cursor""#.utf8)
+    private static let cursorCliSourceExactBytes = Data(#""_source":"cursor-cli""#.utf8)
+    /// JSON `\uXXXX` escape — only then do we fall back to a full parse.
+    private static let jsonUnicodeEscapeBytes = Data(#"\u"#.utf8)
+    private static let cursorSourceFlexibleRegex: NSRegularExpression = {
+        try! NSRegularExpression(
+            pattern: #""_source"\s*:\s*"(cursor-cli|cursor)""#,
+            options: []
+        )
+    }()
+
+    /// Whether Cursor Task routing may need a JSON parse.
+    ///
+    /// Requires `agent-transcripts` plus `_source` of `cursor` / `cursor-cli`
+    /// (not bare "cursor" elsewhere). Fast path: compact bridge literals, then
+    /// whitespace-tolerant regex (only if `"_source"` is present). JSON fallback
+    /// runs only when a `\u` escape is also present — so non-cursor hooks whose
+    /// text merely mentions `agent-transcripts` do not pay for a parse.
+    internal static func mayNeedCursorSubsessionRouting(data: Data) -> Bool {
+        guard data.range(of: cursorTranscriptMarkerBytes) != nil else { return false }
+        // Compact forms first — bridge JSONSerialization emits no spaces after `:`.
+        if data.range(of: cursorCliSourceExactBytes) != nil
+            || data.range(of: cursorSourceExactBytes) != nil {
+            return true
+        }
+        // No `_source` key → cannot be a Cursor hook source field.
+        guard data.range(of: sourceMarkerBytes) != nil else { return false }
+        if let text = String(data: data, encoding: .utf8) {
+            let range = NSRange(text.startIndex..., in: text)
+            if cursorSourceFlexibleRegex.firstMatch(in: text, options: [], range: range) != nil {
+                return true
+            }
+        }
+        // Literal/regex miss with unicode escapes in the payload (e.g. `\u0063ursor`).
+        guard data.range(of: jsonUnicodeEscapeBytes) != nil,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let source = obj["_source"] as? String else {
+            return false
+        }
+        return source == "cursor" || source == "cursor-cli"
+    }
 
     private static func codexSubagentMetadata(from raw: [String: Any]) -> CodexSubagentMetadata? {
         guard let path = nonEmptyString(raw["transcript_path"]) else { return nil }
@@ -350,8 +390,7 @@ class HookServer {
     private func routeSubsessionPayloadIfNeeded(data: Data) -> (processedData: Data, responseData: Data?) {
         let mayNeedPluginOrCodex = data.range(of: Self.pluginMarkerBytes) != nil
             || (data.range(of: Self.sourceMarkerBytes) != nil && data.range(of: Self.codexMarkerBytes) != nil)
-        let mayNeedCursor = data.range(of: Self.cursorTranscriptMarkerBytes) != nil
-            && data.range(of: Self.cursorSourceMarkerBytes) != nil
+        let mayNeedCursor = Self.mayNeedCursorSubsessionRouting(data: data)
 
         let mode = UserDefaults.standard.string(forKey: SettingsKey.pluginSessionMode)
             ?? SettingsDefaults.pluginSessionMode

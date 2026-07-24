@@ -489,6 +489,79 @@ final class ConfigInstallerTests: XCTestCase {
         XCTAssertFalse(uninstalled.contains("codeisland-bridge"), "CodeIsland hooks should be removed after uninstall")
     }
 
+    /// Migrated users may keep hooks under ~/.kimi while ~/.kimi-code/config.toml
+    /// has none. Status must follow the preferred (install) path only — not ANY home.
+    func testKimiHooksInstalledIgnoresLegacyWhenPreferredPathLacksHooks() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let modernPath = tempDir.appendingPathComponent("modern-config.toml").path
+        let legacyPath = tempDir.appendingPathComponent("legacy-config.toml").path
+        // Preferred home config: present but no CodeIsland hooks.
+        fm.createFile(atPath: modernPath, contents: Data("model = \"kimi\"\n".utf8))
+
+        let events = ConfigInstaller.defaultEvents(for: .kimi)
+        let legacyCli = CLIConfig(
+            name: "Kimi Code CLI",
+            source: "kimi",
+            configPath: legacyPath,
+            configKey: "hooks",
+            format: .kimi,
+            events: events
+        )
+        XCTAssertTrue(ConfigInstaller.installKimiHooks(cli: legacyCli, fm: fm))
+        XCTAssertTrue(
+            ConfigInstaller.isKimiHooksInstalled(at: legacyPath, cli: legacyCli, fm: fm),
+            "Sanity: legacy path with hooks reports installed"
+        )
+        XCTAssertFalse(
+            ConfigInstaller.isKimiHooksInstalled(at: modernPath, cli: legacyCli, fm: fm),
+            "Preferred path without hooks must not report installed just because legacy has hooks"
+        )
+    }
+
+    /// Locks status to a single install-target path (no modern∪legacy OR).
+    func testKimiHooksStatusConfigPathsIsExactlyCliFullPath() {
+        let preferred = "/tmp/hermetic-kimi-code/config.toml"
+        let cli = CLIConfig(
+            name: "Kimi Code CLI",
+            source: "kimi",
+            configPath: preferred,
+            configKey: "hooks",
+            format: .kimi,
+            events: ConfigInstaller.defaultEvents(for: .kimi)
+        )
+        let paths = ConfigInstaller.kimiHooksStatusConfigPaths(for: cli)
+        XCTAssertEqual(paths, [preferred])
+        XCTAssertEqual(paths.count, 1, "Status must never OR multiple kimi homes")
+        XCTAssertFalse(
+            paths.contains { $0.hasSuffix("/.kimi/config.toml") && $0 != preferred },
+            "Must not quietly include legacy home alongside preferred path"
+        )
+    }
+
+    func testKimiHooksInstalledTrueWhenPreferredPathHasHooks() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("config.toml").path
+        let events = ConfigInstaller.defaultEvents(for: .kimi)
+        let cli = CLIConfig(
+            name: "Kimi Code CLI",
+            source: "kimi",
+            configPath: configPath,
+            configKey: "hooks",
+            format: .kimi,
+            events: events
+        )
+        XCTAssertTrue(ConfigInstaller.installKimiHooks(cli: cli, fm: fm))
+        XCTAssertTrue(ConfigInstaller.isKimiHooksInstalled(at: configPath, cli: cli, fm: fm))
+    }
+
     func testMergeCocoHooksAppendsHooksSectionWhenMissing() {
         let original = "model:\n    name: GPT-5.4\n"
 

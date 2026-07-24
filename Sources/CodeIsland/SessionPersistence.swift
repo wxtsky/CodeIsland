@@ -33,7 +33,9 @@ struct PersistedSession: Codable {
     let lastActivity: Date
     /// Absolute JSONL path for session fold and transcript tailing.
     let transcriptPath: String?
-    /// Closed subagent ids; kept across relaunch so merge cannot revive them.
+    /// Closed subagent ids in insertion order (newest last). Legacy files may
+    /// still hold a lexicographically sorted list from the pre-cap `Set.sorted()`
+    /// encoder — restore keeps all entries (no fake-recency trim).
     let closedSubagentIds: [String]?
 }
 
@@ -72,7 +74,7 @@ enum SessionPersistence {
                 startTime: s.startTime,
                 lastActivity: s.lastActivity,
                 transcriptPath: s.transcriptPath,
-                closedSubagentIds: s.closedSubagentIds.isEmpty ? nil : Array(s.closedSubagentIds).sorted()
+                closedSubagentIds: s.closedSubagentIds.isEmpty ? nil : s.closedSubagentIds
             )
         }
         do {

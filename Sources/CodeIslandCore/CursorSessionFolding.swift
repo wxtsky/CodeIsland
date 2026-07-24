@@ -97,13 +97,6 @@ public enum CursorSubsessionRouter {
             raw["agent_type"] = "cursor-subagent"
         }
         raw["_cursor_subagent"] = true
-        raw["_cursor_subagent_session_id"] = childSessionId
-        if let eventName = nonEmptyString(raw["hook_event_name"])
-            ?? nonEmptyString(raw["hookEventName"])
-            ?? nonEmptyString(raw["event_name"])
-            ?? nonEmptyString(raw["eventName"]) {
-            raw["_cursor_subagent_event"] = EventNormalizer.normalize(eventName)
-        }
     }
 
     private static func nonEmptyString(_ value: Any?) -> String? {

@@ -84,9 +84,18 @@ public struct SessionSnapshot: Sendable {
     public var toolHistory: [ToolHistoryEntry] = []
     public var totalToolCallCount: Int = 0
     public var subagents: [String: SubagentState] = [:]
-    /// Agent ids closed by SubagentStop/Stop/SessionEnd.
-    /// Blocks merge/fold from putting a finished subagent back on the parent.
-    public var closedSubagentIds: Set<String> = []
+    /// Agent ids closed by SubagentStop/Stop/SessionEnd, in insertion order
+    /// (newest last). Blocks merge/fold from putting a finished subagent back
+    /// on the parent. Live growth is capped at ``maxClosedSubagentIds``;
+    /// restored lists may be larger (see ``restoreClosedSubagentIds``).
+    /// Mutate only via ``recordClosedSubagentId``, ``clearClosedSubagentId``,
+    /// or ``restoreClosedSubagentIds`` so the live cap cannot be bypassed.
+    public private(set) var closedSubagentIds: [String] = []
+    /// O(1) membership mirror of ``closedSubagentIds`` for hot-path tombstone checks.
+    private var closedSubagentIdSet: Set<String> = []
+    /// Bound for *live* ``closedSubagentIds`` growth in long-lived Cursor sessions.
+    /// Persist restore does not apply this cap (see ``restoreClosedSubagentIds``).
+    public static let maxClosedSubagentIds = 256
     public var startTime: Date = Date()
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
@@ -140,6 +149,62 @@ public struct SessionSnapshot: Sendable {
 
     public init(startTime: Date = Date()) {
         self.startTime = startTime
+    }
+
+    /// Record a closed subagent/Task id (no-op if already present). Evicts the
+    /// oldest entries when over ``maxClosedSubagentIds``.
+    ///
+    /// Callers must serialize access (today: `@MainActor` / main-queue session
+    /// mutation). The check-then-append is not atomic across threads the way
+    /// `Set.insert` was — do not call off the session-owning queue.
+    public mutating func recordClosedSubagentId(_ id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !closedSubagentIdSet.contains(trimmed) else { return }
+        closedSubagentIds.append(trimmed)
+        closedSubagentIdSet.insert(trimmed)
+        let overflow = closedSubagentIds.count - Self.maxClosedSubagentIds
+        if overflow > 0 {
+            for evicted in closedSubagentIds.prefix(overflow) {
+                closedSubagentIdSet.remove(evicted)
+            }
+            closedSubagentIds.removeFirst(overflow)
+        }
+    }
+
+    /// Drop a tombstone so the agent/Task may be folded or shown again.
+    /// Trims like ``recordClosedSubagentId`` so whitespace-padded ids clear.
+    public mutating func clearClosedSubagentId(_ id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard closedSubagentIdSet.remove(trimmed) != nil else { return }
+        closedSubagentIds.removeAll { $0 == trimmed }
+    }
+
+    /// O(1) tombstone check used on the subagent hook hot path.
+    /// Trims like ``recordClosedSubagentId`` / ``clearClosedSubagentId``.
+    public func hasClosedSubagentId(_ id: String) -> Bool {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        return closedSubagentIdSet.contains(trimmed)
+    }
+
+    /// Restore persisted ids in file order **without** applying the live cap.
+    ///
+    /// Pre-cap builds wrote this array via `Set.sorted()` (lexicographic) — that
+    /// order is not recency, so keep-last-N on restore would drop arbitrary
+    /// tombstones and allow finished Tasks to re-fold. Disk size already bounds
+    /// memory; ``recordClosedSubagentId`` still caps *new* live growth.
+    public mutating func restoreClosedSubagentIds(_ ids: [String]) {
+        closedSubagentIds = []
+        closedSubagentIdSet = []
+        closedSubagentIds.reserveCapacity(ids.count)
+        closedSubagentIdSet.reserveCapacity(ids.count)
+        for id in ids {
+            let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !closedSubagentIdSet.contains(trimmed) else { continue }
+            closedSubagentIds.append(trimmed)
+            closedSubagentIdSet.insert(trimmed)
+        }
     }
 
     public static func normalizedSupportedSource(_ source: String?) -> String? {
@@ -840,7 +905,7 @@ public func reduceEvent(
         // Separate-mode Cursor Task Stop self-tombstones; a new prompt means relaunch.
         if let source = sessions[sessionId]?.source,
            source == "cursor" || source == "cursor-cli" {
-            sessions[sessionId]?.closedSubagentIds.remove(sessionId)
+            sessions[sessionId]?.clearClosedSubagentId(sessionId)
         }
         // Probe a wider set of field names + nested containers. Qwen Code (#103),
         // Hermes (#117), and most Claude forks put the prompt at "prompt" top-level,
@@ -981,7 +1046,7 @@ public func reduceEvent(
                childSessionId: sessionId,
                transcriptPath: sessions[sessionId]?.transcriptPath
            ) != nil {
-            sessions[sessionId]?.closedSubagentIds.insert(sessionId)
+            sessions[sessionId]?.recordClosedSubagentId(sessionId)
             // Drop process identity so a still-open IDE `_ppid` does not look like
             // a live Task after Stop when the card is later considered for merge.
             sessions[sessionId]?.cliPid = nil
@@ -1458,7 +1523,7 @@ private func ensureSubagent(
     // Only SubagentStart/SessionStart may reopen a closed agent id for most
     // providers. Cursor Tasks relaunch via UserPromptSubmit (see handleSubagentEvent).
     // Later tool/response hooks with the same agent_id must not revive it.
-    if sessions[sessionId]?.closedSubagentIds.contains(agentId) == true {
+    if sessions[sessionId]?.hasClosedSubagentId(agentId) == true {
         return false
     }
     if sessions[sessionId]?.subagents[agentId] == nil {
@@ -1483,7 +1548,7 @@ private func handleSubagentEvent(
     switch eventName {
     case "SubagentStart", "SessionStart":
         let agentType = subagentType(from: event)
-        sessions[sessionId]?.closedSubagentIds.remove(agentId)
+        sessions[sessionId]?.clearClosedSubagentId(agentId)
         sessions[sessionId]?.subagents[agentId] = SubagentState(
             agentId: agentId,
             agentType: agentType
@@ -1501,7 +1566,7 @@ private func handleSubagentEvent(
     case "UserPromptSubmit":
         // Cursor has no SessionStart for Tasks; beforeSubmitPrompt is the relaunch signal.
         if shouldReopenCursorSubagentOnPrompt(event: event, session: sessions[sessionId]) {
-            sessions[sessionId]?.closedSubagentIds.remove(agentId)
+            sessions[sessionId]?.clearClosedSubagentId(agentId)
         }
         guard ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event) else {
             return true
@@ -1520,7 +1585,7 @@ private func handleSubagentEvent(
 
     case "SubagentStop", "Stop", "SessionEnd":
         sessions[sessionId]?.subagents.removeValue(forKey: agentId)
-        sessions[sessionId]?.closedSubagentIds.insert(agentId)
+        sessions[sessionId]?.recordClosedSubagentId(agentId)
         // If no more subagents, revert parent to processing (waiting for main thread to continue)
         if sessions[sessionId]?.subagents.isEmpty == true {
             if sessions[sessionId]?.status == .running && sessions[sessionId]?.currentTool == "Agent" {

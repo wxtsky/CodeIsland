@@ -2503,13 +2503,19 @@ struct ConfigInstaller {
         return result.joined(separator: "\n")
     }
 
+    /// Paths checked for Kimi hooks *status* (Settings installed badge).
+    /// Exactly one path: the install target (`cli.fullPath` / `kimiHome()`).
+    /// Must never OR modern + legacy — that false-positives migrated users.
+    internal static func kimiHooksStatusConfigPaths(for cli: CLIConfig) -> [String] {
+        [cli.fullPath]
+    }
+
+    /// Whether CodeIsland hooks are present in the config kimi-code (or legacy
+    /// kimi-cli) will actually read. Matches install's `cli.fullPath` target —
+    /// do not OR legacy when `~/.kimi-code` exists, or migrated users with hooks
+    /// only under `~/.kimi` show a false "installed" while kimi-code ignores them.
     private static func isKimiHooksInstalled(cli: CLIConfig, fm: FileManager) -> Bool {
-        // Prefer modern home, but also treat legacy ~/.kimi as installed if our
-        // hooks are still there (migration leaves the old tree intact).
-        var candidates = [kimiCodeHome() + "/config.toml", kimiLegacyHome() + "/config.toml"]
-        let resolved = cli.fullPath
-        if !candidates.contains(resolved) { candidates.append(resolved) }
-        return candidates.contains { path in
+        kimiHooksStatusConfigPaths(for: cli).contains { path in
             guard fm.fileExists(atPath: path),
                   let data = fm.contents(atPath: path),
                   let contents = String(data: data, encoding: .utf8) else { return false }
@@ -2517,6 +2523,19 @@ struct ConfigInstaller {
                 contentsContainsKimiHook(contents, event: event)
             }
         }
+    }
+
+    /// Test seam: status for an explicit config path (hermetic fixtures).
+    internal static func isKimiHooksInstalled(at configPath: String, cli: CLIConfig, fm: FileManager) -> Bool {
+        let probe = CLIConfig(
+            name: cli.name,
+            source: cli.source,
+            configPath: configPath,
+            configKey: cli.configKey,
+            format: cli.format,
+            events: cli.events
+        )
+        return isKimiHooksInstalled(cli: probe, fm: fm)
     }
 
     static func contentsContainsKimiHook(_ contents: String, event: String) -> Bool {

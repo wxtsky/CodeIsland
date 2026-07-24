@@ -2345,7 +2345,7 @@ final class AppState {
             snapshot.lastActivity = p.lastActivity
             snapshot.transcriptPath = p.transcriptPath
             if let closed = p.closedSubagentIds, !closed.isEmpty {
-                snapshot.closedSubagentIds = Set(closed)
+                snapshot.restoreClosedSubagentIds(closed)
             }
             // Restore persisted cliPid only if the process is still alive — avoids
             // stale sessions reappearing briefly after the app or IDE restarts (#46).
@@ -2395,7 +2395,7 @@ final class AppState {
         sessionId: String,
         providerSessionId: String?,
         transcriptPath: String?,
-        closedSubagentIds: Set<String>
+        closedSubagentIds: [String]
     ) -> Bool {
         guard source == "cursor" || source == "cursor-cli" else { return false }
         return !closedSubagentIds.isEmpty
@@ -2839,10 +2839,9 @@ final class AppState {
             // Closed ids may sit on the parent (merge Stop) or the child card
             // (separate Stop). Parent tombstone always wins over a late-running
             // orphan card — relaunch clears via UserPromptSubmit on the hook path.
-            let childClosed = candidate.session.closedSubagentIds
-            let candidateCarriesClosed = childClosed.contains(childId)
-                || childClosed.contains(candidate.sessionId)
-            let parentHoldsTombstone = sessions[parentKey]?.closedSubagentIds.contains(childId) == true
+            let candidateCarriesClosed = candidate.session.hasClosedSubagentId(childId)
+                || candidate.session.hasClosedSubagentId(candidate.sessionId)
+            let parentHoldsTombstone = sessions[parentKey]?.hasClosedSubagentId(childId) == true
 
             if candidateCarriesClosed || parentHoldsTombstone {
                 if sessions[parentKey] == nil {
@@ -2863,7 +2862,7 @@ final class AppState {
                     onto: parentKey,
                     childId: childId,
                     candidateSessionId: candidate.sessionId,
-                    childClosed: childClosed
+                    childClosed: candidate.session.closedSubagentIds
                 )
                 if sessions[candidate.sessionId] != nil {
                     removeSession(candidate.sessionId)
@@ -2950,14 +2949,14 @@ final class AppState {
         onto parentKey: String,
         childId: String,
         candidateSessionId: String,
-        childClosed: Set<String>
+        childClosed: [String]
     ) {
-        sessions[parentKey]?.closedSubagentIds.insert(childId)
+        sessions[parentKey]?.recordClosedSubagentId(childId)
         if candidateSessionId != childId {
-            sessions[parentKey]?.closedSubagentIds.insert(candidateSessionId)
+            sessions[parentKey]?.recordClosedSubagentId(candidateSessionId)
         }
         for id in childClosed where id == childId || id == candidateSessionId {
-            sessions[parentKey]?.closedSubagentIds.insert(id)
+            sessions[parentKey]?.recordClosedSubagentId(id)
         }
     }
 
@@ -3028,11 +3027,10 @@ final class AppState {
     }
 
     /// Suppress Permission/Question UI for Stop'd Tasks: merged `agent_id` tombstones
-    /// or separate-mode self-tombstones (`closedSubagentIds` contains the card id).
+    /// or separate-mode self-tombstones (card id recorded in ``closedSubagentIds``).
     private func shouldSuppressClosedSubagentUI(sessionId: String, agentId: String?) -> Bool {
-        let closed = sessions[sessionId]?.closedSubagentIds ?? []
-        if let agentId, closed.contains(agentId) { return true }
-        if agentId == nil, closed.contains(sessionId) { return true }
+        if let agentId, sessions[sessionId]?.hasClosedSubagentId(agentId) == true { return true }
+        if agentId == nil, sessions[sessionId]?.hasClosedSubagentId(sessionId) == true { return true }
         return false
     }
 
@@ -3321,6 +3319,8 @@ final class AppState {
 
     func stopSessionDiscovery() {
         tearDownProjectsWatcher()
+        rotationTimer?.invalidate()
+        rotationTimer = nil
         cleanupTimer?.invalidate()
         cleanupTimer = nil
         saveTimer?.invalidate()
@@ -3334,42 +3334,61 @@ final class AppState {
     /// Stops the FSEvents watcher on the main queue so Stop/Invalidate cannot
     /// race a queued callback. Safe to call from `deinit` (any thread).
     nonisolated private func tearDownProjectsWatcher() {
-        let teardown = { [self] in
-            // Flip cancel before stopping so any already-queued callback no-ops
-            // instead of touching a dying AppState / freed box.
-            projectsWatcherBox?.cancel()
-            if let stream = fsEventStream {
-                FSEventStreamStop(stream)
-                FSEventStreamInvalidate(stream)
-                FSEventStreamRelease(stream)
-                fsEventStream = nil
-            }
-            let box = projectsWatcherBox
-            projectsWatcherBox = nil
-            // Keep the box alive until after previously queued main-queue
-            // callbacks drain (Invalidate does not flush them).
-            if let box {
-                DispatchQueue.main.async { _ = box }
-            }
-        }
+        let run = { [self] in tearDownProjectsWatcherAssumingMain() }
         if Thread.isMainThread {
-            teardown()
+            run()
         } else {
-            DispatchQueue.main.sync(execute: teardown)
+            DispatchQueue.main.sync(execute: run)
+        }
+    }
+
+    /// FSEvents teardown; caller must already be on the main queue.
+    nonisolated private func tearDownProjectsWatcherAssumingMain() {
+        // Flip cancel before stopping so any already-queued callback no-ops
+        // instead of touching a dying AppState / freed box.
+        projectsWatcherBox?.cancel()
+        if let stream = fsEventStream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            fsEventStream = nil
+        }
+        let box = projectsWatcherBox
+        projectsWatcherBox = nil
+        // Keep the box alive until after previously queued main-queue
+        // callbacks drain (Invalidate does not flush them).
+        if let box {
+            DispatchQueue.main.async { _ = box }
         }
     }
 
     deinit {
         // Must not use MainActor.assumeIsolated: async callers (notably XCTest)
         // can release AppState off the main actor via ARC. Weak-boxed FSEvents
-        // + main-synced stream teardown keep discovery teardown crash-free.
-        rotationTimer?.invalidate()
-        cleanupTimer?.invalidate()
-        saveTimer?.invalidate()
-        tearDownProjectsWatcher()
+        // + main-synced Timer/FSEvents teardown keep discovery crash-free.
+        tearDownMainThreadResources()
         discoveryScanTask?.cancel()
         for (_, monitor) in processMonitors {
             monitor.source.cancel()
+        }
+    }
+
+    /// Invalidates main-run-loop Timers and the FSEvents watcher in one main-queue
+    /// hop. Safe from any thread so `deinit` stays uniformly main-safe.
+    nonisolated private func tearDownMainThreadResources() {
+        let teardown = { [self] in
+            rotationTimer?.invalidate()
+            rotationTimer = nil
+            cleanupTimer?.invalidate()
+            cleanupTimer = nil
+            saveTimer?.invalidate()
+            saveTimer = nil
+            tearDownProjectsWatcherAssumingMain()
+        }
+        if Thread.isMainThread {
+            teardown()
+        } else {
+            DispatchQueue.main.sync(execute: teardown)
         }
     }
 
@@ -3920,6 +3939,7 @@ final class AppState {
 
     /// kimi-code tracks sessions in `~/.kimi-code/session_index.jsonl` with
     /// `{ sessionId, sessionDir, workDir }` — workdir folders are no longer md5(cwd).
+    /// `home` is the user home directory (fixture-injectable for tests).
     private nonisolated static func discoverKimiCodeSessionFromIndex(
         home: String,
         cwd: String,
@@ -3979,6 +3999,31 @@ final class AppState {
         )
     }
 
+    /// Test seam for ``discoverKimiCodeSessionFromIndex`` without exposing
+    /// private ``DiscoveredSession``.
+    internal nonisolated static func discoverKimiCodeSessionFromIndexForTesting(
+        home: String,
+        cwd: String,
+        pid: pid_t,
+        processStart: Date?,
+        fm: FileManager
+    ) -> (sessionId: String, cwd: String, pid: pid_t?, source: String, messageTexts: [String])? {
+        guard let match = discoverKimiCodeSessionFromIndex(
+            home: home,
+            cwd: cwd,
+            pid: pid,
+            processStart: processStart,
+            fm: fm
+        ) else { return nil }
+        return (
+            match.sessionId,
+            match.cwd,
+            match.pid,
+            match.source,
+            match.recentMessages.map(\.text)
+        )
+    }
+
     /// Parse recent chat turns from a Kimi wire.jsonl transcript.
     /// Supports legacy kimi-cli (`message.type = TurnBegin|ContentPart|TurnEnd`)
     /// and kimi-code (`turn.prompt` / `context.append_message` / `content.part`).
@@ -3995,6 +4040,10 @@ final class AppState {
         var messages: [ChatMessage] = []
         var previousUserText: String?
         var previousAssistantText: String = ""
+        /// True when the current open turn was started by `context.append_message`
+        /// rather than `turn.prompt` — used so a later `turn.prompt` can replace
+        /// the user text without flushing a duplicate line.
+        var turnOpenedByAppend = false
 
         func flushTurn() {
             if let userText = previousUserText, !userText.isEmpty {
@@ -4005,6 +4054,7 @@ final class AppState {
             }
             previousUserText = nil
             previousAssistantText = ""
+            turnOpenedByAppend = false
         }
 
         func textParts(from value: Any?) -> String {
@@ -4051,10 +4101,25 @@ final class AppState {
             }
 
             // kimi-code wire protocol (v1.4+).
+            // Observed order: turn.prompt opens a turn, then optional
+            // context.append_message (same user text), then content.part replies.
+            // Prefer turn.prompt when both exist. If append_message arrives first
+            // (defensive), mark the turn so the later turn.prompt replaces the
+            // user text instead of flushing a duplicate user line.
             switch json["type"] as? String {
             case "turn.prompt":
-                flushTurn()
-                previousUserText = textParts(from: json["input"])
+                let promptText = textParts(from: json["input"])
+                if turnOpenedByAppend && previousAssistantText.isEmpty {
+                    // Replace append-opened user text only when turn.prompt has
+                    // content; an empty prompt must not wipe the append line.
+                    if !promptText.isEmpty {
+                        previousUserText = promptText
+                    }
+                } else {
+                    flushTurn()
+                    previousUserText = promptText
+                }
+                turnOpenedByAppend = false
             case "context.append_message":
                 if let message = json["message"] as? [String: Any],
                    message["role"] as? String == "user" {
@@ -4064,6 +4129,7 @@ final class AppState {
                         // only start a turn here if we don't already have one open.
                         if previousUserText == nil {
                             previousUserText = userText
+                            turnOpenedByAppend = true
                         }
                     }
                 }

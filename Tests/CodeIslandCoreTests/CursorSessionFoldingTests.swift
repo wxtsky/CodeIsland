@@ -116,7 +116,8 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(raw["agent_id"] as? String, "2528cb91-6379-48f2-aff8-40f4b804dafa")
         XCTAssertEqual(raw["agent_type"] as? String, "cursor-subagent")
         XCTAssertEqual(raw["_cursor_subagent"] as? Bool, true)
-        XCTAssertEqual(raw["_cursor_subagent_event"] as? String, "PreToolUse")
+        XCTAssertNil(raw["_cursor_subagent_session_id"])
+        XCTAssertNil(raw["_cursor_subagent_event"])
     }
 
     func testMergedCursorSubagentAfterAgentResponseDoesNotCompleteParent() throws {
@@ -196,7 +197,7 @@ final class CursorSessionFoldingTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         var sessions = [parentId: parent]
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -306,7 +307,7 @@ final class CursorSessionFoldingTests: XCTestCase {
         var child = SessionSnapshot()
         child.source = "cursor"
         child.status = .idle
-        child.closedSubagentIds = [childId]
+        child.recordClosedSubagentId(childId)
         var sessions = [childId: child]
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -445,7 +446,7 @@ final class CursorSessionFoldingTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         var sessions = [parentId: parent]
 
         let data = try JSONSerialization.data(withJSONObject: [
@@ -472,7 +473,7 @@ final class CursorSessionFoldingTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .processing
-        parent.closedSubagentIds = [childId]
+        parent.recordClosedSubagentId(childId)
         var sessions = [parentId: parent]
 
         let data = try JSONSerialization.data(withJSONObject: [
