@@ -44,6 +44,7 @@ Hook definitions are currently included for the following Windows tools:
 | Codex | Yes, plus live transcript recovery | Yes | Codex Desktop thread or terminal |
 | Gemini CLI | Yes | Notifications depend on CLI hook support | Terminal/workspace |
 | Cursor | Yes | Hook-dependent | IDE/workspace |
+| OpenCode | Yes, through a generated OpenCode plugin | Hook-dependent | Terminal/workspace |
 | Qoder | Yes | Yes | IDE/workspace |
 | Factory Droid | Yes | Yes | Terminal/workspace |
 | CodeBuddy | Yes | Yes | App/terminal |

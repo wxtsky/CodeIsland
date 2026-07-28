@@ -23,7 +23,9 @@ public sealed class ToolDetector
         var config = candidates.FirstOrDefault(File.Exists) ?? candidates.FirstOrDefault();
         var configExists = config is not null && File.Exists(config);
         var registration = configExists ? _store.Read(config!, tool.HookMarker) : null;
-        var markerPresent = registration is not null;
+        var pluginPresent = tool.Format != HookConfigurationFormat.OpenCode || config is not null && File.Exists(
+            Path.Combine(Path.GetDirectoryName(config)!, "plugins", "codeisland.js"));
+        var markerPresent = registration is not null && pluginPresent;
         var currentVersion = registration?.ProtocolVersion == HookRegistration.CurrentProtocolVersion
             && registration.InstallerVersion == HookRegistration.CurrentInstallerVersion
             && registration.Events.SequenceEqual(tool.Events);
@@ -31,7 +33,9 @@ public sealed class ToolDetector
             ? "Executable not found on PATH."
             : !configExists
                 ? "No supported user configuration file found."
-                : !markerPresent ? "Hook registration is not installed."
+                : !markerPresent ? tool.Format == HookConfigurationFormat.OpenCode
+                    ? "OpenCode plugin is not installed."
+                    : "Hook registration is not installed."
                 : !currentVersion ? "Hook protocol version is outdated." : null;
         return new ToolInstallation(tool, executable, config, markerPresent,
             executable is not null && configExists && markerPresent && currentVersion, problem);

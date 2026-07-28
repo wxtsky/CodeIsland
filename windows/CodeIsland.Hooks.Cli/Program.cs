@@ -106,6 +106,23 @@ if (command == "self-test")
             "Cursor event entries must include a matcher.");
         Require(!manager.Uninstall(cursor).HookInstalled, "Cursor uninstall must remove registration.");
 
+        var openCode = KnownTools.All.Single(value => value.DisplayName == "OpenCode");
+        File.WriteAllText(Path.Combine(bin, "opencode.cmd"), "@echo off");
+        var openCodeConfig = Path.Combine(home, openCode.ConfigPaths[0]);
+        Directory.CreateDirectory(Path.GetDirectoryName(openCodeConfig)!);
+        File.WriteAllText(openCodeConfig, "{\"theme\":\"system\"}");
+        Require(manager.Install(openCode, bridge).IsHealthy, "OpenCode install must be healthy.");
+        var openCodePlugin = Path.Combine(Path.GetDirectoryName(openCodeConfig)!, "plugins", "codeisland.js");
+        var openCodePluginText = File.ReadAllText(openCodePlugin);
+        Require(openCodePluginText.Contains("export const CodeIslandPlugin", StringComparison.Ordinal)
+                && openCodePluginText.Contains("session.created", StringComparison.Ordinal)
+                && openCodePluginText.Contains("codeIslandSource = \"opencode\"", StringComparison.Ordinal),
+            "OpenCode install must create an event-forwarding plugin.");
+        Require(!manager.Uninstall(openCode).HookInstalled, "OpenCode uninstall must remove registration.");
+        Require(!File.Exists(openCodePlugin), "OpenCode uninstall must remove only the generated plugin.");
+        Require(File.ReadAllText(openCodeConfig).Contains("theme", StringComparison.Ordinal),
+            "OpenCode uninstall must preserve user configuration.");
+
         var factory = KnownTools.All.Single(value => value.DisplayName == "Factory Droid");
         File.WriteAllText(Path.Combine(bin, "droid.cmd"), "@echo off");
         var factoryConfig = Path.Combine(home, factory.ConfigPaths[0]);

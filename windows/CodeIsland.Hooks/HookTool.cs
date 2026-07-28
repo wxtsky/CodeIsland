@@ -14,7 +14,7 @@ public sealed record HookTool(
     HookTimeoutUnit TimeoutUnit,
     string? SourceTag = null);
 
-public enum HookConfigurationFormat { Claude, EventMap, Cursor }
+public enum HookConfigurationFormat { Claude, EventMap, Cursor, OpenCode }
 
 // Each CLI owns its hook-schema timeout unit; JSON config values must not be converted.
 public enum HookTimeoutUnit { Seconds, Milliseconds }
@@ -44,6 +44,10 @@ public static class KnownTools
         new(AgentKind.Cursor, "Cursor", ["Cursor.exe", "cursor.exe", "cursor.cmd"],
             [@".cursor\hooks.json"], "codeisland-cursor",
             ["sessionStart", "preToolUse", "postToolUse", "sessionEnd"], HookConfigurationFormat.Cursor, 5, HookTimeoutUnit.Seconds),
+        new(AgentKind.OpenCode, "OpenCode", ["opencode.exe", "opencode.cmd", "opencode"],
+            [@".config\opencode\opencode.json"], "codeisland-opencode",
+            ["session.created", "tool.execute.before", "tool.execute.after", "permission.asked", "session.error", "session.idle"],
+            HookConfigurationFormat.OpenCode, 5, HookTimeoutUnit.Seconds),
         new(AgentKind.Qoder, "Qoder", ["Qoder.exe", "qoder.exe", "qoder.cmd"],
             [@".qoder\settings.json"], "codeisland-qoder",
             ["SessionStart", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop"], HookConfigurationFormat.Claude, 5, HookTimeoutUnit.Seconds),

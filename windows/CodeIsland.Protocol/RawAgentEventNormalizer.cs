@@ -38,13 +38,14 @@ public static class RawAgentEventNormalizer
         return normalized switch
         {
             "sessionstart" => AgentEventType.SessionStart,
-            "sessionend" or "stop" => AgentEventType.SessionEnd,
-            "pretooluse" or "toolstart" => AgentEventType.ToolStart,
-            "posttooluse" or "toolend" => AgentEventType.ToolEnd,
-            "permissionrequest" => AgentEventType.PermissionRequest,
+            "sessioncreated" => AgentEventType.SessionStart,
+            "sessionend" or "sessionidle" or "stop" => AgentEventType.SessionEnd,
+            "pretooluse" or "toolexecutebefore" or "toolstart" => AgentEventType.ToolStart,
+            "posttooluse" or "toolexecuteafter" or "toolend" => AgentEventType.ToolEnd,
+            "permissionasked" or "permissionrequest" => AgentEventType.PermissionRequest,
             "question" => AgentEventType.Question,
             "notification" when FirstString(root, "question") is not null => AgentEventType.Question,
-            "error" => AgentEventType.Error,
+            "sessionerror" or "error" => AgentEventType.Error,
             "heartbeat" => AgentEventType.Heartbeat,
             _ => AgentEventType.Message
         };
