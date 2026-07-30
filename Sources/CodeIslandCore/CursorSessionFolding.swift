@@ -9,6 +9,17 @@ public enum CursorSessionFolding {
     /// UUID segment under `agent-transcripts/`.
     private static let uuidDirPattern = #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#
 
+    /// True when `path` is under Cursor's `agent-transcripts` tree
+    /// (`~/.cursor/projects/…/agent-transcripts/…`).
+    public static func isCursorAgentTranscriptPath(_ path: String?) -> Bool {
+        guard let path = path?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty else {
+            return false
+        }
+        guard path.contains("/agent-transcripts/") else { return false }
+        return path.contains("/.cursor/") || path.contains("/cursor/projects/")
+    }
+
     /// Parent conversation id from a Cursor `transcript_path`, when present.
     ///
     /// Recognized layouts:
@@ -59,6 +70,21 @@ public enum CursorSubsessionRouter {
         return normalized == "cursor" || normalized == "cursor-cli"
     }
 
+    /// Treat as Cursor Task routing even when `_source` is missing or still the
+    /// default `"claude"` — Cursor Agent Tasks often fire Claude-format hooks
+    /// without `--source`, which would otherwise leave a ghost Claude card.
+    public static func shouldTreatAsCursorFamily(
+        declaredSource: String?,
+        transcriptPath: String?
+    ) -> Bool {
+        if isCursorFamilySource(declaredSource) { return true }
+        guard CursorSessionFolding.isCursorAgentTranscriptPath(transcriptPath) else {
+            return false
+        }
+        let normalized = SessionSnapshot.normalizedSupportedSource(declaredSource)
+        return normalized == nil || normalized == "claude"
+    }
+
     /// Positive process id from `_ppid` (Int / Int32 / NSNumber / decimal String).
     public static func positivePpid(from raw: [String: Any]) -> Int? {
         let parsed: Int?
@@ -80,9 +106,9 @@ public enum CursorSubsessionRouter {
     /// Apply Agent Sub-Sessions (`separate` / `merge` / `hide`) to Cursor hooks.
     /// Same three modes as Codex and plugin children.
     public static func decide(raw: [String: Any], mode: String) -> CursorSubsessionRouteDecision {
-        guard isCursorFamilySource(
-            (raw["_source"] as? String) ?? (raw["source"] as? String)
-        ) else {
+        let declared = (raw["_source"] as? String) ?? (raw["source"] as? String)
+        let path = transcriptPath(from: raw)
+        guard shouldTreatAsCursorFamily(declaredSource: declared, transcriptPath: path) else {
             return .leave
         }
 
@@ -90,7 +116,7 @@ public enum CursorSubsessionRouter {
 
         guard let parentId = CursorSessionFolding.foldTarget(
             childSessionId: childSessionId,
-            transcriptPath: transcriptPath(from: raw)
+            transcriptPath: path
         ) else {
             return .leave
         }
@@ -118,21 +144,27 @@ public enum CursorSubsessionRouter {
             raw["agent_type"] = "cursor-subagent"
         }
         raw["_cursor_subagent"] = true
+        // Misbranded Claude-default Task hooks must land as Cursor on the parent.
+        if !isCursorFamilySource((raw["_source"] as? String) ?? (raw["source"] as? String)) {
+            raw["_source"] = "cursor"
+        }
     }
 
     /// Whether merge/hide may resolve a parent via `_ppid` after transcript fold
     /// returned `.leave`.
     ///
-    /// True only with Cursor source + session id + positive `_ppid` and **no**
-    /// parseable parent UUID in `transcript_path`. A parseable parent means either
-    /// the main chat or a foldable Task (`decide` already handles the latter).
+    /// True with Cursor family (including misbranded Claude-default + Cursor
+    /// transcript path) + session id + positive `_ppid` and **no** parseable
+    /// parent UUID in `transcript_path`.
     public static func shouldAttemptPpidParentFallback(raw: [String: Any]) -> Bool {
-        guard isCursorFamilySource((raw["_source"] as? String) ?? (raw["source"] as? String)),
+        let declared = (raw["_source"] as? String) ?? (raw["source"] as? String)
+        let path = transcriptPath(from: raw)
+        guard shouldTreatAsCursorFamily(declaredSource: declared, transcriptPath: path),
               sessionId(from: raw) != nil,
               positivePpid(from: raw) != nil else {
             return false
         }
-        if let path = transcriptPath(from: raw),
+        if let path,
            CursorSessionFolding.parentConversationId(fromTranscriptPath: path) != nil {
             return false
         }

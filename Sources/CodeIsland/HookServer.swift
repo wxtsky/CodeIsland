@@ -324,14 +324,12 @@ class HookServer {
 
     /// Whether Cursor Task routing may need a JSON parse (transcript fold path).
     ///
-    /// Requires `agent-transcripts` plus `_source` of `cursor` / `cursor-cli`
-    /// (not bare "cursor" elsewhere). Fast path: compact bridge literals, then
-    /// whitespace-tolerant regex (only if `"_source"` is present). JSON fallback
-    /// runs only when a `\u` escape is also present — so non-cursor hooks whose
-    /// text merely mentions `agent-transcripts` do not pay for a parse.
+    /// Requires `agent-transcripts` plus either a Cursor `_source` or a path under
+    /// `/.cursor/` (misbranded Claude-default Task hooks still fold).
     internal static func mayNeedCursorSubsessionRouting(data: Data) -> Bool {
         guard data.range(of: cursorTranscriptMarkerBytes) != nil else { return false }
-        return mayBeCursorHookSource(data: data)
+        if mayBeCursorHookSource(data: data) { return true }
+        return data.range(of: Data("/.cursor/".utf8)) != nil
     }
 
     /// `_source` is `cursor` / `cursor-cli` (compact, spaced, or `\u`-escaped).

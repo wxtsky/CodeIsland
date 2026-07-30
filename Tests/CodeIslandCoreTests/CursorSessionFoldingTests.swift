@@ -93,13 +93,20 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(CursorSubsessionRouter.decide(raw: raw, mode: "merge"), .leave)
     }
 
-    func testRouterLeavesNonCursorSources() {
+    func testRouterLeavesNonCursorSourcesWithoutCursorTranscript() {
         let raw: [String: Any] = [
-            "_source": "claude",
+            "_source": "codex",
             "session_id": "2528cb91-6379-48f2-aff8-40f4b804dafa",
-            "transcript_path": "/Users/u/.cursor/projects/x/agent-transcripts/e1247fd5-d9a0-48ef-8457-0304606b1833/e1247fd5-d9a0-48ef-8457-0304606b1833.jsonl",
+            "transcript_path": "/Users/u/.cursor/projects/x/agent-transcripts/e1247fd5-d9a0-48ef-8457-0304606b1833/subagents/2528cb91-6379-48f2-aff8-40f4b804dafa.jsonl",
         ]
         XCTAssertEqual(CursorSubsessionRouter.decide(raw: raw, mode: "merge"), .leave)
+
+        let claudeElsewhere: [String: Any] = [
+            "_source": "claude",
+            "session_id": "2528cb91-6379-48f2-aff8-40f4b804dafa",
+            "transcript_path": "/Users/u/.claude/projects/-tmp/2528cb91-6379-48f2-aff8-40f4b804dafa.jsonl",
+        ]
+        XCTAssertEqual(CursorSubsessionRouter.decide(raw: claudeElsewhere, mode: "merge"), .leave)
     }
 
     func testShouldAttemptPpidFallbackOnlyWithoutParseableTranscriptParent() {
@@ -260,6 +267,46 @@ final class CursorSessionFoldingTests: XCTestCase {
                 sessionId: parentId,
                 providerSessionId: parentId,
                 transcriptPath: mainPath
+            )
+        )
+    }
+
+    func testRouterMergesMisbrandedClaudeDefaultCursorTask() {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let path = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+        let raw: [String: Any] = [
+            "_source": "claude",
+            "session_id": childId,
+            "transcript_path": path,
+        ]
+        XCTAssertEqual(
+            CursorSubsessionRouter.decide(raw: raw, mode: "merge"),
+            .merge(parentSessionId: parentId, childSessionId: childId)
+        )
+        var rewritten = raw
+        CursorSubsessionRouter.applyMerge(
+            to: &rewritten,
+            parentSessionId: parentId,
+            childSessionId: childId
+        )
+        XCTAssertEqual(rewritten["_source"] as? String, "cursor")
+        XCTAssertEqual(rewritten["_cursor_subagent"] as? Bool, true)
+    }
+
+    func testShouldTreatAsCursorFamilyForMisbrandedClaudePath() {
+        let path = "/Users/u/.cursor/projects/x/agent-transcripts/p/subagents/c.jsonl"
+        XCTAssertTrue(
+            CursorSubsessionRouter.shouldTreatAsCursorFamily(
+                declaredSource: "claude",
+                transcriptPath: path
+            )
+        )
+        XCTAssertTrue(CursorSessionFolding.isCursorAgentTranscriptPath(path))
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldTreatAsCursorFamily(
+                declaredSource: "claude",
+                transcriptPath: nil
             )
         )
     }

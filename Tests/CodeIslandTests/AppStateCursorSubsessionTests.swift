@@ -43,6 +43,68 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertEqual(appState.activeSessionId, parentId)
     }
 
+    func testMisbrandedClaudeDefaultCursorTaskRebrandsAndMerges() {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let transcriptPath =
+            "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.providerSessionId = parentId
+        parent.transcriptPath =
+            "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+
+        // Ghost card: default Claude source, Cursor host, Task transcript on disk path.
+        var child = SessionSnapshot()
+        child.source = "claude"
+        child.status = .running
+        child.termBundleId = "com.todesktop.230313mzl4w4u92"
+        child.transcriptPath = transcriptPath
+        child.lastActivity = Date()
+
+        appState.sessions[parentId] = parent
+        appState.sessions[childId] = child
+
+        XCTAssertTrue(appState.applyCursorSubsessionModeToKnownSessions())
+        XCTAssertNil(appState.sessions[childId], "ghost Claude Task card should fold away")
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.agentType, "cursor-subagent")
+        XCTAssertEqual(appState.sessions[parentId]?.source, "cursor")
+    }
+
+    func testFindCursorSubagentTranscriptPathLocatesFileUnderProject() throws {
+        let home = NSTemporaryDirectory() + "cursor-subagent-find-" + UUID().uuidString
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let cwd = "/Users/zephyr/Code/CodeIsland"
+        let project = cwd.appProjectDirEncoded()
+        let dir = "\(home)/.cursor/projects/\(project)/agent-transcripts/\(parentId)/subagents"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: home) }
+
+        let path = "\(dir)/\(childId).jsonl"
+        try " {}\n".write(toFile: path, atomically: true, encoding: .utf8)
+
+        let found = AppState.findCursorSubagentTranscriptPath(
+            sessionId: childId,
+            cwd: cwd,
+            home: home
+        )
+        XCTAssertEqual(found, path)
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)

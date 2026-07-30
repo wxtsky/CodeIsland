@@ -1326,6 +1326,13 @@ public func fillMissingParentMetadataFromSubagentEvent(
        source != "claude" {
         sessions[sessionId]?.source = source
     }
+    // Cursor Task hooks often omit `--source` and keep the default "claude".
+    // Rebrand when transcript_path is clearly under Cursor agent-transcripts.
+    if sessions[sessionId]?.source == "claude",
+       let path = event.rawJSON["transcript_path"] as? String,
+       CursorSessionFolding.isCursorAgentTranscriptPath(path) {
+        sessions[sessionId]?.source = "cursor"
+    }
 
     let cwdMissing = sessions[sessionId]?.cwd == nil
         || SessionSnapshot.isUnhelpfulHookCwd(sessions[sessionId]?.cwd ?? "")
@@ -1462,6 +1469,13 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     }
     if let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) {
         sessions[sessionId]?.source = source
+    } else if sessions[sessionId]?.source == "claude",
+              let path = (event.rawJSON["transcript_path"] as? String)
+                ?? (event.rawJSON["transcriptPath"] as? String),
+              CursorSessionFolding.isCursorAgentTranscriptPath(path) {
+        // Untagged Cursor Agent Task hooks inherit SessionSnapshot's default
+        // "claude" — rebrand so merge/hide and the badge follow Cursor.
+        sessions[sessionId]?.source = "cursor"
     }
     // cmux surface / workspace (injected by bridge from CMUX_SURFACE_ID / CMUX_WORKSPACE_ID env vars)
     if let surface = event.rawJSON["_cmux_surface_id"] as? String, !surface.isEmpty {

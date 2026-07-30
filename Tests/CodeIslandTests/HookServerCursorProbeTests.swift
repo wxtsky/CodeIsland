@@ -48,6 +48,12 @@ final class HookServerCursorProbeTests: XCTestCase {
             "Unrelated _source plus bare cursor text must not force a parse"
         )
 
+        // Misbranded Claude-default Task under ~/.cursor/.../agent-transcripts must parse.
+        let misbrandedCursorPath = Data(
+            #"{"_source":"claude","transcript_path":"/Users/u/.cursor/projects/x/agent-transcripts/p/subagents/c.jsonl"}"#.utf8
+        )
+        XCTAssertTrue(HookServer.mayNeedCursorSubsessionRouting(data: misbrandedCursorPath))
+
         // Non-cursor + agent-transcripts + unrelated `\u` must not claim Cursor.
         let wrongSourceWithUnicodeElsewhere = Data(
             #"{"_source":"claude","text":"\u0041","transcript_path":"\#(path)"}"#.utf8

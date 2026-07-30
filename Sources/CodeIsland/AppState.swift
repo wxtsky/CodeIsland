@@ -1166,6 +1166,16 @@ final class AppState {
 
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory)
 
+        // Cursor Agent Tasks often fire Claude-format hooks without `--source`,
+        // leaving ghost Claude cards. Rebrand + fold before the rest of the
+        // pipeline treats them as standalone Claude sessions.
+        if sessions.contains(where: {
+            let source = SessionSnapshot.normalizedSupportedSource($0.value.source)
+            return source == nil || source == "claude"
+        }) {
+            _ = applyCursorSubsessionModeToKnownSessions()
+        }
+
         // After reduce: remoteHostId is authoritative (extractMetadata just ran),
         // so a remote session can never probe the local filesystem here.
         maybeRefreshGitBranch(for: sessionId, cwdBefore: cwdBeforeReduce, normalizedEventName: normalizedEventName)
@@ -2967,8 +2977,12 @@ final class AppState {
             return false
         }
 
+        // Cursor Agent Tasks that fired Claude-format hooks keep default
+        // source=claude and never enter the fold loop — rebrand first.
+        var didMutate = rebrandMisattributedCursorTaskCards()
+
+        // Refresh after rebrand so newly tagged cursor cards are included.
         let candidates = sessions.map { (sessionId: $0.key, session: $0.value) }
-        var didMutate = false
 
         if mode == "hide" {
             for candidate in candidates {
@@ -3217,6 +3231,91 @@ final class AppState {
         }
         if let parentFromCard {
             return (parentFromCard, candidate.sessionId)
+        }
+        return nil
+    }
+
+    /// Rebrand default-Claude cards that are actually Cursor Agent Tasks
+    /// (`~/.cursor/.../agent-transcripts/.../subagents/<id>.jsonl`).
+    @discardableResult
+    func rebrandMisattributedCursorTaskCards() -> Bool {
+        var didMutate = false
+        for (sessionId, snap) in sessions {
+            let normalized = SessionSnapshot.normalizedSupportedSource(snap.source)
+            guard normalized == nil || normalized == "claude" else { continue }
+
+            if let path = snap.transcriptPath,
+               CursorSessionFolding.isCursorAgentTranscriptPath(path) {
+                sessions[sessionId]?.source = "cursor"
+                didMutate = true
+                continue
+            }
+
+            guard let found = Self.findCursorSubagentTranscriptPath(
+                sessionId: sessionId,
+                cwd: snap.cwd
+            ) else {
+                continue
+            }
+            sessions[sessionId]?.source = "cursor"
+            if sessions[sessionId]?.transcriptPath == nil {
+                sessions[sessionId]?.transcriptPath = found
+            }
+            didMutate = true
+        }
+        return didMutate
+    }
+
+    /// Locate `…/agent-transcripts/<parent>/subagents/<sessionId>.jsonl` under
+    /// `~/.cursor/projects`. Prefers the cwd-encoded project when available.
+    nonisolated static func findCursorSubagentTranscriptPath(
+        sessionId: String,
+        cwd: String?,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        fm: FileManager = .default
+    ) -> String? {
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let projectsRoot = "\(home)/.cursor/projects"
+
+        var searchRoots: [String] = []
+        if let cwd, !cwd.isEmpty {
+            searchRoots.append("\(projectsRoot)/\(cwd.appProjectDirEncoded())/agent-transcripts")
+        }
+        // Prefer cwd project; fall back to scanning other Cursor projects.
+        var found: String?
+        for base in searchRoots {
+            if let path = Self.firstSubagentTranscript(in: base, sessionId: trimmed, fm: fm) {
+                found = path
+                break
+            }
+        }
+        if found == nil {
+            if let projects = try? fm.contentsOfDirectory(atPath: projectsRoot) {
+                for project in projects {
+                    let base = "\(projectsRoot)/\(project)/agent-transcripts"
+                    if searchRoots.contains(base) { continue }
+                    if let path = Self.firstSubagentTranscript(in: base, sessionId: trimmed, fm: fm) {
+                        found = path
+                        break
+                    }
+                }
+            }
+        }
+        return found
+    }
+
+    private nonisolated static func firstSubagentTranscript(
+        in transcriptBase: String,
+        sessionId: String,
+        fm: FileManager
+    ) -> String? {
+        let suffix = "/subagents/\(sessionId).jsonl"
+        guard let enumerator = fm.enumerator(atPath: transcriptBase) else { return nil }
+        while let rel = enumerator.nextObject() as? String {
+            if rel.hasSuffix(suffix) || rel == String(suffix.dropFirst()) {
+                return "\(transcriptBase)/\(rel)"
+            }
         }
         return nil
     }
