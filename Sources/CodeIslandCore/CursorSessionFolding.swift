@@ -53,23 +53,44 @@ public enum CursorSubsessionRouteDecision: Equatable {
 }
 
 public enum CursorSubsessionRouter {
+    /// `cursor` / `cursor-cli` after normalization.
+    public static func isCursorFamilySource(_ source: String?) -> Bool {
+        let normalized = SessionSnapshot.normalizedSupportedSource(source)
+        return normalized == "cursor" || normalized == "cursor-cli"
+    }
+
+    /// Positive process id from `_ppid` (Int / Int32 / NSNumber / decimal String).
+    public static func positivePpid(from raw: [String: Any]) -> Int? {
+        let parsed: Int?
+        if let p = raw["_ppid"] as? Int {
+            parsed = p
+        } else if let p = raw["_ppid"] as? Int32 {
+            parsed = Int(p)
+        } else if let p = raw["_ppid"] as? NSNumber {
+            parsed = p.intValue
+        } else if let s = raw["_ppid"] as? String {
+            parsed = Int(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            parsed = nil
+        }
+        guard let parsed, parsed > 0 else { return nil }
+        return parsed
+    }
+
     /// Apply Agent Sub-Sessions (`separate` / `merge` / `hide`) to Cursor hooks.
     /// Same three modes as Codex and plugin children.
     public static func decide(raw: [String: Any], mode: String) -> CursorSubsessionRouteDecision {
-        let normalizedSource = SessionSnapshot.normalizedSupportedSource(
+        guard isCursorFamilySource(
             (raw["_source"] as? String) ?? (raw["source"] as? String)
-        )
-        guard normalizedSource == "cursor" || normalizedSource == "cursor-cli" else {
+        ) else {
             return .leave
         }
 
-        let childSessionId = nonEmptyString(raw["session_id"]) ?? nonEmptyString(raw["sessionId"])
-        guard let childSessionId else { return .leave }
+        guard let childSessionId = sessionId(from: raw) else { return .leave }
 
-        let transcriptPath = nonEmptyString(raw["transcript_path"]) ?? nonEmptyString(raw["transcriptPath"])
         guard let parentId = CursorSessionFolding.foldTarget(
             childSessionId: childSessionId,
-            transcriptPath: transcriptPath
+            transcriptPath: transcriptPath(from: raw)
         ) else {
             return .leave
         }
@@ -97,6 +118,39 @@ public enum CursorSubsessionRouter {
             raw["agent_type"] = "cursor-subagent"
         }
         raw["_cursor_subagent"] = true
+    }
+
+    /// Whether merge/hide may resolve a parent via `_ppid` after transcript fold
+    /// returned `.leave`.
+    ///
+    /// True only with Cursor source + session id + positive `_ppid` and **no**
+    /// parseable parent UUID in `transcript_path`. A parseable parent means either
+    /// the main chat or a foldable Task (`decide` already handles the latter).
+    public static func shouldAttemptPpidParentFallback(raw: [String: Any]) -> Bool {
+        guard isCursorFamilySource((raw["_source"] as? String) ?? (raw["source"] as? String)),
+              sessionId(from: raw) != nil,
+              positivePpid(from: raw) != nil else {
+            return false
+        }
+        if let path = transcriptPath(from: raw),
+           CursorSessionFolding.parentConversationId(fromTranscriptPath: path) != nil {
+            return false
+        }
+        return true
+    }
+
+    /// Search order for same-IDE parent lookup: event source first, then sibling.
+    public static func parentSourceSearchOrder(primarySource: String) -> [String] {
+        let normalized = SessionSnapshot.normalizedSupportedSource(primarySource) ?? primarySource
+        return normalized == "cursor-cli" ? ["cursor-cli", "cursor"] : ["cursor", "cursor-cli"]
+    }
+
+    public static func sessionId(from raw: [String: Any]) -> String? {
+        nonEmptyString(raw["session_id"]) ?? nonEmptyString(raw["sessionId"])
+    }
+
+    public static func transcriptPath(from raw: [String: Any]) -> String? {
+        nonEmptyString(raw["transcript_path"]) ?? nonEmptyString(raw["transcriptPath"])
     }
 
     private static func nonEmptyString(_ value: Any?) -> String? {

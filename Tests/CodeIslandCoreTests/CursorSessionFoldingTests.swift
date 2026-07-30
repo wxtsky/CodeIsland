@@ -102,6 +102,112 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(CursorSubsessionRouter.decide(raw: raw, mode: "merge"), .leave)
     }
 
+    func testShouldAttemptPpidFallbackOnlyWithoutParseableTranscriptParent() {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let mainPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+
+        // Main chat: parent UUID parsed == session_id → never ppid-fallback.
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": parentId,
+                "transcript_path": mainPath,
+            ])
+        )
+
+        // Foldable Task path: parent UUID parses → decide handles merge; no ppid.
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "transcript_path": mainPath,
+            ])
+        )
+
+        // No transcript_path → ppid fallback allowed.
+        XCTAssertTrue(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": 42,
+            ])
+        )
+
+        // Unparseable path (no agent-transcripts UUID) → ppid fallback allowed.
+        XCTAssertTrue(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "transcript_path": "/tmp/other.jsonl",
+                "_ppid": 42,
+            ])
+        )
+
+        // Missing _ppid → no fallback.
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+            ])
+        )
+
+        // Invalid / zero ppid → no fallback.
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": 0,
+            ])
+        )
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": -1,
+            ])
+        )
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": "nope",
+            ])
+        )
+
+        // String / camelCase sessionId + positive ppid still qualify.
+        XCTAssertTrue(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor-cli",
+                "sessionId": childId,
+                "_ppid": "7",
+            ])
+        )
+        XCTAssertTrue(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor-cli",
+                "sessionId": childId,
+                "_ppid": NSNumber(value: 7),
+            ])
+        )
+
+        // Missing session id → no fallback.
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "cursor",
+                "_ppid": 42,
+            ])
+        )
+
+        XCTAssertFalse(
+            CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: [
+                "_source": "claude",
+                "session_id": childId,
+                "_ppid": 42,
+            ])
+        )
+    }
+
     func testApplyMergeRewritesSessionAndSetsAgentId() {
         var raw: [String: Any] = [
             "session_id": "2528cb91-6379-48f2-aff8-40f4b804dafa",

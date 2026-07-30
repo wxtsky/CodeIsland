@@ -1,5 +1,6 @@
 import XCTest
 @testable import CodeIsland
+import CodeIslandCore
 
 @MainActor
 final class HookServerCursorProbeTests: XCTestCase {
@@ -57,5 +58,25 @@ final class HookServerCursorProbeTests: XCTestCase {
 
         let noTranscripts = Data(#"{"_source":"cursor","session_id":"abc"}"#.utf8)
         XCTAssertFalse(HookServer.mayNeedCursorSubsessionRouting(data: noTranscripts))
+        // Without agent-transcripts, source-only probe still sees Cursor (merge/hide gate).
+        XCTAssertTrue(HookServer.mayBeCursorHookSource(data: noTranscripts))
+    }
+
+    func testMayBeCursorHookSourceAcceptsSpacedAndUnicodeWithoutTranscripts() {
+        XCTAssertTrue(
+            HookServer.mayBeCursorHookSource(
+                data: Data(#"{"_source" : "cursor-cli","session_id":"x"}"#.utf8)
+            )
+        )
+        XCTAssertTrue(
+            HookServer.mayBeCursorHookSource(
+                data: Data(#"{"_source":"\u0063ursor","session_id":"x"}"#.utf8)
+            )
+        )
+        XCTAssertFalse(
+            HookServer.mayBeCursorHookSource(
+                data: Data(#"{"_source":"claude","session_id":"x"}"#.utf8)
+            )
+        )
     }
 }
