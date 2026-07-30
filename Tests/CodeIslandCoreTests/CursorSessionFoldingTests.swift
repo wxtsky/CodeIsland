@@ -290,6 +290,32 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(sessions[parentId]?.currentTool, "Agent")
     }
 
+    func testCodexSubagentUserPromptSubmitDoesNotOverwriteParentChat() throws {
+        let parentId = "thread-parent"
+        let childId = "thread-child"
+        var parent = SessionSnapshot()
+        parent.source = "codex"
+        parent.status = .running
+        parent.lastUserPrompt = "parent prompt"
+        parent.addRecentMessage(ChatMessage(isUser: true, text: "parent prompt"))
+        parent.subagents[childId] = SubagentState(agentId: childId, agentType: "worker")
+        var sessions = [parentId: parent]
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": parentId,
+            "_source": "codex",
+            "agent_id": childId,
+            "prompt": "child-only prompt must not replace parent",
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions[parentId]?.lastUserPrompt, "parent prompt")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.text, "parent prompt")
+        XCTAssertEqual(sessions[parentId]?.subagents[childId]?.status, .processing)
+    }
+
     func testSubagentStopRecordsClosedTombstoneAndClearsOnRestart() throws {
         let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
         let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"

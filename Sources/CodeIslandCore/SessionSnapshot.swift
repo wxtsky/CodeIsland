@@ -1325,6 +1325,18 @@ private func shouldReopenCursorSubagentOnPrompt(event: HookEvent, session: Sessi
     return source == "cursor" || source == "cursor-cli"
 }
 
+/// Whether folded-child prompt/response text should appear on the parent card.
+private func shouldSurfaceCursorSubagentChat(event: HookEvent, session: SessionSnapshot?) -> Bool {
+    if (event.rawJSON["_cursor_subagent"] as? Bool) == true {
+        return true
+    }
+    return CursorSubsessionRouter.isCursorFamilySource(
+        (event.rawJSON["_source"] as? String)
+            ?? (event.rawJSON["source"] as? String)
+            ?? session?.source
+    )
+}
+
 public func extractMetadata(into sessions: inout [String: SessionSnapshot], sessionId: String, event: HookEvent) {
     let eventCwd = event.rawJSON["cwd"] as? String
     if let cwd = eventCwd, !cwd.isEmpty,
@@ -1573,14 +1585,15 @@ private func handleSubagentEvent(
         }
         sessions[sessionId]?.subagents[agentId]?.status = .processing
         sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
-        // Merge-into-main: keep parent chat text live for folded Cursor Tasks
-        // (and for main-chat hooks that were incorrectly tagged with agent_id).
-        let prompt = firstStringFromEvent(
-            event,
-            keys: ["prompt", "user_prompt", "userPrompt", "message", "input", "content", "text"],
-            includeNested: true
-        )
-        if let prompt {
+        // Cursor merge-into-main only: keep parent chat text live for folded Tasks
+        // (and for main-chat hooks incorrectly tagged with agent_id). Do not apply
+        // to Codex/plugin children — their prompts must not overwrite the parent card.
+        if shouldSurfaceCursorSubagentChat(event: event, session: sessions[sessionId]),
+           let prompt = firstStringFromEvent(
+               event,
+               keys: ["prompt", "user_prompt", "userPrompt"],
+               includeNested: true
+           ) {
             sessions[sessionId]?.lastUserPrompt = prompt
             if sessions[sessionId]?.recentMessages.last?.isUser == true {
                 sessions[sessionId]?.recentMessages.removeLast()
@@ -1662,14 +1675,15 @@ private func handleSubagentEvent(
         guard ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event) else {
             return true
         }
-        // Surface the folded reply on the parent card (merge-into-main), but never
+        // Cursor-only: surface the folded reply on the parent card, but never
         // enqueue parent-turn completion from a Task response.
-        let responseText = firstStringFromEvent(
-            event,
-            keys: ["text", "message"],
-            includeNested: true
-        )
-        if let text = responseText, !text.isEmpty {
+        if shouldSurfaceCursorSubagentChat(event: event, session: sessions[sessionId]),
+           let text = firstStringFromEvent(
+               event,
+               keys: ["text", "message"],
+               includeNested: true
+           ),
+           !text.isEmpty {
             sessions[sessionId]?.lastAssistantMessage = text
             sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: text))
         }

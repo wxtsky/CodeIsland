@@ -227,19 +227,39 @@ extension AppState {
             mutated = true
         }
 
-        if let prompt = delta.lastUserPrompt, session.lastUserPrompt != prompt {
-            session.lastUserPrompt = prompt
-            if session.recentMessages.last(where: { $0.isUser })?.text != prompt {
-                session.addRecentMessage(ChatMessage(isUser: true, text: prompt))
+        if let prompt = delta.lastUserPrompt {
+            let normalizedIncoming = JSONLTailer.normalizedCursorChatText(from: prompt) ?? prompt
+            let normalizedCurrent = session.lastUserPrompt.flatMap {
+                JSONLTailer.normalizedCursorChatText(from: $0) ?? $0
             }
-            mutated = true
+            if normalizedCurrent != normalizedIncoming {
+                session.lastUserPrompt = normalizedIncoming
+                let lastUserText = session.recentMessages.last(where: { $0.isUser })?.text
+                let lastNormalized = lastUserText.flatMap {
+                    JSONLTailer.normalizedCursorChatText(from: $0) ?? $0
+                }
+                if lastNormalized != normalizedIncoming {
+                    session.addRecentMessage(ChatMessage(isUser: true, text: normalizedIncoming))
+                }
+                mutated = true
+            }
         }
-        if let reply = delta.lastAssistantMessage, session.lastAssistantMessage != reply {
-            session.lastAssistantMessage = reply
-            if session.recentMessages.last(where: { !$0.isUser })?.text != reply {
-                session.addRecentMessage(ChatMessage(isUser: false, text: reply))
+        if let reply = delta.lastAssistantMessage {
+            let normalizedIncoming = JSONLTailer.normalizedCursorChatText(from: reply) ?? reply
+            let normalizedCurrent = session.lastAssistantMessage.flatMap {
+                JSONLTailer.normalizedCursorChatText(from: $0) ?? $0
             }
-            mutated = true
+            if normalizedCurrent != normalizedIncoming {
+                session.lastAssistantMessage = normalizedIncoming
+                let lastAssistantText = session.recentMessages.last(where: { !$0.isUser })?.text
+                let lastNormalized = lastAssistantText.flatMap {
+                    JSONLTailer.normalizedCursorChatText(from: $0) ?? $0
+                }
+                if lastNormalized != normalizedIncoming {
+                    session.addRecentMessage(ChatMessage(isUser: false, text: normalizedIncoming))
+                }
+                mutated = true
+            }
         }
 
         // Cursor question tool has no hook channel (#265) — the transcript tail is
