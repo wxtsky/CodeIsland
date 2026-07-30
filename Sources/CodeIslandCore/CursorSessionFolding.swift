@@ -145,6 +145,95 @@ public enum CursorSubsessionRouter {
         return normalized == "cursor-cli" ? ["cursor-cli", "cursor"] : ["cursor", "cursor-cli"]
     }
 
+    /// True when this top-level card is a foldable Cursor Task (transcript parent ≠ id).
+    public static func isLikelyCursorTaskCard(
+        sessionId: String,
+        providerSessionId: String?,
+        transcriptPath: String?
+    ) -> Bool {
+        if CursorSessionFolding.foldTarget(
+            childSessionId: sessionId,
+            transcriptPath: transcriptPath
+        ) != nil {
+            return true
+        }
+        if let providerSessionId,
+           providerSessionId != sessionId,
+           CursorSessionFolding.foldTarget(
+               childSessionId: providerSessionId,
+               transcriptPath: transcriptPath
+           ) != nil {
+            return true
+        }
+        return false
+    }
+
+    /// True when the card looks like a main Cursor chat (owns its transcript dir,
+    /// or already parents live/folded Tasks).
+    public static func isLikelyCursorMainCard(
+        sessionId: String,
+        providerSessionId: String?,
+        transcriptPath: String?,
+        hasSubagents: Bool
+    ) -> Bool {
+        if hasSubagents { return true }
+        let identities = [sessionId, providerSessionId].compactMap { id -> String? in
+            guard let id else { return nil }
+            let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard let path = transcriptPath,
+              let parentId = CursorSessionFolding.parentConversationId(fromTranscriptPath: path)
+        else {
+            return false
+        }
+        return identities.contains(parentId)
+    }
+
+    /// Pick a unique `_ppid` parent among same-PID Cursor cards.
+    ///
+    /// - Excludes foldable Task cards (never parent onto an orphan Task).
+    /// - Prefers main-looking cards (self transcript / already has subagents).
+    /// - Allows a unique idle main when it shares the IDE pid (main often goes
+    ///   idle while a Task is still running).
+    /// - 2+ live non-Task chats → ambiguous (`nil`).
+    public static func choosePpidFallbackParentId(
+        candidates: [(sessionId: String, status: AgentStatus, startTime: Date, isMain: Bool, isTask: Bool)]
+    ) -> String? {
+        let eligible = candidates.filter { !$0.isTask }
+        guard !eligible.isEmpty else { return nil }
+
+        let mains = eligible.filter(\.isMain)
+        let pool = mains.isEmpty ? eligible : mains
+        if pool.count == 1 { return pool[0].sessionId }
+
+        let active = pool.filter { $0.status != .idle }
+        let idle = pool.filter { $0.status == .idle }
+
+        // Two+ live chats on the same IDE process — do not guess.
+        if active.count >= 2 { return nil }
+        if active.count == 1 {
+            // Idle leftovers + one live card: prefer unique main among idle+active,
+            // else the older idle card when it predates the live orphan Task.
+            if idle.isEmpty { return active[0].sessionId }
+            if let mainIdle = idle.first(where: \.isMain), idle.filter(\.isMain).count == 1 {
+                return mainIdle.sessionId
+            }
+            if let oldestIdle = idle.min(by: { $0.startTime < $1.startTime }),
+               oldestIdle.startTime < active[0].startTime {
+                return oldestIdle.sessionId
+            }
+            return active[0].sessionId
+        }
+
+        // All idle: unique oldest only when startTimes differ.
+        let sorted = pool.sorted { $0.startTime < $1.startTime }
+        guard sorted.count >= 2, sorted[0].startTime < sorted[1].startTime else {
+            return nil
+        }
+        return sorted[0].sessionId
+    }
+
     public static func sessionId(from raw: [String: Any]) -> String? {
         nonEmptyString(raw["session_id"]) ?? nonEmptyString(raw["sessionId"])
     }

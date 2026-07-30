@@ -416,7 +416,8 @@ class HookServer {
         return nil
     }
 
-    /// Sole non-idle same-PID session for `source`, or `nil` when zero / ambiguous.
+    /// Sole suitable same-PID session for `source`, or `nil` when zero / ambiguous.
+    /// Prefers main chats over orphan Task cards; idle mains remain eligible.
     private func uniqueActiveSamePidCursorSession(
         source: String,
         ppid: Int,
@@ -424,19 +425,33 @@ class HookServer {
         activeSince cutoff: Date
     ) -> String? {
         let normalized = SessionSnapshot.normalizedSupportedSource(source)
-        let matches = appState.sessions.compactMap { sessionId, snap -> String? in
-            let snapSource = SessionSnapshot.normalizedSupportedSource(snap.source)
-            guard snapSource == normalized,
-                  snap.cliPid == pid_t(ppid),
-                  snap.lastActivity >= cutoff,
-                  sessionId != excludedSessionId,
-                  snap.status != .idle else {
-                return nil
+        let candidates: [(sessionId: String, status: AgentStatus, startTime: Date, isMain: Bool, isTask: Bool)] =
+            appState.sessions.compactMap { sessionId, snap in
+                let snapSource = SessionSnapshot.normalizedSupportedSource(snap.source)
+                guard snapSource == normalized,
+                      snap.cliPid == pid_t(ppid),
+                      sessionId != excludedSessionId else {
+                    return nil
+                }
+                // Recent activity, or idle with live IDE pid (main often idles while
+                // a Task keeps the process busy).
+                guard snap.lastActivity >= cutoff || snap.status == .idle else {
+                    return nil
+                }
+                let isTask = CursorSubsessionRouter.isLikelyCursorTaskCard(
+                    sessionId: sessionId,
+                    providerSessionId: snap.providerSessionId,
+                    transcriptPath: snap.transcriptPath
+                )
+                let isMain = CursorSubsessionRouter.isLikelyCursorMainCard(
+                    sessionId: sessionId,
+                    providerSessionId: snap.providerSessionId,
+                    transcriptPath: snap.transcriptPath,
+                    hasSubagents: !snap.subagents.isEmpty
+                )
+                return (sessionId, snap.status, snap.startTime, isMain, isTask)
             }
-            return sessionId
-        }
-        guard matches.count == 1 else { return nil }
-        return matches[0]
+        return CursorSubsessionRouter.choosePpidFallbackParentId(candidates: candidates)
     }
 
     /// Rewrite `raw` onto the parent session and serialize.

@@ -157,7 +157,7 @@ final class HookServerCursorPpidFallbackTests: XCTestCase {
         }
     }
 
-    func testMergeModePpidFallbackSkipsIdleParent() throws {
+    func testMergeModePpidFallbackAcceptsUniqueIdleParent() throws {
         try withPluginSessionMode("merge") {
             let ppid = 56_006
             let appState = AppState()
@@ -171,8 +171,85 @@ final class HookServerCursorPpidFallbackTests: XCTestCase {
                 "_ppid": ppid,
                 "hook_event_name": "PostToolUse",
             ])
-            XCTAssertEqual(routed.raw["session_id"] as? String, childId)
-            XCTAssertNil(routed.raw["_cursor_subagent"])
+            // Unique same-pid card — idle main is still a valid fold target.
+            XCTAssertEqual(routed.raw["session_id"] as? String, parentId)
+            XCTAssertEqual(routed.raw["agent_id"] as? String, childId)
+            XCTAssertEqual(routed.raw["_cursor_subagent"] as? Bool, true)
+        }
+    }
+
+    /// Idle main + running orphan Task sharing the IDE pid: must fold onto the
+    /// main card, never treat the orphan Task as parent.
+    func testMergeModePpidFallbackPrefersIdleMainOverRunningOrphanTask() throws {
+        try withPluginSessionMode("merge") {
+            let ppid = 56_022
+            let orphanTaskId = otherId
+            let newTaskId = childId
+            let appState = AppState()
+
+            var idleMain = makeRunningCursorSession(
+                cliPid: ppid,
+                lastActivity: Date().addingTimeInterval(-60),
+                startTime: Date().addingTimeInterval(-600)
+            )
+            idleMain.status = .idle
+            idleMain.transcriptPath =
+                "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+            idleMain.providerSessionId = parentId
+            appState.sessions[parentId] = idleMain
+
+            // Orphan Task card still running under the same IDE process.
+            appState.sessions[orphanTaskId] = makeRunningCursorSession(
+                cliPid: ppid,
+                lastActivity: Date(),
+                startTime: Date().addingTimeInterval(-30)
+            )
+
+            let routed = try route(appState: appState, payload: [
+                "_source": "cursor",
+                "session_id": newTaskId,
+                "_ppid": ppid,
+                "hook_event_name": "PostToolUse",
+            ])
+            XCTAssertEqual(routed.raw["session_id"] as? String, parentId)
+            XCTAssertEqual(routed.raw["agent_id"] as? String, newTaskId)
+            XCTAssertEqual(routed.raw["_cursor_subagent"] as? Bool, true)
+        }
+    }
+
+    /// Foldable Task transcript must never win `_ppid` parent selection over a
+    /// same-pid main chat, even when the Task is the only non-idle card.
+    func testMergeModePpidFallbackExcludesFoldableTaskCardAsParent() throws {
+        try withPluginSessionMode("merge") {
+            let ppid = 56_023
+            let orphanTaskId = otherId
+            let appState = AppState()
+
+            var idleMain = makeRunningCursorSession(
+                cliPid: ppid,
+                lastActivity: Date().addingTimeInterval(-90),
+                startTime: Date().addingTimeInterval(-600)
+            )
+            idleMain.status = .idle
+            appState.sessions[parentId] = idleMain
+
+            var orphanTask = makeRunningCursorSession(
+                cliPid: ppid,
+                lastActivity: Date(),
+                startTime: Date().addingTimeInterval(-20)
+            )
+            orphanTask.transcriptPath =
+                "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(orphanTaskId).jsonl"
+            appState.sessions[orphanTaskId] = orphanTask
+
+            let routed = try route(appState: appState, payload: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": ppid,
+                "hook_event_name": "PostToolUse",
+            ])
+            XCTAssertEqual(routed.raw["session_id"] as? String, parentId)
+            XCTAssertEqual(routed.raw["agent_id"] as? String, childId)
         }
     }
 

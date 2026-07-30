@@ -208,6 +208,62 @@ final class CursorSessionFoldingTests: XCTestCase {
         )
     }
 
+    func testChoosePpidFallbackParentPrefersMainOverRunningTask() {
+        let older = Date().addingTimeInterval(-600)
+        let newer = Date().addingTimeInterval(-30)
+        let chosen = CursorSubsessionRouter.choosePpidFallbackParentId(candidates: [
+            (sessionId: "main", status: .idle, startTime: older, isMain: true, isTask: false),
+            (sessionId: "task", status: .running, startTime: newer, isMain: false, isTask: false),
+        ])
+        XCTAssertEqual(chosen, "main")
+    }
+
+    func testChoosePpidFallbackParentExcludesTaskCards() {
+        let chosen = CursorSubsessionRouter.choosePpidFallbackParentId(candidates: [
+            (sessionId: "main", status: .idle, startTime: Date().addingTimeInterval(-600), isMain: false, isTask: false),
+            (sessionId: "task", status: .running, startTime: Date(), isMain: false, isTask: true),
+        ])
+        XCTAssertEqual(chosen, "main")
+    }
+
+    func testChoosePpidFallbackParentRejectsTwoLiveChats() {
+        let chosen = CursorSubsessionRouter.choosePpidFallbackParentId(candidates: [
+            (sessionId: "a", status: .running, startTime: Date().addingTimeInterval(-100), isMain: false, isTask: false),
+            (sessionId: "b", status: .running, startTime: Date(), isMain: false, isTask: false),
+        ])
+        XCTAssertNil(chosen)
+    }
+
+    func testIsLikelyCursorMainAndTaskCardFromTranscript() {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let mainPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+        let taskPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+
+        XCTAssertTrue(
+            CursorSubsessionRouter.isLikelyCursorMainCard(
+                sessionId: parentId,
+                providerSessionId: parentId,
+                transcriptPath: mainPath,
+                hasSubagents: false
+            )
+        )
+        XCTAssertTrue(
+            CursorSubsessionRouter.isLikelyCursorTaskCard(
+                sessionId: childId,
+                providerSessionId: nil,
+                transcriptPath: taskPath
+            )
+        )
+        XCTAssertFalse(
+            CursorSubsessionRouter.isLikelyCursorTaskCard(
+                sessionId: parentId,
+                providerSessionId: parentId,
+                transcriptPath: mainPath
+            )
+        )
+    }
+
     func testApplyMergeRewritesSessionAndSetsAgentId() {
         var raw: [String: Any] = [
             "session_id": "2528cb91-6379-48f2-aff8-40f4b804dafa",
