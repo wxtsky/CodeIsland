@@ -223,6 +223,64 @@ final class AppStateCursorQuestionTests: XCTestCase {
         XCTAssertEqual(appState.sessions[mainId]?.lastUserPrompt, "PostgreSQL")
     }
 
+    // MARK: - Cursor chat dedupe (hook plain text vs transcript wrappers)
+
+    func testTranscriptDeltaDoesNotDuplicateHookPromptWrappedInUserQuery() {
+        let path = mainTranscriptPath(for: mainId)
+        let appState = AppState()
+        var session = cursorSession(status: .processing, transcriptPath: path)
+        session.lastUserPrompt = "investigate the crash"
+        session.addRecentMessage(ChatMessage(isUser: true, text: "investigate the crash"))
+        appState.sessions[mainId] = session
+
+        appState.applyTranscriptDelta(ConversationTailDelta(
+            sessionId: mainId,
+            lastUserPrompt: "<timestamp>2026-07-30</timestamp>\n<user_query>\ninvestigate the crash\n</user_query>",
+            lastAssistantMessage: nil
+        ))
+
+        XCTAssertEqual(appState.sessions[mainId]?.lastUserPrompt, "investigate the crash")
+        XCTAssertEqual(appState.sessions[mainId]?.recentMessages.filter(\.isUser).count, 1)
+        XCTAssertEqual(appState.sessions[mainId]?.recentMessages.last(where: \.isUser)?.text, "investigate the crash")
+    }
+
+    func testTranscriptDeltaDoesNotDuplicateHookAssistantReplyWithTimestampWrapper() {
+        let path = mainTranscriptPath(for: mainId)
+        let appState = AppState()
+        var session = cursorSession(status: .processing, transcriptPath: path)
+        session.lastAssistantMessage = "here is the fix"
+        session.addRecentMessage(ChatMessage(isUser: false, text: "here is the fix"))
+        appState.sessions[mainId] = session
+
+        appState.applyTranscriptDelta(ConversationTailDelta(
+            sessionId: mainId,
+            lastUserPrompt: nil,
+            lastAssistantMessage: "<timestamp>t</timestamp>here is the fix"
+        ))
+
+        XCTAssertEqual(appState.sessions[mainId]?.lastAssistantMessage, "here is the fix")
+        XCTAssertEqual(appState.sessions[mainId]?.recentMessages.filter { !$0.isUser }.count, 1)
+    }
+
+    func testTranscriptDeltaAppendsWhenNormalizedChatTextDiffers() {
+        let path = mainTranscriptPath(for: mainId)
+        let appState = AppState()
+        var session = cursorSession(status: .processing, transcriptPath: path)
+        session.lastUserPrompt = "first question"
+        session.addRecentMessage(ChatMessage(isUser: true, text: "first question"))
+        appState.sessions[mainId] = session
+
+        appState.applyTranscriptDelta(ConversationTailDelta(
+            sessionId: mainId,
+            lastUserPrompt: "<user_query>second question</user_query>",
+            lastAssistantMessage: nil
+        ))
+
+        XCTAssertEqual(appState.sessions[mainId]?.lastUserPrompt, "second question")
+        XCTAssertEqual(appState.sessions[mainId]?.recentMessages.filter(\.isUser).count, 2)
+        XCTAssertEqual(appState.sessions[mainId]?.recentMessages.last(where: \.isUser)?.text, "second question")
+    }
+
     // MARK: - Hook activity resumes the display wait
 
     func testHookActivityAfterDisplayWaitResumesProcessing() throws {

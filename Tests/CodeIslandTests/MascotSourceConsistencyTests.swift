@@ -43,4 +43,24 @@ final class MascotSourceConsistencyTests: XCTestCase {
             "cursor"
         )
     }
+
+    func testTerminalBadgeLabelFollowsCLIWhenHostedInForeignApp() {
+        let session = makeSession(source: "claude", termBundleId: "com.todesktop.230313mzl4w4u92")
+        XCTAssertEqual(session.terminalName, "Cursor")
+        XCTAssertEqual(session.terminalBadgeLabel, "Claude")
+        XCTAssertEqual(session.mascotSource, "claude")
+    }
+
+    func testTerminalBadgeLabelFollowsHostForNativeCursorSession() {
+        let session = makeSession(source: "cursor", termBundleId: "com.todesktop.230313mzl4w4u92")
+        XCTAssertEqual(session.terminalBadgeLabel, "Cursor")
+        XCTAssertEqual(session.mascotSource, "cursor")
+    }
+
+    func testTerminalBadgeLabelInfersCursorWhenSourceEmpty() {
+        let session = makeSession(source: "", termBundleId: "com.todesktop.230313mzl4w4u92")
+        XCTAssertEqual(session.mascotSource, "cursor")
+        XCTAssertEqual(session.terminalBadgeLabel, "Cursor")
+        XCTAssertFalse(session.isCLIHostedInForeignApp)
+    }
 }

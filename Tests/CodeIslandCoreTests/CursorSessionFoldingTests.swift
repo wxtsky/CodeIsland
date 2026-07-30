@@ -372,6 +372,37 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertEqual(sessions[parentId]?.subagents[childId]?.status, .processing)
     }
 
+    func testCodexSubagentAfterAgentResponseDoesNotOverwriteParentChat() throws {
+        let parentId = "thread-parent"
+        let childId = "thread-child"
+        var parent = SessionSnapshot()
+        parent.source = "codex"
+        parent.status = .running
+        parent.lastAssistantMessage = "parent reply"
+        parent.addRecentMessage(ChatMessage(isUser: false, text: "parent reply"))
+        parent.subagents[childId] = SubagentState(agentId: childId, agentType: "worker")
+        var sessions = [parentId: parent]
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "AfterAgentResponse",
+            "session_id": parentId,
+            "_source": "codex",
+            "agent_id": childId,
+            "text": "child-only reply must not replace parent",
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions[parentId]?.lastAssistantMessage, "parent reply")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.filter { !$0.isUser }.count, 1)
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.text, "parent reply")
+        XCTAssertFalse(effects.contains(where: {
+            if case .enqueueCompletion = $0 { return true }
+            return false
+        }))
+        XCTAssertEqual(sessions[parentId]?.subagents[childId]?.status, .processing)
+    }
+
     func testSubagentStopRecordsClosedTombstoneAndClearsOnRestart() throws {
         let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
         let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"

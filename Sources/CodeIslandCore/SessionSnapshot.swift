@@ -713,6 +713,15 @@ public struct SessionSnapshot: Sendable {
         return src != hostSource
     }
 
+    /// Right-hand session badge text: CLI brand when hosted in a foreign IDE,
+    /// otherwise the host terminal/app name.
+    public var terminalBadgeLabel: String? {
+        if isCLIHostedInForeignApp {
+            return sourceLabel
+        }
+        return terminalName
+    }
+
     /// Short terminal/app name for display tag
     public var terminalName: String? {
         if isRemote {

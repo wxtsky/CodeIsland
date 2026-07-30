@@ -2719,10 +2719,7 @@ private struct TerminalBadge: View {
     }
 
     private var badgeLabel: String? {
-        if session.isCLIHostedInForeignApp {
-            return session.sourceLabel
-        }
-        return session.terminalName
+        session.terminalBadgeLabel
     }
 
     private let remoteColor = Color(red: 0.3, green: 0.75, blue: 0.5)
