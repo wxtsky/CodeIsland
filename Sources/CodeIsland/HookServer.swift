@@ -467,8 +467,15 @@ class HookServer {
     ) -> (processedData: Data, responseData: Data?)? {
         guard mode == "hide" || mode == "merge",
               CursorSubsessionRouter.shouldAttemptPpidParentFallback(raw: raw),
-              let parentId = cursorSubsessionParentId(from: raw),
               let childId = Self.rawSessionId(from: raw) else {
+            return nil
+        }
+        // Established top-level card for this session_id = main chat continuing.
+        // Never `_ppid`-fold it onto a sibling Task (that freezes parent chat text).
+        if cursorSessionCardExists(for: childId) {
+            return nil
+        }
+        guard let parentId = cursorSubsessionParentId(from: raw) else {
             return nil
         }
         if mode == "hide" {
@@ -480,6 +487,21 @@ class HookServer {
             parentSessionId: parentId,
             childSessionId: childId
         )
+    }
+
+    /// True when `sessionId` already names a top-level AppState Cursor card
+    /// (exact key or `providerSessionId` match).
+    private func cursorSessionCardExists(for sessionId: String) -> Bool {
+        if let snap = appState.sessions[sessionId],
+           CursorSubsessionRouter.isCursorFamilySource(snap.source) {
+            return true
+        }
+        if let key = appState.findSessionId(providerSessionId: sessionId),
+           let snap = appState.sessions[key],
+           CursorSubsessionRouter.isCursorFamilySource(snap.source) {
+            return true
+        }
+        return false
     }
 
     /// Test seam for Agent Sub-Sessions pre-routing (Cursor / Codex / plugin).

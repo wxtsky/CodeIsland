@@ -36,20 +36,26 @@ final class JSONLTailerCursorQuestionTests: XCTestCase {
         JSONLTailer.scanLines(Data((lines.joined(separator: "\n") + "\n").utf8))
     }
 
-    // MARK: - Role-keyed lines produce only question signals
+    // MARK: - Role-keyed lines: question signals + normalized chat text
 
-    func testCursorUserLineClearsQuestionWithoutDuplicatingChatText() {
-        // Chat text stays hook-sourced (beforeSubmitPrompt) — the transcript copy
-        // is wrapped in <user_query> tags and would dedup-miss into a second row.
+    func testCursorUserLineClearsQuestionAndExtractsChatText() {
         let result = scan([cursorUserLine(text: "fix the bug")])
-        XCTAssertNil(result.delta.lastUserPrompt)
+        XCTAssertEqual(result.delta.lastUserPrompt, "fix the bug")
         XCTAssertNil(result.delta.lastAssistantMessage)
         XCTAssertEqual(result.delta.cursorQuestion, .cleared)
     }
 
-    func testCursorAssistantTextLineClearsQuestionWithoutDuplicatingChatText() {
+    func testCursorAssistantTextLineClearsQuestionAndExtractsChatText() {
         let result = scan([cursorAssistantTextLine(text: "done, deployed")])
-        XCTAssertNil(result.delta.lastAssistantMessage)
+        XCTAssertEqual(result.delta.lastAssistantMessage, "done, deployed")
+        XCTAssertEqual(result.delta.cursorQuestion, .cleared)
+    }
+
+    func testCursorUserLineStripsTimestampAndUserQueryWrappers() {
+        // Keep `role` as the first key (Cursor writer / quickTypeProbe).
+        let line = #"{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Thursday, Jul 30, 2026, 3:51 PM (UTC+8)</timestamp>\n<user_query>\n## 根因分析\n</user_query>"}]}}"#
+        let result = scan([line])
+        XCTAssertEqual(result.delta.lastUserPrompt, "## 根因分析")
         XCTAssertEqual(result.delta.cursorQuestion, .cleared)
     }
 
@@ -60,7 +66,8 @@ final class JSONLTailerCursorQuestionTests: XCTestCase {
         let result = scan([cursorQuestionLine(inputJSON: input, leadingText: "I need one detail.")])
 
         XCTAssertEqual(result.delta.cursorQuestion, .pending(prompt: "Which database should we target?"))
-        XCTAssertNil(result.delta.lastAssistantMessage)
+        // Leading assistant prose before AskQuestion still refreshes chat text.
+        XCTAssertEqual(result.delta.lastAssistantMessage, "I need one detail.")
     }
 
     func testAskQuestionMultiplePromptsGetNumericSuffix() {

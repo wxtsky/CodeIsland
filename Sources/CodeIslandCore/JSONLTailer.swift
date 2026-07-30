@@ -375,16 +375,9 @@ public final class JSONLTailer: @unchecked Sendable {
 
     /// Handle one Cursor `role`-keyed transcript entry.
     ///
-    /// Only the trailing-question state is derived here: an assistant entry
-    /// carrying an unanswered AskQuestion tool call marks the question pending,
-    /// and any other user/assistant entry supersedes it — last writer wins, so
-    /// only the newest entry in a scan determines the state.
-    ///
-    /// Chat text is deliberately NOT extracted from this shape: Cursor hooks
-    /// (`beforeSubmitPrompt` / `afterAgentResponse`) already stream the same
-    /// messages, and the transcript copies differ cosmetically (`<user_query>`
-    /// wrappers, redaction markers), so a second source would produce
-    /// near-duplicate chat rows.
+    /// Updates trailing-question state and normalized chat text. Chat text is
+    /// stripped of `<timestamp>` / `<user_query>` wrappers so it can refresh the
+    /// island when hooks miss or are folded as subagent events (#merge staleness).
     private static func applyCursorRoleLine(
         role: String,
         message: [String: Any],
@@ -393,15 +386,36 @@ public final class JSONLTailer: @unchecked Sendable {
         switch role {
         case "user":
             delta.cursorQuestion = .cleared
+            if let text = normalizedCursorChatText(from: message["content"]) {
+                delta.lastUserPrompt = text
+            }
         case "assistant":
             if let prompt = cursorQuestionPrompt(inContent: message["content"]) {
                 delta.cursorQuestion = .pending(prompt: prompt)
             } else {
                 delta.cursorQuestion = .cleared
             }
+            if let text = normalizedCursorChatText(from: message["content"]) {
+                delta.lastAssistantMessage = text
+            }
         default:
             break
         }
+    }
+
+    /// Strip Cursor transcript wrappers so hook and transcript copies can dedupe.
+    public static func normalizedCursorChatText(from content: Any?) -> String? {
+        guard var text = extractText(from: content) else { return nil }
+        while let start = text.range(of: "<timestamp>"),
+              let end = text.range(of: "</timestamp>", range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        if let start = text.range(of: "<user_query>"),
+           let end = text.range(of: "</user_query>", range: start.upperBound..<text.endIndex) {
+            text = String(text[start.upperBound..<end.lowerBound])
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Extract the question text when a Cursor assistant `content` array carries a

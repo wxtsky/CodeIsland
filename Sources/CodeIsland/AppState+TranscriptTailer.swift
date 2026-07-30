@@ -22,7 +22,13 @@ extension AppState {
         attachedTranscriptPaths[sessionId] = path
 
         // Backfill messages from the transcript file so recentMessages is populated
-        let (_, messages) = Self.readRecentFromTranscript(path: path)
+        let messages: [ChatMessage]
+        if let source = sessions[sessionId]?.source,
+           source == "cursor" || source == "cursor-cli" {
+            messages = Self.readRecentFromCursorTranscript(path: path).1
+        } else {
+            messages = Self.readRecentFromTranscript(path: path).1
+        }
         if !messages.isEmpty, var session = sessions[sessionId] {
             session.recentMessages = messages
             if let lastUser = messages.last(where: { $0.isUser }) {

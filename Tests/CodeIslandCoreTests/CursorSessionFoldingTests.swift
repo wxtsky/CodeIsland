@@ -226,39 +226,68 @@ final class CursorSessionFoldingTests: XCTestCase {
         XCTAssertNil(raw["_cursor_subagent_event"])
     }
 
-    func testMergedCursorSubagentAfterAgentResponseDoesNotCompleteParent() throws {
+    func testMergedCursorSubagentAfterAgentResponseUpdatesParentChatWithoutCompleting() throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
         var parent = SessionSnapshot()
         parent.source = "cursor"
         parent.status = .running
         parent.lastUserPrompt = "main prompt"
         parent.lastAssistantMessage = "parent reply"
+        parent.subagents[childId] = SubagentState(agentId: childId, agentType: "cursor-subagent")
 
-        var sessions = ["e1247fd5-d9a0-48ef-8457-0304606b1833": parent]
+        var sessions = [parentId: parent]
         let data = try JSONSerialization.data(withJSONObject: [
             "hook_event_name": "afterAgentResponse",
-            "session_id": "e1247fd5-d9a0-48ef-8457-0304606b1833",
+            "session_id": parentId,
             "_source": "cursor",
-            "agent_id": "2528cb91-6379-48f2-aff8-40f4b804dafa",
+            "agent_id": childId,
             "agent_type": "cursor-subagent",
             "text": "child-only reply",
         ] as [String: Any])
         let event = try XCTUnwrap(HookEvent(from: data))
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
 
-        XCTAssertEqual(
-            sessions["e1247fd5-d9a0-48ef-8457-0304606b1833"]?.lastAssistantMessage,
-            "parent reply"
-        )
-        XCTAssertEqual(sessions["e1247fd5-d9a0-48ef-8457-0304606b1833"]?.status, .running)
+        // Merge-into-main: surface the folded reply on the parent card…
+        XCTAssertEqual(sessions[parentId]?.lastAssistantMessage, "child-only reply")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.text, "child-only reply")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.isUser, false)
+        // …but never treat a Task response as parent-turn completion.
+        XCTAssertEqual(sessions[parentId]?.status, .running)
         XCTAssertFalse(effects.contains(where: {
             if case .enqueueCompletion = $0 { return true }
             return false
         }))
-        XCTAssertEqual(
-            sessions["e1247fd5-d9a0-48ef-8457-0304606b1833"]?
-                .subagents["2528cb91-6379-48f2-aff8-40f4b804dafa"]?.status,
-            .processing
-        )
+        XCTAssertEqual(sessions[parentId]?.subagents[childId]?.status, .processing)
+    }
+
+    func testMergedCursorUserPromptSubmitUpdatesParentChat() throws {
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.lastUserPrompt = "old prompt"
+        parent.addRecentMessage(ChatMessage(isUser: true, text: "old prompt"))
+        parent.subagents[childId] = SubagentState(agentId: childId, agentType: "cursor-subagent")
+        var sessions = [parentId: parent]
+
+        let data = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "beforeSubmitPrompt",
+            "session_id": parentId,
+            "_source": "cursor",
+            "agent_id": childId,
+            "_cursor_subagent": true,
+            "prompt": "continue after the root cause",
+        ] as [String: Any])
+        let event = try XCTUnwrap(HookEvent(from: data))
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 10)
+
+        XCTAssertEqual(sessions[parentId]?.lastUserPrompt, "continue after the root cause")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.text, "continue after the root cause")
+        XCTAssertEqual(sessions[parentId]?.recentMessages.last?.isUser, true)
+        XCTAssertEqual(sessions[parentId]?.status, .running)
+        XCTAssertEqual(sessions[parentId]?.currentTool, "Agent")
     }
 
     func testSubagentStopRecordsClosedTombstoneAndClearsOnRestart() throws {

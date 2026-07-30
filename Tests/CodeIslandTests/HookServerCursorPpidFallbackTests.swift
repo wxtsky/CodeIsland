@@ -265,6 +265,51 @@ final class HookServerCursorPpidFallbackTests: XCTestCase {
         }
     }
 
+    /// Main chat hooks sometimes omit `transcript_path`. If a sibling Task card
+    /// shares the IDE pid, naive `_ppid` fallback would rewrite the main session
+    /// onto the Task (or tag it as a subagent) and freeze parent chat text.
+    func testMergeModeDoesNotPpidFoldEstablishedMainChatWithoutTranscriptOntoSibling() throws {
+        try withPluginSessionMode("merge") {
+            let ppid = 56_020
+            let appState = AppState()
+            appState.sessions[parentId] = makeRunningCursorSession(cliPid: ppid)
+            appState.sessions[otherId] = makeRunningCursorSession(
+                cliPid: ppid,
+                lastActivity: Date().addingTimeInterval(5)
+            )
+
+            let routed = try route(appState: appState, payload: [
+                "_source": "cursor",
+                "session_id": parentId,
+                "_ppid": ppid,
+                "hook_event_name": "beforeSubmitPrompt",
+                "prompt": "continue the investigation",
+            ])
+            XCTAssertEqual(routed.raw["session_id"] as? String, parentId)
+            XCTAssertNil(routed.raw["agent_id"])
+            XCTAssertNil(routed.raw["_cursor_subagent"])
+        }
+    }
+
+    /// Unknown Task id (no card yet) must still fold onto the unique parent.
+    func testMergeModeStillPpidFoldsUnknownChildWhenMainCardExists() throws {
+        try withPluginSessionMode("merge") {
+            let ppid = 56_021
+            let appState = AppState()
+            appState.sessions[parentId] = makeRunningCursorSession(cliPid: ppid)
+
+            let routed = try route(appState: appState, payload: [
+                "_source": "cursor",
+                "session_id": childId,
+                "_ppid": ppid,
+                "hook_event_name": "PostToolUse",
+            ])
+            XCTAssertEqual(routed.raw["session_id"] as? String, parentId)
+            XCTAssertEqual(routed.raw["agent_id"] as? String, childId)
+            XCTAssertEqual(routed.raw["_cursor_subagent"] as? Bool, true)
+        }
+    }
+
     func testSeparateModeDoesNotApplyPpidFallback() throws {
         try withPluginSessionMode("separate") {
             let ppid = 56_011

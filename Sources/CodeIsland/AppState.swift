@@ -5435,7 +5435,7 @@ final class AppState {
         return nil
     }
 
-    private nonisolated static func readRecentFromCursorTranscript(path: String) -> (String?, [ChatMessage]) {
+    nonisolated static func readRecentFromCursorTranscript(path: String) -> (String?, [ChatMessage]) {
         guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, []) }
         defer { handle.closeFile() }
 
@@ -5454,7 +5454,8 @@ final class AppState {
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   let role = json["role"] as? String,
                   let message = json["message"] as? [String: Any],
-                  let textContent = extractTextContent(from: message["content"])
+                  let textContent = JSONLTailer.normalizedCursorChatText(from: message["content"])
+                    ?? extractTextContent(from: message["content"])
             else { continue }
 
             if role == "user" {

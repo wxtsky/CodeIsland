@@ -1573,6 +1573,20 @@ private func handleSubagentEvent(
         }
         sessions[sessionId]?.subagents[agentId]?.status = .processing
         sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
+        // Merge-into-main: keep parent chat text live for folded Cursor Tasks
+        // (and for main-chat hooks that were incorrectly tagged with agent_id).
+        let prompt = firstStringFromEvent(
+            event,
+            keys: ["prompt", "user_prompt", "userPrompt", "message", "input", "content", "text"],
+            includeNested: true
+        )
+        if let prompt {
+            sessions[sessionId]?.lastUserPrompt = prompt
+            if sessions[sessionId]?.recentMessages.last?.isUser == true {
+                sessions[sessionId]?.recentMessages.removeLast()
+            }
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: true, text: prompt))
+        }
         if sessions[sessionId]?.status != .waitingApproval && sessions[sessionId]?.status != .waitingQuestion {
             let agentType = sessions[sessionId]?.subagents[agentId]?.agentType
             sessions[sessionId]?.status = .running
@@ -1645,9 +1659,19 @@ private func handleSubagentEvent(
 
     case "AfterAgentResponse":
         // Merged Cursor Task events arrive with parent session_id + child agent_id.
-        // Handle here so they do not overwrite the parent's reply or enqueue a false completion.
         guard ensureSubagent(sessions: &sessions, sessionId: sessionId, agentId: agentId, event: event) else {
             return true
+        }
+        // Surface the folded reply on the parent card (merge-into-main), but never
+        // enqueue parent-turn completion from a Task response.
+        let responseText = firstStringFromEvent(
+            event,
+            keys: ["text", "message"],
+            includeNested: true
+        )
+        if let text = responseText, !text.isEmpty {
+            sessions[sessionId]?.lastAssistantMessage = text
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: text))
         }
         sessions[sessionId]?.subagents[agentId]?.status = .processing
         sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
