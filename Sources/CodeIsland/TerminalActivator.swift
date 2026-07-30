@@ -703,19 +703,25 @@ struct TerminalActivator {
             set found to false
 
             -- Strategy 1: precise tty match
+            -- `tabs of w` is wrapped in its own try: Terminal.app can keep a window
+            -- with no tabs at all (invisible utility window: name "", visible false).
+            -- Asking it for tabs raises -10000, which would abort the whole tell block
+            -- and skip every later window plus the final `activate`.
             if targetTty is not "" then
                 repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            if tty of t is targetTty then
-                                if miniaturized of w then set miniaturized of w to false
-                                set selected tab of w to t
-                                set index of w to 1
-                                set found to true
-                                exit repeat
-                            end if
-                        end try
-                    end repeat
+                    try
+                        repeat with t in tabs of w
+                            try
+                                if tty of t is targetTty then
+                                    if miniaturized of w then set miniaturized of w to false
+                                    set selected tab of w to t
+                                    set index of w to 1
+                                    set found to true
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                    end try
                     if found then exit repeat
                 end repeat
             end if
@@ -723,17 +729,19 @@ struct TerminalActivator {
             -- Strategy 2: auto tab title contains the cwd folder name
             if not found and targetDir is not "" then
                 repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            if (name of t as text) contains targetDir then
-                                if miniaturized of w then set miniaturized of w to false
-                                set selected tab of w to t
-                                set index of w to 1
-                                set found to true
-                                exit repeat
-                            end if
-                        end try
-                    end repeat
+                    try
+                        repeat with t in tabs of w
+                            try
+                                if (name of t as text) contains targetDir then
+                                    if miniaturized of w then set miniaturized of w to false
+                                    set selected tab of w to t
+                                    set index of w to 1
+                                    set found to true
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                    end try
                     if found then exit repeat
                 end repeat
             end if
@@ -741,17 +749,19 @@ struct TerminalActivator {
             -- Strategy 3: user-set custom title
             if not found and targetDir is not "" then
                 repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            if custom title of t contains targetDir then
-                                if miniaturized of w then set miniaturized of w to false
-                                set selected tab of w to t
-                                set index of w to 1
-                                set found to true
-                                exit repeat
-                            end if
-                        end try
-                    end repeat
+                    try
+                        repeat with t in tabs of w
+                            try
+                                if custom title of t contains targetDir then
+                                    if miniaturized of w then set miniaturized of w to false
+                                    set selected tab of w to t
+                                    set index of w to 1
+                                    set found to true
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                    end try
                     if found then exit repeat
                 end repeat
             end if
