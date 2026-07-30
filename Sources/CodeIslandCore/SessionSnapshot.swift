@@ -680,6 +680,39 @@ public struct SessionSnapshot: Sendable {
         "com.anthropic.claudefordesktop": "claude",
     ]
 
+    /// Source id for the native app that owns `bundleId`, if any.
+    public static func sourceForAppBundleId(_ bundleId: String) -> String? {
+        appBundleSources[bundleId]
+    }
+
+    /// Source used for the session-card mascot.
+    ///
+    /// Prefers the hook/discovery source. When that is missing, fall back to the
+    /// native-app bundle map so a Cursor/Codex desktop session does not render
+    /// as the default Claude mascot while the right-hand badge still says Cursor.
+    public var mascotSource: String {
+        if let normalized = Self.normalizedSupportedSource(source) {
+            return normalized
+        }
+        if let bid = termBundleId, let inferred = Self.appBundleSources[bid] {
+            return inferred
+        }
+        return source
+    }
+
+    /// True when this is a CLI agent hosted inside another IDE/app terminal
+    /// (e.g. Claude Code inside Cursor) — mascot/badge should follow the CLI,
+    /// not the host IDE brand.
+    public var isCLIHostedInForeignApp: Bool {
+        guard isIDETerminal,
+              let src = Self.normalizedSupportedSource(source),
+              let bid = termBundleId,
+              let hostSource = Self.appBundleSources[bid] else {
+            return false
+        }
+        return src != hostSource
+    }
+
     /// Short terminal/app name for display tag
     public var terminalName: String? {
         if isRemote {

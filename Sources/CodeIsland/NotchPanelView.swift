@@ -447,7 +447,14 @@ private struct CompactLeftWing: View {
         // happening. Covers no-session and all-idle equally (#149) — without
         // this, an idle session's source overrides the user preference.
         if displayStatus == .idle { return settingsDefaultSource }
-        if let s = displaySession?.source { return s }
+        // Prefer mascotSource so a Cursor/Codex session with empty hook source
+        // still resolves via termBundleId instead of falling through to Clawd.
+        if let s = displaySession {
+            let resolved = s.mascotSource
+            if !resolved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return resolved
+            }
+        }
         return appState.primarySource
     }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
@@ -2204,7 +2211,7 @@ private struct SessionCard: View {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
             VStack(spacing: 3) {
-                MascotView(source: session.source, status: session.status, size: 32)
+                MascotView(source: session.mascotSource, status: session.status, size: 32)
                 if showAgentDetails && !session.subagents.isEmpty {
                     let sorted = session.subagents.values.sorted { $0.startTime < $1.startTime }
                     // Grid: 4 per row, 8px icons
@@ -2696,13 +2703,26 @@ private struct TerminalBadge: View {
     private static var termIconCache: [String: NSImage] = [:]
 
     private var termIcon: NSImage? {
-        let bid = session.termBundleId ?? Self.sourceBundleIds[session.source]
+        // CLI hosted in a foreign IDE: show the agent icon, not the host IDE.
+        if session.isCLIHostedInForeignApp,
+           let src = SessionSnapshot.normalizedSupportedSource(session.source),
+           let icon = cliIcon(source: src, size: 13) {
+            return icon
+        }
+        let bid = session.termBundleId ?? Self.sourceBundleIds[session.mascotSource]
         guard let bid else { return nil }
         if let cached = Self.termIconCache[bid] { return cached }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) else { return nil }
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         Self.termIconCache[bid] = icon
         return icon
+    }
+
+    private var badgeLabel: String? {
+        if session.isCLIHostedInForeignApp {
+            return session.sourceLabel
+        }
+        return session.terminalName
     }
 
     private let remoteColor = Color(red: 0.3, green: 0.75, blue: 0.5)
@@ -2733,7 +2753,7 @@ private struct TerminalBadge: View {
                             .resizable()
                             .frame(width: 13, height: 13)
                     }
-                    if let term = session.terminalName {
+                    if let term = badgeLabel {
                         Text(term)
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))

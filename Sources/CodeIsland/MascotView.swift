@@ -1,4 +1,5 @@
 import SwiftUI
+import CodeIslandCore
 
 // MARK: - Mascot Animation Speed Environment
 
@@ -22,8 +23,9 @@ struct MascotView: View {
     @ObservedObject private var animationGate = MascotAnimationGate.shared
 
     var body: some View {
+        let resolved = SessionSnapshot.normalizedSupportedSource(source) ?? source
         Group {
-            switch source {
+            switch resolved {
             case "codex":
                 DexView(status: status, size: size)
             case "gemini", "google-antigravity":
