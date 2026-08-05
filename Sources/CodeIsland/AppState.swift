@@ -1385,6 +1385,11 @@ final class AppState {
         SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) == "zcode"
     }
 
+    nonisolated static func isQoderEvent(_ event: HookEvent) -> Bool {
+        guard let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) else { return false }
+        return source == "qoder" || source == "qoder-cli"
+    }
+
     /// "Always allow" response for a ZCode PermissionRequest hook (#258).
     ///
     /// ZCode validates hook stdout with a STRICT schema (unknown keys void the
@@ -1882,7 +1887,11 @@ final class AppState {
         // Fall back to the raw toolInput value when the [[String:Any]] cast fails.
         updatedInput["questions"] = originalQuestions ?? (event.toolInput?["questions"] ?? [] as [[String: Any]])
         updatedInput["answers"] = answers
-        if let answer {
+        // Qoder CLI validates updatedInput against the AskUserQuestion schema
+        // (additionalProperties: false, only questions/answers/annotations/
+        // metadata). The scalar `answer` key fails that validation with
+        // "params must NOT have additional properties", so omit it there.
+        if let answer, !Self.isQoderEvent(event) {
             updatedInput["answer"] = answer
         }
         return updatedInput

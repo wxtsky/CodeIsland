@@ -332,6 +332,66 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(fallback, .bashCommand("echo 2"))
     }
 
+    // MARK: - Qoder strict schema
+
+    func testQoderAnswerOmitsScalarAnswerKey() async throws {
+        // Qoder CLI validates PermissionRequest updatedInput against the
+        // AskUserQuestion schema (additionalProperties: false). The scalar
+        // `answer` key trips "params must NOT have additional properties",
+        // so it must be omitted for qoder sources while `answers` stays.
+        let appState = AppState()
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-qoder",
+            questions: [
+                question(header: "确认", text: "继续执行吗？", options: ["继续", "停止"]),
+            ],
+            source: "qoder"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.answerQuestionMulti([
+            (question: "继续执行吗？", answer: "继续"),
+        ])
+
+        let responseData = await responseTask.value
+        let updatedInput = try extractUpdatedInput(from: responseData)
+        XCTAssertNil(updatedInput["answer"], "qoder updatedInput must not carry the extra scalar `answer` key")
+        let answers = try XCTUnwrap(updatedInput["answers"] as? [String: Any])
+        XCTAssertEqual(answers["继续执行吗？"] as? String, "继续")
+    }
+
+    func testNonQoderAnswerKeepsScalarAnswerKey() async throws {
+        let appState = AppState()
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-claude-answer-key",
+            questions: [
+                question(header: "确认", text: "继续执行吗？", options: ["继续", "停止"]),
+            ],
+            source: "claude"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.answerQuestionMulti([
+            (question: "继续执行吗？", answer: "继续"),
+        ])
+
+        let responseData = await responseTask.value
+        let updatedInput = try extractUpdatedInput(from: responseData)
+        XCTAssertEqual(updatedInput["answer"] as? String, "继续")
+    }
+
     // MARK: - Duplicate question text dedup
 
     func testDuplicateQuestionTextGetsDedupedKeys() async throws {
@@ -502,8 +562,8 @@ final class AppStateQuestionFlowTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeAskUserQuestionEvent(sessionId: String, questions: [[String: Any]]) throws -> HookEvent {
-        let payload: [String: Any] = [
+    private func makeAskUserQuestionEvent(sessionId: String, questions: [[String: Any]], source: String? = nil) throws -> HookEvent {
+        var payload: [String: Any] = [
             "hook_event_name": "PermissionRequest",
             "session_id": sessionId,
             "tool_name": "AskUserQuestion",
@@ -511,6 +571,9 @@ final class AppStateQuestionFlowTests: XCTestCase {
                 "questions": questions
             ]
         ]
+        if let source {
+            payload["_source"] = source
+        }
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
             XCTFail("Failed to parse HookEvent")
