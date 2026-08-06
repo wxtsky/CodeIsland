@@ -126,7 +126,15 @@ class PanelWindowController: NSObject, NSWindowDelegate {
 
     private func panelSize(for screen: NSScreen) -> NSSize {
         let maxSessions = CGFloat(max(2, UserDefaults.standard.integer(forKey: SettingsKey.maxVisibleSessions)))
-        let maxH = max(300, maxSessions * 90 + 60)
+        let desiredH = max(300, maxSessions * 90 + 60)
+        // Clamp to the screen's usable height. A borderless, non-opaque panel with a
+        // very tall backing store (e.g. maxVisibleSessions=99 → 8970pt, ~18k px tall on
+        // a Retina display) has its compositing dropped by the macOS 26 WindowServer
+        // once the surface goes idle — the card renders blank until a mouse event forces
+        // a redraw, which looked like "invisible after ~2s, reappears on hover" (#304).
+        // The content is top-anchored and the session list scrolls internally, so the
+        // window never needs to be taller than the visible screen.
+        let maxH = min(desiredH, screen.visibleFrame.height)
         let screenW = screen.frame.width
         let width = min(620, screenW - 40)
         return NSSize(width: width, height: maxH)
