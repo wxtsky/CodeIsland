@@ -1310,16 +1310,21 @@ final class AppState {
             return
         }
 
+        // Queue size is not "is a card showing": dismissing hides a request but
+        // deliberately leaves it queued, so the CLI stays blocked and the prompt
+        // stays recoverable. Gating on `count == 1` therefore swallowed every
+        // later request — from any session — for as long as a dismissed one sat
+        // in the queue. Ask the same predicate the display path uses. (#309)
+        let wasShowingPermission = nextVisiblePermissionIndex() != nil
         permissionQueue.append(request)
 
-        // Show UI only if this is the first (or only) queued item
-        if permissionQueue.count == 1 {
-            activeSessionId = sessionId
-            // If user is already browsing the session list, keep them there and
-            // let inline controls handle approval without stealing focus.
-            if surface != .sessionList, shouldAutoOpenPendingSurface(for: sessionId) {
-                surface = .approvalCard(sessionId: sessionId)
-            }
+        // Show UI only when nothing was already on screen to be stolen from.
+        if !wasShowingPermission, nextVisiblePermissionIndex() != nil {
+            // showNextPending picks the first *visible* request, promotes it to
+            // the head and applies the session-list / Smart Suppress rules —
+            // pointing the card at this session by hand would show the dismissed
+            // request's content whenever a dismissed entry still leads the queue.
+            showNextPending()
             SoundManager.shared.handleEvent("PermissionRequest")
         }
         refreshDerivedState()

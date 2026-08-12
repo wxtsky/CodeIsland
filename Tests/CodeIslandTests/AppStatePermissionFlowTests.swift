@@ -532,6 +532,90 @@ final class AppStatePermissionFlowTests: XCTestCase {
         try String(contentsOf: codeIslandRulesPath(in: codexHome), encoding: .utf8)
     }
 
+    /// #309 — a dismissed request stays queued so the CLI stays blocked, which
+    /// used to make `permissionQueue.count == 1` false forever and swallow every
+    /// later request, from every session, with no card and no sound.
+    func testDismissedPermissionDoesNotSilenceALaterSessionsRequest() async throws {
+        let appState = AppState()
+        let dismissed = try makePermissionRequestEvent(sessionId: "s-dismissed", toolName: "Bash")
+        let later = try makePermissionRequestEvent(sessionId: "s-later", toolName: "Edit")
+
+        let dismissedTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(dismissed, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "s-dismissed"))
+
+        appState.dismissPermissionPrompt()
+        XCTAssertEqual(appState.surface, .collapsed)
+        XCTAssertEqual(appState.permissionQueue.count, 1, "dismiss must keep the request queued")
+
+        let laterTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(later, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(
+            appState.surface,
+            .approvalCard(sessionId: "s-later"),
+            "a different session's approval must still raise a card while a dismissed one sits in the queue"
+        )
+        // Stop here on failure: under the bug, approvePermission() below resolves
+        // the dismissed request instead, so `await laterTask.value` would hang
+        // and the test would report as a timeout rather than by name.
+        guard appState.surface == .approvalCard(sessionId: "s-later") else {
+            appState.handlePeerDisconnect(sessionId: "s-dismissed")
+            appState.handlePeerDisconnect(sessionId: "s-later")
+            _ = await dismissedTask.value
+            _ = await laterTask.value
+            return
+        }
+
+        appState.approvePermission()
+        let laterResponse = await laterTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: laterResponse), "allow")
+
+        await assertTaskNotResolved(dismissedTask)
+        appState.handlePeerDisconnect(sessionId: "s-dismissed")
+        _ = await dismissedTask.value
+    }
+
+    /// The dismissed session's own next request stays hidden — dismissal is
+    /// per-session and is only cleared when that session's request resolves.
+    /// Pinned so the #309 fix is not read as changing it.
+    func testDismissedSessionsOwnNextRequestStaysHidden() async throws {
+        let appState = AppState()
+        let first = try makePermissionRequestEvent(sessionId: "s-same", toolName: "Bash")
+        let second = try makePermissionRequestEvent(sessionId: "s-same", toolName: "Edit")
+
+        let firstTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(first, continuation: continuation)
+            }
+        }
+        await Task.yield()
+        appState.dismissPermissionPrompt()
+        XCTAssertEqual(appState.surface, .collapsed)
+
+        let secondTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(second, continuation: continuation)
+            }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(appState.surface, .collapsed)
+        XCTAssertEqual(appState.permissionQueue.count, 2)
+
+        appState.handlePeerDisconnect(sessionId: "s-same")
+        _ = await firstTask.value
+        _ = await secondTask.value
+    }
+
     private func makePermissionRequestEvent(
         sessionId: String,
         toolName: String,
