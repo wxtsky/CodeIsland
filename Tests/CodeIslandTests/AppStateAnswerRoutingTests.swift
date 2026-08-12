@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import CodeIsland
 import CodeIslandCore
 
@@ -30,12 +31,18 @@ final class AppStateAnswerRoutingTests: XCTestCase {
             expectedSessionId: "liverpool-cleanup"
         )
 
+        // Assert on the queue BEFORE awaiting: a routing regression resolves the
+        // wrong continuation, which would leave the await below hanging forever.
+        // A hung test reports as a CI timeout instead of a named failure.
+        XCTAssertEqual(
+            appState.questionQueue.map { $0.event.sessionId },
+            ["gitops-ansible"],
+            "the addressed session must be the one dequeued, and the other must stay queued"
+        )
+
         let answers = try extractAnswers(from: await secondResponse.value)
         XCTAssertEqual(answers["Delete the branch?"] as? String, "Yes")
 
-        XCTAssertEqual(appState.questionQueue.count, 1, "the untouched session must stay queued")
-        XCTAssertEqual(appState.questionQueue[0].event.sessionId, "gitops-ansible")
-        XCTAssertFalse(firstResponse.isCancelled)
         firstResponse.cancel()
     }
 
@@ -61,6 +68,7 @@ final class AppStateAnswerRoutingTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue[0].event.sessionId, "liverpool-cleanup")
 
         // A click on the now-stale card must not answer the surviving session.
+        appState.surface = .questionCard(sessionId: "gitops-ansible")
         appState.answerQuestionMulti(
             [(question: "Deploy which env?", answer: "staging")],
             expectedSessionId: "gitops-ansible"
@@ -68,6 +76,75 @@ final class AppStateAnswerRoutingTests: XCTestCase {
 
         XCTAssertEqual(appState.questionQueue.count, 1, "surviving session must still be waiting")
         XCTAssertEqual(appState.questionQueue[0].event.sessionId, "liverpool-cleanup")
+        XCTAssertNotEqual(
+            appState.surface,
+            .questionCard(sessionId: "gitops-ansible"),
+            "a card with no queued request must not stay on screen — it would sit expanded and empty"
+        )
+    }
+
+    /// The case the empty-panel bug actually needs: another session is still
+    /// waiting (so the queue is not empty), but Smart Suppress declines to
+    /// auto-open its card. `showNextPending` used to leave the old card's
+    /// surface untouched, and with the card rendering only its own session's
+    /// request that means an expanded, blank notch. (#308)
+    func testStaleCardCollapsesWhenAutoOpenIsSuppressed() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        defer { UserDefaults.standard.removeObject(forKey: SettingsKey.smartSuppress) }
+
+        let appState = AppState()
+        var suppressed = SessionSnapshot()
+        suppressed.termApp = "Ghostty"
+        suppressed.termBundleId = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        appState.sessions["s-other"] = suppressed
+        XCTAssertFalse(
+            appState.shouldAutoOpenPendingSurface(for: "s-other"),
+            "test setup must model Smart Suppress declining to auto-open this session"
+        )
+
+        let stale = try makePermissionRequestEvent(sessionId: "s-stale", command: "echo 1")
+        let other = try makePermissionRequestEvent(sessionId: "s-other", command: "echo 2")
+
+        let staleResponse = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(stale, continuation: $0) }
+        }
+        await Task.yield()
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(other, continuation: $0) }
+        }
+        await Task.yield()
+
+        appState.surface = .approvalCard(sessionId: "s-stale")
+        appState.handlePeerDisconnect(sessionId: "s-stale")
+        _ = await staleResponse.value
+
+        XCTAssertEqual(appState.permissionQueue.map { $0.event.sessionId }, ["s-other"])
+        XCTAssertEqual(
+            appState.surface,
+            .collapsed,
+            "the drained card must not stay up — it has no request left to render"
+        )
+    }
+
+    func testStaleCardCollapsesWhenItsRequestIsDrained() async throws {
+        let appState = AppState()
+        let only = try makeAskUserQuestionEvent(sessionId: "s-only", text: "Proceed?")
+
+        let response = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleAskUserQuestion(only, continuation: $0) }
+        }
+        await Task.yield()
+        appState.surface = .questionCard(sessionId: "s-only")
+
+        // Answered in the terminal instead: the socket drops and the entry drains.
+        appState.handlePeerDisconnect(sessionId: "s-only")
+        _ = await response.value
+
+        XCTAssertEqual(
+            appState.surface,
+            .collapsed,
+            "nothing is queued, so the panel must collapse rather than render an empty card"
+        )
     }
 
     func testSkipTargetsTheCardsSession() async throws {
@@ -86,9 +163,9 @@ final class AppStateAnswerRoutingTests: XCTestCase {
 
         appState.skipQuestion(expectedSessionId: "s-second")
 
+        XCTAssertEqual(appState.questionQueue.map { $0.event.sessionId }, ["s-first"])
         let behavior = try extractPermissionBehavior(from: await secondResponse.value)
         XCTAssertEqual(behavior, "deny")
-        XCTAssertEqual(appState.questionQueue.map { $0.event.sessionId }, ["s-first"])
     }
 
     // MARK: - Permissions
@@ -110,9 +187,10 @@ final class AppStateAnswerRoutingTests: XCTestCase {
 
         appState.approvePermission(expectedSessionId: "s-second")
 
+        // Queue first — see the note in the question-routing test above.
+        XCTAssertEqual(appState.permissionQueue.map { $0.event.sessionId }, ["s-first"])
         let response = await secondResponse.value
         XCTAssertEqual(try extractPermissionBehavior(from: response), "allow")
-        XCTAssertEqual(appState.permissionQueue.map { $0.event.sessionId }, ["s-first"])
     }
 
     func testDenyIsDroppedWhenTheCardsRequestIsNoLongerQueued() async throws {
@@ -133,6 +211,7 @@ final class AppStateAnswerRoutingTests: XCTestCase {
         _ = await staleResponse.value
         XCTAssertEqual(appState.permissionQueue.map { $0.event.sessionId }, ["s-other"])
 
+        appState.surface = .approvalCard(sessionId: "s-stale")
         appState.denyPermission(expectedSessionId: "s-stale")
 
         XCTAssertEqual(
@@ -140,6 +219,31 @@ final class AppStateAnswerRoutingTests: XCTestCase {
             ["s-other"],
             "the surviving session's approval must remain pending"
         )
+        XCTAssertNotEqual(appState.surface, .approvalCard(sessionId: "s-stale"))
+    }
+
+    func testDismissTargetsTheCardsSession() async throws {
+        let appState = AppState()
+        let first = try makePermissionRequestEvent(sessionId: "s-first", command: "echo 1")
+        let second = try makePermissionRequestEvent(sessionId: "s-second", command: "echo 2")
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(first, continuation: $0) }
+        }
+        await Task.yield()
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(second, continuation: $0) }
+        }
+        await Task.yield()
+
+        appState.surface = .approvalCard(sessionId: "s-second")
+        appState.dismissPermissionPrompt(expectedSessionId: "s-second")
+
+        // Dismissing hides that session's prompt and hands the panel to the
+        // session that is still visible. Had it dismissed the head instead, the
+        // panel would have swung to the session the user just dismissed.
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "s-first"))
+        XCTAssertEqual(appState.permissionQueue.count, 2, "dismiss hides, it must not resolve")
     }
 
     // MARK: - Card rendering
@@ -160,6 +264,26 @@ final class AppStateAnswerRoutingTests: XCTestCase {
 
         XCTAssertEqual(appState.pendingPermission(forSession: "s-second")?.event.sessionId, "s-second")
         XCTAssertNil(appState.pendingPermission(forSession: "s-missing"))
+        XCTAssertEqual(appState.permissionQueuePosition(forSession: "s-second"), 2)
+    }
+
+    func testQuestionCardLookupReturnsTheAddressedSessionsRequest() async throws {
+        let appState = AppState()
+        let first = try makeAskUserQuestionEvent(sessionId: "s-first", text: "First?")
+        let second = try makeAskUserQuestionEvent(sessionId: "s-second", text: "Second?")
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleAskUserQuestion(first, continuation: $0) }
+        }
+        await Task.yield()
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleAskUserQuestion(second, continuation: $0) }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(appState.pendingQuestion(forSession: "s-second")?.question.question, "Second?")
+        XCTAssertNil(appState.pendingQuestion(forSession: "s-missing"))
+        XCTAssertEqual(appState.questionQueuePosition(forSession: "s-second"), 2)
     }
 
     // MARK: - Head-of-queue behaviour is preserved for surfaces that mirror it
@@ -167,17 +291,52 @@ final class AppStateAnswerRoutingTests: XCTestCase {
     func testOmittedSessionStillResolvesTheHead() async throws {
         let appState = AppState()
         let first = try makePermissionRequestEvent(sessionId: "s-first", command: "echo 1")
+        let second = try makePermissionRequestEvent(sessionId: "s-second", command: "echo 2")
 
         let firstResponse = Task<Data, Never> {
             await withCheckedContinuation { appState.handlePermissionRequest(first, continuation: $0) }
         }
         await Task.yield()
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(second, continuation: $0) }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 2, "a one-element queue could not detect a change here")
 
+        // Buddy/companion surfaces mirror the head and pass no session.
         appState.approvePermission()
 
+        XCTAssertEqual(appState.permissionQueue.map { $0.event.sessionId }, ["s-second"])
         let response = await firstResponse.value
         XCTAssertEqual(try extractPermissionBehavior(from: response), "allow")
-        XCTAssertTrue(appState.permissionQueue.isEmpty)
+    }
+
+    /// The single-answer path (`Notification` questions, not the AskUserQuestion
+    /// wizard) routes by session too.
+    func testSingleAnswerQuestionTargetsTheCardsSession() async throws {
+        let appState = AppState()
+        let first = try makeNotificationQuestionEvent(sessionId: "s-first", text: "First?")
+        let second = try makeNotificationQuestionEvent(sessionId: "s-second", text: "Second?")
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleQuestion(first, continuation: $0) }
+        }
+        await Task.yield()
+        let secondResponse = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleQuestion(second, continuation: $0) }
+        }
+        await Task.yield()
+        XCTAssertEqual(appState.questionQueue.count, 2)
+
+        appState.answerQuestion("B", expectedSessionId: "s-second")
+
+        XCTAssertEqual(appState.questionQueue.map { $0.event.sessionId }, ["s-first"])
+        let responseData = await secondResponse.value
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        )
+        let output = try XCTUnwrap(json["hookSpecificOutput"] as? [String: Any])
+        XCTAssertEqual(output["answer"] as? String, "B")
     }
 
     // MARK: - Helpers
@@ -194,6 +353,16 @@ final class AppStateAnswerRoutingTests: XCTestCase {
                     "options": [["label": "Yes", "description": ""], ["label": "No", "description": ""]],
                 ]]
             ],
+        ]
+        return try makeEvent(payload)
+    }
+
+    private func makeNotificationQuestionEvent(sessionId: String, text: String) throws -> HookEvent {
+        let payload: [String: Any] = [
+            "hook_event_name": "Notification",
+            "session_id": sessionId,
+            "question": text,
+            "options": ["A", "B"],
         ]
         return try makeEvent(payload)
     }

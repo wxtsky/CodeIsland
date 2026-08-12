@@ -20,4 +20,17 @@ enum IslandSurface: Equatable {
         case .approvalCard(let id), .questionCard(let id), .completionCard(let id): return id
         }
     }
+
+    /// Session of the surface only when it is the matching card kind. A
+    /// permission shortcut fired while a question card is up must not address
+    /// that session's (non-existent) approval and discard the live card. (#308)
+    var approvalSessionId: String? {
+        if case .approvalCard(let id) = self { return id }
+        return nil
+    }
+
+    var questionSessionId: String? {
+        if case .questionCard(let id) = self { return id }
+        return nil
+    }
 }

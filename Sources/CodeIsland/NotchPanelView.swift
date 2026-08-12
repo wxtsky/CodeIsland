@@ -211,7 +211,7 @@ struct NotchPanelView: View {
                             ApprovalBar(
                                 tool: pending.event.toolName ?? "Unknown",
                                 toolInput: pending.event.toolInput,
-                                queuePosition: 1,
+                                queuePosition: appState.permissionQueuePosition(forSession: sid),
                                 queueTotal: appState.permissionQueue.count,
                                 session: session,
                                 sessionId: sid,
@@ -233,7 +233,7 @@ struct NotchPanelView: View {
                                 allQuestions: q.askUserQuestionState?.items ?? [],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
-                                queuePosition: 1,
+                                queuePosition: appState.questionQueuePosition(forSession: sid),
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
                                 onAnswerMulti: { appState.answerQuestionMulti($0, expectedSessionId: sid) },

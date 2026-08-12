@@ -136,6 +136,16 @@ final class AppState {
     func pendingQuestion(forSession sessionId: String) -> QuestionRequest? {
         questionQueue.first { ($0.event.sessionId ?? "default") == sessionId }
     }
+
+    /// 1-based position for a card's "N of M" label. The card may be showing a
+    /// request that is not the head, so the position has to be looked up. (#308)
+    func permissionQueuePosition(forSession sessionId: String) -> Int {
+        (permissionQueue.firstIndex { ($0.event.sessionId ?? "default") == sessionId } ?? 0) + 1
+    }
+
+    func questionQueuePosition(forSession sessionId: String) -> Int {
+        (questionQueue.firstIndex { ($0.event.sessionId ?? "default") == sessionId } ?? 0) + 1
+    }
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
     var surface: IslandSurface = .collapsed {
@@ -1363,7 +1373,6 @@ final class AppState {
     /// genuinely waiting. (#308)
     private func discardStalePanelAction(expected: String, kind: String) {
         log.notice("⚠️ ignored \(kind, privacy: .public) for session=\(expected, privacy: .public) — request no longer queued")
-        surface = .collapsed
         showNextPending()
         refreshDerivedState()
     }
@@ -1598,7 +1607,12 @@ final class AppState {
     }
 
     func dismissPermissionPrompt(expectedSessionId: String? = nil) {
-        guard let index = permissionIndex(expecting: expectedSessionId) else { return }
+        guard let index = permissionIndex(expecting: expectedSessionId) else {
+            if let expectedSessionId {
+                discardStalePanelAction(expected: expectedSessionId, kind: "dismiss")
+            }
+            return
+        }
         let pending = permissionQueue[index]
 
         let sessionId = pending.event.sessionId ?? "default"
@@ -2039,9 +2053,25 @@ final class AppState {
         }
     }
 
+    /// A card whose request is no longer queued must never stay on screen: the
+    /// panel would sit expanded and empty, and the click that lands on it can
+    /// only be discarded. Auto-open suppression decides whether to open a *new*
+    /// card, not whether to keep a dead one, so this runs unconditionally. (#308)
+    private func collapseStaleCardSurface() {
+        switch surface {
+        case .approvalCard(let sid) where pendingPermission(forSession: sid) == nil:
+            surface = .collapsed
+        case .questionCard(let sid) where pendingQuestion(forSession: sid) == nil:
+            surface = .collapsed
+        default:
+            break
+        }
+    }
+
     /// After dequeuing, show next pending item or collapse
     @discardableResult
     func showNextPending() -> Bool {
+        collapseStaleCardSurface()
         if let idx = nextVisiblePermissionIndex() {
             let next = permissionQueue.remove(at: idx)
             permissionQueue.insert(next, at: 0)
