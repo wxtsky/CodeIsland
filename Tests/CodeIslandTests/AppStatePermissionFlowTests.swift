@@ -629,10 +629,12 @@ final class AppStatePermissionFlowTests: XCTestCase {
             "the session un-dismissed itself by asking again, so its card must come back"
         )
         XCTAssertEqual(appState.permissionQueue.count, 2)
-        // Both requests are from the same session, so the surface alone cannot
-        // tell "showNextPending promoted the queue head" from "the surface was
-        // pointed at the arriving request". The card renders the head, so the
-        // user must be asked about the earlier request, not the newer one.
+        // Pins queue order, not the promotion mechanism: the card renders the
+        // head, so the user is asked about the earlier request rather than the
+        // one that just arrived. Both requests here are from one session, so no
+        // assertion at this level can tell showNextPending's promotion from a
+        // hand-pointed surface — the cross-session test's head check is what
+        // covers that.
         XCTAssertEqual(
             appState.pendingPermission?.event.toolName,
             "Bash",
