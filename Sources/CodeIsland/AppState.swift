@@ -1325,17 +1325,35 @@ final class AppState {
         // request undisplayed, so a second session's request still waits behind
         // it. That is pre-existing (`main` behaves the same) and needs
         // showNextPending to skip un-openable entries; tracked separately.
+        //
+        // The surface alone is not enough either: `drainPermissions` empties the
+        // queue without clearing `surface`, and the card renders nothing when
+        // there is no head request — so a bare `.approvalCard` check would block
+        // on a card that is not actually there. Both halves are required.
         let approvalCardOnScreen: Bool
-        if case .approvalCard = surface { approvalCardOnScreen = true } else { approvalCardOnScreen = false }
+        if case .approvalCard = surface, !permissionQueue.isEmpty {
+            approvalCardOnScreen = true
+        } else {
+            approvalCardOnScreen = false
+        }
+
+        // Card and sound answer different questions and must not share a gate.
+        // The sound marks the start of a burst of approvals, which is what
+        // `count == 1` used to approximate; within a burst it stays quiet, and
+        // a dismissed request sitting in the queue must not count as a burst
+        // already in progress.
+        let burstAlreadyInProgress = nextVisiblePermissionIndex() != nil
         permissionQueue.append(request)
 
         // Show UI only when no approval card is already up to be stolen from.
-        if !approvalCardOnScreen, nextVisiblePermissionIndex() != nil {
-            // showNextPending picks the first *visible* request, promotes it to
-            // the head and applies the session-list / Smart Suppress rules —
-            // pointing the card at this session by hand would show the dismissed
-            // request's content whenever a dismissed entry still leads the queue.
+        // showNextPending picks the first *visible* request, promotes it to the
+        // head and applies the session-list / Smart Suppress rules — pointing
+        // the card at this session by hand would show the dismissed request's
+        // content whenever a dismissed entry still leads the queue.
+        if !approvalCardOnScreen {
             showNextPending()
+        }
+        if !burstAlreadyInProgress {
             SoundManager.shared.handleEvent("PermissionRequest")
         }
         refreshDerivedState()

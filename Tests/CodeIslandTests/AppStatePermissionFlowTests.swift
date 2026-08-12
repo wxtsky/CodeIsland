@@ -629,10 +629,50 @@ final class AppStatePermissionFlowTests: XCTestCase {
             "the session un-dismissed itself by asking again, so its card must come back"
         )
         XCTAssertEqual(appState.permissionQueue.count, 2)
+        // Both requests are from the same session, so the surface alone cannot
+        // tell "showNextPending promoted the queue head" from "the surface was
+        // pointed at the arriving request". The card renders the head, so the
+        // user must be asked about the earlier request, not the newer one.
+        XCTAssertEqual(
+            appState.pendingPermission?.event.toolName,
+            "Bash",
+            "the card must show the earlier queued request, not the one that just arrived"
+        )
 
         appState.handlePeerDisconnect(sessionId: "s-same")
         _ = await firstTask.value
         _ = await secondTask.value
+    }
+
+    /// `drainPermissions` (process exit, or a question arriving for the session)
+    /// empties the queue without clearing `surface`, and the card renders nothing
+    /// when there is no head request. A gate that trusts `.approvalCard` alone
+    /// would block on that phantom card and swallow the next request.
+    func testRequestArrivingUnderAStaleApprovalSurfaceStillRaisesACard() async throws {
+        let appState = AppState()
+
+        // The phantom state itself: an .approvalCard surface with an empty queue.
+        // Production reaches it through the drainPermissions callers that do not
+        // touch `surface` (process exit; a question arriving for the session).
+        // Set here directly because those callers are private.
+        appState.surface = .approvalCard(sessionId: "s-gone")
+        XCTAssertTrue(appState.permissionQueue.isEmpty)
+
+        let next = try makePermissionRequestEvent(sessionId: "s-next", toolName: "Read")
+        let nextTask = Task<Data, Never> {
+            await withCheckedContinuation { appState.handlePermissionRequest(next, continuation: $0) }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(
+            appState.surface,
+            .approvalCard(sessionId: "s-next"),
+            "a phantom card must not block the next request from being shown"
+        )
+
+        appState.approvePermission()
+        let response = await nextTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "allow")
     }
 
     /// The state F1 described: a dismissed session asking again must not leave
@@ -663,10 +703,10 @@ final class AppStatePermissionFlowTests: XCTestCase {
         // un-dismiss left A's card unopened and B arrived to a silent, collapsed
         // panel. (Without this the rest of the test passes either way, because
         // resolving A's requests surfaces B regardless.)
-        XCTAssertNotEqual(
+        XCTAssertEqual(
             appState.surface,
-            .collapsed,
-            "a card must be on screen — a silent collapsed panel is the bug"
+            .approvalCard(sessionId: "s-a"),
+            "A's card must be up — a silent collapsed panel is the bug, and it must be A's card since A's request leads the queue"
         )
 
         // B queues behind A's card rather than stealing it — but it must not be
