@@ -1310,16 +1310,27 @@ final class AppState {
             return
         }
 
-        // Queue size is not "is a card showing": dismissing hides a request but
-        // deliberately leaves it queued, so the CLI stays blocked and the prompt
-        // stays recoverable. Gating on `count == 1` therefore swallowed every
-        // later request — from any session — for as long as a dismissed one sat
-        // in the queue. Ask the same predicate the display path uses. (#309)
-        let wasShowingPermission = nextVisiblePermissionIndex() != nil
+        // Dismissing hides a request but deliberately leaves it queued, so the
+        // CLI stays blocked and the prompt stays recoverable. Gating on
+        // `permissionQueue.count == 1` therefore swallowed every later request —
+        // from any session — for as long as a dismissed one sat in the queue.
+        //
+        // The gate's real question is "is an approval card on screen", so ask
+        // the surface. Queue-derived proxies do not survive the un-dismiss
+        // above: a session's own next request clears its dismissal, which makes
+        // its still-queued earlier request count as visible again while nothing
+        // is displayed — silencing every later request all over again. (#309)
+        //
+        // ponytail: a card suppressed by Smart Suppress also leaves a visible
+        // request undisplayed, so a second session's request still waits behind
+        // it. That is pre-existing (`main` behaves the same) and needs
+        // showNextPending to skip un-openable entries; tracked separately.
+        let approvalCardOnScreen: Bool
+        if case .approvalCard = surface { approvalCardOnScreen = true } else { approvalCardOnScreen = false }
         permissionQueue.append(request)
 
-        // Show UI only when nothing was already on screen to be stolen from.
-        if !wasShowingPermission, nextVisiblePermissionIndex() != nil {
+        // Show UI only when no approval card is already up to be stolen from.
+        if !approvalCardOnScreen, nextVisiblePermissionIndex() != nil {
             // showNextPending picks the first *visible* request, promotes it to
             // the head and applies the session-list / Smart Suppress rules —
             // pointing the card at this session by hand would show the dismissed
