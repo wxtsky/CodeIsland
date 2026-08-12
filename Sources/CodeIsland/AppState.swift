@@ -1368,9 +1368,8 @@ final class AppState {
     }
 
     /// The request the card was showing is no longer queued (answered in the
-    /// terminal, drained on disconnect). Collapse first so a dead card can't
-    /// stay on screen, then let `showNextPending()` re-open whatever is
-    /// genuinely waiting. (#308)
+    /// terminal, drained on disconnect). `showNextPending()` drops the dead card
+    /// and re-opens whatever is genuinely waiting. (#308)
     private func discardStalePanelAction(expected: String, kind: String) {
         log.notice("⚠️ ignored \(kind, privacy: .public) for session=\(expected, privacy: .public) — request no longer queued")
         showNextPending()
@@ -2053,13 +2052,20 @@ final class AppState {
         }
     }
 
-    /// A card whose request is no longer queued must never stay on screen: the
-    /// panel would sit expanded and empty, and the click that lands on it can
-    /// only be discarded. Auto-open suppression decides whether to open a *new*
-    /// card, not whether to keep a dead one, so this runs unconditionally. (#308)
+    /// A card the user can no longer act on must never stay on screen: the panel
+    /// would sit expanded showing a request that is gone or dismissed, and any
+    /// click landing on it can only be discarded. Auto-open suppression decides
+    /// whether to open a *new* card, not whether to keep a dead one, so this
+    /// runs unconditionally. (#308)
+    ///
+    /// "Dead" is the same predicate `nextVisiblePermissionIndex()` applies:
+    /// dismissed counts as not visible. Testing queue membership alone would
+    /// keep a dismissed card up, because dismissing hides without dequeuing.
     private func collapseStaleCardSurface() {
         switch surface {
-        case .approvalCard(let sid) where pendingPermission(forSession: sid) == nil:
+        case .approvalCard(let sid)
+            where pendingPermission(forSession: sid) == nil
+                || dismissedPermissionSessionIds.contains(sid):
             surface = .collapsed
         case .questionCard(let sid) where pendingQuestion(forSession: sid) == nil:
             surface = .collapsed

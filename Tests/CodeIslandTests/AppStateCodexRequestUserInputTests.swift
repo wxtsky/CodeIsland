@@ -74,6 +74,45 @@ final class AppStateCodexRequestUserInputTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue.count, 0)
     }
 
+    /// The Codex branches used to be reachable only at the head of the queue.
+    /// Session-addressed answers can land on any index, so a Codex request
+    /// queued behind another session's question must still reply over the
+    /// JSON-RPC path rather than the hook path. (#308)
+    func testCodexQuestionIsAnsweredWhileQueuedBehindAnotherSession() async throws {
+        let appState = AppState()
+
+        let hookPayload: [String: Any] = [
+            "hook_event_name": "Notification",
+            "session_id": "s-hook",
+            "question": "First?",
+            "options": ["A", "B"],
+        ]
+        let hookEvent = try XCTUnwrap(
+            HookEvent(from: try JSONSerialization.data(withJSONObject: hookPayload))
+        )
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { appState.handleQuestion(hookEvent, continuation: $0) }
+        }
+        await Task.yield()
+
+        appState.handleCodexAppServerMessage(makeRequest(threadId: "t-behind", questions: [[
+            "id": "q1", "question": "Pick", "options": [["label": "A", "description": ""]],
+        ]]))
+        XCTAssertEqual(appState.questionQueue.count, 2)
+        XCTAssertTrue(appState.questionQueue[1].isCodexAppServer)
+
+        appState.answerQuestionMulti(
+            [(question: "Pick", answer: "A")],
+            expectedSessionId: "codexapp:t-behind"
+        )
+
+        XCTAssertEqual(
+            appState.questionQueue.map { $0.event.sessionId },
+            ["s-hook"],
+            "the Codex request must be the one dequeued, and the hook question must stay queued"
+        )
+    }
+
     func testServerRequestResolvedDropsQueuedQuestion() {
         let appState = AppState()
         let message = makeRequest(threadId: "t-resolve", questions: [[
