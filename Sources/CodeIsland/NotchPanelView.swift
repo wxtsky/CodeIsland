@@ -204,7 +204,9 @@ struct NotchPanelView: View {
 
                     switch appState.surface {
                     case .approvalCard(let sid):
-                        if let pending = appState.pendingPermission {
+                        // Card is addressed by session — render that session's
+                        // request, not whatever is at the head of the queue. (#308)
+                        if let pending = appState.pendingPermission(forSession: sid) {
                             let session = appState.sessions[sid]
                             ApprovalBar(
                                 tool: pending.event.toolName ?? "Unknown",
@@ -214,16 +216,16 @@ struct NotchPanelView: View {
                                 session: session,
                                 sessionId: sid,
                                 appState: appState,
-                                onAllow: { appState.approvePermission(always: false) },
-                                onAlwaysAllow: { appState.approvePermission(always: true) },
-                                onDeny: { appState.denyPermission() },
-                                onDismiss: { appState.dismissPermissionPrompt() }
+                                onAllow: { appState.approvePermission(always: false, expectedSessionId: sid) },
+                                onAlwaysAllow: { appState.approvePermission(always: true, expectedSessionId: sid) },
+                                onDeny: { appState.denyPermission(expectedSessionId: sid) },
+                                onDismiss: { appState.dismissPermissionPrompt(expectedSessionId: sid) }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
                     case .questionCard(let sid):
                         let session = appState.sessions[sid]
-                        if let q = appState.pendingQuestion {
+                        if let q = appState.pendingQuestion(forSession: sid) {
                             QuestionBar(
                                 question: q.question.question,
                                 options: q.question.options,
@@ -233,9 +235,9 @@ struct NotchPanelView: View {
                                 sessionContext: session?.cwd,
                                 queuePosition: 1,
                                 queueTotal: appState.questionQueue.count,
-                                onAnswer: { appState.answerQuestion($0) },
-                                onAnswerMulti: { appState.answerQuestionMulti($0) },
-                                onSkip: { appState.skipQuestion() }
+                                onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
+                                onAnswerMulti: { appState.answerQuestionMulti($0, expectedSessionId: sid) },
+                                onSkip: { appState.skipQuestion(expectedSessionId: sid) }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         } else if let preview = appState.previewQuestionPayload {
@@ -2279,21 +2281,21 @@ private struct SessionCard: View {
                             fg: .white,
                             bg: Color(red: 0.25, green: 0.65, blue: 0.35),
                             enabled: isActiveApproval,
-                            action: { appState.approvePermission(always: false) }
+                            action: { appState.approvePermission(always: false, expectedSessionId: sessionId) }
                         )
                         inlineActionButton(
                             L10n.shared["always"],
                             fg: .white,
                             bg: Color(red: 0.25, green: 0.55, blue: 0.85),
                             enabled: isActiveApproval,
-                            action: { appState.approvePermission(always: true) }
+                            action: { appState.approvePermission(always: true, expectedSessionId: sessionId) }
                         )
                         inlineActionButton(
                             L10n.shared["deny"],
                             fg: .white,
                             bg: Color(red: 0.85, green: 0.3, blue: 0.3),
                             enabled: isActiveApproval,
-                            action: { appState.denyPermission() }
+                            action: { appState.denyPermission(expectedSessionId: sessionId) }
                         )
                     }
 
