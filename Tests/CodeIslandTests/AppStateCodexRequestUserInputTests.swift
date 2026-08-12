@@ -95,9 +95,32 @@ final class AppStateCodexRequestUserInputTests: XCTestCase {
         }
         await Task.yield()
 
-        appState.handleCodexAppServerMessage(makeRequest(threadId: "t-behind", questions: [[
-            "id": "q1", "question": "Pick", "options": [["label": "A", "description": ""]],
-        ]]))
+        // Enqueued with a capturing reply closure rather than through the live
+        // client: dequeuing is not the half that was at risk. A head-anchored
+        // Codex check sends the answer down the hook path while the indexed
+        // remove still dequeues it — the queue looks identical and the Codex
+        // server waits forever. Only invoking this closure proves which path ran.
+        var repliedAnswers: [String: [String]]?
+        var replyCalled = false
+        let codexEvent = try XCTUnwrap(
+            HookEvent(from: try JSONSerialization.data(withJSONObject: [
+                "hook_event_name": "Notification",
+                "session_id": "codexapp:t-behind",
+            ]))
+        )
+        let payload = QuestionPayload(question: "Pick", options: ["A"], header: "Plan")
+        appState.questionQueue.append(QuestionRequest(
+            event: codexEvent,
+            question: payload,
+            resolution: .codexAppServer { answers in
+                replyCalled = true
+                repliedAnswers = answers
+            },
+            askUserQuestionState: AskUserQuestionState(
+                items: [AskUserQuestionItem(payload: payload, answerKey: "q1", multiSelect: false)],
+                answers: [:]
+            )
+        ))
         XCTAssertEqual(appState.questionQueue.count, 2)
         XCTAssertTrue(appState.questionQueue[1].isCodexAppServer)
 
@@ -111,6 +134,8 @@ final class AppStateCodexRequestUserInputTests: XCTestCase {
             ["s-hook"],
             "the Codex request must be the one dequeued, and the hook question must stay queued"
         )
+        XCTAssertTrue(replyCalled, "the reply must go out over the Codex JSON-RPC path, not the hook path")
+        XCTAssertEqual(repliedAnswers?["q1"], ["A"])
     }
 
     func testServerRequestResolvedDropsQueuedQuestion() {

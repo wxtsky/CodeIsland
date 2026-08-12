@@ -418,6 +418,17 @@ final class AppStateAnswerRoutingTests: XCTestCase {
             "dismissing a card whose request is gone must not hide a different session's prompt"
         )
         XCTAssertNotEqual(appState.surface, .approvalCard(sessionId: "s-stale"))
+
+        // The queue assertions above cannot see the damage a head-based dismiss
+        // would do: dismissing hides without dequeuing, so the queue looks the
+        // same either way. Whether s-other was wrongly marked dismissed only
+        // shows up in whether the panel will still offer its card.
+        appState.showNextPending()
+        XCTAssertEqual(
+            appState.surface,
+            .approvalCard(sessionId: "s-other"),
+            "s-other must remain offerable — a wrongly-dismissed session is filtered out and the panel stays collapsed"
+        )
     }
 
     // MARK: - Surface accessors
