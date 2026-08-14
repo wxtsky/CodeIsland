@@ -66,7 +66,6 @@ struct NotchPanelView: View {
     @State private var hoverTimer: Timer?
     @State private var isHovered = false
     @State private var idleHovered = false
-    @State private var gestureRegionHovered = false
     @State private var gestureMonitor = NotchGestureMonitor()
     /// Three-stage hover: collapsed → prehover (immediate ack) → expanded (after delay)
     @State private var hoverPhase: NotchHoverPhase = .collapsed
@@ -143,7 +142,6 @@ struct NotchPanelView: View {
         hoverTimer?.invalidate()
         hoverTimer = nil
         hoverPhase = .collapsed
-        appState.cancelCompletionQueue()
         withAnimation(NotchAnimation.close) {
             appState.surface = .collapsed
         }
@@ -188,7 +186,6 @@ struct NotchPanelView: View {
                     .frame(height: notchHeight)
                     .contentShape(Rectangle())
                     .onHover { hovering in
-                        gestureRegionHovered = hovering
                         gestureMonitor.isEnabled = hovering
                     }
                     .onTapGesture {
@@ -449,7 +446,6 @@ struct NotchPanelView: View {
             }
             .onChange(of: showBar) { _, visible in
                 guard !visible else { return }
-                gestureRegionHovered = false
                 gestureMonitor.isEnabled = false
             }
 
