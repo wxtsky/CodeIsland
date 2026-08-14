@@ -115,3 +115,45 @@ struct NotchGestureInterpreter {
         emitted = false
     }
 }
+
+enum NotchGesturePolicy {
+    private static let filterModes = ["all", "status", "cli"]
+
+    static func canOpen(surface: IslandSurface, hasSessions: Bool) -> Bool {
+        surface == .collapsed && hasSessions
+    }
+
+    static func canClose(surface: IslandSurface) -> Bool {
+        switch surface {
+        case .sessionList, .completionCard:
+            return true
+        case .collapsed, .approvalCard, .questionCard:
+            return false
+        }
+    }
+
+    static func filterMode(
+        from currentMode: String,
+        action: NotchGestureAction,
+        controlsVisible: Bool
+    ) -> String? {
+        guard controlsVisible,
+              let currentIndex = filterModes.firstIndex(of: currentMode) else { return nil }
+
+        let offset: Int
+        switch action {
+        case .navigatePrevious:
+            offset = -1
+        case .navigateNext:
+            offset = 1
+        case .open, .close:
+            return nil
+        }
+
+        let nextIndex = Swift.min(
+            Swift.max(currentIndex + offset, filterModes.startIndex),
+            filterModes.index(before: filterModes.endIndex)
+        )
+        return filterModes[nextIndex]
+    }
+}
