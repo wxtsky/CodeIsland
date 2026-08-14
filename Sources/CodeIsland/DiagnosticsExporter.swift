@@ -126,6 +126,9 @@ struct DiagnosticsExporter {
                     UserDefaults.standard.object(forKey: SettingsKey.hoverOpenDelay) as? Double
                         ?? SettingsDefaults.hoverOpenDelay
                 ),
+                "invertHorizontalSwipeDirection": UserDefaults.standard.object(
+                    forKey: SettingsKey.invertHorizontalSwipeDirection
+                ) as? Bool ?? SettingsDefaults.invertHorizontalSwipeDirection,
                 "sessionTimeout": UserDefaults.standard.integer(forKey: SettingsKey.sessionTimeout),
                 "maxVisibleSessions": UserDefaults.standard.integer(forKey: SettingsKey.maxVisibleSessions),
                 "mascotSpeed": UserDefaults.standard.integer(forKey: SettingsKey.mascotSpeed),

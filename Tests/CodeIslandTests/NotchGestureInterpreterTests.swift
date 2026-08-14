@@ -3,8 +3,10 @@ import XCTest
 
 final class NotchGestureInterpreterTests: XCTestCase {
     func testPhysicalDirectionsMapToNaturalNotchActions() {
-        XCTAssertEqual(action(x: -30), .navigateNext)
-        XCTAssertEqual(action(x: 30), .navigatePrevious)
+        // NSEvent's normalized device delta is positive when the fingers move
+        // left, so the shipped direction advances the filters to the right.
+        XCTAssertEqual(action(x: 30), .navigateNext)
+        XCTAssertEqual(action(x: -30), .navigatePrevious)
         XCTAssertEqual(action(y: -30), .open)
         XCTAssertEqual(action(y: 30), .close)
     }

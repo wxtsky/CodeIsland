@@ -135,7 +135,7 @@ struct NotchGestureInterpreter {
 
         if horizontal >= Self.activationThreshold,
            horizontal >= vertical * Self.axisDominance {
-            action = accumulatedX < 0 ? .navigateNext : .navigatePrevious
+            action = accumulatedX > 0 ? .navigateNext : .navigatePrevious
         } else if vertical >= Self.activationThreshold,
                   vertical >= horizontal * Self.axisDominance {
             action = accumulatedY < 0 ? .open : .close
@@ -175,7 +175,8 @@ enum NotchGesturePolicy {
     static func filterMode(
         from currentMode: String,
         action: NotchGestureAction,
-        controlsVisible: Bool
+        controlsVisible: Bool,
+        inverted: Bool
     ) -> String? {
         guard controlsVisible,
               let currentIndex = filterModes.firstIndex(of: currentMode) else { return nil }
@@ -183,9 +184,9 @@ enum NotchGesturePolicy {
         let offset: Int
         switch action {
         case .navigatePrevious:
-            offset = -1
+            offset = inverted ? 1 : -1
         case .navigateNext:
-            offset = 1
+            offset = inverted ? -1 : 1
         case .open, .close:
             return nil
         }

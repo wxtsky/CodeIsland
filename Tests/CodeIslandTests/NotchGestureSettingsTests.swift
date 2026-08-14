@@ -5,6 +5,7 @@ final class NotchGestureSettingsTests: XCTestCase {
     func testHoverSettingsPreserveExistingDefaults() {
         XCTAssertTrue(SettingsDefaults.openOnHover)
         XCTAssertEqual(SettingsDefaults.hoverOpenDelay, 0.5, accuracy: 0.001)
+        XCTAssertFalse(SettingsDefaults.invertHorizontalSwipeDirection)
     }
 
     func testHoverDelayClampsValuesToSupportedRange() {

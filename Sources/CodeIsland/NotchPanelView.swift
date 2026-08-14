@@ -58,6 +58,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
     @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
+    @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
@@ -158,7 +159,8 @@ struct NotchPanelView: View {
             guard let nextMode = NotchGesturePolicy.filterMode(
                 from: groupingMode,
                 action: action,
-                controlsVisible: controlsVisible
+                controlsVisible: controlsVisible,
+                inverted: invertHorizontalSwipeDirection
             ) else { return }
             withAnimation(.easeInOut(duration: 0.15)) {
                 groupingMode = nextMode

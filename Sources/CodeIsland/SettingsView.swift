@@ -115,6 +115,7 @@ private struct GesturesPage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
     @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
+    @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
 
@@ -174,6 +175,15 @@ private struct GesturesPage: View {
             }
 
             Section(l10n["gesture_reference"]) {
+                Toggle(isOn: $invertHorizontalSwipeDirection) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(l10n["invert_horizontal_swipe"])
+                        Text(l10n["invert_horizontal_swipe_desc"])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
                 GestureReferenceRow(icon: "cursorarrow.click", text: l10n["gesture_click_open"])
                 GestureReferenceRow(icon: "arrow.down", text: l10n["gesture_swipe_down_open"])
                 GestureReferenceRow(icon: "arrow.up", text: l10n["gesture_swipe_up_close"])

@@ -45,6 +45,7 @@ enum SettingsKey {
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
     static let openOnHover = "openOnHover"
     static let hoverOpenDelay = "hoverOpenDelay"
+    static let invertHorizontalSwipeDirection = "invertHorizontalSwipeDirection"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
     static let autoExpandOnPermission = "autoExpandOnPermission"
     static let autoExpandOnCompletion = "autoExpandOnCompletion"
@@ -159,6 +160,7 @@ struct SettingsDefaults {
     static let collapseOnMouseLeave = true
     static let openOnHover = true
     static let hoverOpenDelay = 0.5
+    static let invertHorizontalSwipeDirection = false
     static let autoCollapseAfterSessionJump = false
     static let autoExpandOnPermission = true
     static let autoExpandOnCompletion = true
@@ -248,6 +250,7 @@ class SettingsManager {
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
             SettingsKey.openOnHover: SettingsDefaults.openOnHover,
             SettingsKey.hoverOpenDelay: SettingsDefaults.hoverOpenDelay,
+            SettingsKey.invertHorizontalSwipeDirection: SettingsDefaults.invertHorizontalSwipeDirection,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
             SettingsKey.autoExpandOnPermission: SettingsDefaults.autoExpandOnPermission,
             SettingsKey.autoExpandOnCompletion: SettingsDefaults.autoExpandOnCompletion,
@@ -360,6 +363,11 @@ class SettingsManager {
     var hoverOpenDelay: Double {
         get { HoverOpenDelay.clamped(defaults.double(forKey: SettingsKey.hoverOpenDelay)) }
         set { defaults.set(HoverOpenDelay.clamped(newValue), forKey: SettingsKey.hoverOpenDelay) }
+    }
+
+    var invertHorizontalSwipeDirection: Bool {
+        get { defaults.bool(forKey: SettingsKey.invertHorizontalSwipeDirection) }
+        set { defaults.set(newValue, forKey: SettingsKey.invertHorizontalSwipeDirection) }
     }
 
     var hapticOnHover: Bool {
