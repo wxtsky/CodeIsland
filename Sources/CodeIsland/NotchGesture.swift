@@ -44,13 +44,22 @@ enum NotchHoverInteraction {
 }
 
 enum NotchVisualStyle {
-    static let contrastEdgeWidth: CGFloat = 0.75
-    static let contrastEdgeOpacity = 0.08
-    static let contrastEdgeBlurRadius: CGFloat = 0.35
+    static let contrastEdgeWidth: CGFloat = 0.9
+    static let contrastEdgeOpacity = 0.14
+    static let contrastEdgeBlurRadius: CGFloat = 0
 
     static func showsContrastEdge(hasNotch: Bool, phase: NotchHoverPhase) -> Bool {
         !hasNotch || phase != .collapsed
     }
+}
+
+/// Live controller-owned dependencies needed by the panel's input behavior.
+/// Passing these directly avoids relying on SwiftUI's forwarding app delegate,
+/// which is not guaranteed to be the concrete `AppDelegate` instance.
+@MainActor
+struct NotchPanelInteractionContext {
+    let panelFrame: () -> NSRect?
+    let isActiveTerminalForeground: () -> Bool
 }
 
 enum NotchGestureAction: Equatable, Sendable {
@@ -235,6 +244,32 @@ enum NotchGesturePolicy {
     }
 }
 
+/// Keeps AppKit's ordered gesture interpretation separate from SwiftUI state
+/// mutation. Global event-monitor callbacks can arrive while AppKit is already
+/// dispatching input, so their resulting UI action runs on the next main-loop
+/// turn instead of re-entering panel layout from inside the callback.
+@MainActor
+struct NotchGestureActionDelivery {
+    typealias Work = @MainActor @Sendable () -> Void
+
+    private let schedule: (@escaping Work) -> Void
+
+    init(schedule: @escaping (@escaping Work) -> Void = { work in
+        DispatchQueue.main.async(execute: work)
+    }) {
+        self.schedule = schedule
+    }
+
+    func deliver(
+        _ action: NotchGestureAction,
+        to handler: @escaping @MainActor @Sendable (NotchGestureAction) -> Void
+    ) {
+        schedule {
+            handler(action)
+        }
+    }
+}
+
 @MainActor
 final class NotchGestureMonitor {
     var isEnabled = false {
@@ -248,6 +283,7 @@ final class NotchGestureMonitor {
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var interpreter = NotchGestureInterpreter()
+    private let actionDelivery = NotchGestureActionDelivery()
     private var panelFrameProvider: (() -> NSRect?)?
     private var onAction: ((NotchGestureAction) -> Void)?
     private var headerWidth: CGFloat = 0
@@ -274,7 +310,9 @@ final class NotchGestureMonitor {
                 panelFrame: self.panelFrameProvider?()
             ) else { return event }
 
-            onAction(action)
+            self.actionDelivery.deliver(action) { [weak self] action in
+                self?.onAction?(action)
+            }
             return nil
         }
 
@@ -282,13 +320,16 @@ final class NotchGestureMonitor {
         // them to the app underneath the physical notch. Global observation fills
         // that gap; local events remain consumable and are not duplicated here.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self,
+            guard let self else { return }
+            guard
                   let action = self.consumeObservedSample(
                     NotchScrollSample(event: event),
                     at: NSEvent.mouseLocation,
                     panelFrame: self.panelFrameProvider?()
                   ) else { return }
-            self.onAction?(action)
+            self.actionDelivery.deliver(action) { [weak self] action in
+                self?.onAction?(action)
+            }
         }
     }
 

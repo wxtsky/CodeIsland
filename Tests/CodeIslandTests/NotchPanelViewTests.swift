@@ -239,9 +239,14 @@ final class NotchHoverInteractionTests: XCTestCase {
 
     func testContrastEdgeIsSofterThanAUniformOutline() {
         XCTAssertLessThan(NotchVisualStyle.contrastEdgeWidth, 1)
-        XCTAssertGreaterThan(NotchVisualStyle.contrastEdgeOpacity, 0)
-        XCTAssertLessThanOrEqual(NotchVisualStyle.contrastEdgeOpacity, 0.1)
-        XCTAssertGreaterThan(NotchVisualStyle.contrastEdgeBlurRadius, 0)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeOpacity, 0.14, accuracy: 0.001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeBlurRadius, 0, accuracy: 0.001)
+    }
+
+    func testCloseUsesTheSameResponseTimeAsOpen() {
+        XCTAssertEqual(NotchAnimationMetrics.closeResponse, NotchAnimationMetrics.openResponse, accuracy: 0.001)
+        XCTAssertEqual(NotchAnimationMetrics.surfaceTransition(for: .collapsed), .close)
+        XCTAssertEqual(NotchAnimationMetrics.surfaceTransition(for: .sessionList), .open)
     }
 
     func testContrastEdgePathStaysOpenAcrossHiddenTop() {

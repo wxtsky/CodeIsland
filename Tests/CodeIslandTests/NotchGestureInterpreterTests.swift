@@ -111,6 +111,34 @@ final class NotchGestureHitboxTests: XCTestCase {
 
 @MainActor
 final class NotchGestureMonitorTests: XCTestCase {
+    func testPanelContextReadsTheControllersLiveFrame() {
+        var frame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let context = NotchPanelInteractionContext(
+            panelFrame: { frame },
+            isActiveTerminalForeground: { false }
+        )
+
+        XCTAssertEqual(context.panelFrame(), frame)
+        frame.origin.x = 220
+        XCTAssertEqual(context.panelFrame(), frame)
+    }
+
+    func testObservedActionDeliveryDefersUIHandlerUntilScheduledWorkRuns() {
+        var scheduledWork: (() -> Void)?
+        var receivedActions: [NotchGestureAction] = []
+        let delivery = NotchGestureActionDelivery { work in
+            scheduledWork = work
+        }
+
+        delivery.deliver(.open) { action in
+            receivedActions.append(action)
+        }
+
+        XCTAssertTrue(receivedActions.isEmpty)
+        scheduledWork?()
+        XCTAssertEqual(receivedActions, [.open])
+    }
+
     func testObservedSwipeDownEmitsOpenBeforeGestureEnds() {
         let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
         let location = NSPoint(x: panelFrame.midX, y: panelFrame.maxY)

@@ -49,6 +49,7 @@ struct NotchPanelView: View {
     let notchHeight: CGFloat
     let notchW: CGFloat
     let screenWidth: CGFloat
+    let interactionContext: NotchPanelInteractionContext
 
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
@@ -329,9 +330,7 @@ struct NotchPanelView: View {
                 displayedToolStatus = showToolStatus
                 gestureMonitor.updateRegion(headerWidth: panelWidth, headerHeight: notchHeight)
                 gestureMonitor.isEnabled = showBar
-                gestureMonitor.start(panelFrameProvider: {
-                    (NSApp.delegate as? AppDelegate)?.panelController?.gesturePanelFrame
-                }) { action in
+                gestureMonitor.start(panelFrameProvider: interactionContext.panelFrame) { action in
                     handleGestureAction(action)
                 }
             }
@@ -395,10 +394,7 @@ struct NotchPanelView: View {
 
                     // Smart suppress applies only to passive hover opening. Click and
                     // trackpad gestures are intentional and bypass this check.
-                    if smartSuppress,
-                       let delegate = NSApp.delegate as? AppDelegate,
-                       let pc = delegate.panelController,
-                       pc.isActiveTerminalForeground() {
+                    if smartSuppress, interactionContext.isActiveTerminalForeground() {
                         return
                     }
 
@@ -469,7 +465,7 @@ struct NotchPanelView: View {
                 .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(NotchAnimation.open, value: appState.surface)
+        .animation(NotchAnimation.surface(for: appState.surface), value: appState.surface)
         .animation(NotchAnimation.micro, value: hoverPhase)
     }
 }

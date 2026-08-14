@@ -341,7 +341,13 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             hasNotch: hasNotch,
             notchHeight: notchHeight,
             notchW: notchW,
-            screenWidth: screen.frame.width
+            screenWidth: screen.frame.width,
+            interactionContext: NotchPanelInteractionContext(
+                panelFrame: { [weak self] in self?.gesturePanelFrame },
+                isActiveTerminalForeground: { [weak self] in
+                    self?.isActiveTerminalForeground() ?? false
+                }
+            )
         )
         let contentView = NotchHostingView(rootView: rootView)
         contentView.sizingOptions = []
