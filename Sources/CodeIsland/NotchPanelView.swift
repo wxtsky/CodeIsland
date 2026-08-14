@@ -295,7 +295,28 @@ struct NotchPanelView: View {
                     minHeight: notchHeight
                 )
                 .stroke(
-                    Color.white.opacity(NotchVisualStyle.contrastEdgeOpacity),
+                    LinearGradient(
+                        stops: [
+                            .init(
+                                color: .white.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                location: 0
+                            ),
+                            .init(
+                                color: .white.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                location: NotchVisualStyle.contrastEdgeUpperHoldLocation
+                            ),
+                            .init(
+                                color: .white.opacity(NotchVisualStyle.contrastEdgeSideOpacity),
+                                location: NotchVisualStyle.contrastEdgeSideLocation
+                            ),
+                            .init(
+                                color: .white.opacity(NotchVisualStyle.contrastEdgeBottomOpacity),
+                                location: 1
+                            ),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
                     style: StrokeStyle(
                         lineWidth: NotchVisualStyle.contrastEdgeWidth,
                         lineCap: .round,

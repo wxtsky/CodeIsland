@@ -45,11 +45,15 @@ enum NotchHoverInteraction {
 
 enum NotchVisualStyle {
     static let contrastEdgeWidth: CGFloat = 0.9
-    static let contrastEdgeOpacity = 0.14
+    static let contrastEdgeTopOpacity = 0.005
+    static let contrastEdgeSideOpacity = 0.07
+    static let contrastEdgeBottomOpacity = 0.20
+    static let contrastEdgeUpperHoldLocation = 0.18
+    static let contrastEdgeSideLocation = 0.72
     static let contrastEdgeBlurRadius: CGFloat = 0
 
-    static func showsContrastEdge(hasNotch: Bool, phase: NotchHoverPhase) -> Bool {
-        !hasNotch || phase != .collapsed
+    static func showsContrastEdge(hasNotch _: Bool, phase _: NotchHoverPhase) -> Bool {
+        true
     }
 }
 

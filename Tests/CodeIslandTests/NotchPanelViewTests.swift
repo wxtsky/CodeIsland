@@ -230,16 +230,20 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchHoverInteraction.collapseDelay, 0.5, accuracy: 0.001)
     }
 
-    func testContrastEdgeOnlyAppearsWhenSoftwareIslandNeedsSeparation() {
-        XCTAssertFalse(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .collapsed))
+    func testContrastEdgeAlwaysAppearsAcrossInteractionStates() {
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .collapsed))
         XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .prehover))
         XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .expanded))
         XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: false, phase: .collapsed))
     }
 
-    func testContrastEdgeIsSofterThanAUniformOutline() {
+    func testContrastEdgeStrengthBuildsFromInvisibleTopToVisibleBottom() {
         XCTAssertLessThan(NotchVisualStyle.contrastEdgeWidth, 1)
-        XCTAssertEqual(NotchVisualStyle.contrastEdgeOpacity, 0.14, accuracy: 0.001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeTopOpacity, 0.005, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeSideOpacity, 0.07, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeBottomOpacity, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeUpperHoldLocation, 0.18, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeSideLocation, 0.72, accuracy: 0.0001)
         XCTAssertEqual(NotchVisualStyle.contrastEdgeBlurRadius, 0, accuracy: 0.001)
     }
 
