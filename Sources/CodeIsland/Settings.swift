@@ -17,6 +17,16 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+enum HoverOpenDelay {
+    static let minimum = 0.1
+    static let maximum = 1.5
+    static let step = 0.1
+
+    static func clamped(_ value: Double) -> Double {
+        min(max(value, minimum), maximum)
+    }
+}
+
 enum SettingsKey {
     // Language
     static let appLanguage = "appLanguage"                 // "system", "en", "zh", "zh-Hant", "de", "ja", "ko", "tr"
@@ -33,6 +43,8 @@ enum SettingsKey {
     static let hideWhenNoSession = "hideWhenNoSession"
     static let smartSuppress = "smartSuppress"
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
+    static let openOnHover = "openOnHover"
+    static let hoverOpenDelay = "hoverOpenDelay"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
     static let autoExpandOnPermission = "autoExpandOnPermission"
     static let autoExpandOnCompletion = "autoExpandOnCompletion"
@@ -145,6 +157,8 @@ struct SettingsDefaults {
     static let hideWhenNoSession = false
     static let smartSuppress = true
     static let collapseOnMouseLeave = true
+    static let openOnHover = true
+    static let hoverOpenDelay = 0.5
     static let autoCollapseAfterSessionJump = false
     static let autoExpandOnPermission = true
     static let autoExpandOnCompletion = true
@@ -232,6 +246,8 @@ class SettingsManager {
             SettingsKey.hideWhenNoSession: SettingsDefaults.hideWhenNoSession,
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
+            SettingsKey.openOnHover: SettingsDefaults.openOnHover,
+            SettingsKey.hoverOpenDelay: SettingsDefaults.hoverOpenDelay,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
             SettingsKey.autoExpandOnPermission: SettingsDefaults.autoExpandOnPermission,
             SettingsKey.autoExpandOnCompletion: SettingsDefaults.autoExpandOnCompletion,
@@ -334,6 +350,16 @@ class SettingsManager {
     var collapseOnMouseLeave: Bool {
         get { defaults.bool(forKey: SettingsKey.collapseOnMouseLeave) }
         set { defaults.set(newValue, forKey: SettingsKey.collapseOnMouseLeave) }
+    }
+
+    var openOnHover: Bool {
+        get { defaults.bool(forKey: SettingsKey.openOnHover) }
+        set { defaults.set(newValue, forKey: SettingsKey.openOnHover) }
+    }
+
+    var hoverOpenDelay: Double {
+        get { HoverOpenDelay.clamped(defaults.double(forKey: SettingsKey.hoverOpenDelay)) }
+        set { defaults.set(HoverOpenDelay.clamped(newValue), forKey: SettingsKey.hoverOpenDelay) }
     }
 
     var hapticOnHover: Bool {
