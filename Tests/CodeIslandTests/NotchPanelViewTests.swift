@@ -219,6 +219,15 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .prehover, event: .collapseDelayElapsed), .prehover)
     }
 
+    func testDisablingHoverCancelsPrehoverWithoutCollapsingExpandedContent() {
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .prehover, event: .hoverDisabled), .collapsed)
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .expanded, event: .hoverDisabled), .expanded)
+    }
+
+    func testMouseLeaveCloseDelayRemainsUnchanged() {
+        XCTAssertEqual(NotchHoverInteraction.collapseDelay, 0.5, accuracy: 0.001)
+    }
+
     func testWidthScaleSliderUsesOnePercentSteps() {
         XCTAssertEqual(NotchWidthScale.min, 50)
         XCTAssertEqual(NotchWidthScale.max, 150)

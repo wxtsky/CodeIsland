@@ -20,48 +20,6 @@ enum NotchWidthMetrics {
     }
 }
 
-// MARK: - Hover interaction state machine
-
-/// Where the island is in its hover interaction. `prehover` is the immediate
-/// lightweight acknowledgement (slight widen + scale) shown while the expand
-/// delay is still running — a quick mouse pass-through only ever plays this
-/// first stage and reverses, instead of popping the full panel open.
-enum NotchHoverPhase {
-    case collapsed
-    case prehover
-    case expanded
-}
-
-enum NotchHoverEvent {
-    case mouseEntered
-    case mouseExited
-    case expandDelayElapsed
-    case collapseDelayElapsed
-}
-
-enum NotchHoverInteraction {
-    static let prehoverAnimationDuration: TimeInterval = 0.21
-    static let expandDelay: TimeInterval = 0.5
-    static let collapseDelay: TimeInterval = 0.5
-    static let prehoverWidthDelta: CGFloat = 7
-    static let prehoverScale: CGFloat = 1.004
-
-    static func nextPhase(from phase: NotchHoverPhase, event: NotchHoverEvent) -> NotchHoverPhase {
-        switch (phase, event) {
-        case (.collapsed, .mouseEntered):
-            return .prehover
-        case (.prehover, .mouseExited):
-            return .collapsed
-        case (.prehover, .expandDelayElapsed):
-            return .expanded
-        case (.expanded, .collapseDelayElapsed):
-            return .collapsed
-        default:
-            return phase
-        }
-    }
-}
-
 enum ToolNameDisplay {
     static let compactMaxCharacters = 24
     static let compactMaxWidth: CGFloat = 120
@@ -98,13 +56,18 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
+    @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
+    @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
+    @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
     @State private var isHovered = false
     @State private var idleHovered = false
+    @State private var gestureRegionHovered = false
+    @State private var gestureMonitor = NotchGestureMonitor()
     /// Three-stage hover: collapsed → prehover (immediate ack) → expanded (after delay)
     @State private var hoverPhase: NotchHoverPhase = .collapsed
     /// Curtain animation for tool status toggle
@@ -162,6 +125,49 @@ struct NotchPanelView: View {
         return nw + wing * 2 + extra + toolExtra + prehoverExtra
     }
 
+    private func openSessionList() {
+        guard NotchGesturePolicy.canOpen(surface: appState.surface, hasSessions: isActive) else { return }
+
+        withAnimation(NotchAnimation.open) {
+            appState.surface = .sessionList
+            appState.cancelCompletionQueue()
+            if appState.activeSessionId == nil {
+                appState.activeSessionId = appState.sessions.keys.sorted().first
+            }
+        }
+    }
+
+    private func closeForGesture() {
+        guard NotchGesturePolicy.canClose(surface: appState.surface) else { return }
+
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        hoverPhase = .collapsed
+        appState.cancelCompletionQueue()
+        withAnimation(NotchAnimation.close) {
+            appState.surface = .collapsed
+        }
+    }
+
+    private func handleGestureAction(_ action: NotchGestureAction) {
+        switch action {
+        case .open:
+            openSessionList()
+        case .close:
+            closeForGesture()
+        case .navigatePrevious, .navigateNext:
+            let controlsVisible = appState.surface == .sessionList && appState.sessions.count > 1
+            guard let nextMode = NotchGesturePolicy.filterMode(
+                from: groupingMode,
+                action: action,
+                controlsVisible: controlsVisible
+            ) else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                groupingMode = nextMode
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -180,6 +186,14 @@ struct NotchPanelView: View {
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
                     }
                     .frame(height: notchHeight)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        gestureRegionHovered = hovering
+                        gestureMonitor.isEnabled = hovering
+                    }
+                    .onTapGesture {
+                        openSessionList()
+                    }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -297,7 +311,15 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onAppear { displayedToolStatus = showToolStatus }
+            .onAppear {
+                displayedToolStatus = showToolStatus
+                gestureMonitor.start { action in
+                    handleGestureAction(action)
+                }
+            }
+            .onDisappear {
+                gestureMonitor.stop()
+            }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
             .onHover { hovering in
@@ -339,17 +361,27 @@ struct NotchPanelView: View {
                 }
                 // Respect collapseOnMouseLeave setting
                 if !hovering && !SettingsManager.shared.collapseOnMouseLeave { return }
-                // Smart suppress: don't auto-expand when active session's terminal is foreground
-                if hovering && smartSuppress {
-                    if let delegate = NSApp.delegate as? AppDelegate,
+
+                isHovered = hovering
+                if hovering {
+                    guard openOnHover else {
+                        hoverTimer?.invalidate()
+                        hoverTimer = nil
+                        withAnimation(NotchAnimation.hoverPrehover) {
+                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .hoverDisabled)
+                        }
+                        return
+                    }
+
+                    // Smart suppress applies only to passive hover opening. Click and
+                    // trackpad gestures are intentional and bypass this check.
+                    if smartSuppress,
+                       let delegate = NSApp.delegate as? AppDelegate,
                        let pc = delegate.panelController,
                        pc.isActiveTerminalForeground() {
                         return
                     }
-                }
 
-                isHovered = hovering
-                if hovering {
                     // Immediate lightweight acknowledgement; a quick pass-through
                     // only ever plays this first stage and reverses.
                     withAnimation(NotchAnimation.hoverPrehover) {
@@ -357,10 +389,10 @@ struct NotchPanelView: View {
                     }
                     // Delay full expansion to avoid accidental triggers
                     hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: NotchHoverInteraction.expandDelay, repeats: false) { _ in
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: HoverOpenDelay.clamped(hoverOpenDelay), repeats: false) { _ in
                         Task { @MainActor in
                             // Guard: mouse may have left during the delay
-                            guard isHovered else { return }
+                            guard isHovered, openOnHover else { return }
                             if hapticOnHover {
                                 let performer = NSHapticFeedbackManager.defaultPerformer
                                 switch hapticIntensity {
@@ -376,13 +408,7 @@ struct NotchPanelView: View {
                                 }
                             }
                             hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .expandDelayElapsed)
-                            withAnimation(NotchAnimation.open) {
-                                appState.surface = .sessionList
-                                appState.cancelCompletionQueue()
-                                if appState.activeSessionId == nil {
-                                    appState.activeSessionId = appState.sessions.keys.sorted().first
-                                }
-                            }
+                            openSessionList()
                         }
                     }
                 } else {
@@ -412,6 +438,19 @@ struct NotchPanelView: View {
                 } else if newSurface.isExpanded && hoverPhase != .expanded {
                     hoverPhase = .expanded
                 }
+            }
+            .onChange(of: openOnHover) { _, enabled in
+                guard !enabled else { return }
+                hoverTimer?.invalidate()
+                hoverTimer = nil
+                withAnimation(NotchAnimation.hoverPrehover) {
+                    hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .hoverDisabled)
+                }
+            }
+            .onChange(of: showBar) { _, visible in
+                guard !visible else { return }
+                gestureRegionHovered = false
+                gestureMonitor.isEnabled = false
             }
 
             Spacer()

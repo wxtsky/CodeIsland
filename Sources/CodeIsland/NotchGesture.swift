@@ -1,5 +1,45 @@
 import AppKit
 
+// MARK: - Hover interaction state machine
+
+/// Where the island is in its hover interaction. `prehover` is the immediate
+/// lightweight acknowledgement shown while the configurable open delay runs.
+enum NotchHoverPhase {
+    case collapsed
+    case prehover
+    case expanded
+}
+
+enum NotchHoverEvent {
+    case mouseEntered
+    case mouseExited
+    case expandDelayElapsed
+    case collapseDelayElapsed
+    case hoverDisabled
+}
+
+enum NotchHoverInteraction {
+    static let prehoverAnimationDuration: TimeInterval = 0.21
+    static let collapseDelay: TimeInterval = 0.5
+    static let prehoverWidthDelta: CGFloat = 7
+    static let prehoverScale: CGFloat = 1.004
+
+    static func nextPhase(from phase: NotchHoverPhase, event: NotchHoverEvent) -> NotchHoverPhase {
+        switch (phase, event) {
+        case (.collapsed, .mouseEntered):
+            return .prehover
+        case (.prehover, .mouseExited), (.prehover, .hoverDisabled):
+            return .collapsed
+        case (.prehover, .expandDelayElapsed):
+            return .expanded
+        case (.expanded, .collapseDelayElapsed):
+            return .collapsed
+        default:
+            return phase
+        }
+    }
+}
+
 enum NotchGestureAction: Equatable {
     case open
     case close
@@ -155,5 +195,47 @@ enum NotchGesturePolicy {
             filterModes.index(before: filterModes.endIndex)
         )
         return filterModes[nextIndex]
+    }
+}
+
+@MainActor
+final class NotchGestureMonitor {
+    var isEnabled = false {
+        didSet {
+            if !isEnabled {
+                interpreter.reset()
+            }
+        }
+    }
+
+    private var monitor: Any?
+    private var interpreter = NotchGestureInterpreter()
+
+    func start(onAction: @escaping (NotchGestureAction) -> Void) {
+        guard monitor == nil else { return }
+
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, self.isEnabled else { return event }
+            guard let action = self.interpreter.consume(NotchScrollSample(event: event)) else {
+                return event
+            }
+
+            onAction(action)
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        monitor = nil
+        interpreter.reset()
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 }
