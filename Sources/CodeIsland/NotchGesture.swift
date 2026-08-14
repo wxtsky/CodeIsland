@@ -44,8 +44,13 @@ enum NotchHoverInteraction {
 }
 
 enum NotchVisualStyle {
-    static let outlineWidth: CGFloat = 1
-    static let outlineOpacity = 0.12
+    static let contrastEdgeWidth: CGFloat = 0.75
+    static let contrastEdgeOpacity = 0.08
+    static let contrastEdgeBlurRadius: CGFloat = 0.35
+
+    static func showsContrastEdge(hasNotch: Bool, phase: NotchHoverPhase) -> Bool {
+        !hasNotch || phase != .collapsed
+    }
 }
 
 enum NotchGestureAction: Equatable, Sendable {
@@ -263,11 +268,11 @@ final class NotchGestureMonitor {
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, self.isEnabled else { return event }
-            guard self.isWithinRegion(NSEvent.mouseLocation) else {
-                self.interpreter.reset()
-                return event
-            }
-            guard let action = self.interpreter.consume(NotchScrollSample(event: event)) else { return event }
+            guard let action = self.consumeObservedSample(
+                NotchScrollSample(event: event),
+                at: NSEvent.mouseLocation,
+                panelFrame: self.panelFrameProvider?()
+            ) else { return event }
 
             onAction(action)
             return nil
@@ -277,11 +282,13 @@ final class NotchGestureMonitor {
         // them to the app underneath the physical notch. Global observation fills
         // that gap; local events remain consumable and are not duplicated here.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            let sample = NotchScrollSample(event: event)
-            let location = NSEvent.mouseLocation
-            Task { @MainActor [weak self] in
-                self?.consumeGlobal(sample, at: location)
-            }
+            guard let self,
+                  let action = self.consumeObservedSample(
+                    NotchScrollSample(event: event),
+                    at: NSEvent.mouseLocation,
+                    panelFrame: self.panelFrameProvider?()
+                  ) else { return }
+            self.onAction?(action)
         }
     }
 
@@ -299,22 +306,26 @@ final class NotchGestureMonitor {
         interpreter.reset()
     }
 
-    private func consumeGlobal(_ sample: NotchScrollSample, at location: NSPoint) {
-        guard isEnabled, isWithinRegion(location) else {
+    /// Process samples immediately on AppKit's ordered event-monitor callback.
+    /// Deferring each sample into a separate task can reorder began/delta/ended.
+    func consumeObservedSample(
+        _ sample: NotchScrollSample,
+        at location: NSPoint,
+        panelFrame: NSRect?
+    ) -> NotchGestureAction? {
+        guard isEnabled, let panelFrame else {
             interpreter.reset()
-            return
+            return nil
         }
-        guard let action = interpreter.consume(sample) else { return }
-        onAction?(action)
-    }
-
-    private func isWithinRegion(_ location: NSPoint) -> Bool {
-        guard let panelFrame = panelFrameProvider?() else { return false }
-        return NotchGestureHitbox(
+        guard NotchGestureHitbox(
             panelFrame: panelFrame,
             headerWidth: headerWidth,
             headerHeight: headerHeight
-        ).contains(location)
+        ).contains(location) else {
+            interpreter.reset()
+            return nil
+        }
+        return interpreter.consume(sample)
     }
 
     deinit {

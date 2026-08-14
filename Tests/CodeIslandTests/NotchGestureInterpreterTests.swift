@@ -108,3 +108,32 @@ final class NotchGestureHitboxTests: XCTestCase {
         XCTAssertTrue(expanded.contains(point))
     }
 }
+
+@MainActor
+final class NotchGestureMonitorTests: XCTestCase {
+    func testObservedSwipeDownEmitsOpenBeforeGestureEnds() {
+        let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let location = NSPoint(x: panelFrame.midX, y: panelFrame.maxY)
+        let monitor = NotchGestureMonitor()
+        monitor.isEnabled = true
+        monitor.updateRegion(headerWidth: 240, headerHeight: 38)
+
+        XCTAssertNil(monitor.consumeObservedSample(sample(y: 0, began: true), at: location, panelFrame: panelFrame))
+        XCTAssertNil(monitor.consumeObservedSample(sample(y: -12), at: location, panelFrame: panelFrame))
+        XCTAssertEqual(monitor.consumeObservedSample(sample(y: -13), at: location, panelFrame: panelFrame), .open)
+        XCTAssertNil(monitor.consumeObservedSample(sample(ended: true), at: location, panelFrame: panelFrame))
+    }
+
+    private func sample(
+        y: CGFloat = 0,
+        began: Bool = false,
+        ended: Bool = false
+    ) -> NotchScrollSample {
+        NotchScrollSample(
+            physicalDeltaX: 0,
+            physicalDeltaY: y,
+            began: began,
+            ended: ended
+        )
+    }
+}

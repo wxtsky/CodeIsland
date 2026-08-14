@@ -288,15 +288,21 @@ struct NotchPanelView: View {
                 .fill(.black)
             )
             .overlay(
-                NotchPanelShape(
+                NotchVisibleOutlineShape(
                     topExtension: shouldShowExpanded ? 14 : 3,
                     bottomRadius: shouldShowExpanded ? 24 : 12,
                     minHeight: notchHeight
                 )
                 .stroke(
-                    Color.white.opacity(NotchVisualStyle.outlineOpacity),
-                    lineWidth: NotchVisualStyle.outlineWidth
+                    Color.white.opacity(NotchVisualStyle.contrastEdgeOpacity),
+                    style: StrokeStyle(
+                        lineWidth: NotchVisualStyle.contrastEdgeWidth,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
                 )
+                .blur(radius: NotchVisualStyle.contrastEdgeBlurRadius)
+                .opacity(NotchVisualStyle.showsContrastEdge(hasNotch: hasNotch, phase: hoverPhase) ? 1 : 0)
                 .allowsHitTesting(false)
             )
             .offset(y: curtainOffset)
@@ -464,6 +470,7 @@ struct NotchPanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(NotchAnimation.open, value: appState.surface)
+        .animation(NotchAnimation.micro, value: hoverPhase)
     }
 }
 

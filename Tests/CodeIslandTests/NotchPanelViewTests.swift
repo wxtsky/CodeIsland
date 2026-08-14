@@ -230,10 +230,33 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchHoverInteraction.collapseDelay, 0.5, accuracy: 0.001)
     }
 
-    func testNotchOutlineIsFaintAndOnePixelWide() {
-        XCTAssertEqual(NotchVisualStyle.outlineWidth, 1, accuracy: 0.001)
-        XCTAssertGreaterThan(NotchVisualStyle.outlineOpacity, 0)
-        XCTAssertLessThanOrEqual(NotchVisualStyle.outlineOpacity, 0.15)
+    func testContrastEdgeOnlyAppearsWhenSoftwareIslandNeedsSeparation() {
+        XCTAssertFalse(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .collapsed))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .prehover))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .expanded))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: false, phase: .collapsed))
+    }
+
+    func testContrastEdgeIsSofterThanAUniformOutline() {
+        XCTAssertLessThan(NotchVisualStyle.contrastEdgeWidth, 1)
+        XCTAssertGreaterThan(NotchVisualStyle.contrastEdgeOpacity, 0)
+        XCTAssertLessThanOrEqual(NotchVisualStyle.contrastEdgeOpacity, 0.1)
+        XCTAssertGreaterThan(NotchVisualStyle.contrastEdgeBlurRadius, 0)
+    }
+
+    func testContrastEdgePathStaysOpenAcrossHiddenTop() {
+        let path = NotchVisibleOutlineShape(
+            topExtension: 14,
+            bottomRadius: 24,
+            minHeight: 38
+        ).path(in: CGRect(x: 0, y: 0, width: 300, height: 120))
+        var closesAcrossTop = false
+        path.forEach { element in
+            if case .closeSubpath = element {
+                closesAcrossTop = true
+            }
+        }
+        XCTAssertFalse(closesAcrossTop)
     }
 
     func testWidthScaleSliderUsesOnePercentSteps() {
