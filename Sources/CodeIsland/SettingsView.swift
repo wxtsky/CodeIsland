@@ -8,6 +8,7 @@ import CodeIslandCore
 enum SettingsPage: String, Identifiable, Hashable {
     case general
     case behavior
+    case gestures
     case appearance
     case mascots
     case sound
@@ -23,6 +24,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         switch self {
         case .general: return "gearshape.fill"
         case .behavior: return "slider.horizontal.3"
+        case .gestures: return "hand.draw.fill"
         case .appearance: return "paintbrush.fill"
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
@@ -38,6 +40,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         switch self {
         case .general: return .gray
         case .behavior: return .orange
+        case .gestures: return .teal
         case .appearance: return .blue
         case .mascots: return .pink
         case .sound: return .green
@@ -56,7 +59,7 @@ private struct SidebarGroup: Hashable {
 }
 
 private let sidebarGroups: [SidebarGroup] = [
-    SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
+    SidebarGroup(title: nil, pages: [.general, .behavior, .gestures, .appearance, .mascots, .sound, .shortcuts]),
     SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
 ]
 
@@ -90,6 +93,7 @@ struct SettingsView: View {
                 switch selectedPage {
                 case .general: GeneralPage()
                 case .behavior: BehaviorPage(appState: appState)
+                case .gestures: GesturesPage()
                 case .appearance: AppearancePage()
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
@@ -102,6 +106,94 @@ struct SettingsView: View {
             }
         }
         .toolbar(removing: .sidebarToggle)
+    }
+}
+
+// MARK: - Gestures Page
+
+private struct GesturesPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
+    @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
+    @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
+    @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
+
+    private var hoverDelayBinding: Binding<Double> {
+        Binding(
+            get: { HoverOpenDelay.clamped(hoverOpenDelay) },
+            set: { hoverOpenDelay = HoverOpenDelay.clamped($0) }
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section(l10n["gesture_opening"]) {
+                Toggle(isOn: $openOnHover) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(l10n["open_on_hover"])
+                        Text(l10n["open_on_hover_desc"])
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
+                if openOnHover {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(l10n["hover_open_delay"])
+                            Spacer()
+                            Text(String(format: l10n["seconds_short"], hoverDelayBinding.wrappedValue))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(
+                            value: hoverDelayBinding,
+                            in: HoverOpenDelay.minimum...HoverOpenDelay.maximum,
+                            step: HoverOpenDelay.step
+                        )
+                    }
+
+                    BehaviorToggleRow(
+                        title: l10n["haptic_on_hover"],
+                        desc: l10n["haptic_on_hover_desc"],
+                        isOn: $hapticOnHover,
+                        animation: .hapticHover
+                    )
+                    if hapticOnHover {
+                        Picker(selection: $hapticIntensity) {
+                            Text(l10n["haptic_light"]).tag(1)
+                            Text(l10n["haptic_medium"]).tag(2)
+                            Text(l10n["haptic_strong"]).tag(3)
+                        } label: {
+                            EmptyView()
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.leading, 84)
+                    }
+                }
+            }
+
+            Section(l10n["gesture_reference"]) {
+                GestureReferenceRow(icon: "cursorarrow.click", text: l10n["gesture_click_open"])
+                GestureReferenceRow(icon: "arrow.down", text: l10n["gesture_swipe_down_open"])
+                GestureReferenceRow(icon: "arrow.up", text: l10n["gesture_swipe_up_close"])
+                GestureReferenceRow(icon: "arrow.left.and.right", text: l10n["gesture_swipe_horizontal_filter"])
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            hoverOpenDelay = HoverOpenDelay.clamped(hoverOpenDelay)
+        }
+    }
+}
+
+private struct GestureReferenceRow: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .foregroundStyle(.secondary)
     }
 }
 
@@ -386,8 +478,6 @@ private struct BehaviorPage: View {
     // shows up as "off" here; writes go to the new key via onChange.
     @State private var completionStyle: String = AppState.completionStyle().rawValue
     @AppStorage(SettingsKey.pluginSessionMode) private var pluginSessionMode = SettingsDefaults.pluginSessionMode
-    @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
-    @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
@@ -472,23 +562,6 @@ private struct BehaviorPage: View {
                     Text(l10n["completion_notification_desc"])
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
-                }
-                BehaviorToggleRow(
-                    title: l10n["haptic_on_hover"],
-                    desc: l10n["haptic_on_hover_desc"],
-                    isOn: $hapticOnHover,
-                    animation: .hapticHover
-                )
-                if hapticOnHover {
-                    Picker(selection: $hapticIntensity) {
-                        Text(l10n["haptic_light"]).tag(1)
-                        Text(l10n["haptic_medium"]).tag(2)
-                        Text(l10n["haptic_strong"]).tag(3)
-                    } label: {
-                        EmptyView()
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.leading, 84)
                 }
             }
 

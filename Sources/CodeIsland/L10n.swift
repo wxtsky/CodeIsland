@@ -47,6 +47,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "General",
         "behavior": "Behavior",
+        "gestures": "Gestures",
         "appearance": "Appearance",
         "mascots": "Mascots",
         "sound": "Sound",
@@ -68,6 +69,18 @@ final class L10n: ObservableObject {
         "auto": "Auto",
         "builtin_display": "Built-in Display",
         "notch": "(Notch)",
+
+        // Gestures
+        "gesture_opening": "Opening",
+        "open_on_hover": "Open on Hover",
+        "open_on_hover_desc": "Automatically open the notch when the pointer rests over it",
+        "hover_open_delay": "Hover Delay",
+        "seconds_short": "%.1f s",
+        "gesture_reference": "Trackpad Gestures",
+        "gesture_click_open": "Click the compact notch to open",
+        "gesture_swipe_down_open": "Two-finger swipe down to open",
+        "gesture_swipe_up_close": "Two-finger swipe up to close",
+        "gesture_swipe_horizontal_filter": "Two-finger swipe left or right to change session filters",
 
         // Behavior
         "display_section": "Display",
@@ -399,6 +412,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "Allgemein",
         "behavior": "Verhalten",
+        "gestures": "Gesten",
         "appearance": "Darstellung",
         "mascots": "Maskottchen",
         "sound": "Ton",
@@ -420,6 +434,18 @@ final class L10n: ObservableObject {
         "auto": "Automatisch",
         "builtin_display": "Integriertes Display",
         "notch": "(Notch)",
+
+        // Gestures
+        "gesture_opening": "Öffnen",
+        "open_on_hover": "Beim Darüberfahren öffnen",
+        "open_on_hover_desc": "Die Notch automatisch öffnen, wenn der Zeiger darauf ruht",
+        "hover_open_delay": "Hover-Verzögerung",
+        "seconds_short": "%.1f s",
+        "gesture_reference": "Trackpad-Gesten",
+        "gesture_click_open": "Zum Öffnen auf die kompakte Notch klicken",
+        "gesture_swipe_down_open": "Mit zwei Fingern nach unten wischen, um zu öffnen",
+        "gesture_swipe_up_close": "Mit zwei Fingern nach oben wischen, um zu schließen",
+        "gesture_swipe_horizontal_filter": "Mit zwei Fingern links oder rechts zwischen Sitzungsfiltern wechseln",
 
         // Behavior
         "display_section": "Anzeige",
@@ -747,6 +773,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "通用",
         "behavior": "行为",
+        "gestures": "手势",
         "appearance": "外观",
         "mascots": "角色",
         "sound": "声音",
@@ -768,6 +795,18 @@ final class L10n: ObservableObject {
         "auto": "自动",
         "builtin_display": "内建显示器",
         "notch": "(刘海)",
+
+        // Gestures
+        "gesture_opening": "打开",
+        "open_on_hover": "悬停时打开",
+        "open_on_hover_desc": "指针停留在刘海上时自动展开面板",
+        "hover_open_delay": "悬停打开延迟",
+        "seconds_short": "%.1f 秒",
+        "gesture_reference": "触控板手势",
+        "gesture_click_open": "点击收起的刘海即可打开",
+        "gesture_swipe_down_open": "双指向下轻扫即可打开",
+        "gesture_swipe_up_close": "双指向上轻扫即可关闭",
+        "gesture_swipe_horizontal_filter": "双指向左或向右轻扫以切换会话筛选器",
 
         // Behavior
         "display_section": "显示",
@@ -1099,6 +1138,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "一般",
         "behavior": "行為",
+        "gestures": "手勢",
         "appearance": "外觀",
         "mascots": "角色",
         "sound": "聲音",
@@ -1120,6 +1160,18 @@ final class L10n: ObservableObject {
         "auto": "自動",
         "builtin_display": "內建顯示器",
         "notch": "(瀏海)",
+
+        // Gestures
+        "gesture_opening": "開啟",
+        "open_on_hover": "懸停時開啟",
+        "open_on_hover_desc": "指標停留在瀏海上時自動展開面板",
+        "hover_open_delay": "懸停開啟延遲",
+        "seconds_short": "%.1f 秒",
+        "gesture_reference": "觸控板手勢",
+        "gesture_click_open": "點擊收合的瀏海即可開啟",
+        "gesture_swipe_down_open": "雙指向下滑動即可開啟",
+        "gesture_swipe_up_close": "雙指向上滑動即可關閉",
+        "gesture_swipe_horizontal_filter": "雙指向左或向右滑動以切換會話篩選器",
 
         // Behavior
         "display_section": "顯示",
@@ -1451,6 +1503,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "一般",
         "behavior": "動作",
+        "gestures": "ジェスチャ",
         "appearance": "外観",
         "mascots": "マスコット",
         "sound": "サウンド",
@@ -1472,6 +1525,18 @@ final class L10n: ObservableObject {
         "auto": "自動",
         "builtin_display": "内蔵ディスプレイ",
         "notch": "(ノッチ)",
+
+        // Gestures
+        "gesture_opening": "開く",
+        "open_on_hover": "ホバーで開く",
+        "open_on_hover_desc": "ポインタをノッチ上に置くと自動的に開きます",
+        "hover_open_delay": "ホバーで開くまでの時間",
+        "seconds_short": "%.1f 秒",
+        "gesture_reference": "トラックパッドジェスチャ",
+        "gesture_click_open": "コンパクトなノッチをクリックして開く",
+        "gesture_swipe_down_open": "2本指で下にスワイプして開く",
+        "gesture_swipe_up_close": "2本指で上にスワイプして閉じる",
+        "gesture_swipe_horizontal_filter": "2本指で左右にスワイプしてセッションフィルタを切り替える",
 
         // Behavior
         "display_section": "表示",
@@ -1803,6 +1868,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "일반",
         "behavior": "동작",
+        "gestures": "제스처",
         "appearance": "외관",
         "mascots": "마스코트",
         "sound": "사운드",
@@ -1824,6 +1890,18 @@ final class L10n: ObservableObject {
         "auto": "자동",
         "builtin_display": "내장 디스플레이",
         "notch": "(노치)",
+
+        // Gestures
+        "gesture_opening": "열기",
+        "open_on_hover": "호버로 열기",
+        "open_on_hover_desc": "포인터를 노치 위에 두면 자동으로 엽니다",
+        "hover_open_delay": "호버 열기 지연",
+        "seconds_short": "%.1f초",
+        "gesture_reference": "트랙패드 제스처",
+        "gesture_click_open": "컴팩트 노치를 클릭하여 열기",
+        "gesture_swipe_down_open": "두 손가락으로 아래로 쓸어 열기",
+        "gesture_swipe_up_close": "두 손가락으로 위로 쓸어 닫기",
+        "gesture_swipe_horizontal_filter": "두 손가락으로 좌우로 쓸어 세션 필터 변경",
 
         // Behavior
         "display_section": "표시",
@@ -2155,6 +2233,7 @@ final class L10n: ObservableObject {
         // Settings pages
         "general": "Genel",
         "behavior": "Davranış",
+        "gestures": "Hareketler",
         "appearance": "Görünüm",
         "mascots": "Maskotlar",
         "sound": "Ses",
@@ -2176,6 +2255,18 @@ final class L10n: ObservableObject {
         "auto": "Otomatik",
         "builtin_display": "Dahili Ekran",
         "notch": "(Çentik)",
+
+        // Gestures
+        "gesture_opening": "Açma",
+        "open_on_hover": "Üzerine Gelince Aç",
+        "open_on_hover_desc": "İşaretçi çentiğin üzerinde beklediğinde otomatik olarak aç",
+        "hover_open_delay": "Üzerine Gelme Gecikmesi",
+        "seconds_short": "%.1f sn",
+        "gesture_reference": "Dokunmatik Yüzey Hareketleri",
+        "gesture_click_open": "Açmak için kompakt çentiğe tıkla",
+        "gesture_swipe_down_open": "Açmak için iki parmakla aşağı kaydır",
+        "gesture_swipe_up_close": "Kapatmak için iki parmakla yukarı kaydır",
+        "gesture_swipe_horizontal_filter": "Oturum filtrelerini değiştirmek için iki parmakla sola veya sağa kaydır",
 
         // Behavior
         "display_section": "Görüntüleme",
