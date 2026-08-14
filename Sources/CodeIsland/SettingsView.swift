@@ -952,6 +952,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
+    @AppStorage(SettingsKey.showContrastEdge) private var showContrastEdge = SettingsDefaults.showContrastEdge
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1017,6 +1018,12 @@ private struct AppearancePage: View {
                         }
                         Slider(value: $customNotchHeight, in: 15...60, step: 1)
                     }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_contrast_edge"], isOn: $showContrastEdge)
+                    Text(l10n["show_contrast_edge_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
             }
 

@@ -80,8 +80,8 @@ final class NotchGestureHitboxTests: XCTestCase {
     func testIncludesExactScreenTopAndPhysicalNotchBand() {
         let hitbox = NotchGestureHitbox(
             panelFrame: panelFrame,
-            headerWidth: 240,
-            headerHeight: 38
+            regionWidth: 240,
+            regionHeight: 38
         )
 
         XCTAssertTrue(hitbox.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY)))
@@ -91,21 +91,46 @@ final class NotchGestureHitboxTests: XCTestCase {
     func testRemainsRestrictedToCenteredNotchHeader() {
         let hitbox = NotchGestureHitbox(
             panelFrame: panelFrame,
-            headerWidth: 240,
-            headerHeight: 38
+            regionWidth: 240,
+            regionHeight: 38
         )
 
         XCTAssertFalse(hitbox.contains(NSPoint(x: panelFrame.minX + 1, y: panelFrame.maxY - 20)))
         XCTAssertFalse(hitbox.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY - 60)))
     }
 
-    func testExpandedHeaderWidthExpandsGestureRegion() {
-        let collapsed = NotchGestureHitbox(panelFrame: panelFrame, headerWidth: 240, headerHeight: 38)
-        let expanded = NotchGestureHitbox(panelFrame: panelFrame, headerWidth: 520, headerHeight: 38)
-        let point = NSPoint(x: panelFrame.midX + 220, y: panelFrame.maxY - 20)
+    func testExpandedVisiblePanelExpandsGestureRegionInBothAxes() {
+        let collapsed = NotchGestureHitbox(panelFrame: panelFrame, regionWidth: 240, regionHeight: 38)
+        let expanded = NotchGestureHitbox(panelFrame: panelFrame, regionWidth: 520, regionHeight: 220)
+        let point = NSPoint(x: panelFrame.midX + 220, y: panelFrame.maxY - 160)
 
         XCTAssertFalse(collapsed.contains(point))
         XCTAssertTrue(expanded.contains(point))
+        XCTAssertFalse(expanded.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY - 240)))
+    }
+}
+
+final class NotchGestureRegionMetricsTests: XCTestCase {
+    func testUsesRenderedWidthInsteadOfAnimatedTargetWidth() {
+        let resolved = NotchGestureRegionMetrics.resolvedSize(
+            renderedSize: CGSize(width: 360, height: 120),
+            fallbackWidth: 580,
+            headerHeight: 38,
+            isExpanded: true
+        )
+
+        XCTAssertEqual(resolved, CGSize(width: 360, height: 120))
+    }
+
+    func testCollapsedRegionKeepsRenderedWidthButCapsHeightToHeader() {
+        let resolved = NotchGestureRegionMetrics.resolvedSize(
+            renderedSize: CGSize(width: 300, height: 160),
+            fallbackWidth: 240,
+            headerHeight: 38,
+            isExpanded: false
+        )
+
+        XCTAssertEqual(resolved, CGSize(width: 300, height: 38))
     }
 }
 
@@ -144,12 +169,23 @@ final class NotchGestureMonitorTests: XCTestCase {
         let location = NSPoint(x: panelFrame.midX, y: panelFrame.maxY)
         let monitor = NotchGestureMonitor()
         monitor.isEnabled = true
-        monitor.updateRegion(headerWidth: 240, headerHeight: 38)
+        monitor.updateRegion(width: 240, height: 38)
 
         XCTAssertNil(monitor.consumeObservedSample(sample(y: 0, began: true), at: location, panelFrame: panelFrame))
         XCTAssertNil(monitor.consumeObservedSample(sample(y: -12), at: location, panelFrame: panelFrame))
         XCTAssertEqual(monitor.consumeObservedSample(sample(y: -13), at: location, panelFrame: panelFrame), .open)
         XCTAssertNil(monitor.consumeObservedSample(sample(ended: true), at: location, panelFrame: panelFrame))
+    }
+
+    func testObservedSwipeWorksBelowHeaderWhenExpandedRegionIncludesIt() {
+        let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let location = NSPoint(x: panelFrame.midX + 180, y: panelFrame.maxY - 160)
+        let monitor = NotchGestureMonitor()
+        monitor.isEnabled = true
+        monitor.updateRegion(width: 520, height: 220)
+
+        XCTAssertNil(monitor.consumeObservedSample(sample(y: 0, began: true), at: location, panelFrame: panelFrame))
+        XCTAssertEqual(monitor.consumeObservedSample(sample(y: 25), at: location, panelFrame: panelFrame), .close)
     }
 
     private func sample(

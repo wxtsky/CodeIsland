@@ -62,6 +62,7 @@ enum SettingsKey {
     static let showAgentDetails = "showAgentDetails"
     static let notchHeightMode = "notchHeightMode"
     static let customNotchHeight = "customNotchHeight"
+    static let showContrastEdge = "showContrastEdge"
 
     // Sound
     static let soundEnabled = "soundEnabled"
@@ -176,6 +177,7 @@ struct SettingsDefaults {
     static let showAgentDetails = false
     static let notchHeightMode = NotchHeightMode.matchNotch.rawValue
     static let customNotchHeight = 37.0
+    static let showContrastEdge = true
 
     static let soundEnabled = false
     static let soundVolume = 50
@@ -265,6 +267,7 @@ class SettingsManager {
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.notchHeightMode: SettingsDefaults.notchHeightMode,
             SettingsKey.customNotchHeight: SettingsDefaults.customNotchHeight,
+            SettingsKey.showContrastEdge: SettingsDefaults.showContrastEdge,
             SettingsKey.soundEnabled: SettingsDefaults.soundEnabled,
             SettingsKey.soundVolume: SettingsDefaults.soundVolume,
             SettingsKey.soundSessionStart: SettingsDefaults.soundSessionStart,

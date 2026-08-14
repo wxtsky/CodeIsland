@@ -43,6 +43,14 @@ enum ToolNameDisplay {
     }
 }
 
+private struct NotchVisibleSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
@@ -60,6 +68,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
     @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
     @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
+    @AppStorage(SettingsKey.showContrastEdge) private var showContrastEdge = SettingsDefaults.showContrastEdge
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
@@ -75,6 +84,7 @@ struct NotchPanelView: View {
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
+    @State private var visiblePanelSize: CGSize = .zero
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -167,6 +177,16 @@ struct NotchPanelView: View {
                 groupingMode = nextMode
             }
         }
+    }
+
+    private func updateGestureRegion(visibleSize: CGSize? = nil) {
+        let regionSize = NotchGestureRegionMetrics.resolvedSize(
+            renderedSize: visibleSize ?? visiblePanelSize,
+            fallbackWidth: panelWidth,
+            headerHeight: notchHeight,
+            isExpanded: shouldShowExpanded
+        )
+        gestureMonitor.updateRegion(width: regionSize.width, height: regionSize.height)
     }
 
     var body: some View {
@@ -279,6 +299,14 @@ struct NotchPanelView: View {
                 }
             }
             .frame(width: panelWidth)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: NotchVisibleSizePreferenceKey.self,
+                        value: geometry.size
+                    )
+                }
+            }
             .clipped()
             .background(
                 NotchPanelShape(
@@ -324,7 +352,11 @@ struct NotchPanelView: View {
                     )
                 )
                 .blur(radius: NotchVisualStyle.contrastEdgeBlurRadius)
-                .opacity(NotchVisualStyle.showsContrastEdge(hasNotch: hasNotch, phase: hoverPhase) ? 1 : 0)
+                .opacity(
+                    showContrastEdge && NotchVisualStyle.showsContrastEdge(hasNotch: hasNotch, phase: hoverPhase)
+                        ? 1
+                        : 0
+                )
                 .allowsHitTesting(false)
             )
             .offset(y: curtainOffset)
@@ -349,7 +381,7 @@ struct NotchPanelView: View {
             }
             .onAppear {
                 displayedToolStatus = showToolStatus
-                gestureMonitor.updateRegion(headerWidth: panelWidth, headerHeight: notchHeight)
+                updateGestureRegion()
                 gestureMonitor.isEnabled = showBar
                 gestureMonitor.start(panelFrameProvider: interactionContext.panelFrame) { action in
                     handleGestureAction(action)
@@ -478,8 +510,15 @@ struct NotchPanelView: View {
             .onChange(of: showBar) { _, visible in
                 gestureMonitor.isEnabled = visible
             }
-            .onChange(of: panelWidth) { _, width in
-                gestureMonitor.updateRegion(headerWidth: width, headerHeight: notchHeight)
+            .onChange(of: panelWidth) { _, _ in
+                updateGestureRegion()
+            }
+            .onChange(of: shouldShowExpanded) { _, _ in
+                updateGestureRegion()
+            }
+            .onPreferenceChange(NotchVisibleSizePreferenceKey.self) { size in
+                visiblePanelSize = size
+                updateGestureRegion(visibleSize: size)
             }
 
             Spacer()

@@ -140,16 +140,29 @@ struct NotchGestureHitbox {
     private let minY: CGFloat
     private let maxY: CGFloat
 
-    init(panelFrame: NSRect, headerWidth: CGFloat, headerHeight: CGFloat) {
-        let width = Swift.min(Swift.max(headerWidth, 0), panelFrame.width)
+    init(panelFrame: NSRect, regionWidth: CGFloat, regionHeight: CGFloat) {
+        let width = Swift.min(Swift.max(regionWidth, 0), panelFrame.width)
         minX = panelFrame.midX - width / 2
         maxX = panelFrame.midX + width / 2
-        minY = panelFrame.maxY - Swift.max(headerHeight, 0)
+        minY = panelFrame.maxY - Swift.min(Swift.max(regionHeight, 0), panelFrame.height)
         maxY = panelFrame.maxY + Self.topEdgeExtension
     }
 
     func contains(_ point: NSPoint) -> Bool {
         point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
+    }
+}
+
+enum NotchGestureRegionMetrics {
+    static func resolvedSize(
+        renderedSize: CGSize,
+        fallbackWidth: CGFloat,
+        headerHeight: CGFloat,
+        isExpanded: Bool
+    ) -> CGSize {
+        let width = renderedSize.width > 0 ? renderedSize.width : fallbackWidth
+        let height = isExpanded ? max(renderedSize.height, headerHeight) : headerHeight
+        return CGSize(width: width, height: height)
     }
 }
 
@@ -290,12 +303,12 @@ final class NotchGestureMonitor {
     private let actionDelivery = NotchGestureActionDelivery()
     private var panelFrameProvider: (() -> NSRect?)?
     private var onAction: ((NotchGestureAction) -> Void)?
-    private var headerWidth: CGFloat = 0
-    private var headerHeight: CGFloat = 0
+    private var regionWidth: CGFloat = 0
+    private var regionHeight: CGFloat = 0
 
-    func updateRegion(headerWidth: CGFloat, headerHeight: CGFloat) {
-        self.headerWidth = headerWidth
-        self.headerHeight = headerHeight
+    func updateRegion(width: CGFloat, height: CGFloat) {
+        regionWidth = width
+        regionHeight = height
     }
 
     func start(
@@ -364,8 +377,8 @@ final class NotchGestureMonitor {
         }
         guard NotchGestureHitbox(
             panelFrame: panelFrame,
-            headerWidth: headerWidth,
-            headerHeight: headerHeight
+            regionWidth: regionWidth,
+            regionHeight: regionHeight
         ).contains(location) else {
             interpreter.reset()
             return nil
