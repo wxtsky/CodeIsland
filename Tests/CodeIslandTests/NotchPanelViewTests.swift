@@ -219,13 +219,21 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .prehover, event: .collapseDelayElapsed), .prehover)
     }
 
-    func testDisablingHoverCancelsPrehoverWithoutCollapsingExpandedContent() {
-        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .prehover, event: .hoverDisabled), .collapsed)
-        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .expanded, event: .hoverDisabled), .expanded)
+    func testDisablingHoverKeepsImmediatePrehoverButDisablesFullOpen() {
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .collapsed, event: .mouseEntered), .prehover)
+        XCTAssertFalse(NotchHoverInteraction.shouldScheduleOpen(openOnHover: false))
+        XCTAssertTrue(NotchHoverInteraction.shouldScheduleOpen(openOnHover: true))
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .expanded, event: .mouseEntered), .expanded)
     }
 
     func testMouseLeaveCloseDelayRemainsUnchanged() {
         XCTAssertEqual(NotchHoverInteraction.collapseDelay, 0.5, accuracy: 0.001)
+    }
+
+    func testNotchOutlineIsFaintAndOnePixelWide() {
+        XCTAssertEqual(NotchVisualStyle.outlineWidth, 1, accuracy: 0.001)
+        XCTAssertGreaterThan(NotchVisualStyle.outlineOpacity, 0)
+        XCTAssertLessThanOrEqual(NotchVisualStyle.outlineOpacity, 0.15)
     }
 
     func testWidthScaleSliderUsesOnePercentSteps() {

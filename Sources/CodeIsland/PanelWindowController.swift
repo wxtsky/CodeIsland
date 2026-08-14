@@ -670,6 +670,9 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         return false
     }
 
+    /// Current screen-space bounds used by the notch-only gesture monitor.
+    var gesturePanelFrame: NSRect? { panel?.frame }
+
     /// Fast check: is the terminal running the active session the foreground app?
     /// Main-thread safe — no AppleScript or subprocess calls.
     func isActiveTerminalForeground() -> Bool {

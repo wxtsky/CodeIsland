@@ -15,7 +15,6 @@ enum NotchHoverEvent {
     case mouseExited
     case expandDelayElapsed
     case collapseDelayElapsed
-    case hoverDisabled
 }
 
 enum NotchHoverInteraction {
@@ -28,7 +27,7 @@ enum NotchHoverInteraction {
         switch (phase, event) {
         case (.collapsed, .mouseEntered):
             return .prehover
-        case (.prehover, .mouseExited), (.prehover, .hoverDisabled):
+        case (.prehover, .mouseExited):
             return .collapsed
         case (.prehover, .expandDelayElapsed):
             return .expanded
@@ -38,16 +37,25 @@ enum NotchHoverInteraction {
             return phase
         }
     }
+
+    static func shouldScheduleOpen(openOnHover: Bool) -> Bool {
+        openOnHover
+    }
 }
 
-enum NotchGestureAction: Equatable {
+enum NotchVisualStyle {
+    static let outlineWidth: CGFloat = 1
+    static let outlineOpacity = 0.12
+}
+
+enum NotchGestureAction: Equatable, Sendable {
     case open
     case close
     case navigatePrevious
     case navigateNext
 }
 
-struct NotchScrollSample {
+struct NotchScrollSample: Sendable {
     let physicalDeltaX: CGFloat
     let physicalDeltaY: CGFloat
     let began: Bool
@@ -101,6 +109,29 @@ struct NotchScrollSample {
             momentum: !event.momentumPhase.isEmpty,
             precise: event.hasPreciseScrollingDeltas
         )
+    }
+}
+
+struct NotchGestureHitbox {
+    /// Include the exact screen edge and tolerate sub-pixel coordinate rounding
+    /// when macOS reports a pointer hidden behind the physical camera notch.
+    static let topEdgeExtension: CGFloat = 2
+
+    private let minX: CGFloat
+    private let maxX: CGFloat
+    private let minY: CGFloat
+    private let maxY: CGFloat
+
+    init(panelFrame: NSRect, headerWidth: CGFloat, headerHeight: CGFloat) {
+        let width = Swift.min(Swift.max(headerWidth, 0), panelFrame.width)
+        minX = panelFrame.midX - width / 2
+        maxX = panelFrame.midX + width / 2
+        minY = panelFrame.maxY - Swift.max(headerHeight, 0)
+        maxY = panelFrame.maxY + Self.topEdgeExtension
+    }
+
+    func contains(_ point: NSPoint) -> Bool {
+        point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY
     }
 }
 
@@ -209,34 +240,89 @@ final class NotchGestureMonitor {
         }
     }
 
-    private var monitor: Any?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
     private var interpreter = NotchGestureInterpreter()
+    private var panelFrameProvider: (() -> NSRect?)?
+    private var onAction: ((NotchGestureAction) -> Void)?
+    private var headerWidth: CGFloat = 0
+    private var headerHeight: CGFloat = 0
 
-    func start(onAction: @escaping (NotchGestureAction) -> Void) {
-        guard monitor == nil else { return }
+    func updateRegion(headerWidth: CGFloat, headerHeight: CGFloat) {
+        self.headerWidth = headerWidth
+        self.headerHeight = headerHeight
+    }
 
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+    func start(
+        panelFrameProvider: @escaping () -> NSRect?,
+        onAction: @escaping (NotchGestureAction) -> Void
+    ) {
+        guard localMonitor == nil, globalMonitor == nil else { return }
+        self.panelFrameProvider = panelFrameProvider
+        self.onAction = onAction
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, self.isEnabled else { return event }
-            guard let action = self.interpreter.consume(NotchScrollSample(event: event)) else {
+            guard self.isWithinRegion(NSEvent.mouseLocation) else {
+                self.interpreter.reset()
                 return event
             }
+            guard let action = self.interpreter.consume(NotchScrollSample(event: event)) else { return event }
 
             onAction(action)
             return nil
         }
+
+        // A nonactivating panel does not receive scroll events when macOS routes
+        // them to the app underneath the physical notch. Global observation fills
+        // that gap; local events remain consumable and are not duplicated here.
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let sample = NotchScrollSample(event: event)
+            let location = NSEvent.mouseLocation
+            Task { @MainActor [weak self] in
+                self?.consumeGlobal(sample, at: location)
+            }
+        }
     }
 
     func stop() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
         }
-        monitor = nil
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+        }
+        localMonitor = nil
+        globalMonitor = nil
+        panelFrameProvider = nil
+        onAction = nil
         interpreter.reset()
     }
 
+    private func consumeGlobal(_ sample: NotchScrollSample, at location: NSPoint) {
+        guard isEnabled, isWithinRegion(location) else {
+            interpreter.reset()
+            return
+        }
+        guard let action = interpreter.consume(sample) else { return }
+        onAction?(action)
+    }
+
+    private func isWithinRegion(_ location: NSPoint) -> Bool {
+        guard let panelFrame = panelFrameProvider?() else { return false }
+        return NotchGestureHitbox(
+            panelFrame: panelFrame,
+            headerWidth: headerWidth,
+            headerHeight: headerHeight
+        ).contains(location)
+    }
+
     deinit {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+        }
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
         }
     }
 }

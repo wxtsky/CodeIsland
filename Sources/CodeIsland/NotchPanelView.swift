@@ -187,9 +187,6 @@ struct NotchPanelView: View {
                     }
                     .frame(height: notchHeight)
                     .contentShape(Rectangle())
-                    .onHover { hovering in
-                        gestureMonitor.isEnabled = hovering
-                    }
                     .onTapGesture {
                         openSessionList()
                     }
@@ -290,6 +287,18 @@ struct NotchPanelView: View {
                 )
                 .fill(.black)
             )
+            .overlay(
+                NotchPanelShape(
+                    topExtension: shouldShowExpanded ? 14 : 3,
+                    bottomRadius: shouldShowExpanded ? 24 : 12,
+                    minHeight: notchHeight
+                )
+                .stroke(
+                    Color.white.opacity(NotchVisualStyle.outlineOpacity),
+                    lineWidth: NotchVisualStyle.outlineWidth
+                )
+                .allowsHitTesting(false)
+            )
             .offset(y: curtainOffset)
             .opacity(curtainOpacity)
             .onChange(of: showToolStatus) { _, newValue in
@@ -312,7 +321,11 @@ struct NotchPanelView: View {
             }
             .onAppear {
                 displayedToolStatus = showToolStatus
-                gestureMonitor.start { action in
+                gestureMonitor.updateRegion(headerWidth: panelWidth, headerHeight: notchHeight)
+                gestureMonitor.isEnabled = showBar
+                gestureMonitor.start(panelFrameProvider: {
+                    (NSApp.delegate as? AppDelegate)?.panelController?.gesturePanelFrame
+                }) { action in
                     handleGestureAction(action)
                 }
             }
@@ -363,14 +376,16 @@ struct NotchPanelView: View {
 
                 isHovered = hovering
                 if hovering {
-                    guard openOnHover else {
-                        hoverTimer?.invalidate()
-                        hoverTimer = nil
-                        withAnimation(NotchAnimation.hoverPrehover) {
-                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .hoverDisabled)
-                        }
-                        return
+                    hoverTimer?.invalidate()
+                    hoverTimer = nil
+
+                    // Always acknowledge the pointer with the subtle prehover,
+                    // even when passive hover-to-open is disabled.
+                    withAnimation(NotchAnimation.hoverPrehover) {
+                        hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
                     }
+
+                    guard NotchHoverInteraction.shouldScheduleOpen(openOnHover: openOnHover) else { return }
 
                     // Smart suppress applies only to passive hover opening. Click and
                     // trackpad gestures are intentional and bypass this check.
@@ -381,13 +396,7 @@ struct NotchPanelView: View {
                         return
                     }
 
-                    // Immediate lightweight acknowledgement; a quick pass-through
-                    // only ever plays this first stage and reverses.
-                    withAnimation(NotchAnimation.hoverPrehover) {
-                        hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
-                    }
                     // Delay full expansion to avoid accidental triggers
-                    hoverTimer?.invalidate()
                     hoverTimer = Timer.scheduledTimer(withTimeInterval: HoverOpenDelay.clamped(hoverOpenDelay), repeats: false) { _ in
                         Task { @MainActor in
                             // Guard: mouse may have left during the delay
@@ -442,13 +451,12 @@ struct NotchPanelView: View {
                 guard !enabled else { return }
                 hoverTimer?.invalidate()
                 hoverTimer = nil
-                withAnimation(NotchAnimation.hoverPrehover) {
-                    hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .hoverDisabled)
-                }
             }
             .onChange(of: showBar) { _, visible in
-                guard !visible else { return }
-                gestureMonitor.isEnabled = false
+                gestureMonitor.isEnabled = visible
+            }
+            .onChange(of: panelWidth) { _, width in
+                gestureMonitor.updateRegion(headerWidth: width, headerHeight: notchHeight)
             }
 
             Spacer()

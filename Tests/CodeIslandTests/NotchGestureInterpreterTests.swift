@@ -73,3 +73,38 @@ final class NotchGestureInterpreterTests: XCTestCase {
         )
     }
 }
+
+final class NotchGestureHitboxTests: XCTestCase {
+    private let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+
+    func testIncludesExactScreenTopAndPhysicalNotchBand() {
+        let hitbox = NotchGestureHitbox(
+            panelFrame: panelFrame,
+            headerWidth: 240,
+            headerHeight: 38
+        )
+
+        XCTAssertTrue(hitbox.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY)))
+        XCTAssertTrue(hitbox.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY - 20)))
+    }
+
+    func testRemainsRestrictedToCenteredNotchHeader() {
+        let hitbox = NotchGestureHitbox(
+            panelFrame: panelFrame,
+            headerWidth: 240,
+            headerHeight: 38
+        )
+
+        XCTAssertFalse(hitbox.contains(NSPoint(x: panelFrame.minX + 1, y: panelFrame.maxY - 20)))
+        XCTAssertFalse(hitbox.contains(NSPoint(x: panelFrame.midX, y: panelFrame.maxY - 60)))
+    }
+
+    func testExpandedHeaderWidthExpandsGestureRegion() {
+        let collapsed = NotchGestureHitbox(panelFrame: panelFrame, headerWidth: 240, headerHeight: 38)
+        let expanded = NotchGestureHitbox(panelFrame: panelFrame, headerWidth: 520, headerHeight: 38)
+        let point = NSPoint(x: panelFrame.midX + 220, y: panelFrame.maxY - 20)
+
+        XCTAssertFalse(collapsed.contains(point))
+        XCTAssertTrue(expanded.contains(point))
+    }
+}
