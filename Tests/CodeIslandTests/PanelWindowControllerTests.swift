@@ -3,6 +3,17 @@ import XCTest
 @testable import CodeIsland
 
 final class PanelWindowControllerTests: XCTestCase {
+    func testPanelFollowsSpaceTransitionsWhileRemainingAvailableOnEverySpace() {
+        let behavior = PanelWindowBehavior.collectionBehavior
+
+        XCTAssertTrue(behavior.contains(.canJoinAllSpaces))
+        XCTAssertTrue(behavior.contains(.canJoinAllApplications))
+        XCTAssertTrue(behavior.contains(.managed))
+        XCTAssertTrue(behavior.contains(.fullScreenAuxiliary))
+        XCTAssertTrue(behavior.contains(.ignoresCycle))
+        XCTAssertFalse(behavior.contains(.stationary))
+    }
+
     func testScreenHopMotionUsesMoreVisibleTiming() {
         let motion = PanelWindowController.screenHopMotion()
 

@@ -235,7 +235,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.collectionBehavior = PanelWindowBehavior.collectionBehavior
         panel.sharingType = .readOnly
         panel.contentView = contentView
         panel.delegate = self
