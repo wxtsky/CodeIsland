@@ -606,6 +606,19 @@ struct ConfigInstaller {
             format: .none,
             events: []
         ),
+        // DSH (DeepSeek Harness) — cordis plugin runtime ("everything is a
+        // plugin"). No shell hooks: the dsh-island plugin
+        // (github:cdxiaodong/dsh-island) listens to DSH's built-in events and
+        // forwards them over the CodeIsland socket directly. CodeIsland only
+        // needs the source name so DSH events render as their own session card.
+        CLIConfig(
+            name: "DeepSeek Harness",
+            source: "dsh",
+            configPath: ".dsh",
+            configKey: "",
+            format: .none,
+            events: []
+        ),
         // ZCode (Z.ai) — Electron desktop app, NOT a Claude Code fork. Reads
         // hooks from ~/.zcode/cli/config.json (strict event whitelist, no
         // hot-reload — see `.zcode` HookFormat doc for details) (#245).
@@ -935,7 +948,7 @@ struct ConfigInstaller {
                 if !installHermesHooks(fm: fm) { ok = false }
             } else if cli.format == .zcode {
                 if !installZcodeHooks(fm: fm) { ok = false }
-            } else if cli.source == "pi" || cli.source == "omp" || cli.source == "openclaw" {
+            } else if cli.source == "pi" || cli.source == "omp" || cli.source == "openclaw" || cli.source == "dsh" {
                 continue
             } else {
                 if !installExternalHooks(cli: cli, fm: fm) { ok = false }
@@ -992,6 +1005,8 @@ struct ConfigInstaller {
                 uninstallOmpExtension(fm: fm)
             } else if cli.source == "openclaw" {
                 uninstallOpenclawPlugin(fm: fm)
+            } else if cli.source == "dsh" {
+                // DSH is bridged via the dsh-island plugin; no shell hooks to remove.
             } else {
                 uninstallHooks(cli: cli, fm: fm)
             }
@@ -1013,6 +1028,7 @@ struct ConfigInstaller {
         if source == "pi" { return isPiExtensionInstalled(fm: FileManager.default) }
         if source == "omp" { return isOmpExtensionInstalled(fm: FileManager.default) }
         if source == "openclaw" { return isOpenclawPluginInstalled(fm: FileManager.default) }
+        if source == "dsh" { return isDshInstalled() }
         if source == "traecli" { return isTraecliHooksInstalled(fm: FileManager.default) }
         if source == "hermes" { return isHermesHooksInstalled(fm: FileManager.default) }
         if source == "zcode" { return isZcodeHooksInstalled(fm: FileManager.default) }
@@ -1030,6 +1046,13 @@ struct ConfigInstaller {
         if source == "pi" { return FileManager.default.fileExists(atPath: piAgentDir) }
         if source == "omp" { return FileManager.default.fileExists(atPath: ompAgentDir) }
         if source == "openclaw" { return FileManager.default.fileExists(atPath: openclawDir) }
+        if source == "dsh" {
+            // DSH harness home defaults to ~/.dsh (override with $DSH_HOME).
+            if let home = ProcessInfo.processInfo.environment["DSH_HOME"], !home.isEmpty {
+                return FileManager.default.fileExists(atPath: home)
+            }
+            return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.dsh")
+        }
         if source == "grok" { return FileManager.default.fileExists(atPath: grokHome()) }
         if source == "copilot" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.copilot") }
         if source == "cline" {
@@ -1051,6 +1074,17 @@ struct ConfigInstaller {
         if source == "kimi" { return kimiPresenceDetected() }
         guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
         return FileManager.default.fileExists(atPath: cli.dirPath)
+    }
+
+    /// DSH (DeepSeek Harness) is bridged via the dsh-island plugin
+    /// (`dsh plugin add github:cdxiaodong/dsh-island`). CodeIsland cannot
+    /// introspect the cordis plugin store, so "installed" means the harness is
+    /// present on this machine — its plugin wiring is the user's responsibility.
+    static func isDshInstalled() -> Bool {
+        if let home = ProcessInfo.processInfo.environment["DSH_HOME"], !home.isEmpty {
+            return FileManager.default.fileExists(atPath: home)
+        }
+        return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.dsh")
     }
 
     // Keep backward compat

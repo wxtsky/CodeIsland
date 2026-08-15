@@ -26,7 +26,7 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 ## 功能特性
 
 - **刘海原生 UI** — 从 MacBook 刘海处展开，空闲时自动收起
-- **支持 14 种 AI 工具** — Claude Code、Codex、Grok CLI、Gemini CLI、Cursor、Copilot、Trae/Traecli、Qoder、Factory、CodeBuddy、OpenCode、Kimi Code CLI、Cline、Pi / Oh My Pi
+- **支持 15 种 AI 工具** — Claude Code、Codex、Grok CLI、Gemini CLI、Cursor、Copilot、Trae/Traecli、Qoder、Factory、CodeBuddy、OpenCode、Kimi Code CLI、Cline、Pi / Oh My Pi、DeepSeek Harness
 - **实时状态追踪** — 查看活跃会话、工具调用和 AI 回复
 - **权限管理** — 直接在面板上审批/拒绝工具权限请求
 - **问题回答** — 无需离开当前应用即可回答 Agent 的问题
@@ -57,6 +57,7 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 | <img src="docs/images/mascots/opencode.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/opencode.png" width="16"> OpenCode | All | APP/终端 | 完整 |
 | <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | 完整 |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/pi.png" width="16"> Pi / Oh My Pi | 8 | 终端 | 完整 |
+| | <img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="16"> DeepSeek Harness | 9 | 终端 | 完整 |
 
 ## 安装
 
@@ -117,6 +118,14 @@ AI 工具 (Claude/Codex/Gemini/Cursor/...)
 CodeIsland 在每个 AI 工具的配置中安装轻量级 hooks。当工具触发事件（会话开始、工具调用、权限请求等）时，hook 通过 Unix socket 发送 JSON 消息。CodeIsland 监听此 socket 并即时更新刘海面板。
 
 **OpenCode** 使用 JS 插件直接连接 socket，无需 bridge 二进制。
+
+**DeepSeek Harness（DSH）** 通过 [dsh-island](https://github.com/cdxiaodong/dsh-island) cordis 插件接入：插件监听 DSH 内置事件（`session/created`、`tools/pre-execute`、`approval/request` 等），把同样的 JSON 写入 Unix socket。在 DSH 内安装：
+
+```bash
+dsh plugin --profile <profile> add github:cdxiaodong/dsh-island
+```
+
+DSH 是插件原生运行时，因此无需安装任何 hook 配置 —— CodeIsland 只需识别 `dsh` source 即可渲染它的会话卡片。
 
 ## 设置
 

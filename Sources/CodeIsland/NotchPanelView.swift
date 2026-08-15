@@ -2918,6 +2918,7 @@ private let cliIconFiles: [String: String] = [
     "omp": "pi",
     "opencode": "opencode",
     "cline": "cline",
+    "dsh": "dsh",
     // Rendered from the in-house pixel mascots via
     // MascotRenderHarness/testRenderCliIcons (MASCOT_ICON_DIR=…).
     "kiro": "kiro",

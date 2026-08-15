@@ -26,7 +26,7 @@ It connects to **14 AI coding tools** via Unix socket IPC, displaying session st
 ## Features
 
 - **Notch-native UI** — Expands from the MacBook notch, collapses when idle
-- **14 AI tools supported** — Claude Code, Codex, Grok CLI, Gemini CLI, Cursor, Copilot, Trae/Traecli, Qoder, Factory, CodeBuddy, OpenCode, Kimi Code CLI, Cline, Pi / Oh My Pi
+- **15 AI tools supported** — Claude Code, Codex, Grok CLI, Gemini CLI, Cursor, Copilot, Trae/Traecli, Qoder, Factory, CodeBuddy, OpenCode, Kimi Code CLI, Cline, Pi / Oh My Pi, DeepSeek Harness
 - **Live status tracking** — See active sessions, tool calls, and AI responses in real time
 - **Permission management** — Approve/deny tool permissions directly from the panel
 - **Question answering** — Respond to agent questions without leaving your current app
@@ -57,6 +57,7 @@ It connects to **14 AI coding tools** via Unix socket IPC, displaying session st
 | <img src="docs/images/mascots/opencode.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/opencode.png" width="16"> OpenCode | All | APP/Terminal | Full |
 | <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | Full |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/pi.png" width="16"> Pi / Oh My Pi | 8 | Terminal | Full |
+| | <img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="16"> DeepSeek Harness | 9 | Terminal | Full |
 
 ## Installation
 
@@ -117,6 +118,14 @@ AI Tool (Claude/Codex/Gemini/Cursor/...)
 CodeIsland installs lightweight hooks into each AI tool's config. When the tool triggers an event (session start, tool call, permission request, etc.), the hook sends a JSON message through a Unix socket. CodeIsland listens on this socket and updates the notch panel instantly.
 
 For **OpenCode**, a JS plugin connects directly to the socket — no bridge binary needed.
+
+For **DeepSeek Harness (DSH)**, the [dsh-island](https://github.com/cdxiaodong/dsh-island) cordis plugin listens to DSH's built-in events (`session/created`, `tools/pre-execute`, `approval/request`, …) and writes the same JSON over the Unix socket. Install it inside DSH:
+
+```bash
+dsh plugin --profile <profile> add github:cdxiaodong/dsh-island
+```
+
+DSH is plugin-native, so no hook configuration is installed — CodeIsland only needs to know the `dsh` source name to render its session card.
 
 ## Settings
 

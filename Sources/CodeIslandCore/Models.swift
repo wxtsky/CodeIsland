@@ -15,6 +15,10 @@ public enum CLIProcessResolver {
             return lowercasedPath.hasSuffix("/codex") || lowercasedPath.contains("/codex ")
         case "claude":
             return lowercasedPath.hasSuffix("/claude") || lowercasedPath.contains("/claude ")
+        case "dsh":
+            // DeepSeek Harness CLI ships a `dsh` binary. It has no shell hooks —
+            // the dsh-island plugin forwards events over the socket directly.
+            return lowercasedPath.hasSuffix("/dsh") || lowercasedPath.contains("/dsh ")
         case "qwen":
             return lowercasedPath.hasSuffix("/qwen")
                 || lowercasedPath.hasSuffix("/qwen-code")

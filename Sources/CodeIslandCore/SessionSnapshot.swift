@@ -38,6 +38,7 @@ public struct SessionSnapshot: Sendable {
         "pi",
         "kiro",
         "cline",
+        "dsh",
         "zcode",
     ]
 
