@@ -2068,19 +2068,10 @@ final class AppState {
         refreshDerivedState()
     }
 
-<<<<<<< HEAD
     func answerQuestionMulti(
         _ answers: [(question: String, answer: String)],
         expectedSessionId: String? = nil
     ) {
-        guard let index = questionIndex(expecting: expectedSessionId) else {
-            if let expectedSessionId {
-                discardStalePanelAction(expected: expectedSessionId, kind: "answer")
-            }
-            return
-        }
-=======
-    func answerQuestionMulti(_ answers: [(question: String, answer: String)]) {
         answerQuestionMulti(
             answers.map {
                 AskUserQuestionAnswer(
@@ -2089,13 +2080,21 @@ final class AppState {
                     selectedOptions: [],
                     customInput: nil
                 )
-            }
+            },
+            expectedSessionId: expectedSessionId
         )
     }
 
-    func answerQuestionMulti(_ answers: [AskUserQuestionAnswer]) {
-        guard !questionQueue.isEmpty else { return }
->>>>>>> bca1665 (fix(omp): race native Ask UI with CodeIsland answering)
+    func answerQuestionMulti(
+        _ answers: [AskUserQuestionAnswer],
+        expectedSessionId: String? = nil
+    ) {
+        guard let index = questionIndex(expecting: expectedSessionId) else {
+            if let expectedSessionId {
+                discardStalePanelAction(expected: expectedSessionId, kind: "answer")
+            }
+            return
+        }
         // Codex app-server questions reply over the JSON-RPC client, not a hook.
         if questionQueue[index].isCodexAppServer {
             let pending = questionQueue.remove(at: index)

@@ -2886,11 +2886,10 @@ struct ConfigInstaller {
     /// Current pi extension version — bump when codeisland-pi.ts changes.
     private static let piExtensionVersion = "v3"
 
-    /// Current OMP extension version — keep independent of pi (OMP reuses the
-    /// "CodeIsland pi extension" banner but ships its own resource file).
-    private static let ompExtensionVersion = "v2"
-
     /// Current omp extension version — bump when codeisland-omp.ts changes.
+    /// Kept independent of pi (OMP reuses the "CodeIsland pi extension" banner
+    /// but ships its own resource file), so a pi-only bump does not false-flag
+    /// healthy OMP installs as needing repair.
     private static let ompExtensionVersion = "v6"
 
     private static func piExtensionSource() -> String? {
@@ -2976,11 +2975,8 @@ struct ConfigInstaller {
               let data = fm.contents(atPath: ompExtensionPath),
               let content = String(data: data, encoding: .utf8)
         else { return false }
-<<<<<<< HEAD
         // OMP ships a separate resource; do not share piExtensionVersion or a
         // pi-only bump would force a false "needs repair" for healthy OMP installs.
-=======
->>>>>>> bca1665 (fix(omp): race native Ask UI with CodeIsland answering)
         return content.contains("CodeIsland pi extension")
             && content.contains("// version: \(ompExtensionVersion)")
     }
