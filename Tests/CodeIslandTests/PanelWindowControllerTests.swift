@@ -13,15 +13,20 @@ final class PanelWindowControllerTests: XCTestCase {
         XCTAssertFalse(PanelSpaceTransitionPolicy.settledFullscreenLatch(isFullscreen: false))
     }
 
-    func testPanelFollowsSpaceTransitionsWhileRemainingAvailableOnEverySpace() {
+    /// `.managed` tells Spaces the window belongs to exactly one Space and should be
+    /// reassigned as the user switches — the opposite membership model from
+    /// `.canJoinAllSpaces`. Combining them is what produced the drop-out/reappear
+    /// glitch during a Space swipe: `.stationary` (pinned like the menu bar, no
+    /// transition participation) is the correct pairing with `.canJoinAllSpaces`.
+    func testPanelStaysPinnedAcrossSpaceTransitionsInsteadOfBeingSpaceManaged() {
         let behavior = PanelWindowBehavior.collectionBehavior
 
         XCTAssertTrue(behavior.contains(.canJoinAllSpaces))
-        XCTAssertTrue(behavior.contains(.canJoinAllApplications))
-        XCTAssertTrue(behavior.contains(.managed))
+        XCTAssertTrue(behavior.contains(.stationary))
         XCTAssertTrue(behavior.contains(.fullScreenAuxiliary))
         XCTAssertTrue(behavior.contains(.ignoresCycle))
-        XCTAssertFalse(behavior.contains(.stationary))
+        XCTAssertFalse(behavior.contains(.managed))
+        XCTAssertFalse(behavior.contains(.canJoinAllApplications))
     }
 
     func testScreenHopMotionUsesMoreVisibleTiming() {

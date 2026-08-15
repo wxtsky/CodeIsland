@@ -115,6 +115,7 @@ private struct GesturesPage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
     @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
+    @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
     @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
@@ -123,6 +124,13 @@ private struct GesturesPage: View {
         Binding(
             get: { HoverOpenDelay.clamped(hoverOpenDelay) },
             set: { hoverOpenDelay = HoverOpenDelay.clamped($0) }
+        )
+    }
+
+    private var animationSpeedBinding: Binding<Double> {
+        Binding(
+            get: { NotchAnimationSpeed.clamped(notchAnimationSpeed) },
+            set: { notchAnimationSpeed = NotchAnimationSpeed.clamped($0) }
         )
     }
 
@@ -172,6 +180,27 @@ private struct GesturesPage: View {
                         .padding(.leading, 84)
                     }
                 }
+
+                // Outside the openOnHover branch on purpose: this governs the
+                // close animation too, which runs whether or not hover-to-open
+                // is the thing that opened the island.
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(l10n["notch_animation_speed"])
+                        Spacer()
+                        Text(String(format: "%.1f×", animationSpeedBinding.wrappedValue))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Slider(
+                        value: animationSpeedBinding,
+                        in: NotchAnimationSpeed.minimum...NotchAnimationSpeed.maximum,
+                        step: NotchAnimationSpeed.step
+                    )
+                    Text(l10n["notch_animation_speed_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Section(l10n["gesture_reference"]) {
@@ -193,6 +222,7 @@ private struct GesturesPage: View {
         .formStyle(.grouped)
         .onAppear {
             hoverOpenDelay = HoverOpenDelay.clamped(hoverOpenDelay)
+            notchAnimationSpeed = NotchAnimationSpeed.clamped(notchAnimationSpeed)
         }
     }
 }
@@ -482,6 +512,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
+    @AppStorage(SettingsKey.collapseOnSpaceSwipe) private var collapseOnSpaceSwipe = SettingsDefaults.collapseOnSpaceSwipe
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
     @AppStorage(SettingsKey.autoExpandOnPermission) private var autoExpandOnPermission = SettingsDefaults.autoExpandOnPermission
     // Seeded through the migration shim so a legacy autoExpandOnCompletion=false
@@ -552,6 +583,14 @@ private struct BehaviorPage: View {
                     title: l10n["collapse_on_mouse_leave"],
                     desc: l10n["collapse_on_mouse_leave_desc"],
                     isOn: $collapseOnMouseLeave,
+                    animation: .collapseMouseLeave
+                )
+                BehaviorToggleRow(
+                    title: l10n["collapse_on_space_swipe"],
+                    desc: l10n["collapse_on_space_swipe_desc"],
+                    isOn: $collapseOnSpaceSwipe,
+                    // Shares the collapse animation: the outcome it illustrates
+                    // — expanded panel shrinking back to the notch — is the same.
                     animation: .collapseMouseLeave
                 )
                 BehaviorToggleRow(
@@ -953,6 +992,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.showContrastEdge) private var showContrastEdge = SettingsDefaults.showContrastEdge
+    @AppStorage(SettingsKey.tintContrastEdgeWithMascot) private var tintContrastEdgeWithMascot = SettingsDefaults.tintContrastEdgeWithMascot
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1025,6 +1065,13 @@ private struct AppearancePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["tint_contrast_edge_mascot"], isOn: $tintContrastEdgeWithMascot)
+                    Text(l10n["tint_contrast_edge_mascot_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                .disabled(!showContrastEdge)
             }
 
             Section(l10n["content"]) {
@@ -1158,33 +1205,35 @@ private struct MascotsPage: View {
     @AppStorage(SettingsKey.mascotSpeed) private var mascotSpeed = SettingsDefaults.mascotSpeed
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
-    private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
-        ("Clawd", "claude", "Claude Code", Color(red: 0.871, green: 0.533, blue: 0.427)),
-        ("Dex", "codex", "Codex (OpenAI)", Color(red: 0.92, green: 0.92, blue: 0.93)),
-        ("Grok", "grok", "Grok CLI", Color.white),
-        ("Gemini", "gemini", "Gemini CLI", Color(red: 0.278, green: 0.588, blue: 0.894)),
-        ("CursorBot", "cursor", "Cursor", Color(red: 0.96, green: 0.31, blue: 0.0)),
-        ("TraeBot", "trae", "Trae", Color(red: 0.96, green: 0.31, blue: 0.0)),
-        ("TraeCNBot", "traecn", "Trae CN", Color(red: 0.96, green: 0.31, blue: 0.0)),
-        ("CopilotBot", "copilot", "GitHub Copilot", Color(red: 0.35, green: 0.75, blue: 0.95)),
-        ("QoderBot", "qoder", "Qoder", Color(red: 0.165, green: 0.859, blue: 0.361)),
-        ("QoderBot", "qoderwork", "QoderWork", Color(red: 0.165, green: 0.859, blue: 0.361)),
-        ("Droid", "droid", "Factory", Color(red: 0.835, green: 0.416, blue: 0.149)),
-        ("Buddy", "codebuddy", "CodeBuddy", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("BuddyCN", "codybuddycn", "CodyBuddyCN", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("StepFun", "stepfun", "StepFun", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("AntiGravity", "antigravity", "AntiGravity", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("WorkBuddy", "workbuddy", "WorkBuddy", Color(red: 0.475, green: 0.380, blue: 0.870)),
-        ("Hermes", "hermes", "Hermes", Color(red: 0.424, green: 0.302, blue: 1.0)),
-        ("Molty", "openclaw", "OpenClaw", Color(red: 0.93, green: 0.36, blue: 0.24)),
-        ("QwenBot", "qwen", "Qwen Code", Color(red: 0.486, green: 0.228, blue: 0.929)),
-        ("KimiBot", "kimi", "Kimi Code CLI", Color(red: 0.29, green: 0.56, blue: 1.0)),
-        ("Kiro", "kiro", "Kiro", Color(red: 0.62, green: 0.45, blue: 1.0)),
-        ("Pi", "pi", "Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
-        ("Oh My Pi", "omp", "Oh My Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
-        ("OpBot", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),
-        ("ClineBot", "cline", "Cline", Color(red: 0.00, green: 0.70, blue: 0.49)),
-        ("Gemini", "google-antigravity", "Google Antigravity", Color(red: 0.278, green: 0.588, blue: 0.894)),
+    /// Colors come from `MascotPalette` so the swatches here and the island's
+    /// contrast-edge tint can never drift apart.
+    private let mascotList: [(name: String, source: String, desc: String)] = [
+        ("Clawd", "claude", "Claude Code"),
+        ("Dex", "codex", "Codex (OpenAI)"),
+        ("Grok", "grok", "Grok CLI"),
+        ("Gemini", "gemini", "Gemini CLI"),
+        ("CursorBot", "cursor", "Cursor"),
+        ("TraeBot", "trae", "Trae"),
+        ("TraeCNBot", "traecn", "Trae CN"),
+        ("CopilotBot", "copilot", "GitHub Copilot"),
+        ("QoderBot", "qoder", "Qoder"),
+        ("QoderBot", "qoderwork", "QoderWork"),
+        ("Droid", "droid", "Factory"),
+        ("Buddy", "codebuddy", "CodeBuddy"),
+        ("BuddyCN", "codybuddycn", "CodyBuddyCN"),
+        ("StepFun", "stepfun", "StepFun"),
+        ("AntiGravity", "antigravity", "AntiGravity"),
+        ("WorkBuddy", "workbuddy", "WorkBuddy"),
+        ("Hermes", "hermes", "Hermes"),
+        ("Molty", "openclaw", "OpenClaw"),
+        ("QwenBot", "qwen", "Qwen Code"),
+        ("KimiBot", "kimi", "Kimi Code CLI"),
+        ("Kiro", "kiro", "Kiro"),
+        ("Pi", "pi", "Pi"),
+        ("Oh My Pi", "omp", "Oh My Pi"),
+        ("OpBot", "opencode", "OpenCode"),
+        ("ClineBot", "cline", "Cline"),
+        ("Gemini", "google-antigravity", "Google Antigravity"),
     ]
 
     var body: some View {
@@ -1230,7 +1279,7 @@ private struct MascotsPage: View {
                         name: mascot.name,
                         source: mascot.source,
                         desc: mascot.desc,
-                        color: mascot.color,
+                        color: MascotPalette.color(for: mascot.source),
                         status: previewStatus
                     )
                 }

@@ -2,8 +2,10 @@ import XCTest
 @testable import CodeIsland
 
 final class NotchGestureSettingsTests: XCTestCase {
-    func testHoverSettingsPreserveExistingDefaults() {
-        XCTAssertTrue(SettingsDefaults.openOnHover)
+    func testHoverSettingsShipWithIntendedDefaults() {
+        // Hover-to-open is opt-in: brushing the notch on the way to the menu
+        // bar shouldn't expand the island.
+        XCTAssertFalse(SettingsDefaults.openOnHover)
         XCTAssertEqual(SettingsDefaults.hoverOpenDelay, 0.5, accuracy: 0.001)
         XCTAssertFalse(SettingsDefaults.invertHorizontalSwipeDirection)
         XCTAssertTrue(SettingsDefaults.showContrastEdge)

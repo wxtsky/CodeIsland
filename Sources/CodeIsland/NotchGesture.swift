@@ -52,6 +52,11 @@ enum NotchVisualStyle {
     static let contrastEdgeSideLocation = 0.72
     static let contrastEdgeBlurRadius: CGFloat = 0
 
+    /// How far a mascot's signature color is lifted toward white before it is
+    /// used to tint the edge. High enough that saturated brand colors read as a
+    /// pale wash at these opacities rather than as a colored outline.
+    static let contrastEdgeTintWhiteMix = 0.62
+
     static func showsContrastEdge(hasNotch _: Bool, phase _: NotchHoverPhase) -> Bool {
         true
     }
@@ -64,6 +69,10 @@ enum NotchVisualStyle {
 struct NotchPanelInteractionContext {
     let panelFrame: () -> NSRect?
     let isActiveTerminalForeground: () -> Bool
+    /// The island's rendered bounds in screen coordinates, reported as SwiftUI
+    /// lays them out. The controller needs the same geometry the in-view
+    /// gesture monitor uses, to tell whether the pointer is over the island.
+    var reportVisibleContentFrame: (_ contentFrame: NSRect, _ panelFrame: NSRect) -> Void = { _, _ in }
 }
 
 enum NotchGestureAction: Equatable, Sendable {

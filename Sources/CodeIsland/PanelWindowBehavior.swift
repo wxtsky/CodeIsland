@@ -12,12 +12,15 @@ enum PanelSpaceTransitionPolicy {
 }
 
 enum PanelWindowBehavior {
-    /// Join every Space while participating in the system's desktop transition,
-    /// so the island travels with the screen instead of dropping out mid-swipe.
+    /// `.canJoinAllSpaces` and `.managed` are contradictory membership models —
+    /// `.managed` tells Spaces the window belongs to one Space at a time and should
+    /// be reassigned as the user switches, which is what caused the island to drop
+    /// out and reappear mid-swipe. `.stationary` is the correct pairing: the window
+    /// stays pinned in place, like the menu bar, and never participates in the
+    /// transition animation at all.
     static let collectionBehavior: NSWindow.CollectionBehavior = [
         .canJoinAllSpaces,
-        .canJoinAllApplications,
-        .managed,
+        .stationary,
         .fullScreenAuxiliary,
         .ignoresCycle,
     ]

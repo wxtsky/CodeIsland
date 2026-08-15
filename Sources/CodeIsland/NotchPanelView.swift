@@ -126,6 +126,8 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
     @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
     @AppStorage(SettingsKey.showContrastEdge) private var showContrastEdge = SettingsDefaults.showContrastEdge
+    @AppStorage(SettingsKey.tintContrastEdgeWithMascot) private var tintContrastEdgeWithMascot = SettingsDefaults.tintContrastEdgeWithMascot
+    @AppStorage(SettingsKey.defaultSource) private var contrastEdgeDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
@@ -164,6 +166,27 @@ struct NotchPanelView: View {
 
     /// Mascot size — fits within the menu bar height
     private var mascotSize: CGFloat { min(27, notchHeight - 6) }
+
+    /// The source whose mascot the bar is showing. Mirrors the bar's own
+    /// precedence so the edge is tinted by the mascot actually on screen, and
+    /// falls back to the configured default while everything is idle.
+    private var contrastEdgeSource: String {
+        let sid = appState.rotatingSessionId
+            ?? appState.activeSessionId
+            ?? appState.sessions.keys.sorted().first
+        guard let sid, let session = appState.sessions[sid] else {
+            return contrastEdgeDefaultSource
+        }
+        return session.status == .idle ? contrastEdgeDefaultSource : session.source
+    }
+
+    /// White unless the user has opted into mascot tinting, so turning the
+    /// setting off restores the original edge exactly.
+    private var contrastEdgeColor: Color {
+        tintContrastEdgeWithMascot
+            ? MascotPalette.contrastEdgeTint(for: contrastEdgeSource)
+            : .white
+    }
 
     /// Minimum wing width needed to display compact bar content
     private var compactWingWidth: CGFloat { mascotSize + 14 }
@@ -367,6 +390,7 @@ struct NotchPanelView: View {
             .background {
                 NotchVisibleContentFrameReader { frame, panelFrame in
                     gestureMonitor.updateVisibleContentFrame(frame, relativeTo: panelFrame)
+                    interactionContext.reportVisibleContentFrame(frame, panelFrame)
                 }
                 .allowsHitTesting(false)
             }
@@ -389,19 +413,19 @@ struct NotchPanelView: View {
                     LinearGradient(
                         stops: [
                             .init(
-                                color: .white.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
                                 location: 0
                             ),
                             .init(
-                                color: .white.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
                                 location: NotchVisualStyle.contrastEdgeUpperHoldLocation
                             ),
                             .init(
-                                color: .white.opacity(NotchVisualStyle.contrastEdgeSideOpacity),
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeSideOpacity),
                                 location: NotchVisualStyle.contrastEdgeSideLocation
                             ),
                             .init(
-                                color: .white.opacity(NotchVisualStyle.contrastEdgeBottomOpacity),
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeBottomOpacity),
                                 location: 1
                             ),
                         ],
@@ -420,6 +444,7 @@ struct NotchPanelView: View {
                         ? 1
                         : 0
                 )
+                .animation(NotchAnimation.contrastEdgeTint, value: contrastEdgeColor)
                 .allowsHitTesting(false)
             )
             .offset(y: curtainOffset)
