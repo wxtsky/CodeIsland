@@ -19,10 +19,12 @@ final class NotchGestureInterpreterTests: XCTestCase {
     func testGestureEmitsOnlyOnceUntilEnded() {
         var interpreter = NotchGestureInterpreter()
 
-        XCTAssertEqual(interpreter.consume(sample(x: -30)), .navigateNext)
+        // Negative physical delta is a leftward swipe — see the direction
+        // mapping asserted in testPhysicalDirectionsMapToNaturalNotchActions.
+        XCTAssertEqual(interpreter.consume(sample(x: -30)), .navigatePrevious)
         XCTAssertNil(interpreter.consume(sample(x: -30)))
         XCTAssertNil(interpreter.consume(sample(ended: true)))
-        XCTAssertEqual(interpreter.consume(sample(x: -30, began: true)), .navigateNext)
+        XCTAssertEqual(interpreter.consume(sample(x: -30, began: true)), .navigatePrevious)
     }
 
     func testMomentumAndNonPreciseScrollAreIgnored() {
