@@ -188,6 +188,58 @@ final class NotchGestureMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.consumeObservedSample(sample(y: 25), at: location, panelFrame: panelFrame), .close)
     }
 
+    func testLiveVisibleContentFrameOverridesStaleMeasuredRegion() {
+        let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let visibleContentFrame = NSRect(x: 140, y: 580, width: 520, height: 220)
+        let location = NSPoint(x: panelFrame.midX + 220, y: panelFrame.maxY - 180)
+        let monitor = NotchGestureMonitor()
+        monitor.isEnabled = true
+        monitor.updateRegion(width: 240, height: 38)
+        monitor.updateVisibleContentFrame(visibleContentFrame, relativeTo: panelFrame)
+
+        XCTAssertNil(monitor.consumeObservedSample(sample(y: 0, began: true), at: location, panelFrame: panelFrame))
+        XCTAssertEqual(monitor.consumeObservedSample(sample(y: 25), at: location, panelFrame: panelFrame), .close)
+    }
+
+    func testPanelEventInTransparentRemainderIsRejected() {
+        let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let visibleContentFrame = NSRect(x: 140, y: 580, width: 520, height: 220)
+        let location = NSPoint(x: panelFrame.midX, y: visibleContentFrame.minY - 40)
+        let monitor = NotchGestureMonitor()
+        monitor.isEnabled = true
+        monitor.updateRegion(width: 240, height: 38)
+        monitor.updateVisibleContentFrame(visibleContentFrame, relativeTo: panelFrame)
+
+        XCTAssertNil(monitor.consumeObservedSample(sample(y: 25, began: true), at: location, panelFrame: panelFrame))
+    }
+
+    func testLiveVisibleContentFrameTracksPanelMovement() {
+        let panelFrame = NSRect(x: 100, y: 300, width: 600, height: 500)
+        let visibleContentFrame = NSRect(x: 140, y: 580, width: 520, height: 220)
+        let movedPanelFrame = panelFrame.offsetBy(dx: 700, dy: -120)
+        let originalLocation = NSPoint(x: visibleContentFrame.midX, y: visibleContentFrame.midY)
+        let movedLocation = NSPoint(x: originalLocation.x + 700, y: originalLocation.y - 120)
+        let monitor = NotchGestureMonitor()
+        monitor.isEnabled = true
+        monitor.updateVisibleContentFrame(visibleContentFrame, relativeTo: panelFrame)
+
+        XCTAssertNil(monitor.consumeObservedSample(
+            sample(y: 25, began: true),
+            at: originalLocation,
+            panelFrame: movedPanelFrame
+        ))
+        XCTAssertNil(monitor.consumeObservedSample(
+            sample(y: 0, began: true),
+            at: movedLocation,
+            panelFrame: movedPanelFrame
+        ))
+        XCTAssertEqual(monitor.consumeObservedSample(
+            sample(y: 25),
+            at: movedLocation,
+            panelFrame: movedPanelFrame
+        ), .close)
+    }
+
     private func sample(
         y: CGFloat = 0,
         began: Bool = false,

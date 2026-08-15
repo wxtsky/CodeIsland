@@ -169,6 +169,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     private var autoScreenPoller: Timer?
     private var fullscreenPoller: Timer?
     private var isSessionObservationArmed = false
+    private var activeSpaceTransitionTask: Task<Void, Never>?
     private var fullscreenLatch = false
     private var settingsObservers: [NSObjectProtocol] = []
     private var globalClickMonitor: Any?
@@ -272,19 +273,27 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.refreshCurrentScreen()
-                if self.isActiveSpaceFullscreen() {
-                    self.fullscreenLatch = true
+                self.activeSpaceTransitionTask?.cancel()
+                self.fullscreenPoller?.invalidate()
+                self.fullscreenPoller = nil
+
+                // Keep the island present while macOS animates between desktops.
+                // CGWindowList/frontmostApplication can still describe the outgoing
+                // Space here, which previously caused a transient orderOut/orderFront.
+                self.fullscreenLatch = PanelSpaceTransitionPolicy.immediateFullscreenLatch
+                self.updateVisibility()
+
+                self.activeSpaceTransitionTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(PanelSpaceTransitionPolicy.fullscreenEvaluationDelay))
+                    guard !Task.isCancelled, let self else { return }
+
+                    self.fullscreenLatch = PanelSpaceTransitionPolicy.settledFullscreenLatch(
+                        isFullscreen: self.isActiveSpaceFullscreen()
+                    )
                     self.updateVisibility()
-                    self.startFullscreenExitPoller()
-                } else {
-                    // Non-fullscreen space: clear any stale latch immediately so the panel
-                    // doesn't stay hidden for up to 1.5s while the exit poller catches up (#104).
                     if self.fullscreenLatch {
-                        self.fullscreenLatch = false
-                        self.fullscreenPoller?.invalidate()
-                        self.fullscreenPoller = nil
+                        self.startFullscreenExitPoller()
                     }
-                    self.updateVisibility()
                 }
             }
         }
@@ -703,6 +712,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     }
 
     deinit {
+        activeSpaceTransitionTask?.cancel()
         autoScreenPoller?.invalidate()
         fullscreenPoller?.invalidate()
         for observer in settingsObservers {

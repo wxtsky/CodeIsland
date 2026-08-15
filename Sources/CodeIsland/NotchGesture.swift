@@ -296,7 +296,6 @@ final class NotchGestureMonitor {
             }
         }
     }
-
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var interpreter = NotchGestureInterpreter()
@@ -305,10 +304,22 @@ final class NotchGestureMonitor {
     private var onAction: ((NotchGestureAction) -> Void)?
     private var regionWidth: CGFloat = 0
     private var regionHeight: CGFloat = 0
+    private var visibleContentGeometry: (contentFrame: NSRect, panelFrame: NSRect)?
 
     func updateRegion(width: CGFloat, height: CGFloat) {
         regionWidth = width
         regionHeight = height
+    }
+
+    /// AppKit reports the rendered island bounds in screen coordinates. Prefer
+    /// this live frame to SwiftUI's asynchronous size preference so gestures
+    /// cover animated expanded content without including transparent panel space.
+    func updateVisibleContentFrame(_ frame: NSRect?, relativeTo panelFrame: NSRect? = nil) {
+        guard let frame, let panelFrame else {
+            visibleContentGeometry = nil
+            return
+        }
+        visibleContentGeometry = (frame, panelFrame)
     }
 
     func start(
@@ -375,11 +386,27 @@ final class NotchGestureMonitor {
             interpreter.reset()
             return nil
         }
-        guard NotchGestureHitbox(
-            panelFrame: panelFrame,
-            regionWidth: regionWidth,
-            regionHeight: regionHeight
-        ).contains(location) else {
+
+        let gestureHitbox: NotchGestureHitbox
+        if let visibleContentGeometry {
+            let visibleContentFrame = visibleContentGeometry.contentFrame.offsetBy(
+                dx: panelFrame.minX - visibleContentGeometry.panelFrame.minX,
+                dy: panelFrame.minY - visibleContentGeometry.panelFrame.minY
+            )
+            gestureHitbox = NotchGestureHitbox(
+                panelFrame: visibleContentFrame,
+                regionWidth: visibleContentFrame.width,
+                regionHeight: visibleContentFrame.height
+            )
+        } else {
+            gestureHitbox = NotchGestureHitbox(
+                panelFrame: panelFrame,
+                regionWidth: regionWidth,
+                regionHeight: regionHeight
+            )
+        }
+
+        guard gestureHitbox.contains(location) else {
             interpreter.reset()
             return nil
         }

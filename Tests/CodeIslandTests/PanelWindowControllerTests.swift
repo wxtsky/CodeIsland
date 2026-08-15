@@ -3,6 +3,16 @@ import XCTest
 @testable import CodeIsland
 
 final class PanelWindowControllerTests: XCTestCase {
+    func testSpaceTransitionKeepsPanelVisibleUntilFullscreenDetectionSettles() {
+        XCTAssertFalse(PanelSpaceTransitionPolicy.immediateFullscreenLatch)
+        XCTAssertGreaterThan(PanelSpaceTransitionPolicy.fullscreenEvaluationDelay, 0)
+    }
+
+    func testSettledSpaceUsesDetectedFullscreenState() {
+        XCTAssertTrue(PanelSpaceTransitionPolicy.settledFullscreenLatch(isFullscreen: true))
+        XCTAssertFalse(PanelSpaceTransitionPolicy.settledFullscreenLatch(isFullscreen: false))
+    }
+
     func testPanelFollowsSpaceTransitionsWhileRemainingAvailableOnEverySpace() {
         let behavior = PanelWindowBehavior.collectionBehavior
 

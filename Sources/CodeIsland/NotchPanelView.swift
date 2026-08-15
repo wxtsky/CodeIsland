@@ -51,6 +51,63 @@ private struct NotchVisibleSizePreferenceKey: PreferenceKey {
     }
 }
 
+/// Reports the exact rendered island bounds synchronously from AppKit. The
+/// hosting view fills the entire panel, including transparent space, so its
+/// window alone is not a safe gesture hit-test boundary.
+private struct NotchVisibleContentFrameReader: NSViewRepresentable {
+    let onFrameChange: @MainActor (_ contentFrame: NSRect, _ panelFrame: NSRect) -> Void
+
+    func makeNSView(context _: Context) -> NotchVisibleContentTrackingView {
+        let view = NotchVisibleContentTrackingView()
+        view.onFrameChange = onFrameChange
+        return view
+    }
+
+    func updateNSView(_ view: NotchVisibleContentTrackingView, context _: Context) {
+        view.onFrameChange = onFrameChange
+        view.reportFrame()
+    }
+}
+
+@MainActor
+private final class NotchVisibleContentTrackingView: NSView {
+    var onFrameChange: ((_ contentFrame: NSRect, _ panelFrame: NSRect) -> Void)?
+    private var lastReportedFrame = NSRect.null
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        reportFrame()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reportFrame()
+    }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        reportFrame()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        reportFrame()
+    }
+
+    func reportFrame() {
+        guard let window, !bounds.isEmpty else { return }
+        let windowFrame = convert(bounds, to: nil)
+        let screenFrame = window.convertToScreen(windowFrame)
+        guard screenFrame != lastReportedFrame else { return }
+        lastReportedFrame = screenFrame
+        onFrameChange?(screenFrame, window.frame)
+    }
+}
+
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
@@ -307,6 +364,12 @@ struct NotchPanelView: View {
                     )
                 }
             }
+            .background {
+                NotchVisibleContentFrameReader { frame, panelFrame in
+                    gestureMonitor.updateVisibleContentFrame(frame, relativeTo: panelFrame)
+                }
+                .allowsHitTesting(false)
+            }
             .clipped()
             .background(
                 NotchPanelShape(
@@ -388,6 +451,7 @@ struct NotchPanelView: View {
                 }
             }
             .onDisappear {
+                gestureMonitor.updateVisibleContentFrame(nil)
                 gestureMonitor.stop()
             }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
