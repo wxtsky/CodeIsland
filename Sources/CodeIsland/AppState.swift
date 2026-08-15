@@ -3974,10 +3974,10 @@ final class AppState {
             sessions[parentKey]?.currentTool = "Agent"
             sessions[parentKey]?.toolDescription = info.agentNickname ?? agentType
         }
-        sessions[parentKey]?.lastActivity = max(
-            sessions[parentKey]?.lastActivity ?? .distantPast,
-            info.modifiedAt
-        )
+        // Read before the assignment: writing `sessions[...]` while the RHS also
+        // reads it overlaps a modify with a read access and traps at runtime.
+        let previousParentActivity = sessions[parentKey]?.lastActivity ?? .distantPast
+        sessions[parentKey]?.lastActivity = max(previousParentActivity, info.modifiedAt)
         activeSessionId = parentKey
         return true
     }

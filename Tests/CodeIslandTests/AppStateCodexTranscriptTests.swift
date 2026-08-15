@@ -1,7 +1,9 @@
 import XCTest
 @testable import CodeIsland
+import CodeIslandCore
 import SQLite3
 
+@MainActor
 final class AppStateCodexTranscriptTests: XCTestCase {
     func testDelayedDeltaFromDetachedGenerationCannotMutateRecreatedSession() throws {
         let appState = AppState()

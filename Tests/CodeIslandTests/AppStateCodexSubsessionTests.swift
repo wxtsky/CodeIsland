@@ -361,6 +361,10 @@ final class AppStateCodexSubsessionTests: XCTestCase {
         var parent = SessionSnapshot()
         parent.source = "codex"
         parent.providerSessionId = "parent-thread"
+        // Parent lookup is Desktop/CLI-namespace aware, and the child below is
+        // discovered with the Codex app bundle — so the parent card has to be in
+        // APP mode, which is what a real `codexapp:` card always carries.
+        parent.termBundleId = AppState.codexAppBundleId
         parent.status = .running
         parent.currentTool = "Agent"
         parent.toolDescription = "worker"
