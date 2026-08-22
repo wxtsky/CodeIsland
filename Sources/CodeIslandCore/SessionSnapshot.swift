@@ -915,7 +915,8 @@ public enum SideEffect: Equatable {
 public func reduceEvent(
     sessions: inout [String: SessionSnapshot],
     event: HookEvent,
-    maxHistory: Int
+    maxHistory: Int,
+    replyCompletePlaceholder: String = "Reply complete"
 ) -> [SideEffect] {
     let sessionId = event.sessionId ?? "default"
     let eventName = EventNormalizer.normalize(event.eventName)
@@ -1111,7 +1112,7 @@ public func reduceEvent(
             sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
         } else if sessions[sessionId]?.lastAssistantMessage == nil,
                   sessions[sessionId]?.recentMessages.last?.isUser == true {
-            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: "[回复完成]"))
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: replyCompletePlaceholder))
         }
         // Cline tasks are single-round — treat completion/cancellation as session end,
         // and latch a flag so out-of-order in-flight tool events don't revive it.
@@ -1157,7 +1158,7 @@ public func reduceEvent(
         } else if sessions[sessionId]?.lastAssistantMessage == nil,
                   sessions[sessionId]?.recentMessages.last?.isUser == true {
             // No reply content from hook (e.g. CodeBuddy) -- add placeholder
-            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: "[回复完成]"))
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: replyCompletePlaceholder))
         }
         // Try to capture user prompt from Stop event if not already set
         if sessions[sessionId]?.lastUserPrompt == nil {

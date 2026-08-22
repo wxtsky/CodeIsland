@@ -1362,7 +1362,8 @@ final class AppState {
         // approved in the terminal — resume those (and only those) as approved.
         resolveOrphanPermissionsOnActivity(event)
 
-        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory)
+        let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: maxHistory,
+                                  replyCompletePlaceholder: L10n.shared["reply_complete_placeholder"])
 
         // Cursor Agent Tasks often fire Claude-format hooks without `--source`,
         // leaving ghost Claude cards. Rebrand + fold before the rest of the
