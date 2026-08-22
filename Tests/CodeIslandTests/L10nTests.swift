@@ -157,4 +157,46 @@ final class L10nTests: XCTestCase {
         let formattedUpdate = String(format: updateAvailable, "1.0.19", "1.0.18")
         XCTAssertEqual(formattedUpdate, "CodeIsland 1.0.19 ist verfügbar (aktuell: 1.0.18). Möchtest du es herunterladen?")
     }
+
+    // MARK: - reply_complete_placeholder
+
+    func testReplyCompletePlaceholderExistsInAllLanguages() {
+        let languages = ["en", "de", "zh", "zh-Hant", "ja", "ko", "tr"]
+        for lang in languages {
+            guard let dict = L10n.strings[lang] else {
+                XCTFail("Language '\(lang)' not found in L10n.strings")
+                continue
+            }
+            XCTAssertTrue(dict.keys.contains("reply_complete_placeholder"),
+                          "Language '\(lang)' is missing reply_complete_placeholder")
+        }
+    }
+
+    func testReplyCompletePlaceholderHasNoBrackets() {
+        let languages = ["en", "de", "zh", "zh-Hant", "ja", "ko", "tr"]
+        for lang in languages {
+            let value = L10n.strings[lang]?["reply_complete_placeholder"] ?? ""
+            XCTAssertFalse(value.hasPrefix("["),
+                           "'\(lang)' reply_complete_placeholder must not start with '['")
+            XCTAssertFalse(value.hasSuffix("]"),
+                           "'\(lang)' reply_complete_placeholder must not end with ']'")
+        }
+    }
+
+    func testReplyCompletePlaceholderReturnsLocalizedValuePerLanguage() {
+        let expected: [String: String] = [
+            "en": "Reply complete",
+            "de": "Antwort abgeschlossen",
+            "zh": "回复完成",
+            "zh-Hant": "回覆完成",
+            "ja": "返信完了",
+            "ko": "답변 완료",
+            "tr": "Yanıt tamamlandı",
+        ]
+        for (lang, translation) in expected {
+            L10n.shared.language = lang
+            XCTAssertEqual(L10n.shared["reply_complete_placeholder"], translation,
+                           "Wrong reply_complete_placeholder for language '\(lang)'")
+        }
+    }
 }
