@@ -1361,7 +1361,7 @@ hooks:
 
         let contents = try String(contentsOf: piExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v3"))
+        XCTAssertTrue(contents.contains("// version: v4"))
         XCTAssertTrue(contents.contains("__codeislandAllowedToolCalls"))
         XCTAssertTrue(contents.contains("@earendil-works/pi-coding-agent"))
         XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
@@ -1434,7 +1434,7 @@ hooks:
         try fm.createDirectory(at: ompExtensionDir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tempDir) }
 
-        for version in ["v2", "v3", "v4", "v5"] {
+        for version in ["v2", "v3", "v4", "v5", "v6"] {
             try """
             // CodeIsland pi extension
             // version: \(version)
@@ -1458,7 +1458,7 @@ hooks:
             )
 
             let rewritten = try String(contentsOf: ompExtensionPath)
-            XCTAssertTrue(rewritten.contains("// version: v6"))
+            XCTAssertTrue(rewritten.contains("// version: v7"))
             XCTAssertTrue(
                 ConfigInstaller.isOmpExtensionInstalled(
                     ompExtensionPath: ompExtensionPath.path,
@@ -1486,7 +1486,7 @@ hooks:
 
         let contents = try String(contentsOf: ompExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v6"))
+        XCTAssertTrue(contents.contains("// version: v7"))
         XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
         XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
         XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))

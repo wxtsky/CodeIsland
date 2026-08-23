@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### English
+- Add exact click-to-jump and smart suppression for local Herdr agent panes; CodeIsland preserves pane/server identity through hooks and app restarts, raises the hosting terminal after focus, and retains existing terminal activation when Herdr is unavailable or stale
+
+### 中文
+- 新增本地 Herdr Agent 面板的精确点击跳转与智能通知抑制；CodeIsland 通过 hooks 和应用重启保留面板/服务器身份，聚焦后唤起宿主终端，Herdr 不可用或目标过期时继续使用现有终端跳转逻辑
+
 ## [v1.0.32] - 2026-08-15
 
 ### English

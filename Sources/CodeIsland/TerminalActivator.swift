@@ -82,8 +82,15 @@ struct TerminalActivator {
         "com.anthropic.claudefordesktop": "Claude",
     ]
 
-    static func activate(session: SessionSnapshot, sessionId: String? = nil) {
+    static func activate(
+        session: SessionSnapshot,
+        sessionId: String? = nil,
+        allowHerdr: Bool = true
+    ) {
         guard !session.isRemote else { return }
+        if allowHerdr && activateHerdrIfAvailable(session: session, sessionId: sessionId) {
+            return
+        }
 
         // Native app by bundle ID (e.g. Codex APP vs Codex CLI). These are IDE-style
         // apps (Cursor, Trae, Qoder, Factory, …) that can hold several workspace
@@ -1189,6 +1196,41 @@ struct TerminalActivator {
         end tell
         """
         runAppleScript(script)
+    }
+
+    private static func activateHerdrIfAvailable(
+        session: SessionSnapshot,
+        sessionId: String?
+    ) -> Bool {
+        guard HerdrController.shouldRoute(session),
+              let identity = HerdrController.identity(from: session) else {
+            return false
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            if HerdrController.focus(identity) {
+                if let bundleId = herdrHostBundleId(for: session) {
+                    DispatchQueue.main.async {
+                        raiseAppWithoutQuickTerminal(bundleId: bundleId)
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    activate(session: session, sessionId: sessionId, allowHerdr: false)
+                }
+            }
+        }
+        return true
+    }
+
+    private static func herdrHostBundleId(for session: SessionSnapshot) -> String? {
+        if let bundleId = session.termBundleId, !bundleId.isEmpty {
+            return bundleId
+        }
+        guard let app = session.termApp?.lowercased() else { return nil }
+        return knownTerminals.first { terminal in
+            let name = terminal.name.lowercased()
+            return app == name || app == "\(name).app"
+        }?.bundleId
     }
 
     // MARK: - Activate by bundle ID

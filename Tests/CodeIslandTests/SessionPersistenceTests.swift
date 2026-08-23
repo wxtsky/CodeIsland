@@ -63,6 +63,9 @@ final class SessionPersistenceTests: XCTestCase {
             zellijPaneId: nil,
             zellijSessionName: nil,
             weztermPaneId: nil,
+            herdrPaneId: nil,
+            herdrSocketPath: nil,
+            herdrBinaryPath: nil,
             cliPid: 456,
             cliStartTime: cliStartTime,
             startTime: startTime,
@@ -108,6 +111,9 @@ final class SessionPersistenceTests: XCTestCase {
             zellijPaneId: nil,
             zellijSessionName: nil,
             weztermPaneId: nil,
+            herdrPaneId: nil,
+            herdrSocketPath: nil,
+            herdrBinaryPath: nil,
             cliPid: nil,
             cliStartTime: nil,
             startTime: startTime,
@@ -183,6 +189,9 @@ final class SessionPersistenceTests: XCTestCase {
             zellijPaneId: nil,
             zellijSessionName: nil,
             weztermPaneId: nil,
+            herdrPaneId: nil,
+            herdrSocketPath: nil,
+            herdrBinaryPath: nil,
             cliPid: nil,
             cliStartTime: nil,
             startTime: startTime,
@@ -230,4 +239,48 @@ final class SessionPersistenceTests: XCTestCase {
         let session = try decoder.decode(PersistedSession.self, from: Data(json.utf8))
         XCTAssertNil(session.transcriptPath)
     }
+    func testPersistedSessionRoundTripPreservesHerdrRouting() throws {
+        let startTime = ISO8601DateFormatter().date(from: "2026-04-09T10:00:00Z")!
+        let session = PersistedSession(
+            sessionId: "session-herdr",
+            cwd: "/tmp/demo",
+            source: "omp",
+            model: nil,
+            sessionTitle: nil,
+            sessionTitleSource: nil,
+            providerSessionId: nil,
+            lastUserPrompt: nil,
+            lastAssistantMessage: nil,
+            termApp: "ghostty",
+            itermSessionId: nil,
+            ttyPath: "/dev/ttys001",
+            kittyWindowId: nil,
+            tmuxPane: nil,
+            tmuxClientTty: nil,
+            tmuxEnv: nil,
+            termBundleId: "com.mitchellh.ghostty",
+            cmuxSurfaceId: nil,
+            cmuxWorkspaceId: nil,
+            zellijPaneId: nil,
+            zellijSessionName: nil,
+            weztermPaneId: nil,
+            herdrPaneId: "w1:p2",
+            herdrSocketPath: "/tmp/herdr.sock",
+            herdrBinaryPath: "/opt/homebrew/bin/herdr",
+            cliPid: nil,
+            cliStartTime: nil,
+            startTime: startTime,
+            lastActivity: startTime,
+            transcriptPath: nil,
+            closedSubagentIds: nil
+        )
+
+        let data = try JSONEncoder().encode(session)
+        let decoded = try JSONDecoder().decode(PersistedSession.self, from: data)
+
+        XCTAssertEqual(decoded.herdrPaneId, "w1:p2")
+        XCTAssertEqual(decoded.herdrSocketPath, "/tmp/herdr.sock")
+        XCTAssertEqual(decoded.herdrBinaryPath, "/opt/homebrew/bin/herdr")
+    }
+
 }

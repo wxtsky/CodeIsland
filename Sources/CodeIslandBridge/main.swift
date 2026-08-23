@@ -537,6 +537,18 @@ if let weztermPane = env["WEZTERM_PANE"], !weztermPane.isEmpty {
     json["_wezterm_pane"] = weztermPane
 }
 
+// Herdr injects an exact pane plus owning server socket into every managed pane.
+// Require the complete pair so a pane id is never sent to Herdr's default server.
+if env["HERDR_ENV"] == "1",
+   let pane = env["HERDR_PANE_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines), !pane.isEmpty,
+   let socket = env["HERDR_SOCKET_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines), !socket.isEmpty {
+    json["_herdr_pane_id"] = pane
+    json["_herdr_socket_path"] = socket
+    if let binary = env["HERDR_BIN_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines), !binary.isEmpty {
+        json["_herdr_bin_path"] = binary
+    }
+}
+
 // Superset (Electron agent-orchestration terminal) — TERM_PROGRAM is spoofed to "kitty"
 // and __CFBundleIdentifier is stripped from the PTY env, so the only reliable Superset
 // signal is its own SUPERSET_* env vars (which survive Superset's env allowlist). The mere

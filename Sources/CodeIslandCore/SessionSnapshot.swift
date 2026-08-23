@@ -126,6 +126,9 @@ public struct SessionSnapshot: Sendable {
     public var zellijPaneId: String?    // Zellij pane id (numeric string) from ZELLIJ_PANE_ID env var
     public var zellijSessionName: String? // Zellij session name from ZELLIJ_SESSION_NAME env var
     public var weztermPaneId: String?   // WezTerm / Kaku pane id (numeric string) from WEZTERM_PANE env var
+    public var herdrPaneId: String?       // Herdr pane identifier (wN:pN)
+    public var herdrSocketPath: String?   // Owning Herdr server socket
+    public var herdrBinaryPath: String?   // Herdr executable captured from pane env
     public var supersetWorkspaceId: String? // Superset workspace UUID (from SUPERSET_WORKSPACE_ID env var); presence means running inside Superset
     public var supersetPaneId: String?  // Superset pane/terminal id (from SUPERSET_PANE_ID / SUPERSET_TERMINAL_ID env var)
     /// Orca terminal handle (ORCA_TERMINAL_HANDLE) — the argument `orca terminal
@@ -756,6 +759,10 @@ public struct SessionSnapshot: Sendable {
         if isRemote {
             return remoteDisplayName ?? "Remote"
         }
+        if let pane = herdrPaneId?.trimmingCharacters(in: .whitespacesAndNewlines), !pane.isEmpty,
+           let socket = herdrSocketPath?.trimmingCharacters(in: .whitespacesAndNewlines), socket.hasPrefix("/") {
+            return "Herdr"
+        }
         // If termBundleId is a known app, show app name (APP mode)
         if let bid = termBundleId, let name = Self.appBundleNames[bid] {
             return name
@@ -1229,6 +1236,15 @@ public func reduceEvent(
         if let weztermPane = event.rawJSON["_wezterm_pane"] as? String, !weztermPane.isEmpty {
             sessions[sessionId]?.weztermPaneId = weztermPane
         }
+        if let herdrPane = event.rawJSON["_herdr_pane_id"] as? String, !herdrPane.isEmpty {
+            sessions[sessionId]?.herdrPaneId = herdrPane
+        }
+        if let herdrSocket = event.rawJSON["_herdr_socket_path"] as? String, !herdrSocket.isEmpty {
+            sessions[sessionId]?.herdrSocketPath = herdrSocket
+        }
+        if let herdrBinary = event.rawJSON["_herdr_bin_path"] as? String, !herdrBinary.isEmpty {
+            sessions[sessionId]?.herdrBinaryPath = herdrBinary
+        }
         if let supersetWs = event.rawJSON["_superset_workspace_id"] as? String, !supersetWs.isEmpty {
             sessions[sessionId]?.supersetWorkspaceId = supersetWs
         }
@@ -1444,6 +1460,19 @@ public func fillMissingParentMetadataFromSubagentEvent(
        let ppid = event.rawJSON["_ppid"] as? Int, ppid > 0 {
         sessions[sessionId]?.cliPid = pid_t(ppid)
     }
+
+    if sessions[sessionId]?.herdrPaneId == nil,
+       let pane = event.rawJSON["_herdr_pane_id"] as? String, !pane.isEmpty {
+        sessions[sessionId]?.herdrPaneId = pane
+    }
+    if sessions[sessionId]?.herdrSocketPath == nil,
+       let socket = event.rawJSON["_herdr_socket_path"] as? String, !socket.isEmpty {
+        sessions[sessionId]?.herdrSocketPath = socket
+    }
+    if sessions[sessionId]?.herdrBinaryPath == nil,
+       let binary = event.rawJSON["_herdr_bin_path"] as? String, !binary.isEmpty {
+        sessions[sessionId]?.herdrBinaryPath = binary
+    }
 }
 
 private func shouldReopenCursorSubagentOnPrompt(event: HookEvent, session: SessionSnapshot?) -> Bool {
@@ -1576,6 +1605,15 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     // WezTerm / Kaku pane id (injected by bridge from WEZTERM_PANE env var)
     if let weztermPane = event.rawJSON["_wezterm_pane"] as? String, !weztermPane.isEmpty {
         sessions[sessionId]?.weztermPaneId = weztermPane
+    }
+    if let herdrPane = event.rawJSON["_herdr_pane_id"] as? String, !herdrPane.isEmpty {
+        sessions[sessionId]?.herdrPaneId = herdrPane
+    }
+    if let herdrSocket = event.rawJSON["_herdr_socket_path"] as? String, !herdrSocket.isEmpty {
+        sessions[sessionId]?.herdrSocketPath = herdrSocket
+    }
+    if let herdrBinary = event.rawJSON["_herdr_bin_path"] as? String, !herdrBinary.isEmpty {
+        sessions[sessionId]?.herdrBinaryPath = herdrBinary
     }
     // Superset workspace / pane (injected by bridge from SUPERSET_* env vars). Presence routes
     // activation to com.superset.desktop instead of the spoofed kitty TERM_PROGRAM. (#213)

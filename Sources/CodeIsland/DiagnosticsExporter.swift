@@ -163,6 +163,9 @@ struct DiagnosticsExporter {
             if let model = s.model { dict["model"] = model }
             if let term = s.terminalName { dict["terminal"] = term }
             if let pid = s.cliPid { dict["pid"] = pid }
+            let hasHerdrRouting = s.herdrPaneId?.isEmpty == false && s.herdrSocketPath?.isEmpty == false
+            dict["hasHerdrRouting"] = hasHerdrRouting
+            if let pane = s.herdrPaneId, !pane.isEmpty { dict["herdrPaneId"] = pane }
             dict["subagentCount"] = s.subagents.count
             dict["toolHistoryCount"] = s.toolHistory.count
             return dict

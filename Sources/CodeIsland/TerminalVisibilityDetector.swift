@@ -95,6 +95,10 @@ struct TerminalVisibilityDetector {
             return isTmuxPaneActive(pane)
         }
 
+        if let identity = HerdrController.identity(from: session) {
+            return HerdrController.isFocused(identity)
+        }
+
         // Route by bundle ID first (precise), then by TERM_PROGRAM (fallback).
         // This avoids misrouting Warp (TERM_PROGRAM=Apple_Terminal) to Terminal.app.
         let bid = session.termBundleId?.lowercased() ?? ""

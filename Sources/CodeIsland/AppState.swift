@@ -2803,6 +2803,9 @@ final class AppState {
             snapshot.zellijPaneId = p.zellijPaneId
             snapshot.zellijSessionName = p.zellijSessionName
             snapshot.weztermPaneId = p.weztermPaneId
+            snapshot.herdrPaneId = p.herdrPaneId
+            snapshot.herdrSocketPath = p.herdrSocketPath
+            snapshot.herdrBinaryPath = p.herdrBinaryPath
             snapshot.lastActivity = p.lastActivity
             snapshot.transcriptPath = p.transcriptPath
             if let closed = p.closedSubagentIds, !closed.isEmpty {
@@ -4011,6 +4014,9 @@ final class AppState {
                 child.zellijPaneId = child.zellijPaneId ?? parent.session.zellijPaneId
                 child.zellijSessionName = child.zellijSessionName ?? parent.session.zellijSessionName
                 child.weztermPaneId = child.weztermPaneId ?? parent.session.weztermPaneId
+                child.herdrPaneId = child.herdrPaneId ?? parent.session.herdrPaneId
+                child.herdrSocketPath = child.herdrSocketPath ?? parent.session.herdrSocketPath
+                child.herdrBinaryPath = child.herdrBinaryPath ?? parent.session.herdrBinaryPath
                 child.remoteHostId = child.remoteHostId ?? parent.session.remoteHostId
                 child.remoteHostName = child.remoteHostName ?? parent.session.remoteHostName
                 // Keep the child's own process identity only — the parent Cursor chat

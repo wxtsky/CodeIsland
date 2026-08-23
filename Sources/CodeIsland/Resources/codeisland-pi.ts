@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v3
+// version: v4
 
 /**
  * @fileoverview CodeIsland Integration Extension.
@@ -79,6 +79,10 @@ const ENV_KEYS = [
   "ZELLIJ_PANE_ID",
   "ZELLIJ_SESSION_NAME",
   "WEZTERM_PANE",
+  "HERDR_ENV",
+  "HERDR_PANE_ID",
+  "HERDR_SOCKET_PATH",
+  "HERDR_BIN_PATH",
   "__CFBundleIdentifier",
 ] as const;
 
@@ -103,6 +107,18 @@ function collectEnv(): Record<string, string> {
     if (process.env[key]) env[key] = process.env[key]!;
   }
   return env;
+}
+
+function herdrMetadata(env: Record<string, string>): Record<string, string> {
+  const pane = env.HERDR_PANE_ID?.trim();
+  const socket = env.HERDR_SOCKET_PATH?.trim();
+  if (env.HERDR_ENV !== "1" || !pane || !socket) return {};
+  const binary = env.HERDR_BIN_PATH?.trim();
+  return {
+    _herdr_pane_id: pane,
+    _herdr_socket_path: socket,
+    ...(binary ? { _herdr_bin_path: binary } : {}),
+  };
 }
 
 /**
@@ -216,11 +232,13 @@ function base(
   extra: Record<string, unknown>,
   tty: string | null,
 ): Record<string, unknown> {
+  const env = collectEnv();
   return {
     session_id: `pi-${sessionId}`,
     _source: "pi",
     _ppid: process.pid,
-    _env: collectEnv(),
+    _env: env,
+    ...herdrMetadata(env),
     _tty: tty,
     _server_port: 0,
     cwd,

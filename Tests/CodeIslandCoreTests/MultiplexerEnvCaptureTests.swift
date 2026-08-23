@@ -190,6 +190,79 @@ final class MultiplexerEnvCaptureTests: XCTestCase {
         XCTAssertEqual(sessions["sess-superset-name"]?.terminalName, "Superset")
     }
 
+    // MARK: - Herdr
+
+    func testSessionStartCapturesCompleteHerdrRoute() {
+        let event = makeEvent([
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-herdr",
+            "_term_bundle": "com.mitchellh.ghostty",
+            "_herdr_pane_id": "w2:p1",
+            "_herdr_socket_path": "/tmp/herdr.sock",
+            "_herdr_bin_path": "/opt/homebrew/bin/herdr",
+        ])
+
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-herdr"]?.herdrPaneId, "w2:p1")
+        XCTAssertEqual(sessions["sess-herdr"]?.herdrSocketPath, "/tmp/herdr.sock")
+        XCTAssertEqual(sessions["sess-herdr"]?.herdrBinaryPath, "/opt/homebrew/bin/herdr")
+        XCTAssertEqual(sessions["sess-herdr"]?.terminalName, "Herdr")
+    }
+
+    func testNonSessionStartEventCapturesCompleteHerdrRoute() {
+        let event = makeEvent([
+            "hook_event_name": "PostToolUse",
+            "session_id": "sess-herdr-late",
+            "_herdr_pane_id": "w3:p2",
+            "_herdr_socket_path": "/tmp/named/herdr.sock",
+        ])
+
+        var sessions = ["sess-herdr-late": SessionSnapshot()]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-herdr-late"]?.herdrPaneId, "w3:p2")
+        XCTAssertEqual(sessions["sess-herdr-late"]?.herdrSocketPath, "/tmp/named/herdr.sock")
+    }
+
+    func testIncompleteHerdrRouteKeepsOuterTerminalLabel() {
+        let event = makeEvent([
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-herdr-incomplete",
+            "_term_bundle": "com.mitchellh.ghostty",
+            "_herdr_pane_id": "w1:p1",
+        ])
+
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-herdr-incomplete"]?.terminalName, "Ghostty")
+    }
+
+    func testSubagentMetadataFillsMissingHerdrRouteWithoutOverwritingParent() {
+        var parent = SessionSnapshot()
+        parent.herdrPaneId = "existing-pane"
+        var sessions = ["parent": parent]
+        let event = makeEvent([
+            "hook_event_name": "PostToolUse",
+            "session_id": "child",
+            "_herdr_pane_id": "child-pane",
+            "_herdr_socket_path": "/tmp/child.sock",
+            "_herdr_bin_path": "/tmp/herdr",
+        ])
+
+        fillMissingParentMetadataFromSubagentEvent(
+            into: &sessions,
+            sessionId: "parent",
+            event: event
+        )
+
+        XCTAssertEqual(sessions["parent"]?.herdrPaneId, "existing-pane")
+        XCTAssertEqual(sessions["parent"]?.herdrSocketPath, "/tmp/child.sock")
+        XCTAssertEqual(sessions["parent"]?.herdrBinaryPath, "/tmp/herdr")
+    }
+
     // MARK: - Helpers
 
     private func makeEvent(_ payload: [String: Any]) -> HookEvent {

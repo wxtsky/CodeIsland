@@ -27,6 +27,9 @@ struct PersistedSession: Codable {
     let zellijPaneId: String?
     let zellijSessionName: String?
     let weztermPaneId: String?
+    let herdrPaneId: String?
+    let herdrSocketPath: String?
+    let herdrBinaryPath: String?
     let cliPid: Int32?
     let cliStartTime: Date?
     let startTime: Date
@@ -69,6 +72,9 @@ enum SessionPersistence {
                 zellijPaneId: s.zellijPaneId,
                 zellijSessionName: s.zellijSessionName,
                 weztermPaneId: s.weztermPaneId,
+                herdrPaneId: s.herdrPaneId,
+                herdrSocketPath: s.herdrSocketPath,
+                herdrBinaryPath: s.herdrBinaryPath,
                 cliPid: s.cliPid,
                 cliStartTime: s.cliStartTime,
                 startTime: s.startTime,

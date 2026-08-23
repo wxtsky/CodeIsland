@@ -31,8 +31,8 @@ It connects to **14 AI coding tools** via Unix socket IPC, displaying session st
 - **Permission management** — Approve/deny tool permissions directly from the panel
 - **Question answering** — Respond to agent questions without leaving your current app
 - **Pixel-art mascots** — Each AI tool has its own animated character
-- **One-click jump** — Click a session to jump to its terminal tab or IDE window
-- **Smart suppress** — Tab-level terminal detection: only suppresses notifications when you're looking at the specific session tab, not just the terminal app
+- **One-click jump** — Click a session to jump to its terminal tab, IDE window, or exact Herdr agent pane
+- **Smart suppress** — Tab-level terminal and Herdr pane detection: only suppresses notifications when you're looking at the specific session, not just the terminal app
 - **Sound effects** — Optional 8-bit sound notifications for session events
 - **Auto hook install** — Automatically configures hooks for all detected CLI tools, with auto-repair and version tracking
 - **iPhone & Apple Watch Buddy** — Mirror session status to Dynamic Island, Lock Screen, StandBy, and Apple Watch
