@@ -2760,6 +2760,22 @@ private struct TerminalBadge: View {
 
     private let remoteColor = Color(red: 0.3, green: 0.75, blue: 0.5)
 
+    /// Small chip naming the multiplexer the CLI sits in (tmux, zellij), shown
+    /// next to — never instead of — the terminal it runs inside. Same chip
+    /// vocabulary as the queue counter and the AskUserQuestion header.
+    @ViewBuilder
+    private func multiplexerChip(fg: Color, bg: Color) -> some View {
+        if let mux = session.multiplexerLabel {
+            Text(mux)
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(fg)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(bg)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
+    }
+
     var body: some View {
         Group {
             if session.isRemote {
@@ -2772,6 +2788,7 @@ private struct TerminalBadge: View {
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(remoteColor)
                     }
+                    multiplexerChip(fg: remoteColor, bg: remoteColor.opacity(0.16))
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
@@ -2791,6 +2808,7 @@ private struct TerminalBadge: View {
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                     }
+                    multiplexerChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
                 }
             }
         }

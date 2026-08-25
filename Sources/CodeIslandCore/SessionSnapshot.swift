@@ -751,6 +751,18 @@ public struct SessionSnapshot: Sendable {
         return terminalName
     }
 
+    /// The multiplexer layered on top of the terminal, if any.
+    ///
+    /// Not the terminal itself: cmux is a terminal app and is already named by
+    /// `terminalName`, so repeating it here would print the same word twice on
+    /// one badge. Nested multiplexers each leave their env vars behind, so the
+    /// innermost layer — the one the CLI actually sits in — wins.
+    public var multiplexerLabel: String? {
+        if zellijPaneId != nil || zellijSessionName != nil { return "zellij" }
+        if tmuxEnv != nil || tmuxPane != nil { return "tmux" }
+        return nil
+    }
+
     /// Short terminal/app name for display tag
     public var terminalName: String? {
         if isRemote {
