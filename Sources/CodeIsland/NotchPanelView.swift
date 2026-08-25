@@ -233,6 +233,9 @@ struct NotchPanelView: View {
                                 allQuestions: q.askUserQuestionState?.items ?? [],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
+                                session: session,
+                                sessionId: sid,
+                                appState: appState,
                                 queuePosition: appState.questionQueuePosition(forSession: sid),
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
@@ -248,6 +251,9 @@ struct NotchPanelView: View {
                                 allQuestions: [],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
+                                session: session,
+                                sessionId: sid,
+                                appState: appState,
                                 queuePosition: 1,
                                 queueTotal: 1,
                                 onAnswer: { _ in },
@@ -1092,13 +1098,6 @@ private struct ApprovalBar: View {
         }
     }
 
-    // MARK: - Click-to-jump handling
-
-    /// Handle click on approval card to jump to terminal.
-    /// Logic mirrors SessionCard.handleSessionClick():
-    /// - nil session: play error sound + shake animation
-    /// - remote session: skip (no terminal to jump to)
-    /// - valid local session: activate terminal + optionally auto-collapse
     /// Badge text for a global shortcut, shown only when the user has enabled
     /// it in Settings — the shortcut existed but nothing surfaced it (#12 UX).
     static func shortcutHint(_ action: ShortcutAction) -> String? {
@@ -1106,73 +1105,23 @@ private struct ApprovalBar: View {
         return action.binding.displayString
     }
 
+    // MARK: - Click-to-jump handling
+
+    /// Handle click on the approval card to jump to the owning terminal.
+    /// Behaviour lives in `startNotchCardJump`, shared with QuestionBar:
+    /// - nil session: play error sound + shake animation
+    /// - remote session: skip (no terminal to jump to)
+    /// - valid local session: activate terminal + optionally auto-collapse
     private func handleCardClick() {
-        // Session may be nil if removed while card is still visible
-        guard let session = session else {
-            Task { @MainActor in
-                SoundManager.shared.preview("8bit_error")
-                await runJumpFailureShakeAnimation()
-            }
-            return
-        }
-
-        // Remote sessions have no local terminal
-        guard !session.isRemote else { return }
-
-        TerminalActivator.activate(session: session, sessionId: sessionId)
-
-        guard autoCollapseAfterSessionJump else { return }
-
-        // Validate jump: retry 3x with increasing delays (120ms, 320ms, 640ms)
-        // Collapse on success; play error sound + shake on failure
         jumpValidationTask?.cancel()
-        jumpValidationTask = Task {
-            let delays: [UInt64] = [120_000_000, 320_000_000, 640_000_000]
-            let outcome = await evaluateJumpValidation(
-                delays: delays,
-                checkSucceeded: { await checkJumpSucceeded(session: session) }
-            )
-
-            switch outcome {
-            case .success:
-                guard !Task.isCancelled else { return }
-                // Auto-collapse to collapsed surface on successful jump
-                await MainActor.run {
-                    switch appState.surface {
-                    case .approvalCard:
-                        withAnimation(NotchAnimation.close) {
-                            appState.surface = .collapsed
-                        }
-                    default:
-                        break
-                    }
-                }
-            case .failed:
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    SoundManager.shared.preview("8bit_error")
-                }
-                guard !Task.isCancelled else { return }
-                await runJumpFailureShakeAnimation()
-            case .cancelled:
-                return
-            }
-        }
-    }
-
-    private func checkJumpSucceeded(session: SessionSnapshot) async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let succeeded = TerminalVisibilityDetector.isSessionTabVisible(session)
-                    || TerminalVisibilityDetector.isTerminalFrontmostForSession(session)
-                continuation.resume(returning: succeeded)
-            }
-        }
-    }
-
-    @MainActor
-    private func runJumpFailureShakeAnimation() async {
-        await JumpAnimationHelper.runShake(offset: $failureShakeOffset)
+        jumpValidationTask = startNotchCardJump(
+            kind: .approval,
+            session: session,
+            sessionId: sessionId,
+            appState: appState,
+            autoCollapseAfterJump: autoCollapseAfterSessionJump,
+            shakeOffset: $failureShakeOffset
+        )
     }
 }
 
@@ -1199,6 +1148,12 @@ private struct QuestionBar: View {
     let allQuestions: [AskUserQuestionItem]
     let sessionSource: String?
     let sessionContext: String?
+    /// Owning session, so the card can focus its terminal on click the same way
+    /// ApprovalBar does. Optional: the session may be gone while the card is
+    /// still on screen.
+    let session: SessionSnapshot?
+    let sessionId: String
+    let appState: AppState
     let queuePosition: Int
     let queueTotal: Int
     let onAnswer: (String) -> Void
@@ -1208,6 +1163,12 @@ private struct QuestionBar: View {
     @State private var textInput = ""
     @FocusState private var isFocused: Bool
     @State private var selectedIndex: Int? = nil
+
+    // Click-to-jump state, mirroring ApprovalBar
+    @State private var failureShakeOffset: CGFloat = 0
+    @State private var jumpValidationTask: Task<Void, Never>?
+    @State private var jumpRowHovering = false
+    @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
 
     // Multi-question wizard state
     @State private var currentQuestionIndex: Int = 0
@@ -1224,27 +1185,18 @@ private struct QuestionBar: View {
         return allQuestions[currentQuestionIndex]
     }
 
+    /// Remote sessions run on another machine — there is no local terminal to
+    /// focus, so the affordance stays hidden rather than dead.
+    private var canJumpToTerminal: Bool {
+        guard let session else { return false }
+        return !session.isRemote
+    }
+
     var body: some View {
         VStack(spacing: 8) {
-            // Session context
-            if sessionSource != nil || sessionContext != nil {
-                HStack(spacing: 5) {
-                    if let src = sessionSource, let icon = cliIcon(source: src, size: 12) {
-                        Image(nsImage: icon)
-                            .resizable()
-                            .frame(width: 12, height: 12)
-                    }
-                    if let cwd = sessionContext {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text((cwd as NSString).lastPathComponent)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 14)
+            // Session context — doubles as the click-to-jump target
+            if sessionSource != nil || sessionContext != nil || canJumpToTerminal {
+                sessionContextRow
             }
 
             if let item = currentItem {
@@ -1254,7 +1206,69 @@ private struct QuestionBar: View {
             }
         }
         .padding(.vertical, 10)
+        .offset(x: failureShakeOffset)
         .onAppear { isFocused = true }
+        .onDisappear {
+            jumpValidationTask?.cancel()
+            jumpValidationTask = nil
+        }
+    }
+
+    /// CLI icon + project folder. Clicking it focuses the terminal that asked
+    /// the question, so the answer can be given where the full transcript is —
+    /// the notch card previously offered no way back to the conversation.
+    private var sessionContextRow: some View {
+        HStack(spacing: 5) {
+            if let src = sessionSource, let icon = cliIcon(source: src, size: 12) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 12, height: 12)
+            }
+            if let cwd = sessionContext {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text((cwd as NSString).lastPathComponent)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            if canJumpToTerminal {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(jumpRowHovering ? 0.85 : 0.35))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(jumpRowHovering ? Color.white.opacity(0.09) : Color.clear)
+        )
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { handleCardClick() }
+        .onHover { hovering in
+            guard canJumpToTerminal else { return }
+            withAnimation(NotchAnimation.micro) { jumpRowHovering = hovering }
+        }
+    }
+
+    // MARK: - Click-to-jump handling
+
+    /// Focus the terminal that asked the question. Same contract as
+    /// ApprovalBar.handleCardClick(): the question stays queued, so collapsing
+    /// after a successful jump never discards it — unlike Skip, which denies.
+    private func handleCardClick() {
+        jumpValidationTask?.cancel()
+        jumpValidationTask = startNotchCardJump(
+            kind: .question,
+            session: session,
+            sessionId: sessionId,
+            appState: appState,
+            autoCollapseAfterJump: autoCollapseAfterSessionJump,
+            shakeOffset: $failureShakeOffset
+        )
     }
 
     // MARK: - Multi-question content (AskUserQuestion)
@@ -2160,6 +2174,105 @@ func evaluateJumpValidation(
     }
 
     return isCancelled() ? .cancelled : .failed
+}
+
+/// Which notch card a click-to-jump was started from.
+///
+/// The jump validation runs asynchronously, so by the time it lands the panel
+/// may already be showing a different card. Collapsing on a surface the jump
+/// did not originate from would discard a live card the user never touched —
+/// the same class of cross-card mix-up as #308.
+enum NotchCardKind: Equatable {
+    case approval
+    case question
+
+    /// Is `surface` still the card this jump started from?
+    func matches(_ surface: IslandSurface) -> Bool {
+        switch (self, surface) {
+        case (.approval, .approvalCard), (.question, .questionCard):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// Retry schedule for checking whether a click-to-jump actually landed.
+let sessionJumpValidationDelays: [UInt64] = [120_000_000, 320_000_000, 640_000_000]
+
+/// Did the terminal owning `session` come to the front?
+func sessionJumpSucceeded(_ session: SessionSnapshot) async -> Bool {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global(qos: .userInitiated).async {
+            let succeeded = TerminalVisibilityDetector.isSessionTabVisible(session)
+                || TerminalVisibilityDetector.isTerminalFrontmostForSession(session)
+            continuation.resume(returning: succeeded)
+        }
+    }
+}
+
+/// Shared click-to-jump driver for the notch cards (approval + question).
+///
+/// Both cards behave identically on click: activate the owning terminal, then
+/// poll a few times to see whether the jump landed — collapsing the notch on
+/// success, error sound + shake on failure. Only the surface allowed to
+/// collapse differs, which is what `kind` selects.
+///
+/// Returns the validation task so the caller can cancel it on disappear, or
+/// nil when there is nothing to validate.
+func startNotchCardJump(
+    kind: NotchCardKind,
+    session: SessionSnapshot?,
+    sessionId: String,
+    appState: AppState,
+    autoCollapseAfterJump: Bool,
+    shakeOffset: Binding<CGFloat>,
+    delays: [UInt64] = sessionJumpValidationDelays
+) -> Task<Void, Never>? {
+    // Session may be nil if it was removed while the card is still visible
+    guard let session else {
+        return Task { @MainActor in
+            SoundManager.shared.preview("8bit_error")
+            await JumpAnimationHelper.runShake(offset: shakeOffset)
+        }
+    }
+
+    // Remote sessions have no local terminal to focus
+    guard !session.isRemote else { return nil }
+
+    TerminalActivator.activate(session: session, sessionId: sessionId)
+
+    guard autoCollapseAfterJump else { return nil }
+
+    // Validate jump: retry 3x with increasing delays (120ms, 320ms, 640ms)
+    // Collapse on success; play error sound + shake on failure
+    return Task {
+        let outcome = await evaluateJumpValidation(
+            delays: delays,
+            checkSucceeded: { await sessionJumpSucceeded(session) }
+        )
+
+        switch outcome {
+        case .success:
+            guard !Task.isCancelled else { return }
+            // Auto-collapse to collapsed surface on successful jump
+            await MainActor.run {
+                guard kind.matches(appState.surface) else { return }
+                withAnimation(NotchAnimation.close) {
+                    appState.surface = .collapsed
+                }
+            }
+        case .failed:
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                SoundManager.shared.preview("8bit_error")
+            }
+            guard !Task.isCancelled else { return }
+            await JumpAnimationHelper.runShake(offset: shakeOffset)
+        case .cancelled:
+            return
+        }
+    }
 }
 
 enum ApprovalInlineSummary: Equatable {

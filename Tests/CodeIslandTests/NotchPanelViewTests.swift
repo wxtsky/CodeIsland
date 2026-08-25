@@ -233,4 +233,34 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 10, hasNotch: false), 100)
         XCTAssertEqual(NotchWidthMetrics.effectiveNotchWidth(notchW: 200, collapsedWidthScale: 900, hasNotch: false), 300)
     }
+
+    // MARK: - Click-to-jump card ownership
+
+    func testApprovalJumpOnlyCollapsesAnApprovalSurface() {
+        XCTAssertTrue(NotchCardKind.approval.matches(.approvalCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.approval.matches(.questionCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.approval.matches(.completionCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.approval.matches(.sessionList))
+        XCTAssertFalse(NotchCardKind.approval.matches(.collapsed))
+    }
+
+    func testQuestionJumpOnlyCollapsesAQuestionSurface() {
+        XCTAssertTrue(NotchCardKind.question.matches(.questionCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.question.matches(.approvalCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.question.matches(.completionCard(sessionId: "s-1")))
+        XCTAssertFalse(NotchCardKind.question.matches(.sessionList))
+        XCTAssertFalse(NotchCardKind.question.matches(.collapsed))
+    }
+
+    /// Jump validation is async: by the time it lands, the panel may already be
+    /// showing the other kind of card. Collapsing then would discard a live
+    /// request the user never touched — the #308 failure mode.
+    func testJumpDoesNotCollapseACardThatReplacedItsOwn() {
+        XCTAssertFalse(NotchCardKind.question.matches(.approvalCard(sessionId: "s-2")))
+        XCTAssertFalse(NotchCardKind.approval.matches(.questionCard(sessionId: "s-2")))
+    }
+
+    func testSessionJumpValidationUsesThreeIncreasingDelays() {
+        XCTAssertEqual(sessionJumpValidationDelays, [120_000_000, 320_000_000, 640_000_000])
+    }
 }

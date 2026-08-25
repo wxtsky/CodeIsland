@@ -866,6 +866,43 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertNil(completedPayload.pendingAction)
     }
 
+    // MARK: - Click-to-jump
+
+    /// Clicking the question card focuses the asking terminal and — when
+    /// Auto-Collapse After Jump is on — folds the notch. That fold must not be
+    /// confused with Skip: the question stays queued and answerable, in the
+    /// terminal or back on the card.
+    func testCollapsingAQuestionCardAfterAJumpKeepsItAnswerable() async throws {
+        let appState = AppState()
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "s-jump",
+            questions: [question(header: "Mode", text: "Pick one", options: ["A", "B"])]
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.questionQueue.count, 1)
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: "s-jump"))
+
+        // What a successful click-to-jump does to the panel.
+        appState.surface = .collapsed
+
+        XCTAssertEqual(appState.questionQueue.count, 1, "a jump must not dequeue the question")
+        XCTAssertNotNil(appState.pendingQuestion(forSession: "s-jump"))
+
+        appState.answerQuestionMulti([
+            (question: "Pick one", answer: "A"),
+        ])
+
+        let answers = try extractAnswers(from: await responseTask.value)
+        XCTAssertEqual(answers["Pick one"] as? String, "A")
+    }
+
     // MARK: - Helpers
 
     private func makeAskUserQuestionEvent(
