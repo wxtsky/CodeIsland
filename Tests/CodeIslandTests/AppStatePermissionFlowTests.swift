@@ -350,6 +350,14 @@ final class AppStatePermissionFlowTests: XCTestCase {
     func testCodexAlwaysAllowMCPToolPersistsApprovalModeWithoutUnsupportedUpdatedPermissions() async throws {
         let codexHome = makeTemporaryCodexHome()
         defer { try? FileManager.default.removeItem(at: codexHome) }
+        try writeCodexConfig(
+            """
+            [mcp_servers.sh_wiki]
+            command = "sh-wiki-mcp"
+
+            """,
+            in: codexHome
+        )
 
         let appState = AppState()
         let event = try makePermissionRequestEvent(
@@ -508,6 +516,70 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertEqual(contents.components(separatedBy: #"pattern = ["npm", "run", "build"]"#).count - 1, 1)
     }
 
+    func testCodexAlwaysAllowPersistsMCPToolForDeclaredServer() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let configURL = try writeCodexConfig(
+            """
+            [mcp_servers.github]
+            command = "github-mcp-server"
+
+            """,
+            in: codexHome
+        )
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-mcp-known",
+            toolName: "mcp__github__get_me",
+            source: "codex"
+        )
+
+        XCTAssertTrue(CodexPermissionRules().persistAlwaysAllowRule(for: event))
+
+        let contents = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(contents.contains("[mcp_servers.github.tools.get_me]"))
+        XCTAssertTrue(contents.contains(#"approval_mode = "approve""#))
+    }
+
+    /// A tools table under a server that declares no transport makes Codex reject
+    /// the entire config.toml, which surfaces as unrelated settings failing to save.
+    func testCodexAlwaysAllowLeavesConfigUntouchedForUndeclaredMCPServer() throws {
+        let codexHome = makeTemporaryCodexHome()
+        defer { try? FileManager.default.removeItem(at: codexHome) }
+        let original = """
+        [mcp_servers.github]
+        command = "github-mcp-server"
+
+        """
+        let configURL = try writeCodexConfig(original, in: codexHome)
+
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-codex-mcp-unknown",
+            toolName: "mcp__codex_app__send_message_to_thread",
+            source: "codex"
+        )
+
+        XCTAssertFalse(CodexPermissionRules().persistAlwaysAllowRule(for: event))
+
+        let contents = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertEqual(contents, original)
+        XCTAssertFalse(contents.contains("codex_app"))
+    }
+
+    func testConfigDeclaresMCPServerTransportRecognisesURLAndRejectsToolsOnlyTable() {
+        let contents = """
+        [mcp_servers.remote]
+        url = "https://example.com/mcp"
+
+        [mcp_servers.codex_app.tools.send_message_to_thread]
+        approval_mode = "approve"
+        """
+
+        XCTAssertTrue(CodexPermissionRules.configDeclaresMCPServerTransport(contents, serverID: "remote"))
+        XCTAssertFalse(CodexPermissionRules.configDeclaresMCPServerTransport(contents, serverID: "codex_app"))
+        XCTAssertFalse(CodexPermissionRules.configDeclaresMCPServerTransport(contents, serverID: "absent"))
+    }
+
     func testCodexAutoReviewConfigDefersPermissionRequestToCodex() throws {
         let codexHome = makeTemporaryCodexHome()
         defer { try? FileManager.default.removeItem(at: codexHome) }
@@ -581,6 +653,14 @@ final class AppStatePermissionFlowTests: XCTestCase {
 
     private func readCodeIslandRules(in codexHome: URL) throws -> String {
         try String(contentsOf: codeIslandRulesPath(in: codexHome), encoding: .utf8)
+    }
+
+    @discardableResult
+    private func writeCodexConfig(_ contents: String, in codexHome: URL) throws -> URL {
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        let configURL = codexHome.appendingPathComponent("config.toml")
+        try contents.write(to: configURL, atomically: true, encoding: .utf8)
+        return configURL
     }
 
     /// #309 — a dismissed request stays queued so the CLI stays blocked, which

@@ -123,6 +123,13 @@ struct CodexPermissionRules {
         do {
             try fileManager.createDirectory(atPath: configDirectory, withIntermediateDirectories: true)
             let existing = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
+            // Codex rejects the whole config.toml when a `mcp_servers.*` table has
+            // no transport, so a tools table under a server we never declared (the
+            // built-in `codex_app` namespace, say) would break every unrelated
+            // setting. Approve the call in-session instead of persisting it.
+            guard Self.configDeclaresMCPServerTransport(existing, serverID: serverID) else {
+                return false
+            }
             let updated = Self.configWithMCPToolApproval(
                 existing,
                 tablePath: targetPath,
@@ -148,6 +155,22 @@ struct CodexPermissionRules {
         let toolName = String(rest[separator.upperBound...])
         guard !serverID.isEmpty, !toolName.isEmpty else { return nil }
         return (serverID, toolName)
+    }
+
+    static func configDeclaresMCPServerTransport(_ contents: String, serverID: String) -> Bool {
+        let lines = contents.components(separatedBy: .newlines)
+        guard let headerIndex = lines.firstIndex(where: {
+            tomlTableSegments(from: $0) == ["mcp_servers", serverID]
+        }) else {
+            return false
+        }
+
+        let endIndex = lines[(headerIndex + 1)...].firstIndex(where: { tomlTableSegments(from: $0) != nil })
+            ?? lines.endIndex
+        return lines[(headerIndex + 1)..<endIndex].contains { line in
+            guard let key = tomlKey(from: line) else { return false }
+            return key == "command" || key == "url"
+        }
     }
 
     static func configWithMCPToolApproval(_ contents: String, tablePath: [String], comment: String) -> String {
