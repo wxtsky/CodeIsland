@@ -42,6 +42,33 @@ final class L10nTests: XCTestCase {
         XCTAssertTrue(missingKeys.isEmpty, "German is missing keys: \(missingKeys)")
     }
 
+    func testEveryTranslationContainsAllKeysPresentInEnglish() {
+        let enKeys = Set(L10n.strings["en"]?.keys ?? Dictionary<String, String>().keys)
+
+        for language in ["zh", "zh-Hant", "de", "ja", "ko", "tr"] {
+            let localizedKeys = Set(L10n.strings[language]?.keys ?? Dictionary<String, String>().keys)
+            let missingKeys = enKeys.subtracting(localizedKeys)
+            XCTAssertTrue(missingKeys.isEmpty, "\(language) is missing keys: \(missingKeys)")
+        }
+    }
+
+    func testGesturePageNameIsLocalized() {
+        let expected = [
+            "en": "Gestures",
+            "zh": "手势",
+            "zh-Hant": "手勢",
+            "de": "Gesten",
+            "ja": "ジェスチャ",
+            "ko": "제스처",
+            "tr": "Hareketler",
+        ]
+
+        for (language, translation) in expected {
+            L10n.shared.language = language
+            XCTAssertEqual(L10n.shared["gestures"], translation)
+        }
+    }
+
     func testTurkishTranslationReturnsCorrectValue() {
         L10n.shared.language = "tr"
 

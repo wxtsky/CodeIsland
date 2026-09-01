@@ -20,48 +20,6 @@ enum NotchWidthMetrics {
     }
 }
 
-// MARK: - Hover interaction state machine
-
-/// Where the island is in its hover interaction. `prehover` is the immediate
-/// lightweight acknowledgement (slight widen + scale) shown while the expand
-/// delay is still running — a quick mouse pass-through only ever plays this
-/// first stage and reverses, instead of popping the full panel open.
-enum NotchHoverPhase {
-    case collapsed
-    case prehover
-    case expanded
-}
-
-enum NotchHoverEvent {
-    case mouseEntered
-    case mouseExited
-    case expandDelayElapsed
-    case collapseDelayElapsed
-}
-
-enum NotchHoverInteraction {
-    static let prehoverAnimationDuration: TimeInterval = 0.21
-    static let expandDelay: TimeInterval = 0.5
-    static let collapseDelay: TimeInterval = 0.5
-    static let prehoverWidthDelta: CGFloat = 7
-    static let prehoverScale: CGFloat = 1.004
-
-    static func nextPhase(from phase: NotchHoverPhase, event: NotchHoverEvent) -> NotchHoverPhase {
-        switch (phase, event) {
-        case (.collapsed, .mouseEntered):
-            return .prehover
-        case (.prehover, .mouseExited):
-            return .collapsed
-        case (.prehover, .expandDelayElapsed):
-            return .expanded
-        case (.expanded, .collapseDelayElapsed):
-            return .collapsed
-        default:
-            return phase
-        }
-    }
-}
-
 enum ToolNameDisplay {
     static let compactMaxCharacters = 24
     static let compactMaxWidth: CGFloat = 120
@@ -85,12 +43,78 @@ enum ToolNameDisplay {
     }
 }
 
+private struct NotchVisibleSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
+/// Reports the exact rendered island bounds synchronously from AppKit. The
+/// hosting view fills the entire panel, including transparent space, so its
+/// window alone is not a safe gesture hit-test boundary.
+private struct NotchVisibleContentFrameReader: NSViewRepresentable {
+    let onFrameChange: @MainActor (_ contentFrame: NSRect, _ panelFrame: NSRect) -> Void
+
+    func makeNSView(context _: Context) -> NotchVisibleContentTrackingView {
+        let view = NotchVisibleContentTrackingView()
+        view.onFrameChange = onFrameChange
+        return view
+    }
+
+    func updateNSView(_ view: NotchVisibleContentTrackingView, context _: Context) {
+        view.onFrameChange = onFrameChange
+        view.reportFrame()
+    }
+}
+
+@MainActor
+private final class NotchVisibleContentTrackingView: NSView {
+    var onFrameChange: ((_ contentFrame: NSRect, _ panelFrame: NSRect) -> Void)?
+    private var lastReportedFrame = NSRect.null
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        reportFrame()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reportFrame()
+    }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        reportFrame()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        reportFrame()
+    }
+
+    func reportFrame() {
+        guard let window, !bounds.isEmpty else { return }
+        let windowFrame = convert(bounds, to: nil)
+        let screenFrame = window.convertToScreen(windowFrame)
+        guard screenFrame != lastReportedFrame else { return }
+        lastReportedFrame = screenFrame
+        onFrameChange?(screenFrame, window.frame)
+    }
+}
+
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
     let notchHeight: CGFloat
     let notchW: CGFloat
     let screenWidth: CGFloat
+    let interactionContext: NotchPanelInteractionContext
 
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
@@ -98,19 +122,28 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
+    @AppStorage(SettingsKey.openOnHover) private var openOnHover = SettingsDefaults.openOnHover
+    @AppStorage(SettingsKey.hoverOpenDelay) private var hoverOpenDelay = SettingsDefaults.hoverOpenDelay
+    @AppStorage(SettingsKey.invertHorizontalSwipeDirection) private var invertHorizontalSwipeDirection = SettingsDefaults.invertHorizontalSwipeDirection
+    @AppStorage(SettingsKey.showContrastEdge) private var showContrastEdge = SettingsDefaults.showContrastEdge
+    @AppStorage(SettingsKey.tintContrastEdgeWithMascot) private var tintContrastEdgeWithMascot = SettingsDefaults.tintContrastEdgeWithMascot
+    @AppStorage(SettingsKey.defaultSource) private var contrastEdgeDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
+    @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
     @State private var isHovered = false
     @State private var idleHovered = false
+    @State private var gestureMonitor = NotchGestureMonitor()
     /// Three-stage hover: collapsed → prehover (immediate ack) → expanded (after delay)
     @State private var hoverPhase: NotchHoverPhase = .collapsed
     /// Curtain animation for tool status toggle
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
+    @State private var visiblePanelSize: CGSize = .zero
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -133,6 +166,27 @@ struct NotchPanelView: View {
 
     /// Mascot size — fits within the menu bar height
     private var mascotSize: CGFloat { min(27, notchHeight - 6) }
+
+    /// The source whose mascot the bar is showing. Mirrors the bar's own
+    /// precedence so the edge is tinted by the mascot actually on screen, and
+    /// falls back to the configured default while everything is idle.
+    private var contrastEdgeSource: String {
+        let sid = appState.rotatingSessionId
+            ?? appState.activeSessionId
+            ?? appState.sessions.keys.sorted().first
+        guard let sid, let session = appState.sessions[sid] else {
+            return contrastEdgeDefaultSource
+        }
+        return session.status == .idle ? contrastEdgeDefaultSource : session.source
+    }
+
+    /// White unless the user has opted into mascot tinting, so turning the
+    /// setting off restores the original edge exactly.
+    private var contrastEdgeColor: Color {
+        tintContrastEdgeWithMascot
+            ? MascotPalette.contrastEdgeTint(for: contrastEdgeSource)
+            : .white
+    }
 
     /// Minimum wing width needed to display compact bar content
     private var compactWingWidth: CGFloat { mascotSize + 14 }
@@ -162,6 +216,59 @@ struct NotchPanelView: View {
         return nw + wing * 2 + extra + toolExtra + prehoverExtra
     }
 
+    private func openSessionList() {
+        guard NotchGesturePolicy.canOpen(surface: appState.surface, hasSessions: isActive) else { return }
+
+        withAnimation(NotchAnimation.open) {
+            appState.surface = .sessionList
+            appState.cancelCompletionQueue()
+            if appState.activeSessionId == nil {
+                appState.activeSessionId = appState.sessions.keys.sorted().first
+            }
+        }
+    }
+
+    private func closeForGesture() {
+        guard NotchGesturePolicy.canClose(surface: appState.surface) else { return }
+
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        hoverPhase = .collapsed
+        withAnimation(NotchAnimation.close) {
+            appState.surface = .collapsed
+        }
+    }
+
+    private func handleGestureAction(_ action: NotchGestureAction) {
+        switch action {
+        case .open:
+            openSessionList()
+        case .close:
+            closeForGesture()
+        case .navigatePrevious, .navigateNext:
+            let controlsVisible = appState.surface == .sessionList && appState.sessions.count > 1
+            guard let nextMode = NotchGesturePolicy.filterMode(
+                from: groupingMode,
+                action: action,
+                controlsVisible: controlsVisible,
+                inverted: invertHorizontalSwipeDirection
+            ) else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                groupingMode = nextMode
+            }
+        }
+    }
+
+    private func updateGestureRegion(visibleSize: CGSize? = nil) {
+        let regionSize = NotchGestureRegionMetrics.resolvedSize(
+            renderedSize: visibleSize ?? visiblePanelSize,
+            fallbackWidth: panelWidth,
+            headerHeight: notchHeight,
+            isExpanded: shouldShowExpanded
+        )
+        gestureMonitor.updateRegion(width: regionSize.width, height: regionSize.height)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -180,6 +287,10 @@ struct NotchPanelView: View {
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
                     }
                     .frame(height: notchHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        openSessionList()
+                    }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -274,6 +385,21 @@ struct NotchPanelView: View {
                 }
             }
             .frame(width: panelWidth)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: NotchVisibleSizePreferenceKey.self,
+                        value: geometry.size
+                    )
+                }
+            }
+            .background {
+                NotchVisibleContentFrameReader { frame, panelFrame in
+                    gestureMonitor.updateVisibleContentFrame(frame, relativeTo: panelFrame)
+                    interactionContext.reportVisibleContentFrame(frame, panelFrame)
+                }
+                .allowsHitTesting(false)
+            }
             .clipped()
             .background(
                 NotchPanelShape(
@@ -282,6 +408,50 @@ struct NotchPanelView: View {
                     minHeight: notchHeight
                 )
                 .fill(.black)
+            )
+            .overlay(
+                NotchVisibleOutlineShape(
+                    topExtension: shouldShowExpanded ? 14 : 3,
+                    bottomRadius: shouldShowExpanded ? 24 : 12,
+                    minHeight: notchHeight
+                )
+                .stroke(
+                    LinearGradient(
+                        stops: [
+                            .init(
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                location: 0
+                            ),
+                            .init(
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeTopOpacity),
+                                location: NotchVisualStyle.contrastEdgeUpperHoldLocation
+                            ),
+                            .init(
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeSideOpacity),
+                                location: NotchVisualStyle.contrastEdgeSideLocation
+                            ),
+                            .init(
+                                color: contrastEdgeColor.opacity(NotchVisualStyle.contrastEdgeBottomOpacity),
+                                location: 1
+                            ),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    style: StrokeStyle(
+                        lineWidth: NotchVisualStyle.contrastEdgeWidth,
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
+                )
+                .blur(radius: NotchVisualStyle.contrastEdgeBlurRadius)
+                .opacity(
+                    showContrastEdge && NotchVisualStyle.showsContrastEdge(hasNotch: hasNotch, phase: hoverPhase)
+                        ? 1
+                        : 0
+                )
+                .animation(NotchAnimation.contrastEdgeTint, value: contrastEdgeColor)
+                .allowsHitTesting(false)
             )
             .offset(y: curtainOffset)
             .opacity(curtainOpacity)
@@ -303,7 +473,18 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onAppear { displayedToolStatus = showToolStatus }
+            .onAppear {
+                displayedToolStatus = showToolStatus
+                updateGestureRegion()
+                gestureMonitor.isEnabled = showBar
+                gestureMonitor.start(panelFrameProvider: interactionContext.panelFrame) { action in
+                    handleGestureAction(action)
+                }
+            }
+            .onDisappear {
+                gestureMonitor.updateVisibleContentFrame(nil)
+                gestureMonitor.stop()
+            }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
             .onHover { hovering in
@@ -345,28 +526,31 @@ struct NotchPanelView: View {
                 }
                 // Respect collapseOnMouseLeave setting
                 if !hovering && !SettingsManager.shared.collapseOnMouseLeave { return }
-                // Smart suppress: don't auto-expand when active session's terminal is foreground
-                if hovering && smartSuppress {
-                    if let delegate = NSApp.delegate as? AppDelegate,
-                       let pc = delegate.panelController,
-                       pc.isActiveTerminalForeground() {
-                        return
-                    }
-                }
 
                 isHovered = hovering
                 if hovering {
-                    // Immediate lightweight acknowledgement; a quick pass-through
-                    // only ever plays this first stage and reverses.
+                    hoverTimer?.invalidate()
+                    hoverTimer = nil
+
+                    // Always acknowledge the pointer with the subtle prehover,
+                    // even when passive hover-to-open is disabled.
                     withAnimation(NotchAnimation.hoverPrehover) {
                         hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
                     }
+
+                    guard NotchHoverInteraction.shouldScheduleOpen(openOnHover: openOnHover) else { return }
+
+                    // Smart suppress applies only to passive hover opening. Click and
+                    // trackpad gestures are intentional and bypass this check.
+                    if smartSuppress, interactionContext.isActiveTerminalForeground() {
+                        return
+                    }
+
                     // Delay full expansion to avoid accidental triggers
-                    hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: NotchHoverInteraction.expandDelay, repeats: false) { _ in
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: HoverOpenDelay.clamped(hoverOpenDelay), repeats: false) { _ in
                         Task { @MainActor in
                             // Guard: mouse may have left during the delay
-                            guard isHovered else { return }
+                            guard isHovered, openOnHover else { return }
                             if hapticOnHover {
                                 let performer = NSHapticFeedbackManager.defaultPerformer
                                 switch hapticIntensity {
@@ -382,13 +566,7 @@ struct NotchPanelView: View {
                                 }
                             }
                             hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .expandDelayElapsed)
-                            withAnimation(NotchAnimation.open) {
-                                appState.surface = .sessionList
-                                appState.cancelCompletionQueue()
-                                if appState.activeSessionId == nil {
-                                    appState.activeSessionId = appState.sessions.keys.sorted().first
-                                }
-                            }
+                            openSessionList()
                         }
                     }
                 } else {
@@ -419,12 +597,31 @@ struct NotchPanelView: View {
                     hoverPhase = .expanded
                 }
             }
+            .onChange(of: openOnHover) { _, enabled in
+                guard !enabled else { return }
+                hoverTimer?.invalidate()
+                hoverTimer = nil
+            }
+            .onChange(of: showBar) { _, visible in
+                gestureMonitor.isEnabled = visible
+            }
+            .onChange(of: panelWidth) { _, _ in
+                updateGestureRegion()
+            }
+            .onChange(of: shouldShowExpanded) { _, _ in
+                updateGestureRegion()
+            }
+            .onPreferenceChange(NotchVisibleSizePreferenceKey.self) { size in
+                visiblePanelSize = size
+                updateGestureRegion(visibleSize: size)
+            }
 
             Spacer()
                 .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(NotchAnimation.open, value: appState.surface)
+        .animation(NotchAnimation.surface(for: appState.surface), value: appState.surface)
+        .animation(NotchAnimation.micro, value: hoverPhase)
     }
 }
 

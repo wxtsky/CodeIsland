@@ -219,6 +219,55 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .prehover, event: .collapseDelayElapsed), .prehover)
     }
 
+    func testDisablingHoverKeepsImmediatePrehoverButDisablesFullOpen() {
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .collapsed, event: .mouseEntered), .prehover)
+        XCTAssertFalse(NotchHoverInteraction.shouldScheduleOpen(openOnHover: false))
+        XCTAssertTrue(NotchHoverInteraction.shouldScheduleOpen(openOnHover: true))
+        XCTAssertEqual(NotchHoverInteraction.nextPhase(from: .expanded, event: .mouseEntered), .expanded)
+    }
+
+    func testMouseLeaveCloseDelayRemainsUnchanged() {
+        XCTAssertEqual(NotchHoverInteraction.collapseDelay, 0.5, accuracy: 0.001)
+    }
+
+    func testContrastEdgeAlwaysAppearsAcrossInteractionStates() {
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .collapsed))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .prehover))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: true, phase: .expanded))
+        XCTAssertTrue(NotchVisualStyle.showsContrastEdge(hasNotch: false, phase: .collapsed))
+    }
+
+    func testContrastEdgeStrengthBuildsFromInvisibleTopToVisibleBottom() {
+        XCTAssertLessThan(NotchVisualStyle.contrastEdgeWidth, 1)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeTopOpacity, 0.005, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeSideOpacity, 0.07, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeBottomOpacity, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeUpperHoldLocation, 0.18, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeSideLocation, 0.72, accuracy: 0.0001)
+        XCTAssertEqual(NotchVisualStyle.contrastEdgeBlurRadius, 0, accuracy: 0.001)
+    }
+
+    func testCloseUsesTheSameResponseTimeAsOpen() {
+        XCTAssertEqual(NotchAnimationMetrics.closeResponse, NotchAnimationMetrics.openResponse, accuracy: 0.001)
+        XCTAssertEqual(NotchAnimationMetrics.surfaceTransition(for: .collapsed), .close)
+        XCTAssertEqual(NotchAnimationMetrics.surfaceTransition(for: .sessionList), .open)
+    }
+
+    func testContrastEdgePathStaysOpenAcrossHiddenTop() {
+        let path = NotchVisibleOutlineShape(
+            topExtension: 14,
+            bottomRadius: 24,
+            minHeight: 38
+        ).path(in: CGRect(x: 0, y: 0, width: 300, height: 120))
+        var closesAcrossTop = false
+        path.forEach { element in
+            if case .closeSubpath = element {
+                closesAcrossTop = true
+            }
+        }
+        XCTAssertFalse(closesAcrossTop)
+    }
+
     func testWidthScaleSliderUsesOnePercentSteps() {
         XCTAssertEqual(NotchWidthScale.min, 50)
         XCTAssertEqual(NotchWidthScale.max, 150)

@@ -120,6 +120,15 @@ struct DiagnosticsExporter {
                 "hideWhenNoSession": UserDefaults.standard.bool(forKey: SettingsKey.hideWhenNoSession),
                 "collapseOnMouseLeave": UserDefaults.standard.bool(forKey: SettingsKey.collapseOnMouseLeave),
                 "smartSuppress": UserDefaults.standard.bool(forKey: SettingsKey.smartSuppress),
+                "openOnHover": UserDefaults.standard.object(forKey: SettingsKey.openOnHover) as? Bool
+                    ?? SettingsDefaults.openOnHover,
+                "hoverOpenDelay": HoverOpenDelay.clamped(
+                    UserDefaults.standard.object(forKey: SettingsKey.hoverOpenDelay) as? Double
+                        ?? SettingsDefaults.hoverOpenDelay
+                ),
+                "invertHorizontalSwipeDirection": UserDefaults.standard.object(
+                    forKey: SettingsKey.invertHorizontalSwipeDirection
+                ) as? Bool ?? SettingsDefaults.invertHorizontalSwipeDirection,
                 "sessionTimeout": UserDefaults.standard.integer(forKey: SettingsKey.sessionTimeout),
                 "maxVisibleSessions": UserDefaults.standard.integer(forKey: SettingsKey.maxVisibleSessions),
                 "mascotSpeed": UserDefaults.standard.integer(forKey: SettingsKey.mascotSpeed),

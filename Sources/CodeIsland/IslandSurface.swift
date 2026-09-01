@@ -13,6 +13,17 @@ enum IslandSurface: Equatable {
 
     var isExpanded: Bool { self != .collapsed }
 
+    /// Whether this surface may be silently collapsed by something other than
+    /// direct user action (e.g. clicking outside the panel, switching desktops)
+    /// — approval/question cards represent a pending request the user still
+    /// needs to act on and must stay put until explicitly resolved.
+    var canAutoCollapse: Bool {
+        switch self {
+        case .collapsed, .approvalCard, .questionCard: return false
+        case .sessionList, .completionCard: return true
+        }
+    }
+
     /// 当前 surface 关联的 session ID（如有）
     var sessionId: String? {
         switch self {

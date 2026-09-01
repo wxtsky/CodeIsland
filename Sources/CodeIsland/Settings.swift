@@ -17,6 +17,39 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+enum HoverOpenDelay {
+    static let minimum = 0.1
+    static let maximum = 1.5
+    static let step = 0.1
+
+    static func clamped(_ value: Double) -> Double {
+        min(max(value, minimum), maximum)
+    }
+}
+
+/// Speed multiplier for the island's open and close animations. Higher is
+/// faster; the stored value scales the spring response rather than a fixed
+/// duration, so the motion stays interruptible at every setting.
+enum NotchAnimationSpeed {
+    static let minimum = 0.5
+    static let maximum = 2.0
+    static let step = 0.1
+    static let normal = 1.0
+
+    /// A missing or zero stored value means "never set" — `UserDefaults.double`
+    /// returns 0 for an absent key — which must read as normal speed, not as
+    /// an infinitely slow animation.
+    static func clamped(_ value: Double) -> Double {
+        guard value > 0 else { return normal }
+        return min(max(value, minimum), maximum)
+    }
+
+    /// Faster speed shortens the spring response.
+    static func response(base: TimeInterval, speed: Double) -> TimeInterval {
+        base / clamped(speed)
+    }
+}
+
 enum SettingsKey {
     // Language
     static let appLanguage = "appLanguage"                 // "system", "en", "zh", "zh-Hant", "de", "ja", "ko", "tr"
@@ -33,6 +66,11 @@ enum SettingsKey {
     static let hideWhenNoSession = "hideWhenNoSession"
     static let smartSuppress = "smartSuppress"
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
+    static let collapseOnSpaceSwipe = "collapseOnSpaceSwipe"
+    static let openOnHover = "openOnHover"
+    static let hoverOpenDelay = "hoverOpenDelay"
+    static let notchAnimationSpeed = "notchAnimationSpeed"
+    static let invertHorizontalSwipeDirection = "invertHorizontalSwipeDirection"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
     static let autoExpandOnPermission = "autoExpandOnPermission"
     static let autoExpandOnCompletion = "autoExpandOnCompletion"
@@ -49,6 +87,8 @@ enum SettingsKey {
     static let showAgentDetails = "showAgentDetails"
     static let notchHeightMode = "notchHeightMode"
     static let customNotchHeight = "customNotchHeight"
+    static let showContrastEdge = "showContrastEdge"
+    static let tintContrastEdgeWithMascot = "tintContrastEdgeWithMascot"
 
     // Sound
     static let soundEnabled = "soundEnabled"
@@ -145,6 +185,14 @@ struct SettingsDefaults {
     static let hideWhenNoSession = false
     static let smartSuppress = true
     static let collapseOnMouseLeave = true
+    static let collapseOnSpaceSwipe = true
+    /// Off by default: hovering the notch on the way to the menu bar is easy to
+    /// do by accident, so opening is opt-in and click/swipe remain the
+    /// deliberate ways in.
+    static let openOnHover = false
+    static let hoverOpenDelay = 0.5
+    static let notchAnimationSpeed = NotchAnimationSpeed.normal
+    static let invertHorizontalSwipeDirection = false
     static let autoCollapseAfterSessionJump = false
     static let autoExpandOnPermission = true
     static let autoExpandOnCompletion = true
@@ -160,6 +208,10 @@ struct SettingsDefaults {
     static let showAgentDetails = false
     static let notchHeightMode = NotchHeightMode.matchNotch.rawValue
     static let customNotchHeight = 37.0
+    static let showContrastEdge = true
+    /// Off by default: the white edge is the established look, and leaving it
+    /// as the default makes the setting a purely additive opt-in.
+    static let tintContrastEdgeWithMascot = false
 
     static let soundEnabled = false
     static let soundVolume = 50
@@ -232,6 +284,11 @@ class SettingsManager {
             SettingsKey.hideWhenNoSession: SettingsDefaults.hideWhenNoSession,
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
+            SettingsKey.collapseOnSpaceSwipe: SettingsDefaults.collapseOnSpaceSwipe,
+            SettingsKey.openOnHover: SettingsDefaults.openOnHover,
+            SettingsKey.hoverOpenDelay: SettingsDefaults.hoverOpenDelay,
+            SettingsKey.notchAnimationSpeed: SettingsDefaults.notchAnimationSpeed,
+            SettingsKey.invertHorizontalSwipeDirection: SettingsDefaults.invertHorizontalSwipeDirection,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
             SettingsKey.autoExpandOnPermission: SettingsDefaults.autoExpandOnPermission,
             SettingsKey.autoExpandOnCompletion: SettingsDefaults.autoExpandOnCompletion,
@@ -246,6 +303,8 @@ class SettingsManager {
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.notchHeightMode: SettingsDefaults.notchHeightMode,
             SettingsKey.customNotchHeight: SettingsDefaults.customNotchHeight,
+            SettingsKey.showContrastEdge: SettingsDefaults.showContrastEdge,
+            SettingsKey.tintContrastEdgeWithMascot: SettingsDefaults.tintContrastEdgeWithMascot,
             SettingsKey.soundEnabled: SettingsDefaults.soundEnabled,
             SettingsKey.soundVolume: SettingsDefaults.soundVolume,
             SettingsKey.soundSessionStart: SettingsDefaults.soundSessionStart,
@@ -334,6 +393,31 @@ class SettingsManager {
     var collapseOnMouseLeave: Bool {
         get { defaults.bool(forKey: SettingsKey.collapseOnMouseLeave) }
         set { defaults.set(newValue, forKey: SettingsKey.collapseOnMouseLeave) }
+    }
+
+    var collapseOnSpaceSwipe: Bool {
+        get { defaults.bool(forKey: SettingsKey.collapseOnSpaceSwipe) }
+        set { defaults.set(newValue, forKey: SettingsKey.collapseOnSpaceSwipe) }
+    }
+
+    var openOnHover: Bool {
+        get { defaults.bool(forKey: SettingsKey.openOnHover) }
+        set { defaults.set(newValue, forKey: SettingsKey.openOnHover) }
+    }
+
+    var hoverOpenDelay: Double {
+        get { HoverOpenDelay.clamped(defaults.double(forKey: SettingsKey.hoverOpenDelay)) }
+        set { defaults.set(HoverOpenDelay.clamped(newValue), forKey: SettingsKey.hoverOpenDelay) }
+    }
+
+    var notchAnimationSpeed: Double {
+        get { NotchAnimationSpeed.clamped(defaults.double(forKey: SettingsKey.notchAnimationSpeed)) }
+        set { defaults.set(NotchAnimationSpeed.clamped(newValue), forKey: SettingsKey.notchAnimationSpeed) }
+    }
+
+    var invertHorizontalSwipeDirection: Bool {
+        get { defaults.bool(forKey: SettingsKey.invertHorizontalSwipeDirection) }
+        set { defaults.set(newValue, forKey: SettingsKey.invertHorizontalSwipeDirection) }
     }
 
     var hapticOnHover: Bool {

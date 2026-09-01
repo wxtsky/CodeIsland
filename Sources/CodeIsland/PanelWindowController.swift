@@ -21,9 +21,11 @@ private class KeyablePanel: NSPanel {
 /// Also guards against NSHostingView constraint-update re-entrancy crash:
 /// during updateConstraints(), SwiftUI may invalidate the view graph and
 /// call setNeedsUpdateConstraints again, which AppKit forbids.
-private class NotchHostingView<Content: View>: NSHostingView<Content> {
+private class NotchHostingView<Content: View>: NSHostingView<Content>, FourFingerSwipeObserving {
     /// When true, the deferred handler is setting super — don't re-defer.
     private var applyingDeferred = false
+    private var fourFingerSwipeState = FourFingerSwipeTrackingState()
+    var onFourFingerSwipeThresholdCrossed: (() -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         window?.makeKey()
@@ -39,6 +41,26 @@ private class NotchHostingView<Content: View>: NSHostingView<Content> {
     /// allocations and main-queue wakeups on an otherwise idle Mac (#299).
     private var pendingConstraintsValue: Bool?
     private var pendingLayoutValue: Bool?
+
+    override func touchesBegan(with event: NSEvent) {
+        fourFingerSwipeTouchesBegan(event, state: &fourFingerSwipeState)
+        super.touchesBegan(with: event)
+    }
+
+    override func touchesMoved(with event: NSEvent) {
+        fourFingerSwipeTouchesMoved(event, state: &fourFingerSwipeState)
+        super.touchesMoved(with: event)
+    }
+
+    override func touchesEnded(with event: NSEvent) {
+        fourFingerSwipeState.reset()
+        super.touchesEnded(with: event)
+    }
+
+    override func touchesCancelled(with event: NSEvent) {
+        fourFingerSwipeState.reset()
+        super.touchesCancelled(with: event)
+    }
 
     /// Always defer `needsUpdateConstraints = true` to the next run-loop turn.
     /// During AppKit's display-cycle (constraint-update or layout phases),
@@ -169,9 +191,12 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     private var autoScreenPoller: Timer?
     private var fullscreenPoller: Timer?
     private var isSessionObservationArmed = false
+    private var activeSpaceTransitionTask: Task<Void, Never>?
     private var fullscreenLatch = false
     private var settingsObservers: [NSObjectProtocol] = []
     private var globalClickMonitor: Any?
+    private let spacesSwipeMonitor = SpacesSwipeMonitor()
+    private var visibleContentGeometry: (contentFrame: NSRect, panelFrame: NSRect)?
     private var lastChosenScreenSignature = ""
     private var isAnimatingScreenHop = false
     private var dragStartMouseX: CGFloat?
@@ -210,6 +235,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                 guard let self else { return }
                 self.isSessionObservationArmed = false
                 self.updateVisibility()
+                self.updateSpacesSwipeArming()
                 self.armSessionObservation()
             }
         }
@@ -221,13 +247,26 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         self.hostingView = contentView
 
         let size = panelSize
+        // `.utilityWindow` + `.hudWindow` matches a reference notch-overlay panel's
+        // style mask; the chrome they'd normally add is fully suppressed below
+        // (clear background, no shadow, custom SwiftUI content), but the mask
+        // itself is part of how such panels stay correctly composited on all
+        // Spaces without custom Space-change handling.
         let panel = KeyablePanel(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
+        // isMovableByWindowBackground alone only blocks click-drag on the
+        // background — isMovable is the master switch, and left at its
+        // default (true) any OS-level window-drag mechanism (e.g. the
+        // accessibility three/four-finger trackpad drag) can reposition the
+        // panel. That's indistinguishable from "the notch doesn't stay
+        // pinned during a Space swipe" if the drag gesture and the Space
+        // gesture are easy to conflate.
+        panel.isMovable = false
         panel.acceptsMouseMovedEvents = true
         panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
         panel.backgroundColor = .clear
@@ -235,7 +274,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.collectionBehavior = PanelWindowBehavior.collectionBehavior
         panel.sharingType = .readOnly
         panel.contentView = contentView
         panel.delegate = self
@@ -246,6 +285,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         setupHorizontalDragMonitor()
         updatePosition()
         panel.orderFrontRegardless()
+        AllSpacesAnchor.shared.anchor(panel)
         MascotAnimationGate.shared.setPanelVisible(true)
 
         // Screen change observer
@@ -272,19 +312,30 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.refreshCurrentScreen()
-                if self.isActiveSpaceFullscreen() {
-                    self.fullscreenLatch = true
+                self.collapseIfPossible()
+                self.activeSpaceTransitionTask?.cancel()
+                self.fullscreenPoller?.invalidate()
+                self.fullscreenPoller = nil
+
+                // Bookkeeping only — no window/order/visibility call here. A reference
+                // notch overlay (boring.notch) does nothing at all on this notification
+                // and stays pinned purely via .canJoinAllSpaces + .stationary; touching
+                // orderFrontRegardless/orderOut mid-transition, even when it should be a
+                // no-op, is itself what can make WindowServer reconsider the window's
+                // compositing during the live Space-swipe animation.
+                self.fullscreenLatch = PanelSpaceTransitionPolicy.immediateFullscreenLatch
+
+                self.activeSpaceTransitionTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(PanelSpaceTransitionPolicy.fullscreenEvaluationDelay))
+                    guard !Task.isCancelled, let self else { return }
+
+                    self.fullscreenLatch = PanelSpaceTransitionPolicy.settledFullscreenLatch(
+                        isFullscreen: self.isActiveSpaceFullscreen()
+                    )
                     self.updateVisibility()
-                    self.startFullscreenExitPoller()
-                } else {
-                    // Non-fullscreen space: clear any stale latch immediately so the panel
-                    // doesn't stay hidden for up to 1.5s while the exit poller catches up (#104).
                     if self.fullscreenLatch {
-                        self.fullscreenLatch = false
-                        self.fullscreenPoller?.invalidate()
-                        self.fullscreenPoller = nil
+                        self.startFullscreenExitPoller()
                     }
-                    self.updateVisibility()
                 }
             }
         }
@@ -312,23 +363,61 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         // Global click monitor: close panel + repost click when clicking outside
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             Task { @MainActor in
-                guard let self = self, self.appState.surface.isExpanded else { return }
-                // Don't close during approval/question
-                switch self.appState.surface {
-                case .approvalCard, .questionCard: return
-                default: break
-                }
+                guard let self = self, self.appState.surface.canAutoCollapse else { return }
                 // Don't collapse if click is within the panel frame (event leaked on external display)
                 if let panelFrame = self.panel?.frame {
                     let clickLocation = NSEvent.mouseLocation
                     if panelFrame.contains(clickLocation) { return }
                 }
-                withAnimation(NotchAnimation.close) {
-                    self.appState.surface = .collapsed
-                    self.appState.cancelCompletionQueue()
-                }
+                self.collapseIfPossible()
             }
         }
+
+        // Start collapsing the moment a Spaces swipe becomes deliberate. The
+        // activeSpaceDidChangeNotification observer above only fires once macOS
+        // has finished the transition, which leaves the island riding through
+        // the whole animation fully expanded before snapping shut.
+        spacesSwipeMonitor.start { [weak self] in
+            guard let self else { return }
+            guard self.isPointerOverIsland else {
+                log.debug("Spaces swipe ignored — pointer is not over the island")
+                return
+            }
+            log.debug("Spaces swipe crossed threshold over the island — collapsing")
+            self.collapseIfPossible()
+        }
+        updateSpacesSwipeArming()
+    }
+
+    /// Per-frame touch work only runs while there is an expanded surface worth
+    /// collapsing and the user hasn't turned the behavior off.
+    private func updateSpacesSwipeArming() {
+        let enabled = SettingsManager.shared.collapseOnSpaceSwipe
+        spacesSwipeMonitor.setArmed(enabled && appState.surface.canAutoCollapse)
+    }
+
+    /// Whether the pointer sits over the island's rendered content.
+    ///
+    /// A four-finger swipe is a global gesture, so without this the island
+    /// would collapse on every desktop switch anywhere on screen. Requiring
+    /// the pointer to be on the island scopes it to the case that actually
+    /// matters: the user is looking at the expanded panel and swipes away.
+    private var isPointerOverIsland: Bool {
+        guard let panelFrame = panel?.frame,
+              let geometry = visibleContentGeometry else { return false }
+
+        // The reported frame is relative to the panel position at layout time;
+        // re-anchor it if the panel has since moved (screen hop, drag).
+        let contentFrame = geometry.contentFrame.offsetBy(
+            dx: panelFrame.minX - geometry.panelFrame.minX,
+            dy: panelFrame.minY - geometry.panelFrame.minY
+        )
+        let hitbox = NotchGestureHitbox(
+            panelFrame: contentFrame,
+            regionWidth: contentFrame.width,
+            regionHeight: contentFrame.height
+        )
+        return hitbox.contains(NSEvent.mouseLocation)
     }
 
     private func makeHostingView(for screen: NSScreen) -> NotchHostingView<NotchPanelView> {
@@ -341,11 +430,25 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             hasNotch: hasNotch,
             notchHeight: notchHeight,
             notchW: notchW,
-            screenWidth: screen.frame.width
+            screenWidth: screen.frame.width,
+            interactionContext: NotchPanelInteractionContext(
+                panelFrame: { [weak self] in self?.gesturePanelFrame },
+                isActiveTerminalForeground: { [weak self] in
+                    self?.isActiveTerminalForeground() ?? false
+                },
+                reportVisibleContentFrame: { [weak self] contentFrame, panelFrame in
+                    self?.visibleContentGeometry = (contentFrame, panelFrame)
+                }
+            )
         )
         let contentView = NotchHostingView(rootView: rootView)
         contentView.sizingOptions = []
         contentView.translatesAutoresizingMaskIntoConstraints = true
+        contentView.allowedTouchTypes = [.indirect]
+        contentView.wantsRestingTouches = true
+        contentView.onFourFingerSwipeThresholdCrossed = { [weak self] in
+            self?.collapseIfPossible()
+        }
         return contentView
     }
 
@@ -467,6 +570,10 @@ class PanelWindowController: NSObject, NSWindowDelegate {
                     self.updateVisibility()
                     self.updatePosition()
                 }
+                // The system trackpad gesture preference can change while we
+                // run, and so can the user's own toggle for this behavior.
+                self.spacesSwipeMonitor.refreshFingerCounts()
+                self.updateSpacesSwipeArming()
             }
         }
         settingsObservers.append(observer)
@@ -612,6 +719,17 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Collapse the panel if its current surface allows it (see
+    /// `IslandSurface.canAutoCollapse`) — shared by the click-outside monitor,
+    /// the Space-change fallback, and the four-finger-swipe detector.
+    private func collapseIfPossible() {
+        guard appState.surface.canAutoCollapse else { return }
+        withAnimation(NotchAnimation.close) {
+            appState.surface = .collapsed
+            appState.cancelCompletionQueue()
+        }
+    }
+
     /// Update panel visibility based on settings
     private func updateVisibility() {
         guard let panel = panel else { return }
@@ -670,6 +788,9 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         return false
     }
 
+    /// Current screen-space bounds used by the notch-only gesture monitor.
+    var gesturePanelFrame: NSRect? { panel?.frame }
+
     /// Fast check: is the terminal running the active session the foreground app?
     /// Main-thread safe — no AppleScript or subprocess calls.
     func isActiveTerminalForeground() -> Bool {
@@ -694,6 +815,10 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     }
 
     deinit {
+        if let panel {
+            AllSpacesAnchor.shared.release(panel)
+        }
+        activeSpaceTransitionTask?.cancel()
         autoScreenPoller?.invalidate()
         fullscreenPoller?.invalidate()
         for observer in settingsObservers {
