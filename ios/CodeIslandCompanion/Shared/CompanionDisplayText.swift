@@ -19,6 +19,12 @@ enum CompanionDisplayText {
             return "OPENCODE"
         case "qwen":
             return "QWEN"
+        case "aiwork":
+            return "AIWORK"
+        case "aiwork-cli":
+            // The uppercase fallback would render "AIWORK-CLI"; match the Mac's
+            // "AiWork CLI" spacing instead.
+            return "AIWORK CLI"
         default:
             return trimmed.uppercased()
         }

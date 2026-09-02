@@ -60,6 +60,10 @@ struct TerminalActivator {
         "stepfun": "com.stepfun.app",
         "opencode": "ai.opencode.desktop",
         "workbuddy": "com.workbuddy.workbuddy",
+        // AiWork GUI only. `aiwork-cli` is deliberately absent: a TUI session runs
+        // in a terminal, so it must fall through to terminal tab-matching instead
+        // of raising — or launching — the IDE.
+        "aiwork": "com.alipay.dtcoder.ide",
     ]
 
     /// Bundle IDs of apps that have both APP and CLI modes.
@@ -76,6 +80,7 @@ struct TerminalActivator {
         "com.stepfun.app": "StepFun",
         "ai.opencode.desktop": "OpenCode",
         "com.workbuddy.workbuddy": "WorkBuddy",
+        "com.alipay.dtcoder.ide": "AiWork",
         // Claude Code Desktop (#211). Deliberately NOT in sourceToNativeAppBundleId:
         // most "claude" sessions are terminal CLI runs, and that fallback would
         // steal their click-to-jump whenever the desktop app happens to be open.

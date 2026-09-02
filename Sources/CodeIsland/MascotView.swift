@@ -69,6 +69,8 @@ struct MascotView: View {
                 PiView(status: status, size: size)
             case "cline":
                 ClineView(status: status, size: size)
+            case "aiwork", "aiwork-cli":
+                AiWorkView(status: status, size: size)
             default:
                 ClawdView(status: status, size: size)
             }

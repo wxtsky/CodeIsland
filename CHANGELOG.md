@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### English
+- Add AiWork, both the GUI and the CLI/TUI, as a read-only view: session title, working directory, live status, the running tool, and streaming reply/thinking text all reach the notch, and a request for approval, a plan confirmation or a question lights up its waiting state and shows what is being asked — but approving, denying and answering still happen on the AiWork side, so the panel offers no buttons for them. Completion and failure each play their sound, an abort is silent. GUI and CLI are independent toggles in Hooks settings and neither installs a hook or a plugin — a running AiWork is picked up as-is. A finished conversation leaves the panel about a minute after its last activity, much sooner than the ten-minute timeout every other tool uses, and the iPhone/Watch companion shows AiWork sessions with their own AiWorkBot
+
+### 中文
+- 新增 AiWork，GUI 与 CLI/TUI 都支持，本期为只读展示：会话标题、工作目录、实时状态、正在执行的工具，以及回复正文与思考过程的流式增量都会进刘海；需要授权、确认计划或被反问时会亮起等待状态并显示请求内容，但同意、拒绝与作答仍要回 AiWork 侧操作，面板不提供按钮。完成与失败各有提示音，中断静默。GUI 与 CLI 在 Hooks 设置里是两个独立开关，而且都不需要装 hook 或插件——AiWork 只要在跑就能被识别。跑完的会话会在最后一次活动后约一分钟离开面板，比其他工具的十分钟超时快得多；iPhone / Watch 端也能看到 AiWork 会话与它的 AiWorkBot 形象
+
 ## [v1.0.33] - 2026-09-01
 
 ### English
