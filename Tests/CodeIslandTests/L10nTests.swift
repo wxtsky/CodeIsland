@@ -86,6 +86,24 @@ final class L10nTests: XCTestCase {
         XCTAssertEqual(L10n.shared["quit"], "Beenden")
     }
 
+    func testNotchAnimationSpeedLabelsAreLocalized() {
+        let expected: [String: (title: String, description: String)] = [
+            "en": ("Open / Close Speed", "How fast the island expands and collapses"),
+            "de": ("Öffnungs-/Schließgeschwindigkeit", "Wie schnell die Insel auf- und zuklappt"),
+            "zh": ("展开 / 收起速度", "灵动岛展开和收起动画的快慢"),
+            "zh-Hant": ("展開 / 收合速度", "靈動島展開和收合動畫的快慢"),
+            "ja": ("開閉スピード", "アイランドが展開・収縮する速さ"),
+            "ko": ("열기 / 닫기 속도", "아일랜드가 펼쳐지고 접히는 속도"),
+            "tr": ("Açılma / Kapanma Hızı", "Adanın ne kadar hızlı açılıp kapandığı"),
+        ]
+
+        for (language, translation) in expected {
+            L10n.shared.language = language
+            XCTAssertEqual(L10n.shared["notch_animation_speed"], translation.title)
+            XCTAssertEqual(L10n.shared["notch_animation_speed_desc"], translation.description)
+        }
+    }
+
     func testEffectiveLanguageReturnsTurkishWhenSystemLocaleIsTurkish() {
         L10n.shared.language = "system"
 
