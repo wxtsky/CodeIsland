@@ -40,6 +40,18 @@ public struct SessionSnapshot: Sendable {
         "cline",
         "dsh",
         "zcode",
+        "aiwork",
+        "aiwork-cli",
+    ]
+
+    /// Sources whose tool/description text arrives as a rapid delta stream
+    /// (AiWork/Agentix `stream.text_delta`). MorphText swaps text immediately for
+    /// these instead of restarting its blur morph on every update, which would
+    /// otherwise leave the label permanently unreadable. Scoped deliberately:
+    /// every other source keeps the original morph behaviour.
+    public static let rapidStreamingSources: Set<String> = [
+        "aiwork",
+        "aiwork-cli",
     ]
 
     public static let ideCompletionSources: Set<String> = [
@@ -152,6 +164,9 @@ public struct SessionSnapshot: Sendable {
     public var sessionTitle: String?
     public var sessionTitleSource: SessionTitleSource?
     public var providerSessionId: String?
+    /// AiWork/Agentix `client_type` from `sessions.get` (e.g. `DTCoderGUI`, `AiWorkGUI`).
+    /// Prefer this over the `acp:`/`cli:` session-id prefix — modern TUI also uses `acp:`.
+    public var aiworkClientType: String?
     public var remoteHostId: String?
     public var remoteHostName: String?
     /// nil = unchecked, false = not YOLO, true = YOLO
@@ -272,6 +287,12 @@ public struct SessionSnapshot: Sendable {
             "qoderclicn": "qoder-cli",
             "qodercli-cn": "qoder-cli",
             "qoder-cn": "qoder-cli",
+            // AiWork (formerly DTCoder) — the pre-rename spelling and the
+            // no-separator CLI variants normalise onto the `aiwork*` keys.
+            "dtcoder": "aiwork",
+            "dtcoder-cli": "aiwork-cli",
+            "dtcodercli": "aiwork-cli",
+            "aiworkcli": "aiwork-cli",
             "qodercn": "qoder-cli",
             // QoderWork — Qoder's standalone desktop assistant app (not the
             // IDE); own hooks file at ~/.qoderwork/settings.json (#249).
@@ -631,6 +652,8 @@ public struct SessionSnapshot: Sendable {
         case "kiro": return "Kiro"
         case "cline": return "Cline"
         case "zcode": return "ZCode"
+        case "aiwork": return "AiWork"
+        case "aiwork-cli": return "AiWork CLI"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {
                 return customName
@@ -691,6 +714,7 @@ public struct SessionSnapshot: Sendable {
         // Claude Code Desktop (#211): local Code-tab sessions run the same engine
         // and fire the same ~/.claude/settings.json hooks as the CLI.
         "com.anthropic.claudefordesktop": "Claude",
+        "com.alipay.dtcoder.ide": "AiWork",
     ]
 
     /// Maps native app bundle IDs to their expected source identifier.
@@ -711,6 +735,7 @@ public struct SessionSnapshot: Sendable {
         // Claude Code Desktop (#211) — hook subprocesses inherit the app's
         // __CFBundleIdentifier, so desktop Code sessions arrive tagged with it.
         "com.anthropic.claudefordesktop": "claude",
+        "com.alipay.dtcoder.ide": "aiwork",
     ]
 
     /// Source id for the native app that owns `bundleId`, if any.
@@ -785,6 +810,9 @@ public struct SessionSnapshot: Sendable {
         if isRemote {
             return remoteDisplayName ?? "Remote"
         }
+        // AiWork (formerly DTCoder): badge names match Hooks settings.
+        if source == "aiwork" { return "AiWork" }
+        if source == "aiwork-cli" { return "AiWork CLI" }
         // If termBundleId is a known app, show app name (APP mode)
         if let bid = termBundleId, let name = Self.appBundleNames[bid] {
             return name

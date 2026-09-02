@@ -148,6 +148,7 @@ private struct MascotContactSheet: View {
         case "kimi": KimiView(status: status, size: size)
         case "pi": PiView(status: status, size: size)
         case "cline": ClineView(status: status, size: size)
+        case "aiwork", "aiwork-cli": AiWorkView(status: status, size: size)
         default: ClawdView(status: status, size: size)
         }
     }

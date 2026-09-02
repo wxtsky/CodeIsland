@@ -21,12 +21,12 @@
 
 CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的工作状态。不用再频繁切窗口去看 Claude 是否在等审批、Codex 是否完成了任务。
 
-它通过 Unix socket IPC 连接 **14 种 AI 编码工具**，在刘海面板中展示会话状态、工具调用、权限请求等信息——全部呈现在一个紧凑的像素风面板中。
+它通过 Unix socket IPC 连接 **16 种 AI 编码工具**，在刘海面板中展示会话状态、工具调用、权限请求等信息——全部呈现在一个紧凑的像素风面板中。
 
 ## 功能特性
 
 - **刘海原生 UI** — 从 MacBook 刘海处展开，空闲时自动收起
-- **支持 15 种 AI 工具** — Claude Code、Codex、Grok CLI、Gemini CLI、Cursor、Copilot、Trae/Traecli、Qoder、Factory、CodeBuddy、OpenCode、Kimi Code CLI、Cline、Pi / Oh My Pi、DeepSeek Harness
+- **支持 16 种 AI 工具** — Claude Code、Codex、Grok CLI、Gemini CLI、Cursor、Copilot、Trae/Traecli、Qoder、Factory、CodeBuddy、OpenCode、Kimi Code CLI、Cline、Pi / Oh My Pi、DeepSeek Harness、AiWork
 - **实时状态追踪** — 查看活跃会话、工具调用和 AI 回复
 - **权限管理** — 直接在面板上审批/拒绝工具权限请求
 - **问题回答** — 无需离开当前应用即可回答 Agent 的问题
@@ -58,6 +58,7 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 | <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | 完整 |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/pi.png" width="16"> Pi / Oh My Pi | 8 | 终端 | 完整 |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="16"> DeepSeek Harness | 9 | 终端 | 完整 |
+| | <img src="Sources/CodeIsland/Resources/cli-icons/aiwork.png" width="16"> AiWork | 20 | IDE/终端 | 完整 |
 
 ## 安装
 
