@@ -19,6 +19,7 @@ targets:
     sources:
       - path: CodeIslandCompanion
       - path: Shared
+      - path: ../../Sources/CodeIsland/AiWorkView.swift
       - path: ../../Sources/CodeIsland/AntiGravityView.swift
       - path: ../../Sources/CodeIsland/BuddyView.swift
       - path: ../../Sources/CodeIsland/ClineView.swift
@@ -59,6 +60,7 @@ targets:
     sources:
       - path: CodeIslandCompanionWidget
       - path: Shared
+      - path: ../../Sources/CodeIsland/AiWorkView.swift
       - path: ../../Sources/CodeIsland/AntiGravityView.swift
       - path: ../../Sources/CodeIsland/BuddyView.swift
       - path: ../../Sources/CodeIsland/ClineView.swift
@@ -96,6 +98,7 @@ targets:
       - path: Shared/SharedMascotView.swift
       - path: Shared/WatchStateStore.swift
       - path: Shared/L10n.swift
+      - path: ../../Sources/CodeIsland/AiWorkView.swift
       - path: ../../Sources/CodeIsland/AntiGravityView.swift
       - path: ../../Sources/CodeIsland/BuddyView.swift
       - path: ../../Sources/CodeIsland/ClineView.swift
@@ -137,6 +140,7 @@ targets:
       - path: Shared/SharedMascotView.swift
       - path: Shared/WatchStateStore.swift
       - path: Shared/L10n.swift
+      - path: ../../Sources/CodeIsland/AiWorkView.swift
       - path: ../../Sources/CodeIsland/AntiGravityView.swift
       - path: ../../Sources/CodeIsland/BuddyView.swift
       - path: ../../Sources/CodeIsland/ClineView.swift

@@ -394,6 +394,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "more below",
         "lines": "lines",
         "reply_complete_placeholder": "Reply complete",
+        "reply_failed_placeholder": "Reply failed",
+        "reply_aborted_placeholder": "Reply interrupted",
     ]
 
     private static let de: [String: String] = en.merging([
@@ -743,6 +745,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "weitere unten",
         "lines": "Zeilen",
         "reply_complete_placeholder": "Antwort abgeschlossen",
+        "reply_failed_placeholder": "Antwort fehlgeschlagen",
+        "reply_aborted_placeholder": "Antwort abgebrochen",
     ]) { _, localized in localized }
 
     private static let zh: [String: String] = [
@@ -1096,6 +1100,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "个未显示",
         "lines": "行",
         "reply_complete_placeholder": "回复完成",
+        "reply_failed_placeholder": "回复失败",
+        "reply_aborted_placeholder": "回复已中断",
     ]
 
     private static let zhHant: [String: String] = [
@@ -1449,6 +1455,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "個未顯示",
         "lines": "行",
         "reply_complete_placeholder": "回覆完成",
+        "reply_failed_placeholder": "回覆失敗",
+        "reply_aborted_placeholder": "回覆已中斷",
     ]
 
     private static let ja: [String: String] = [
@@ -1802,6 +1810,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "下にさらにあります",
         "lines": "行",
         "reply_complete_placeholder": "返信完了",
+        "reply_failed_placeholder": "返信失敗",
+        "reply_aborted_placeholder": "返信中断",
     ]
 
     private static let ko: [String: String] = [
@@ -2155,6 +2165,8 @@ final class L10n: ObservableObject {
         "scroll_hidden": "아래에 더 있음",
         "lines": "줄",
         "reply_complete_placeholder": "답변 완료",
+        "reply_failed_placeholder": "답변 실패",
+        "reply_aborted_placeholder": "답변 중단",
     ]
 
     private static let tr: [String: String] = [
@@ -2508,5 +2520,7 @@ final class L10n: ObservableObject {
         "scroll_hidden": "aşağıda",
         "lines": "satır",
         "reply_complete_placeholder": "Yanıt tamamlandı",
+        "reply_failed_placeholder": "Yanıt başarısız",
+        "reply_aborted_placeholder": "Yanıt kesildi",
     ]
 }

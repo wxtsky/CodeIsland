@@ -159,7 +159,7 @@ public enum CLIProcessResolver {
     }
 }
 
-public enum AgentStatus: Sendable {
+public enum AgentStatus: Sendable, Equatable {
     case idle
     case processing
     case running

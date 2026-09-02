@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### English
+- Add AiWork (formerly DTCoder), both the GUI and the CLI/TUI. It installs no hooks: CodeIsland connects to the Agentix daemon's Unix socket (`~/.agentix/run/*/agent.sock`), subscribes to `sessions.watch`, and maps 20 `stream.*` events onto session cards, with `sessions.get` / `agent.stats` / `sessions.list` filling in title, working directory and live status. GUI and CLI are independent toggles in Hooks settings, and an idle conversation is swept shortly after its last activity because the daemon keeps every session `active` forever and never emits a close event
+
+### 中文
+- 新增 AiWork（原 AiWork），GUI 与 CLI/TUI 都支持。它不需要安装任何 hook：CodeIsland 直接连 Agentix 守护进程的 Unix socket（`~/.agentix/run/*/agent.sock`）订阅 `sessions.watch`，把 20 个 `stream.*` 事件映射成会话卡片，再用 `sessions.get` / `agent.stats` / `sessions.list` 补齐标题、工作目录和实时状态。GUI 与 CLI 在 Hooks 设置里是两个独立开关；空闲会话会在最后一次活动后不久被清掉——守护进程把每个会话永久标记为 `active`，从不发送关闭事件
+
 ## [v1.0.33] - 2026-09-01
 
 ### English

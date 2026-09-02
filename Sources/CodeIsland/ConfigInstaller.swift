@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CodeIslandCore
 import Yams
 
@@ -1025,6 +1026,11 @@ struct ConfigInstaller {
 
     /// Check if a specific CLI's hooks are installed
     static func isInstalled(source: String) -> Bool {
+        if source == "aiwork" || source == "aiwork-cli" {
+            // No hooks to install — "activated" means monitoring is enabled and
+            // the matching AiWork surface is present on this machine.
+            return isEnabled(source: source) && cliExists(source: source)
+        }
         if source == "opencode" { return isOpencodePluginInstalled(fm: FileManager.default) }
         if source == "pi" { return isPiExtensionInstalled(fm: FileManager.default) }
         if source == "omp" { return isOmpExtensionInstalled(fm: FileManager.default) }
@@ -1043,6 +1049,8 @@ struct ConfigInstaller {
 
     /// Check if CLI directory exists (tool is installed on this machine)
     static func cliExists(source: String) -> Bool {
+        if source == "aiwork" { return aiworkGuiIsPresent() }
+        if source == "aiwork-cli" { return aiworkCliIsPresent() }
         if source == "opencode" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.config/opencode") }
         if source == "pi" { return FileManager.default.fileExists(atPath: piAgentDir) }
         if source == "omp" { return FileManager.default.fileExists(atPath: ompAgentDir) }
@@ -1088,6 +1096,51 @@ struct ConfigInstaller {
         return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.dsh")
     }
 
+    /// AiWork GUI (formerly DTCoder). Bundle id is still `com.alipay.dtcoder.ide`.
+    static func aiworkGuiIsPresent(fileManager fm: FileManager = .default) -> Bool {
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.alipay.dtcoder.ide") != nil {
+            return true
+        }
+        let names = ["AiWork.app", "DTCoder.app"]
+        let roots = [NSHomeDirectory() + "/Applications", "/Applications"]
+        return names.contains { name in
+            roots.contains { root in
+                fm.fileExists(atPath: (root as NSString).appendingPathComponent(name))
+            }
+        }
+    }
+
+    /// AiWork CLI (`aiwork` / legacy `aiwork` on PATH, or Agentix state).
+    static func aiworkCliIsPresent(fileManager fm: FileManager = .default) -> Bool {
+        let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+        let binaries = ["aiwork", "aiwork"]
+        for dir in pathDirs {
+            for binary in binaries where fm.isExecutableFile(atPath: (dir as NSString).appendingPathComponent(binary)) {
+                return true
+            }
+        }
+        // TUI brings up the Agentix daemon under ~/.agentix even without the GUI app.
+        return fm.fileExists(atPath: NSHomeDirectory() + "/.agentix/run")
+    }
+
+    /// Either GUI or CLI/TUI is available.
+    static func aiworkIsPresent(fileManager fm: FileManager = .default) -> Bool {
+        aiworkGuiIsPresent(fileManager: fm) || aiworkCliIsPresent(fileManager: fm)
+    }
+
+    /// Monitoring is on for GUI and/or CLI.
+    static func isAnyAiWorkMonitoringEnabled() -> Bool {
+        isEnabled(source: "aiwork") || isEnabled(source: "aiwork-cli")
+    }
+
+    static var aiworkDisplayConfigPath: String { "~/.agentix/run/coder/agent.sock" }
+    static var aiworkCliDisplayConfigPath: String { "aiwork tui → agent.sock" }
+    static var aiworkFullConfigPath: String {
+        NSHomeDirectory() + "/.agentix/run/coder/agent.sock"
+    }
+
     // Keep backward compat
     static func isCodexInstalled() -> Bool { isInstalled(source: "codex") }
 
@@ -1106,6 +1159,10 @@ struct ConfigInstaller {
         if enabled {
             installHookScript(fm: fm)
             installBridgeBinary(fm: fm)
+            if source == "aiwork" || source == "aiwork-cli" {
+                // Daemon session watch — no hook files; AppState starts the watcher.
+                return true
+            }
             if source == "opencode" {
                 return installOpencodePlugin(fm: fm)
             }
@@ -1130,7 +1187,9 @@ struct ConfigInstaller {
                 return isHooksInstalled(for: cli, fm: fm)
             }
         } else {
-            if source == "opencode" {
+            if source == "aiwork" || source == "aiwork-cli" {
+                return true
+            } else if source == "opencode" {
                 uninstallOpencodePlugin(fm: fm)
             } else if source == "pi" {
                 uninstallPiExtension(fm: fm)

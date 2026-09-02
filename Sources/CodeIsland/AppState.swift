@@ -188,6 +188,20 @@ final class AppState {
     @ObservationIgnored
     var closedCodexAppThreads: [String: Date] = [:]
 
+    /// Per-agent AiWork/Agentix daemon watch clients (`sessions.watch`).
+    /// Keyed by agent id (e.g. `"coder"`). See AppState+AiWorkWatch.
+    @ObservationIgnored
+    var aiworkWatchClients: [String: AiWorkWatchClient] = [:]
+    /// Periodic reconnect / rediscovery timer for Agentix daemons.
+    @ObservationIgnored
+    var aiworkWatchReconnectTimer: Timer?
+    /// Daemon session ids that already received a `sessions.get` title/cwd hydrate.
+    @ObservationIgnored
+    var aiworkHydratedSessionIds: Set<String> = []
+    /// Guards overlapping `agent.stats` reconciles from the 3s rediscovery timer.
+    @ObservationIgnored
+    var aiworkReconcileInFlight = false
+
     /// Computed: first item in permission queue (backward compat for UI reads)
     var pendingPermission: PermissionRequest? { permissionQueue.first }
     /// Computed: first item in question queue
@@ -231,7 +245,13 @@ final class AppState {
     /// Local-transcript token usage shown in the session-list footer.
     /// Refreshed lazily on panel expansion (no resident timer, no API calls).
     var claudeUsage: ClaudeUsageScanner.Snapshot?
-    private var usageScanInFlight = false
+    /// Process-wide, not per-instance: the scan reads one shared history
+    /// (`~/.claude`), so two concurrent runs are always duplicate work. Production
+    /// has a single AppState and never noticed, but anything constructing several —
+    /// the test bundle does — otherwise starts N cold scans at once on the shared
+    /// `.utility` cooperative pool and starves every other detached probe on it
+    /// (git-branch resolution among them).
+    private static var usageScanInFlight = false
     /// Incremental parse state — round-trips through each detached scan so
     /// growing transcripts are only read past their last consumed offset.
     private var usageFileCache = ClaudeUsageScanner.FileCache()
@@ -505,6 +525,27 @@ final class AppState {
                 // No process monitor (hook-only sessions): clean up after 10 min idle
                 removeSession(key)
             }
+        }
+
+        // 4b. AiWork sessions come from the Agentix daemon's persistent session
+        //     store, which keeps every conversation as status:"active" forever and
+        //     never emits a close/delete event. A finished turn or an exited TUI/GUI
+        //     conversation just goes idle, so without this it would sit here for the
+        //     full 10-min no-monitor timeout (Section 4) — completed eval bursts pile
+        //     up in the notch. Backfill already treats idle AiWork entries as
+        //     historical and skips them, so mirror that: drop an idle AiWork session
+        //     shortly after its last activity. Live turns bump lastActivity on every
+        //     stream event, so an in-use conversation is never swept mid-thought and
+        //     re-appears the moment the next turn starts.
+        let aiworkIdleGrace: TimeInterval = 60
+        for (key, session) in sessions
+            where key.hasPrefix(AppState.aiworkSessionPrefix)
+            && session.status == .idle {
+            guard -session.lastActivity.timeIntervalSinceNow > aiworkIdleGrace else { continue }
+            if let daemonId = session.providerSessionId {
+                aiworkHydratedSessionIds.remove(daemonId)
+            }
+            removeSession(key)
         }
 
         // 5. Reclaim memory for abandoned tool_use_id cache entries.
@@ -1024,7 +1065,7 @@ final class AppState {
         return .expand
     }
 
-    private func enqueueCompletion(_ sessionId: String) {
+    func enqueueCompletion(_ sessionId: String) {
         switch Self.completionStyle() {
         case .off:
             // Panel stays compact — status indicators still update, but no
@@ -1053,17 +1094,20 @@ final class AppState {
     /// on the first expansion.
     func refreshClaudeUsageIfStale() {
         guard UserDefaults.standard.bool(forKey: SettingsKey.showUsageStats) else { return }
-        guard !usageScanInFlight else { return }
+        guard !Self.usageScanInFlight else { return }
         if let scannedAt = claudeUsage?.scannedAt, Date().timeIntervalSince(scannedAt) < 120 { return }
-        usageScanInFlight = true
+        Self.usageScanInFlight = true
         let cacheCopy = usageFileCache
         Task.detached(priority: .utility) {
             var cache = cacheCopy
             let snapshot = ClaudeUsageScanner.scan(cache: &cache)
+            // Bound to a `let` before the hop: capturing the `var` in the
+            // concurrently-executing closure is an error under Swift 6.
+            let scannedCache = cache
             await MainActor.run { [weak self] in
                 self?.claudeUsage = snapshot
-                self?.usageFileCache = cache
-                self?.usageScanInFlight = false
+                self?.usageFileCache = scannedCache
+                AppState.usageScanInFlight = false
             }
         }
     }

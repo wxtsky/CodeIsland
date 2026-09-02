@@ -59,6 +59,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         appState.startSessionDiscovery()
         appState.startCodexAppServerWatcher()
+        appState.startAiWorkWatcher()
         RemoteManager.shared.startup()
 
         // Buddy bridge (opt-in): mirrors the Dynamic Island onto the companion
@@ -169,6 +170,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteManager.shared.shutdown()
         hookServer?.stop()
         appState.stopCodexAppServerWatcher()
+        appState.stopAiWorkWatcher()
         appState.stopSessionDiscovery()
     }
 
