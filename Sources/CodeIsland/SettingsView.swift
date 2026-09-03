@@ -869,11 +869,19 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
+    @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
             get: { NotchHeightMode(rawValue: notchHeightModeRaw) ?? .matchNotch },
             set: { notchHeightModeRaw = $0.rawValue }
+        )
+    }
+
+    private var notchAnimationSpeedBinding: Binding<Double> {
+        Binding(
+            get: { NotchAnimationSpeed.clamped(notchAnimationSpeed) },
+            set: { notchAnimationSpeed = NotchAnimationSpeed.clamped($0) }
         )
     }
 
@@ -888,6 +896,25 @@ private struct AppearancePage: View {
             }
 
             Section(l10n["panel"]) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(l10n["notch_animation_speed"])
+                        Spacer()
+                        Text("\(notchAnimationSpeedBinding.wrappedValue, specifier: "%.1f")×")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Slider(
+                        value: notchAnimationSpeedBinding,
+                        in: NotchAnimationSpeed.minimum...NotchAnimationSpeed.maximum,
+                        step: NotchAnimationSpeed.step
+                    )
+                    .accessibilityLabel(Text(l10n["notch_animation_speed"]))
+                    .accessibilityValue(Text("\(notchAnimationSpeedBinding.wrappedValue, specifier: "%.1f")×"))
+                    Text(l10n["notch_animation_speed_desc"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Picker(selection: $maxVisibleSessions) {
                     Text("3").tag(3)
                     Text("5").tag(5)

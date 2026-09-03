@@ -170,6 +170,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "Preview",
         "panel": "Panel",
+        "notch_animation_speed": "Open / Close Speed",
+        "notch_animation_speed_desc": "How fast the island expands and collapses",
         "max_visible_sessions": "Max Visible Sessions",
         "max_visible_sessions_desc": "Sessions beyond this limit will be scrollable",
         "collapsed_width_scale": "Island Width",
@@ -519,6 +521,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "Vorschau",
         "panel": "Panel",
+        "notch_animation_speed": "Öffnungs-/Schließgeschwindigkeit",
+        "notch_animation_speed_desc": "Wie schnell die Insel auf- und zuklappt",
         "max_visible_sessions": "Maximal sichtbare Sitzungen",
         "max_visible_sessions_desc": "Sitzungen über diesem Limit werden scrollbar",
         "collapsed_width_scale": "Island-Breite",
@@ -872,6 +876,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "预览",
         "panel": "面板",
+        "notch_animation_speed": "展开 / 收起速度",
+        "notch_animation_speed_desc": "灵动岛展开和收起动画的快慢",
         "max_visible_sessions": "最大显示会话数",
         "max_visible_sessions_desc": "超出数量的会话将通过滚动查看",
         "collapsed_width_scale": "灵动岛宽度",
@@ -1225,6 +1231,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "預覽",
         "panel": "面板",
+        "notch_animation_speed": "展開 / 收合速度",
+        "notch_animation_speed_desc": "靈動島展開和收合動畫的快慢",
         "max_visible_sessions": "最大顯示會話數",
         "max_visible_sessions_desc": "超出數量的會話將透過捲動檢視",
         "collapsed_width_scale": "靈動島寬度",
@@ -1578,6 +1586,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "プレビュー",
         "panel": "パネル",
+        "notch_animation_speed": "開閉スピード",
+        "notch_animation_speed_desc": "アイランドが展開・収縮する速さ",
         "max_visible_sessions": "最大表示セッション数",
         "max_visible_sessions_desc": "この数を超えるセッションはスクロールして表示します",
         "collapsed_width_scale": "アイランドの幅",
@@ -1931,6 +1941,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "미리보기",
         "panel": "패널",
+        "notch_animation_speed": "열기 / 닫기 속도",
+        "notch_animation_speed_desc": "아일랜드가 펼쳐지고 접히는 속도",
         "max_visible_sessions": "최대 표시 세션 수",
         "max_visible_sessions_desc": "이 수를 넘는 세션은 스크롤해서 볼 수 있습니다",
         "collapsed_width_scale": "아일랜드 너비",
@@ -2284,6 +2296,8 @@ final class L10n: ObservableObject {
         // Appearance
         "preview": "Önizleme",
         "panel": "Panel",
+        "notch_animation_speed": "Açılma / Kapanma Hızı",
+        "notch_animation_speed_desc": "Adanın ne kadar hızlı açılıp kapandığı",
         "max_visible_sessions": "Maksimum Görünür Oturum",
         "max_visible_sessions_desc": "Bu sınırdan fazla oturumlar kaydırılabilir olacak",
         "collapsed_width_scale": "Ada Genişliği",
