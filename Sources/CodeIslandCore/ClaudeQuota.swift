@@ -170,11 +170,17 @@ public enum ClaudeQuotaChipMode: String, CaseIterable, Sendable {
 }
 
 public enum ClaudeQuotaSelector {
-    /// Pick the limit for the collapsed chip. `auto` ranks by pace (used
-    /// fraction minus elapsed fraction) so a 5h window at 40% with four hours
-    /// left outranks a weekly window at 60% on its last day; ties fall back
-    /// to raw percent. Fixed modes return that window, or nil if the server
-    /// didn't report it.
+    /// 5h usage at or above this share always takes the chip in `auto`.
+    public static let sessionAlertPercent: Double = 70
+
+    /// Pick the limit for the collapsed chip. Fixed modes return that window,
+    /// or nil if the server didn't report it.
+    ///
+    /// `auto` shows the weekly budget by default — the tighter of the two
+    /// weekly windows — because that is the one that runs out for days. The
+    /// 5-hour window takes over only while it is the pressing one: running
+    /// ahead of pace (used share exceeds elapsed share) or past
+    /// `sessionAlertPercent`.
     public static func pick(from snapshot: ClaudeQuotaSnapshot, mode: ClaudeQuotaChipMode, now: Date = Date()) -> ClaudeQuotaLimit? {
         switch mode {
         case .off: return nil
@@ -182,12 +188,17 @@ public enum ClaudeQuotaSelector {
         case .weeklyAll: return snapshot.limit(.weeklyAll)
         case .weeklyScoped: return snapshot.limit(.weeklyScoped)
         case .auto:
-            return snapshot.limits.max { a, b in
-                let pa = a.paceDelta(now: now), pb = b.paceDelta(now: now)
-                if abs(pa - pb) > 0.0001 { return pa < pb }
-                return a.percent < b.percent
-            }
+            let session = snapshot.limit(.session)
+            let weekly = [snapshot.limit(.weeklyAll), snapshot.limit(.weeklyScoped)]
+                .compactMap { $0 }
+                .max { $0.percent < $1.percent }
+            if let session, sessionIsPressing(session, now: now) { return session }
+            return weekly ?? session
         }
+    }
+
+    public static func sessionIsPressing(_ session: ClaudeQuotaLimit, now: Date = Date()) -> Bool {
+        session.percent >= sessionAlertPercent || session.paceDelta(now: now) > 0
     }
 }
 

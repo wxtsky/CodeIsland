@@ -160,7 +160,7 @@ struct NotchPanelView: View {
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
         // Plan-limit chip in the right wing (ring + percent).
-        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip) != nil ? QuotaChip.reservedWidth : 0
+        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip).map(QuotaChip.reservedWidth(for:)) ?? 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
         return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
@@ -1989,8 +1989,11 @@ struct QuotaChip: View {
     let stale: Bool
     @ObservedObject private var l10n = L10n.shared
 
-    /// Width reserved in the collapsed bar when the chip is shown.
-    static let reservedWidth: CGFloat = 40
+    /// Width reserved in the collapsed bar when the chip is shown: ring +
+    /// percent plus the window label (10pt monospaced ≈ 6.2pt per glyph).
+    static func reservedWidth(for limit: ClaudeQuotaLimit) -> CGFloat {
+        44 + CGFloat(QuotaStyle.label(limit, l10n: L10n.shared).count) * 6.2
+    }
 
     init(limit: ClaudeQuotaLimit, snapshot: ClaudeQuotaSnapshot, stale: Bool) {
         self.limit = limit
@@ -2009,6 +2012,11 @@ struct QuotaChip: View {
     var body: some View {
         let color = QuotaStyle.color(limit.level)
         HStack(spacing: 3) {
+            // Which window this is: 5h / week / model name.
+            Text(QuotaStyle.label(limit, l10n: l10n))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
             ZStack {
                 Circle().stroke(.white.opacity(0.18), lineWidth: 2)
                 Circle()
