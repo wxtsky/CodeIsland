@@ -113,6 +113,9 @@ struct NotchPanelView: View {
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
+    /// Measured width of the plan-limit chip (0 until first laid out) — the
+    /// bar reserves exactly this instead of guessing from the label length.
+    @State private var quotaChipWidth: CGFloat = 0
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -160,9 +163,13 @@ struct NotchPanelView: View {
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
         // Plan-limit chip shares the left-wing tool slot, so only the part its
-        // width exceeds the tool reserve needs adding.
+        // width exceeds the tool reserve needs adding. Measured when possible;
+        // the label-length estimate only covers the first frame.
         let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
-            .map { Swift.max(0, QuotaChip.reservedWidth(for: $0) - toolExtra) } ?? 0
+            .map { limit in
+                let width = quotaChipWidth > 0 ? quotaChipWidth + 6 : QuotaChip.reservedWidth(for: limit)
+                return Swift.max(0, width - toolExtra)
+            } ?? 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
         return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
@@ -186,6 +193,7 @@ struct NotchPanelView: View {
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
                     }
                     .frame(height: notchHeight)
+                    .onPreferenceChange(QuotaChipWidthKey.self) { quotaChipWidth = $0 }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -526,6 +534,10 @@ private struct CompactLeftWing: View {
                     // running: window label + ring + percent, all windows in
                     // the tooltip.
                     QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
+                        })
                         .transition(.opacity)
                 }
             }
@@ -1984,7 +1996,15 @@ private enum QuotaStyle {
     }
 }
 
-/// Collapsed-island chip: a 9pt ring plus percent for the selected window.
+/// Reports the collapsed chip's laid-out width up to the bar for its reserve.
+struct QuotaChipWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = Swift.max(value, nextValue())
+    }
+}
+
+/// Collapsed-island chip: window label, a 9pt ring, and percent.
 struct QuotaChip: View {
     let limit: ClaudeQuotaLimit
     let snapshot: ClaudeQuotaSnapshot

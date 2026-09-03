@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 /// The Claude Code OAuth login, as Claude Code itself stores it.
 public struct ClaudeOAuthCredential: Equatable, Sendable {
@@ -37,19 +36,31 @@ public enum ClaudeCredentialStore {
         )
     }
 
-    /// Raw item data from the login keychain. The first read from a new binary
-    /// triggers macOS's "wants to use your confidential information" prompt.
-    public static func readKeychain(service: String = keychainService) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+    /// Raw item data from the login keychain, read through `/usr/bin/security`.
+    ///
+    /// Claude Code stores the item with that same tool, so `security` is on
+    /// the item's access list and reads it silently. `SecItemCopyMatching`
+    /// from our own process would instead raise the "wants to use your
+    /// confidential information" prompt — and, for an ad-hoc signed build,
+    /// raise it again after every rebuild.
+    public static func readKeychain(service: String = keychainService, timeout: TimeInterval = 5) -> Data? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        proc.arguments = ["find-generic-password", "-s", service, "-w"]
+        let out = Pipe()
+        proc.standardOutput = out
+        proc.standardError = FileHandle.nullDevice
+        proc.standardInput = FileHandle.nullDevice
+        do { try proc.run() } catch { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        let deadline = Date().addingTimeInterval(timeout)
+        while proc.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        if proc.isRunning { proc.terminate(); return nil }
+        guard proc.terminationStatus == 0 else { return nil }
+        // `-w` prints the secret followed by a newline.
+        var bytes = data
+        while let last = bytes.last, last == UInt8(ascii: "\n") || last == UInt8(ascii: "\r") { bytes.removeLast() }
+        return bytes.isEmpty ? nil : bytes
     }
 
     /// File fallback (`~/.claude/.credentials.json`) used by Claude Code where
