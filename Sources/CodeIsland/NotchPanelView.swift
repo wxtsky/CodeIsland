@@ -18,6 +18,15 @@ enum NotchWidthMetrics {
         if hasNotch { return Swift.max(notchW, scaled) }
         return scaled
     }
+
+    /// Wing width on a notched collapsed bar. The bar is centred on the notch,
+    /// so both wings must be equal for the gap between them (exactly the
+    /// notch) to land on the cutout; widening the total by X only moves an
+    /// edge by X/2. The slot is the reserve unless a wing's measured content
+    /// (tool name, plan-limit chip, badges) needs more.
+    static func collapsedWingSlot(reserve: CGFloat, measuredLeft: CGFloat, measuredRight: CGFloat) -> CGFloat {
+        Swift.max(reserve, measuredLeft, measuredRight)
+    }
 }
 
 // MARK: - Hover interaction state machine
@@ -113,9 +122,10 @@ struct NotchPanelView: View {
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
-    /// Measured width of the plan-limit chip (0 until first laid out) — the
-    /// bar reserves exactly this instead of guessing from the label length.
-    @State private var quotaChipWidth: CGFloat = 0
+    /// Measured ideal widths of the collapsed wings (0 until first laid out).
+    /// On notched screens both wings get the same slot so the gap between
+    /// them sits exactly on the notch; the slot has to fit the wider one.
+    @State private var wingWidths = CompactWingWidths()
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -162,17 +172,29 @@ struct NotchPanelView: View {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
-        // Plan-limit chip shares the left-wing tool slot, so only the part its
-        // width exceeds the tool reserve needs adding. Measured when possible;
-        // the label-length estimate only covers the first frame.
-        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
-            .map { limit in
-                let width = quotaChipWidth > 0 ? quotaChipWidth + 6 : QuotaChip.reservedWidth(for: limit)
-                return Swift.max(0, width - toolExtra)
-            } ?? 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
+        if hasNotch {
+            // The bar is centred on the notch, so the wings must be equal for
+            // the gap between them to line up with it. Widening the total by X
+            // only moves the left edge by X/2 — the slot itself has to grow.
+            let slot = NotchWidthMetrics.collapsedWingSlot(
+                reserve: wing + (extra + toolExtra) / 2,
+                measuredLeft: wingWidths.left,
+                measuredRight: wingWidths.right
+            )
+            return nw + slot * 2 + prehoverExtra
+        }
+        // Without a notch the wings sit at the edges of a flexible row; only
+        // the part the measured content exceeds the reserve needs adding.
+        let overflow = Swift.max(0, wingWidths.left - wing) + Swift.max(0, wingWidths.right - wing)
+        return nw + wing * 2 + extra + toolExtra + overflow + prehoverExtra
+    }
+
+    /// Fixed wing width on a notched collapsed bar (nil = flexible layout).
+    private var collapsedWingSlot: CGFloat? {
+        guard hasNotch, showBar, !shouldShowExpanded else { return nil }
+        return (panelWidth - effectiveNotchW) / 2
     }
 
     var body: some View {
@@ -182,8 +204,11 @@ struct NotchPanelView: View {
                     // Active: compact bar — wider version when expanded
                     HStack(spacing: 0) {
                         CompactLeftWing(appState: appState, expanded: shouldShowExpanded, mascotSize: mascotSize, hasNotch: hasNotch, showToolStatus: showToolStatus)
+                            .frame(width: collapsedWingSlot, alignment: .leading)
                         if hasNotch && !shouldShowExpanded {
-                            Spacer(minLength: effectiveNotchW)
+                            // Exactly the notch: the wings are sized so this
+                            // gap lands on the physical cutout, not near it.
+                            Color.clear.frame(width: effectiveNotchW)
                         } else if !shouldShowExpanded && showToolStatus {
                             CompactToolStatus(appState: appState)
                             Spacer(minLength: 0)
@@ -191,9 +216,10 @@ struct NotchPanelView: View {
                             Spacer(minLength: 0)
                         }
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
+                            .frame(width: collapsedWingSlot, alignment: .trailing)
                     }
                     .frame(height: notchHeight)
-                    .onPreferenceChange(QuotaChipWidthKey.self) { quotaChipWidth = $0 }
+                    .onPreferenceChange(CompactWingWidths.Key.self) { wingWidths = $0 }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -513,36 +539,44 @@ private struct CompactLeftWing: View {
                     .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1))
                 }
             } else {
-                MascotView(source: displaySource, status: displayStatus, size: mascotSize)
-                    .id(displaySource)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.3), value: displaySource)
+                // Laid out at its ideal width and reported up: the bar sizes
+                // the wing slot from this, so nothing here gets squeezed into
+                // the notch. The tool name still truncates at its own cap.
+                HStack(spacing: 6) {
+                    MascotView(source: displaySource, status: displayStatus, size: mascotSize)
+                        .id(displaySource)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.3), value: displaySource)
 
-                // On notch screens, show tool name only (no description, space is tight)
-                if hasNotch, showToolStatus, let tool = shownTool {
-                    Text(ToolNameDisplay.compact(tool))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(toolStatusColor(tool))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
-                        .transition(.opacity)
-                        .help(tool)
-                } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
-                          let snapshot = appState.claudeQuota.snapshot {
-                    // Plan-limit chip takes the tool slot while no tool is
-                    // running: window label + ring + percent, all windows in
-                    // the tooltip.
-                    QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
-                        .fixedSize()
-                        .background(GeometryReader { geo in
-                            Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
-                        })
-                        .transition(.opacity)
+                    // On notch screens, show tool name only (no description, space is tight)
+                    if hasNotch, showToolStatus, let tool = shownTool {
+                        Text(ToolNameDisplay.compact(tool))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(toolStatusColor(tool))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
+                            .transition(.opacity)
+                            .help(tool)
+                    } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                              let snapshot = appState.claudeQuota.snapshot {
+                        // Plan-limit chip takes the tool slot while no tool is
+                        // running: window label + ring + percent, all windows in
+                        // the tooltip.
+                        QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
+                            .transition(.opacity)
+                    }
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(
+                        key: CompactWingWidths.Key.self,
+                        value: CompactWingWidths(left: CompactWingWidths.reported(geo.size.width))
+                    )
+                })
             }
         }
-        .padding(.leading, 6)
+        .padding(.leading, CompactWingWidths.edgePadding)
         .clipped()
         .onChange(of: liveTool) { _, newTool in
             lingerTimer?.invalidate()
@@ -610,65 +644,101 @@ private struct CompactRightWing: View {
                     NSApplication.shared.terminate(nil)
                 }
             } else {
-                // Quiet hours active — explains why event sounds are silent.
-                if inQuietHours {
-                    Image(systemName: "moon.fill")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.35))
-                        .help(l10n["quiet_hours"])
-                }
-
-                // Glance completion dot — an agent finished while collapsed;
-                // cleared as soon as the panel expands.
-                if appState.glanceCompletionActive {
-                    Circle()
-                        .fill(Color(red: 0.4, green: 1.0, blue: 0.5))
-                        .frame(width: 7, height: 7)
-                        .shadow(color: Color(red: 0.4, green: 1.0, blue: 0.5).opacity(0.7), radius: 3)
-                }
-
-                // Pending approval/question badge
-                if appState.status == .waitingApproval || appState.status == .waitingQuestion {
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating)
-                }
-
-                if showToolStatus {
-                    // Detailed mode: session count (project name is shown in center on non-notch)
-                    HStack(spacing: 1) {
-                        let active = appState.activeSessionCount
-                        let total = appState.totalSessionCount
-                        if active > 0 {
-                            Text("\(active)")
-                                .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
-                            Text("/")
-                                .foregroundStyle(.white.opacity(0.4))
-                        }
-                        Text("\(total)")
-                            .foregroundStyle(.white.opacity(0.9))
+                HStack(spacing: 6) {
+                    // Quiet hours active — explains why event sounds are silent.
+                    if inQuietHours {
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.35))
+                            .help(l10n["quiet_hours"])
                     }
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                } else {
-                    // Simple mode: original session count only
-                    HStack(spacing: 1) {
-                        let active = appState.activeSessionCount
-                        let total = appState.totalSessionCount
-                        if active > 0 {
-                            Text("\(active)")
-                                .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
-                            Text("/")
-                                .foregroundStyle(.white.opacity(0.4))
-                        }
-                        Text("\(total)")
-                            .foregroundStyle(.white.opacity(0.9))
+
+                    // Glance completion dot — an agent finished while collapsed;
+                    // cleared as soon as the panel expands.
+                    if appState.glanceCompletionActive {
+                        Circle()
+                            .fill(Color(red: 0.4, green: 1.0, blue: 0.5))
+                            .frame(width: 7, height: 7)
+                            .shadow(color: Color(red: 0.4, green: 1.0, blue: 0.5).opacity(0.7), radius: 3)
                     }
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+
+                    // Pending approval/question badge
+                    if appState.status == .waitingApproval || appState.status == .waitingQuestion {
+                        Image(systemName: "bell.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                            .symbolEffect(.pulse, options: .repeating)
+                    }
+
+                    if showToolStatus {
+                        // Detailed mode: session count (project name is shown in center on non-notch)
+                        HStack(spacing: 1) {
+                            let active = appState.activeSessionCount
+                            let total = appState.totalSessionCount
+                            if active > 0 {
+                                Text("\(active)")
+                                    .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
+                                Text("/")
+                                    .foregroundStyle(.white.opacity(0.4))
+                            }
+                            Text("\(total)")
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    } else {
+                        // Simple mode: original session count only
+                        HStack(spacing: 1) {
+                            let active = appState.activeSessionCount
+                            let total = appState.totalSessionCount
+                            if active > 0 {
+                                Text("\(active)")
+                                    .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
+                                Text("/")
+                                    .foregroundStyle(.white.opacity(0.4))
+                            }
+                            Text("\(total)")
+                                .foregroundStyle(.white.opacity(0.9))
+                        }
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    }
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(
+                        key: CompactWingWidths.Key.self,
+                        value: CompactWingWidths(right: CompactWingWidths.reported(geo.size.width))
+                    )
+                })
             }
         }
-        .padding(.trailing, 6)
+        .padding(.trailing, CompactWingWidths.edgePadding)
+    }
+}
+
+/// Ideal widths of the collapsed wings, reported up to the bar so it can
+/// size the wing slots (notched screens) or its total width (others).
+struct CompactWingWidths: Equatable {
+    var left: CGFloat = 0
+    var right: CGFloat = 0
+
+    /// Padding between the bar edge and the wing content.
+    static let edgePadding: CGFloat = 6
+    /// Breathing room between the wing content and the notch; without it the
+    /// last glyph sits flush against the cutout.
+    static let notchGap: CGFloat = 6
+    /// What a wing reports for its content: the content plus both margins,
+    /// so the slot covers them.
+    static func reported(_ contentWidth: CGFloat) -> CGFloat {
+        contentWidth + edgePadding + notchGap
+    }
+
+    struct Key: PreferenceKey {
+        static let defaultValue = CompactWingWidths()
+        static func reduce(value: inout CompactWingWidths, nextValue: () -> CompactWingWidths) {
+            let next = nextValue()
+            value.left = Swift.max(value.left, next.left)
+            value.right = Swift.max(value.right, next.right)
+        }
     }
 }
 
@@ -1996,26 +2066,12 @@ private enum QuotaStyle {
     }
 }
 
-/// Reports the collapsed chip's laid-out width up to the bar for its reserve.
-struct QuotaChipWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = Swift.max(value, nextValue())
-    }
-}
-
 /// Collapsed-island chip: window label, a 9pt ring, and percent.
 struct QuotaChip: View {
     let limit: ClaudeQuotaLimit
     let snapshot: ClaudeQuotaSnapshot
     let stale: Bool
     @ObservedObject private var l10n = L10n.shared
-
-    /// Width reserved in the collapsed bar when the chip is shown: ring +
-    /// percent plus the window label (10pt monospaced ≈ 6.2pt per glyph).
-    static func reservedWidth(for limit: ClaudeQuotaLimit) -> CGFloat {
-        44 + CGFloat(QuotaStyle.label(limit, l10n: L10n.shared).count) * 6.2
-    }
 
     init(limit: ClaudeQuotaLimit, snapshot: ClaudeQuotaSnapshot, stale: Bool) {
         self.limit = limit

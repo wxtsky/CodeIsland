@@ -263,4 +263,40 @@ final class NotchHoverInteractionTests: XCTestCase {
     func testSessionJumpValidationUsesThreeIncreasingDelays() {
         XCTAssertEqual(sessionJumpValidationDelays, [120_000_000, 320_000_000, 640_000_000])
     }
+
+    // MARK: - Collapsed wing slot (notched screens)
+
+    func testWingSlotStaysAtReserveWhenContentFits() {
+        XCTAssertEqual(
+            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 71, measuredRight: 40),
+            82
+        )
+    }
+
+    func testWingSlotGrowsToTheWiderWing() {
+        // Plan-limit chip in the left wing needs more than the reserve.
+        XCTAssertEqual(
+            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 106, measuredRight: 40),
+            106
+        )
+        // Badges on the right can be the wider side too.
+        XCTAssertEqual(
+            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 71, measuredRight: 90),
+            90
+        )
+    }
+
+    func testEqualWingsKeepTheGapOnTheNotch() {
+        // Bar centred on the notch centre: the left wing must end exactly
+        // where the cutout starts, however wide the wing content gets.
+        let notchW: CGFloat = 220
+        let notchCenter: CGFloat = 1028
+        for left: CGFloat in [40, 71, 106, 160] {
+            let slot = NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: left, measuredRight: 40)
+            let panelWidth = notchW + slot * 2
+            let leftEdge = notchCenter - panelWidth / 2
+            XCTAssertEqual(leftEdge + slot, notchCenter - notchW / 2, accuracy: 0.001)
+            XCTAssertGreaterThanOrEqual(slot, left)
+        }
+    }
 }
