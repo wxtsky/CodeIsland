@@ -229,6 +229,14 @@ enum DebugHarness {
             hourlyOutputTokens: [0, 0, 4200, 18_000, 9500, 0, 22_000, 41_000, 12_000, 30_500, 52_000, 17_500],
             scannedAt: Date()
         )
+        state.claudeQuota.applyPreview(ClaudeQuotaSnapshot(
+            limits: [
+                ClaudeQuotaLimit(kind: .session, percent: 72, severity: "warning", resetsAt: Date().addingTimeInterval(80 * 60)),
+                ClaudeQuotaLimit(kind: .weeklyAll, percent: 30, resetsAt: Date().addingTimeInterval(2 * 86_400 + 4 * 3600)),
+                ClaudeQuotaLimit(kind: .weeklyScoped, percent: 48, resetsAt: Date().addingTimeInterval(2 * 86_400 + 4 * 3600), scopeLabel: "Fable", isActive: true),
+            ],
+            fetchedAt: Date()
+        ))
     }
 
     private static func applyBusy(to state: AppState) {

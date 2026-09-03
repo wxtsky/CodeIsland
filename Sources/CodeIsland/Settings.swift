@@ -70,6 +70,10 @@ enum SettingsKey {
     // Token-usage footer (local Claude transcript aggregation)
     static let showUsageStats = "showUsageStats"
 
+    // Claude plan limits (Anthropic usage endpoint via the Claude Code login)
+    static let showClaudeQuota = "showClaudeQuota"
+    static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
+
     // Completion notification: "expand" | "glance" | "off". Successor of the
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
     static let completionNotificationStyle = "completionNotificationStyle"
@@ -174,6 +178,8 @@ struct SettingsDefaults {
     static let quietHoursEnd = 8 * 60
     static let showGitBranch = true
     static let showUsageStats = true
+    static let showClaudeQuota = false
+    static let claudeQuotaChip = "auto"
 
     static let rotationInterval = 5
 
@@ -259,6 +265,8 @@ class SettingsManager {
             SettingsKey.quietHoursEnd: SettingsDefaults.quietHoursEnd,
             SettingsKey.showGitBranch: SettingsDefaults.showGitBranch,
             SettingsKey.showUsageStats: SettingsDefaults.showUsageStats,
+            SettingsKey.showClaudeQuota: SettingsDefaults.showClaudeQuota,
+            SettingsKey.claudeQuotaChip: SettingsDefaults.claudeQuotaChip,
             SettingsKey.rotationInterval: SettingsDefaults.rotationInterval,
             SettingsKey.maxToolHistory: SettingsDefaults.maxToolHistory,
             SettingsKey.mascotSpeed: SettingsDefaults.mascotSpeed,

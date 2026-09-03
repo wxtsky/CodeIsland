@@ -263,4 +263,29 @@ final class NotchHoverInteractionTests: XCTestCase {
     func testSessionJumpValidationUsesThreeIncreasingDelays() {
         XCTAssertEqual(sessionJumpValidationDelays, [120_000_000, 320_000_000, 640_000_000])
     }
+
+    // MARK: - Collapsed wing slots (notched screens)
+
+    func testWingSlotStaysAtReserveWhenContentFits() {
+        XCTAssertEqual(NotchWidthMetrics.collapsedWingSlot(reserve: 82, measured: 71), 82)
+    }
+
+    func testWingSlotGrowsToItsContent() {
+        // Plan-limit chip in the left wing needs more than the reserve.
+        XCTAssertEqual(NotchWidthMetrics.collapsedWingSlot(reserve: 82, measured: 106), 106)
+    }
+
+    func testShiftKeepsTheGapOnTheNotch() {
+        // Bar centred on the notch centre, wings of different widths: after
+        // the shift the left wing must end exactly where the cutout starts.
+        let notchW: CGFloat = 220
+        let notchCenter: CGFloat = 1028
+        for (left, right): (CGFloat, CGFloat) in [(82, 82), (106, 82), (82, 120), (160, 40)] {
+            let panelWidth = notchW + left + right
+            let shift = NotchWidthMetrics.collapsedShift(leftSlot: left, rightSlot: right)
+            let leftEdge = notchCenter - panelWidth / 2 + shift
+            XCTAssertEqual(leftEdge + left, notchCenter - notchW / 2, accuracy: 0.001)
+            XCTAssertEqual(leftEdge + left + notchW, notchCenter + notchW / 2, accuracy: 0.001)
+        }
+    }
 }

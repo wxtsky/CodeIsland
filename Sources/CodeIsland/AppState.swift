@@ -224,6 +224,9 @@ final class AppState {
             }
             if surface.isExpanded {
                 refreshClaudeUsageIfStale()
+                claudeQuota.noteExpanded()
+            } else {
+                claudeQuota.noteCollapsed()
             }
         }
     }
@@ -231,6 +234,8 @@ final class AppState {
     /// Local-transcript token usage shown in the session-list footer.
     /// Refreshed lazily on panel expansion (no resident timer, no API calls).
     var claudeUsage: ClaudeUsageScanner.Snapshot?
+    /// Subscription rate limits (5h / weekly) from Anthropic — opt-in, network.
+    let claudeQuota = ClaudeQuotaMonitor()
     private var usageScanInFlight = false
     /// Incremental parse state — round-trips through each detached scan so
     /// growing transcripts are only read past their last consumed offset.
@@ -1400,6 +1405,13 @@ final class AppState {
         // After reduce: remoteHostId is authoritative (extractMetadata just ran),
         // so a remote session can never probe the local filesystem here.
         maybeRefreshGitBranch(for: sessionId, cwdBefore: cwdBeforeReduce, normalizedEventName: normalizedEventName)
+
+        // A finished local Claude turn is booked against the plan limits now —
+        // the quota monitor coalesces these into at most one fetch a minute.
+        if normalizedEventName == "Stop",
+           let s = sessions[sessionId], s.isClaude, s.isRemote != true {
+            claudeQuota.noteStop()
+        }
 
         // Backfill model after metadata extraction. Hooks are inconsistent across providers,
         // so retry with a cooldown instead of giving up permanently on the first miss.
