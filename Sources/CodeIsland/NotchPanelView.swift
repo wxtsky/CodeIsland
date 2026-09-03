@@ -717,7 +717,10 @@ private struct CompactToolStatus: View {
                     MorphText(
                         text: shortDesc(desc),
                         font: .system(size: 11, weight: .medium, design: .monospaced),
-                        color: .white.opacity(0.7)
+                        color: .white.opacity(0.7),
+                        streamsRapidly: displaySession.map {
+                            SessionSnapshot.rapidStreamingSources.contains($0.source)
+                        } ?? false
                     )
                     .truncationMode(.tail)
                 }
@@ -1822,6 +1825,8 @@ private struct SessionListView: View {
                 ("kiro", "Kiro"),
                 ("cline", "Cline"),
                 ("zcode", "ZCode"),
+                ("aiwork", "AiWork"),
+                ("aiwork-cli", "AiWork CLI"),
             ]
             var result: [(String, String?, [String])] = []
             var seen = Set<String>()
@@ -2558,7 +2563,9 @@ private struct SessionCard: View {
                                 MorphText(
                                     text: session.toolDescription ?? tool,
                                     font: .system(size: fontSize, design: .monospaced),
-                                    color: .white.opacity(0.75)
+                                    color: .white.opacity(0.75),
+                                    streamsRapidly: SessionSnapshot.rapidStreamingSources
+                                        .contains(session.source)
                                 )
                                 .truncationMode(.tail)
                             } else {
@@ -2848,6 +2855,8 @@ private struct TerminalBadge: View {
         "stepfun": "com.stepfun.app",
         "codex": "com.openai.codex",
         "opencode": "ai.opencode.desktop",
+        "aiwork": "com.alipay.dtcoder.ide",
+        "aiwork-cli": "com.alipay.dtcoder.ide",
     ]
     private static var termIconCache: [String: NSImage] = [:]
 
@@ -3050,6 +3059,11 @@ private let cliIconFiles: [String: String] = [
     "opencode": "opencode",
     "cline": "cline",
     "dsh": "dsh",
+    // AiWork (formerly DTCoder). GUI and CLI share one asset, as qoder/qoder-cli
+    // and cursor/cursor-cli do; the NSWorkspace branch in cliIcon() prefers the
+    // installed app's own icon and falls back to this when AiWork is absent.
+    "aiwork": "aiwork",
+    "aiwork-cli": "aiwork",
     // Rendered from the in-house pixel mascots via
     // MascotRenderHarness/testRenderCliIcons (MASCOT_ICON_DIR=…).
     "kiro": "kiro",
@@ -3061,6 +3075,17 @@ private var cliIconCache: [String: NSImage] = [:]
 func cliIcon(source: String, size: CGFloat = 16) -> NSImage? {
     let key = "\(source)_\(Int(size))"
     if let cached = cliIconCache[key] { return cached }
+
+    // AiWork (formerly DTCoder): prefer the installed app's own icon, falling
+    // back to the bundled aiwork.png below when AiWork is not installed.
+    if source == "aiwork" || source == "aiwork-cli",
+       let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.alipay.dtcoder.ide") {
+        let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        icon.size = NSSize(width: size, height: size)
+        cliIconCache[key] = icon
+        return icon
+    }
+
     guard let filename = cliIconFiles[source],
           let url = Bundle.appModule.url(forResource: filename, withExtension: "png", subdirectory: "Resources/cli-icons"),
           let image = NSImage(contentsOf: url)
