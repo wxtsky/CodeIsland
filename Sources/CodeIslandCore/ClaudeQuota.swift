@@ -170,17 +170,23 @@ public enum ClaudeQuotaChipMode: String, CaseIterable, Sendable {
 }
 
 public enum ClaudeQuotaSelector {
-    /// 5h usage at or above this share always takes the chip in `auto`.
-    public static let sessionAlertPercent: Double = 70
+    /// Usage at or above this share counts as pressing regardless of pace.
+    public static let alertPercent: Double = 80
 
     /// Pick the limit for the collapsed chip. Fixed modes return that window,
     /// or nil if the server didn't report it.
     ///
-    /// `auto` shows the weekly budget by default — the tighter of the two
-    /// weekly windows — because that is the one that runs out for days. The
-    /// 5-hour window takes over only while it is the pressing one: running
-    /// ahead of pace (used share exceeds elapsed share) or past
-    /// `sessionAlertPercent`.
+    /// `auto`:
+    /// 1. The 5-hour window takes the chip while it is pressing — it is the
+    ///    one that can block you within the hour.
+    /// 2. Otherwise a weekly window: if either is pressing, the one further
+    ///    ahead of pace; if neither, the one with more used (the tighter
+    ///    budget). Weekly (all models) and weekly (current model) compete on
+    ///    the same terms.
+    /// 3. With no weekly reported, the 5-hour window is all there is.
+    ///
+    /// "Pressing" = used share exceeds the elapsed share of the window
+    /// (ahead of pace), or usage is at or past `alertPercent`.
     public static func pick(from snapshot: ClaudeQuotaSnapshot, mode: ClaudeQuotaChipMode, now: Date = Date()) -> ClaudeQuotaLimit? {
         switch mode {
         case .off: return nil
@@ -189,16 +195,24 @@ public enum ClaudeQuotaSelector {
         case .weeklyScoped: return snapshot.limit(.weeklyScoped)
         case .auto:
             let session = snapshot.limit(.session)
-            let weekly = [snapshot.limit(.weeklyAll), snapshot.limit(.weeklyScoped)]
-                .compactMap { $0 }
-                .max { $0.percent < $1.percent }
-            if let session, sessionIsPressing(session, now: now) { return session }
-            return weekly ?? session
+            if let session, isPressing(session, now: now) { return session }
+            let weeklies = [snapshot.limit(.weeklyAll), snapshot.limit(.weeklyScoped)].compactMap { $0 }
+            return pickWeekly(weeklies, now: now) ?? session
         }
     }
 
-    public static func sessionIsPressing(_ session: ClaudeQuotaLimit, now: Date = Date()) -> Bool {
-        session.percent >= sessionAlertPercent || session.paceDelta(now: now) > 0
+    public static func isPressing(_ limit: ClaudeQuotaLimit, now: Date = Date()) -> Bool {
+        limit.percent >= alertPercent || limit.paceDelta(now: now) > 0
+    }
+
+    /// Among the weekly windows: the one furthest ahead of pace if any is
+    /// pressing, else the one with the most used.
+    static func pickWeekly(_ weeklies: [ClaudeQuotaLimit], now: Date) -> ClaudeQuotaLimit? {
+        let pressing = weeklies.filter { isPressing($0, now: now) }
+        if !pressing.isEmpty {
+            return pressing.max { $0.paceDelta(now: now) < $1.paceDelta(now: now) }
+        }
+        return weeklies.max { $0.percent < $1.percent }
     }
 }
 

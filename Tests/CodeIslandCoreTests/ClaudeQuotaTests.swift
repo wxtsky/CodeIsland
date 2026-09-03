@@ -62,7 +62,8 @@ final class ClaudeQuotaTests: XCTestCase {
     }
 
     func testAutoShowsTighterWeeklyWindowByDefault() {
-        // 5h at 20% with 2.5h left is behind pace → weekly wins; Fable (48%) is the tighter weekly.
+        // 5h at 20% with 2.5h left is behind pace → weekly wins. Both weeklies
+        // behind pace (1 day of 7 left, so 86% elapsed) → the one with more used.
         let snap = ClaudeQuotaSnapshot(limits: [
             ClaudeQuotaLimit(kind: .session, percent: 20, resetsAt: now.addingTimeInterval(2.5 * 3600)),
             ClaudeQuotaLimit(kind: .weeklyAll, percent: 30, resetsAt: now.addingTimeInterval(86_400)),
@@ -76,6 +77,31 @@ final class ClaudeQuotaTests: XCTestCase {
         XCTAssertEqual(ClaudeQuotaSelector.pick(from: allTighter, mode: .auto, now: now)?.kind, .weeklyAll)
     }
 
+    func testAutoPrefersTheWeeklyWindowAheadOfPace() {
+        // Weekly-all has more used but is behind pace (1 day left → 86%
+        // elapsed, 40% used); Fable is ahead of pace (6 days left → 14%
+        // elapsed, 25% used) → Fable.
+        let fableAhead = ClaudeQuotaSnapshot(limits: [
+            ClaudeQuotaLimit(kind: .session, percent: 5, resetsAt: now.addingTimeInterval(4 * 3600)),
+            ClaudeQuotaLimit(kind: .weeklyAll, percent: 40, resetsAt: now.addingTimeInterval(86_400)),
+            ClaudeQuotaLimit(kind: .weeklyScoped, percent: 25, resetsAt: now.addingTimeInterval(6 * 86_400), scopeLabel: "Fable"),
+        ], fetchedAt: now)
+        XCTAssertEqual(ClaudeQuotaSelector.pick(from: fableAhead, mode: .auto, now: now)?.kind, .weeklyScoped)
+        // Both ahead of pace (6 days left, 14% elapsed): the one further ahead wins, not the higher percent.
+        let bothAhead = ClaudeQuotaSnapshot(limits: [
+            ClaudeQuotaLimit(kind: .weeklyAll, percent: 30, resetsAt: now.addingTimeInterval(6 * 86_400)),
+            ClaudeQuotaLimit(kind: .weeklyScoped, percent: 28, resetsAt: now.addingTimeInterval(6.5 * 86_400), scopeLabel: "Fable"),
+        ], fetchedAt: now)
+        // weekly-all: 0.30 - 0.143 = 0.157; Fable: 0.28 - 0.071 = 0.209 → Fable.
+        XCTAssertEqual(ClaudeQuotaSelector.pick(from: bothAhead, mode: .auto, now: now)?.kind, .weeklyScoped)
+        // A weekly past the alert line is pressing even when behind pace.
+        let hotWeekly = ClaudeQuotaSnapshot(limits: [
+            ClaudeQuotaLimit(kind: .weeklyAll, percent: 85, resetsAt: now.addingTimeInterval(3600)),
+            ClaudeQuotaLimit(kind: .weeklyScoped, percent: 20, resetsAt: now.addingTimeInterval(3600), scopeLabel: "Fable"),
+        ], fetchedAt: now)
+        XCTAssertEqual(ClaudeQuotaSelector.pick(from: hotWeekly, mode: .auto, now: now)?.kind, .weeklyAll)
+    }
+
     func testAutoSwitchesToSessionWhenAheadOfPaceOrPastThreshold() {
         // 40% used with 4h of 5h left → 20% elapsed → ahead of pace.
         let ahead = ClaudeQuotaSnapshot(limits: [
@@ -83,12 +109,18 @@ final class ClaudeQuotaTests: XCTestCase {
             ClaudeQuotaLimit(kind: .weeklyAll, percent: 60, resetsAt: now.addingTimeInterval(86_400)),
         ], fetchedAt: now)
         XCTAssertEqual(ClaudeQuotaSelector.pick(from: ahead, mode: .auto, now: now)?.kind, .session)
-        // 72% used with 10 minutes left is behind pace but past the 70% alert line.
+        // 82% used with 10 minutes left is behind pace but past the 80% alert line.
         let hot = ClaudeQuotaSnapshot(limits: [
-            ClaudeQuotaLimit(kind: .session, percent: 72, resetsAt: now.addingTimeInterval(600)),
+            ClaudeQuotaLimit(kind: .session, percent: 82, resetsAt: now.addingTimeInterval(600)),
             ClaudeQuotaLimit(kind: .weeklyAll, percent: 10, resetsAt: now.addingTimeInterval(86_400)),
         ], fetchedAt: now)
         XCTAssertEqual(ClaudeQuotaSelector.pick(from: hot, mode: .auto, now: now)?.kind, .session)
+        // 75% with 10 minutes left: behind pace and under the line → weekly stays.
+        let warm = ClaudeQuotaSnapshot(limits: [
+            ClaudeQuotaLimit(kind: .session, percent: 75, resetsAt: now.addingTimeInterval(600)),
+            ClaudeQuotaLimit(kind: .weeklyAll, percent: 10, resetsAt: now.addingTimeInterval(86_400)),
+        ], fetchedAt: now)
+        XCTAssertEqual(ClaudeQuotaSelector.pick(from: warm, mode: .auto, now: now)?.kind, .weeklyAll)
         // No weekly reported at all → session is all there is.
         let only = ClaudeQuotaSnapshot(limits: [ClaudeQuotaLimit(kind: .session, percent: 5)], fetchedAt: now)
         XCTAssertEqual(ClaudeQuotaSelector.pick(from: only, mode: .auto, now: now)?.kind, .session)
