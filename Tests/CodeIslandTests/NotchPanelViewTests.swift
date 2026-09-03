@@ -264,39 +264,28 @@ final class NotchHoverInteractionTests: XCTestCase {
         XCTAssertEqual(sessionJumpValidationDelays, [120_000_000, 320_000_000, 640_000_000])
     }
 
-    // MARK: - Collapsed wing slot (notched screens)
+    // MARK: - Collapsed wing slots (notched screens)
 
     func testWingSlotStaysAtReserveWhenContentFits() {
-        XCTAssertEqual(
-            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 71, measuredRight: 40),
-            82
-        )
+        XCTAssertEqual(NotchWidthMetrics.collapsedWingSlot(reserve: 82, measured: 71), 82)
     }
 
-    func testWingSlotGrowsToTheWiderWing() {
+    func testWingSlotGrowsToItsContent() {
         // Plan-limit chip in the left wing needs more than the reserve.
-        XCTAssertEqual(
-            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 106, measuredRight: 40),
-            106
-        )
-        // Badges on the right can be the wider side too.
-        XCTAssertEqual(
-            NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: 71, measuredRight: 90),
-            90
-        )
+        XCTAssertEqual(NotchWidthMetrics.collapsedWingSlot(reserve: 82, measured: 106), 106)
     }
 
-    func testEqualWingsKeepTheGapOnTheNotch() {
-        // Bar centred on the notch centre: the left wing must end exactly
-        // where the cutout starts, however wide the wing content gets.
+    func testShiftKeepsTheGapOnTheNotch() {
+        // Bar centred on the notch centre, wings of different widths: after
+        // the shift the left wing must end exactly where the cutout starts.
         let notchW: CGFloat = 220
         let notchCenter: CGFloat = 1028
-        for left: CGFloat in [40, 71, 106, 160] {
-            let slot = NotchWidthMetrics.collapsedWingSlot(reserve: 82, measuredLeft: left, measuredRight: 40)
-            let panelWidth = notchW + slot * 2
-            let leftEdge = notchCenter - panelWidth / 2
-            XCTAssertEqual(leftEdge + slot, notchCenter - notchW / 2, accuracy: 0.001)
-            XCTAssertGreaterThanOrEqual(slot, left)
+        for (left, right): (CGFloat, CGFloat) in [(82, 82), (106, 82), (82, 120), (160, 40)] {
+            let panelWidth = notchW + left + right
+            let shift = NotchWidthMetrics.collapsedShift(leftSlot: left, rightSlot: right)
+            let leftEdge = notchCenter - panelWidth / 2 + shift
+            XCTAssertEqual(leftEdge + left, notchCenter - notchW / 2, accuracy: 0.001)
+            XCTAssertEqual(leftEdge + left + notchW, notchCenter + notchW / 2, accuracy: 0.001)
         }
     }
 }

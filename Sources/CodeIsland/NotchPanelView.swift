@@ -19,13 +19,17 @@ enum NotchWidthMetrics {
         return scaled
     }
 
-    /// Wing width on a notched collapsed bar. The bar is centred on the notch,
-    /// so both wings must be equal for the gap between them (exactly the
-    /// notch) to land on the cutout; widening the total by X only moves an
-    /// edge by X/2. The slot is the reserve unless a wing's measured content
-    /// (tool name, plan-limit chip, badges) needs more.
-    static func collapsedWingSlot(reserve: CGFloat, measuredLeft: CGFloat, measuredRight: CGFloat) -> CGFloat {
-        Swift.max(reserve, measuredLeft, measuredRight)
+    /// Width of one wing on a notched collapsed bar: the reserve unless the
+    /// wing's measured content (tool name, plan-limit chip, badges) needs more.
+    static func collapsedWingSlot(reserve: CGFloat, measured: CGFloat) -> CGFloat {
+        Swift.max(reserve, measured)
+    }
+
+    /// The bar is centred on the notch, so a wider left wing pushes the gap
+    /// between the wings to the right of the cutout (and vice versa); moving
+    /// the whole bar back by half the difference puts the gap on the notch.
+    static func collapsedShift(leftSlot: CGFloat, rightSlot: CGFloat) -> CGFloat {
+        (rightSlot - leftSlot) / 2
     }
 }
 
@@ -122,10 +126,12 @@ struct NotchPanelView: View {
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
-    /// Measured ideal widths of the collapsed wings (0 until first laid out).
-    /// On notched screens both wings get the same slot so the gap between
-    /// them sits exactly on the notch; the slot has to fit the wider one.
+    /// Widths the collapsed wings are laid out for (0 until first measured).
+    /// Grows as soon as a wing's content needs more; shrinks only after the
+    /// content has been narrower for a while, so the bar doesn't twitch on
+    /// every tool change.
     @State private var wingWidths = CompactWingWidths()
+    @State private var wingShrinkTimer: Timer?
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -174,16 +180,10 @@ struct NotchPanelView: View {
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        if hasNotch {
-            // The bar is centred on the notch, so the wings must be equal for
-            // the gap between them to line up with it. Widening the total by X
-            // only moves the left edge by X/2 — the slot itself has to grow.
-            let slot = NotchWidthMetrics.collapsedWingSlot(
-                reserve: wing + (extra + toolExtra) / 2,
-                measuredLeft: wingWidths.left,
-                measuredRight: wingWidths.right
-            )
-            return nw + slot * 2 + prehoverExtra
+        if let slots = collapsedWingSlots {
+            // Each wing is exactly as wide as it needs, the notch sits between
+            // them, and the bar is shifted so that gap lands on the cutout.
+            return nw + slots.left + slots.right
         }
         // Without a notch the wings sit at the edges of a flexible row; only
         // the part the measured content exceeds the reserve needs adding.
@@ -191,10 +191,46 @@ struct NotchPanelView: View {
         return nw + wing * 2 + extra + toolExtra + overflow + prehoverExtra
     }
 
-    /// Fixed wing width on a notched collapsed bar (nil = flexible layout).
-    private var collapsedWingSlot: CGFloat? {
+    /// Fixed wing widths on a notched collapsed bar (nil = flexible layout).
+    /// Left: the classic reserve (mascot plus room for a short tool name) or
+    /// the measured content if wider. Right: just its content — the count and
+    /// a badge or two — so the bar stays clear of the menu-bar icons.
+    private var collapsedWingSlots: (left: CGFloat, right: CGFloat)? {
         guard hasNotch, showBar, !shouldShowExpanded else { return nil }
-        return (panelWidth - effectiveNotchW) / 2
+        let extra: CGFloat = appState.status == .idle ? 0 : 20
+        let toolExtra: CGFloat = displayedToolStatus ? screenWidth * 0.03 : 0
+        let leftReserve = compactWingWidth + (extra + toolExtra) / 2
+        let prehover: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta / 2 : 0
+        return (
+            NotchWidthMetrics.collapsedWingSlot(reserve: leftReserve, measured: wingWidths.left) + prehover,
+            NotchWidthMetrics.collapsedWingSlot(reserve: compactWingWidth, measured: wingWidths.right) + prehover
+        )
+    }
+
+    /// Horizontal shift that keeps the gap between unequal wings on the notch.
+    private var collapsedShift: CGFloat {
+        guard let slots = collapsedWingSlots else { return 0 }
+        return NotchWidthMetrics.collapsedShift(leftSlot: slots.left, rightSlot: slots.right)
+    }
+
+    /// Widen at once (content would clip otherwise), narrow only after the
+    /// content has stayed narrower for a while — a tool name that comes and
+    /// goes shouldn't make the bar breathe.
+    private func applyWingWidths(_ measured: CompactWingWidths) {
+        let grown = CompactWingWidths(
+            left: Swift.max(wingWidths.left, measured.left),
+            right: Swift.max(wingWidths.right, measured.right)
+        )
+        if grown != wingWidths {
+            withAnimation(.easeOut(duration: 0.25)) { wingWidths = grown }
+        }
+        wingShrinkTimer?.invalidate()
+        guard measured != grown else { return }
+        wingShrinkTimer = Timer.scheduledTimer(withTimeInterval: CompactWingWidths.shrinkDelay, repeats: false) { _ in
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 0.3)) { wingWidths = measured }
+            }
+        }
     }
 
     var body: some View {
@@ -204,7 +240,7 @@ struct NotchPanelView: View {
                     // Active: compact bar — wider version when expanded
                     HStack(spacing: 0) {
                         CompactLeftWing(appState: appState, expanded: shouldShowExpanded, mascotSize: mascotSize, hasNotch: hasNotch, showToolStatus: showToolStatus)
-                            .frame(width: collapsedWingSlot, alignment: .leading)
+                            .frame(width: collapsedWingSlots?.left, alignment: .leading)
                         if hasNotch && !shouldShowExpanded {
                             // Exactly the notch: the wings are sized so this
                             // gap lands on the physical cutout, not near it.
@@ -216,10 +252,10 @@ struct NotchPanelView: View {
                             Spacer(minLength: 0)
                         }
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
-                            .frame(width: collapsedWingSlot, alignment: .trailing)
+                            .frame(width: collapsedWingSlots?.right, alignment: .trailing)
                     }
                     .frame(height: notchHeight)
-                    .onPreferenceChange(CompactWingWidths.Key.self) { wingWidths = $0 }
+                    .onPreferenceChange(CompactWingWidths.Key.self) { applyWingWidths($0) }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -323,7 +359,7 @@ struct NotchPanelView: View {
                 )
                 .fill(.black)
             )
-            .offset(y: curtainOffset)
+            .offset(x: collapsedShift, y: curtainOffset)
             .opacity(curtainOpacity)
             .onChange(of: showToolStatus) { _, newValue in
                 // Phase 1: entire bar slides up and fades out
@@ -549,22 +585,30 @@ private struct CompactLeftWing: View {
                         .animation(.easeInOut(duration: 0.3), value: displaySource)
 
                     // On notch screens, show tool name only (no description, space is tight)
-                    if hasNotch, showToolStatus, let tool = shownTool {
-                        Text(ToolNameDisplay.compact(tool))
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(toolStatusColor(tool))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
-                            .transition(.opacity)
-                            .help(tool)
-                    } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
-                              let snapshot = appState.claudeQuota.snapshot {
+                    let toolShown = hasNotch && showToolStatus && shownTool != nil
+                    ZStack(alignment: .leading) {
                         // Plan-limit chip takes the tool slot while no tool is
                         // running: window label + ring + percent, all windows in
-                        // the tooltip.
-                        QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
-                            .transition(.opacity)
+                        // the tooltip. While a tool name shows it stays as an
+                        // invisible placeholder so the slot — and the bar —
+                        // keep their width across the switch.
+                        if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                           let snapshot = appState.claudeQuota.snapshot {
+                            QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
+                                .opacity(toolShown ? 0 : 1)
+                                .allowsHitTesting(!toolShown)
+                                .transition(.opacity)
+                        }
+                        if toolShown, let tool = shownTool {
+                            Text(ToolNameDisplay.compact(tool))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(toolStatusColor(tool))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
+                                .transition(.opacity)
+                                .help(tool)
+                        }
                     }
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -726,6 +770,8 @@ struct CompactWingWidths: Equatable {
     /// Breathing room between the wing content and the notch; without it the
     /// last glyph sits flush against the cutout.
     static let notchGap: CGFloat = 6
+    /// How long a wing stays wide after its content got narrower.
+    static let shrinkDelay: TimeInterval = 5
     /// What a wing reports for its content: the content plus both margins,
     /// so the slot covers them.
     static func reported(_ contentWidth: CGFloat) -> CGFloat {

@@ -4,11 +4,11 @@
 
 ### English
 - Claude plan limits: an opt-in "Show Claude plan limits" setting reads the Claude Code sign-in from Keychain and asks Anthropic for the same 5-hour / weekly windows `/usage` shows. The expanded panel gets a footer line with every window (mini bar, percent, reset countdown); the collapsed island gets a labelled ring chip next to the session count showing one window — "Auto" shows the tighter weekly budget and switches to the 5-hour window while that one is pressing (ahead of pace, or past 70%), or pin 5h / weekly / weekly (current model). Refreshes are driven by Stop hooks (15s coalesce, at most once a minute, trailing catch-up) with a 10-minute idle tick, exponential backoff on errors, and no token refresh ever — an expired token just says "run Claude Code once". Off by default; the login is read through `security`, the tool Claude Code stores it with, so no Keychain prompt
-- Collapsed island on notched screens: the two wings are now the same width, sized from their measured content, with the gap between them exactly the notch. The old flexible row only guaranteed *a* gap at least as wide as the notch, so whichever wing was wider (a long tool name, now the plan-limit chip) slid its tail under the cutout — invisible on the display even though screenshots showed it intact
+- Collapsed island on notched screens: each wing is sized from its measured content and the bar is shifted so the gap between them is exactly the notch. The old flexible row only guaranteed *a* gap at least as wide as the notch, so whichever wing was wider (a long tool name, now the plan-limit chip) slid its tail under the cutout — invisible on the display even though screenshots showed it intact. The bar also stops twitching: the chip keeps its slot as an invisible placeholder while a tool name shows, width changes ease in, shrinking waits 5s, and the right wing is trimmed to its content so it stays clear of the menu-bar icons
 
 ### 中文
 - Claude 套餐额度：新增可选设置「显示 Claude 套餐额度」，用 Keychain 里的 Claude Code 登录向 Anthropic 查询和 `/usage` 一样的 5 小时 / 周窗口。展开面板底部新增一行显示全部窗口（迷你进度条、百分比、重置倒计时）；收起药丸在会话数旁加一个带窗口标签的环形 chip 只显示一个窗口——「自动」常态显示更紧的那条周额度，5 小时窗口吃紧时（进度超前或超过 70%）切换过去，也可固定为 5 小时 / 周 / 周（当前模型）。刷新由 Stop hook 驱动（15 秒合并、每分钟最多一次、窗口结束后补发一次），空闲时 10 分钟一次，出错指数退避，永不刷新 token——过期只提示「运行一次 Claude Code」。默认关闭；登录信息通过 `security` 命令读取（Claude Code 自己就是用它写入的），不会弹 Keychain 授权框
-- 刘海屏收起态：左右翼改为等宽，宽度按各自实测内容取大，中间精确留出刘海宽度。原来的弹性布局只保证中间「有一段」不小于刘海的空隙，并不保证空隙对准刘海，哪边更宽（长工具名、现在的额度 chip）尾巴就钻到刘海底下——屏幕上看不见，截图里却是完整的
+- 刘海屏收起态：左右翼各按实测内容定宽，整体平移让中间空隙精确对准刘海。原来的弹性布局只保证中间「有一段」不小于刘海的空隙，并不保证空隙对准刘海，哪边更宽（长工具名、现在的额度 chip）尾巴就钻到刘海底下——屏幕上看不见，截图里却是完整的。药丸也不再抖动：显示工具名时额度 chip 以隐形占位保留宽度，变宽走缓动，收窄延迟 5 秒，右翼只保留内容所需宽度，不挤占菜单栏图标
 
 ## [v1.0.33] - 2026-09-01
 
