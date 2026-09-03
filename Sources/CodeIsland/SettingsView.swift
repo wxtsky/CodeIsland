@@ -866,6 +866,8 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
@@ -965,6 +967,20 @@ private struct AppearancePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_claude_quota"], isOn: $showClaudeQuota)
+                    Text(l10n["show_claude_quota_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                Picker(l10n["claude_quota_chip"], selection: $claudeQuotaChip) {
+                    Text(l10n["quota_chip_off"]).tag(ClaudeQuotaChipMode.off.rawValue)
+                    Text(l10n["quota_chip_auto"]).tag(ClaudeQuotaChipMode.auto.rawValue)
+                    Text(l10n["quota_chip_session"]).tag(ClaudeQuotaChipMode.session.rawValue)
+                    Text(l10n["quota_chip_weekly"]).tag(ClaudeQuotaChipMode.weeklyAll.rawValue)
+                    Text(l10n["quota_chip_weekly_model"]).tag(ClaudeQuotaChipMode.weeklyScoped.rawValue)
+                }
+                .disabled(!showClaudeQuota)
             }
         }
         .formStyle(.grouped)

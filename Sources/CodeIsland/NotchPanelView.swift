@@ -98,6 +98,8 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
 
@@ -157,9 +159,11 @@ struct NotchPanelView: View {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
+        // Plan-limit chip in the right wing (ring + percent).
+        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip) != nil ? QuotaChip.reservedWidth : 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        return nw + wing * 2 + extra + toolExtra + prehoverExtra
+        return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
     }
 
     var body: some View {
@@ -549,6 +553,8 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     /// Re-evaluated on every re-render; the compact bar redraws often enough
     /// that the moon appears/disappears close to the window edges.
@@ -606,6 +612,13 @@ private struct CompactRightWing: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
                         .symbolEffect(.pulse, options: .repeating)
+                }
+
+                // Plan-limit chip: the window most likely to run out (or the
+                // one the user pinned), ring + percent. Tooltip has all windows.
+                if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                   let snapshot = appState.claudeQuota.snapshot {
+                    QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
                 }
 
                 if showToolStatus {
@@ -1765,6 +1778,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
         if let only = onlySessionId, appState.sessions[only] != nil {
@@ -1920,7 +1934,177 @@ private struct SessionListView: View {
                !(usage.last5h.isEmpty && usage.today.isEmpty) {
                 UsageFooterLine(usage: usage)
             }
+            if showClaudeQuota, onlySessionId == nil {
+                if let snapshot = appState.claudeQuota.snapshot {
+                    QuotaFooterLine(snapshot: snapshot, error: appState.claudeQuota.lastError)
+                } else if let error = appState.claudeQuota.lastError {
+                    QuotaFooterMessage(error: error)
+                }
+            }
         }
+    }
+}
+
+// MARK: - Plan limits (Anthropic subscription windows)
+
+private enum QuotaStyle {
+    static let normal = Color.white.opacity(0.85)
+    static let warning = Color(red: 1.0, green: 0.7, blue: 0.28)
+    static let critical = Color(red: 1.0, green: 0.4, blue: 0.4)
+
+    static func color(_ level: ClaudeQuotaLimit.Level) -> Color {
+        switch level {
+        case .normal: return normal
+        case .warning: return warning
+        case .critical: return critical
+        }
+    }
+
+    static func label(_ limit: ClaudeQuotaLimit, l10n: L10n) -> String {
+        switch limit.kind {
+        case .session: return "5h"
+        case .weeklyAll: return l10n["quota_week"]
+        case .weeklyScoped: return limit.scopeLabel ?? l10n["quota_week"]
+        }
+    }
+
+    /// One line per window for tooltips: "5h 3% · resets in 1h20m".
+    static func tooltip(_ snapshot: ClaudeQuotaSnapshot, stale: Bool, l10n: L10n, now: Date = Date()) -> String {
+        var lines = snapshot.ordered.map { limit -> String in
+            var line = "\(label(limit, l10n: l10n)) \(ClaudeQuotaFormat.percent(limit.percent))"
+            if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+                line += " · ↻ \(cd)"
+            }
+            return line
+        }
+        if stale { lines.append(l10n["quota_stale"]) }
+        return lines.joined(separator: "\n")
+    }
+}
+
+/// Collapsed-island chip: a 9pt ring plus percent for the selected window.
+struct QuotaChip: View {
+    let limit: ClaudeQuotaLimit
+    let snapshot: ClaudeQuotaSnapshot
+    let stale: Bool
+    @ObservedObject private var l10n = L10n.shared
+
+    /// Width reserved in the collapsed bar when the chip is shown.
+    static let reservedWidth: CGFloat = 40
+
+    init(limit: ClaudeQuotaLimit, snapshot: ClaudeQuotaSnapshot, stale: Bool) {
+        self.limit = limit
+        self.snapshot = snapshot
+        self.stale = stale
+    }
+
+    /// Shared resolution for the chip's limit so the bar width and the wing
+    /// agree on whether it is shown.
+    static func limit(appState: AppState, enabled: Bool, modeRaw: String) -> ClaudeQuotaLimit? {
+        guard enabled, let mode = ClaudeQuotaChipMode(rawValue: modeRaw), mode != .off,
+              let snapshot = appState.claudeQuota.snapshot else { return nil }
+        return ClaudeQuotaSelector.pick(from: snapshot, mode: mode)
+    }
+
+    var body: some View {
+        let color = QuotaStyle.color(limit.level)
+        HStack(spacing: 3) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.18), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: min(limit.percent / 100, 1))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 9, height: 9)
+            Text(ClaudeQuotaFormat.percent(limit.percent))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+        }
+        .opacity(stale ? 0.55 : 1)
+        .help(QuotaStyle.tooltip(snapshot, stale: stale, l10n: l10n))
+    }
+}
+
+/// Expanded footer: every window with a mini bar, percent, and reset countdown.
+private struct QuotaFooterLine: View {
+    let snapshot: ClaudeQuotaSnapshot
+    let error: ClaudeQuotaClientError?
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        // Countdowns tick once a minute; the panel is only open briefly.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(l10n["quota_label"])
+                    .fontWeight(.semibold)
+                ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { index, limit in
+                    if index > 0 {
+                        Text("·").foregroundStyle(.white.opacity(0.25))
+                    }
+                    segment(limit, now: context.date)
+                }
+                Spacer()
+                if error != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(QuotaStyle.warning)
+                        .help(l10n["quota_stale"])
+                }
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.45))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .help(QuotaStyle.tooltip(snapshot, stale: error != nil, l10n: l10n, now: context.date))
+        }
+    }
+
+    private func segment(_ limit: ClaudeQuotaLimit, now: Date) -> some View {
+        let color = QuotaStyle.color(limit.level)
+        return HStack(spacing: 4) {
+            Text(QuotaStyle.label(limit, l10n: l10n))
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.12))
+                Capsule().fill(color)
+                    .frame(width: 30 * min(limit.percent / 100, 1))
+            }
+            .frame(width: 30, height: 4)
+            Text(ClaudeQuotaFormat.percent(limit.percent))
+                .foregroundStyle(color)
+            if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+                Text("↻\(cd)")
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+    }
+}
+
+/// Footer fallback when there is no snapshot yet but the fetch failed.
+private struct QuotaFooterMessage: View {
+    let error: ClaudeQuotaClientError
+    @ObservedObject private var l10n = L10n.shared
+
+    private var text: String {
+        switch error {
+        case .unauthorized, .noCredential: return l10n["quota_login_needed"]
+        default: return l10n["quota_unreachable"]
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+            Spacer()
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.35))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
     }
 }
 
