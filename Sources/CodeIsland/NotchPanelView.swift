@@ -159,8 +159,10 @@ struct NotchPanelView: View {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
-        // Plan-limit chip in the right wing (ring + percent).
-        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip).map(QuotaChip.reservedWidth(for:)) ?? 0
+        // Plan-limit chip shares the left-wing tool slot, so only the part its
+        // width exceeds the tool reserve needs adding.
+        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
+            .map { Swift.max(0, QuotaChip.reservedWidth(for: $0) - toolExtra) } ?? 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
         return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
@@ -446,6 +448,8 @@ private struct CompactLeftWing: View {
     // Bound via @AppStorage so flipping the default mascot in Settings rerenders this view
     // even when AppState.primarySource wasn't recomputed (no session mutations in flight).
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     private var displaySession: SessionSnapshot? {
         let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -516,6 +520,13 @@ private struct CompactLeftWing: View {
                         .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
                         .transition(.opacity)
                         .help(tool)
+                } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                          let snapshot = appState.claudeQuota.snapshot {
+                    // Plan-limit chip takes the tool slot while no tool is
+                    // running: window label + ring + percent, all windows in
+                    // the tooltip.
+                    QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
+                        .transition(.opacity)
                 }
             }
         }
@@ -553,8 +564,6 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
-    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
-    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     /// Re-evaluated on every re-render; the compact bar redraws often enough
     /// that the moon appears/disappears close to the window edges.
@@ -612,13 +621,6 @@ private struct CompactRightWing: View {
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
                         .symbolEffect(.pulse, options: .repeating)
-                }
-
-                // Plan-limit chip: the window most likely to run out (or the
-                // one the user pinned), ring + percent. Tooltip has all windows.
-                if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
-                   let snapshot = appState.claudeQuota.snapshot {
-                    QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
                 }
 
                 if showToolStatus {
