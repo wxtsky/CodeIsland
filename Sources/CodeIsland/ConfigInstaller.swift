@@ -300,7 +300,12 @@ struct ConfigInstaller {
                 // stays in "running" and the approval sound never plays —
                 // see issue #145 and developers.openai.com/codex/hooks.
                 ("PermissionRequest", 86400, false),
+                ("PreCompact", 5, false),
+                ("PostCompact", 5, false),
+                ("SubagentStart", 5, false),
+                ("SubagentStop", 5, false),
                 ("Stop", 5, false),
+                ("Interrupt", 5, false),
             ],
             rootOverride: { ConfigInstaller.codexHome() },
             displayPathOverride: { ConfigInstaller.displayCodexPath(filename: "hooks.json") }

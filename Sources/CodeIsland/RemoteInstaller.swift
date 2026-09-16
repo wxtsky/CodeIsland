@@ -14,7 +14,7 @@ private struct RemoteCommandResult: Sendable {
 }
 
 enum RemoteInstaller {
-    private static let remoteHookVersion = "0.1.4"
+    private static let remoteHookVersion = "0.2.0"
     private static let remoteOpencodePluginVersion = "v3"
 
     static func installAll(host: RemoteHost, remoteSocketPath: String) async -> RemoteInstallResult {
@@ -812,19 +812,17 @@ def install_codex():
 
     cmd = command_for("codex")
     entry = [{"hooks": [{"type": "command", "command": cmd, "timeout": 60}]}]
-    # Codex fires PermissionRequest before shell escalation / managed-network
-    # approvals. Remote Codex registered only the three lifecycle events, so the
-    # approval never left the remote terminal while remote Claude — same host,
-    # same tunnel — worked fine (#306). Long timeout for the same reason as the
-    # local installer: the user may take minutes to decide.
+    # PermissionRequest blocks on a human, so it receives the long timeout. The
+    # other entries mirror Codex's complete public lifecycle surface, keeping
+    # remote status fidelity identical to local sessions.
     blocking_entry = [{"hooks": [{"type": "command", "command": cmd, "timeout": 86400}]}]
-    append_our_hooks(hooks, "SessionStart", entry)
-    append_our_hooks(hooks, "SessionEnd", entry)
-    append_our_hooks(hooks, "UserPromptSubmit", entry)
-    append_our_hooks(hooks, "PreToolUse", entry)
-    append_our_hooks(hooks, "PostToolUse", entry)
+    for event in [
+        "PreToolUse", "PostToolUse", "PreCompact", "PostCompact",
+        "SessionStart", "SessionEnd", "SubagentStart", "SubagentStop",
+        "UserPromptSubmit", "Stop", "Interrupt",
+    ]:
+        append_our_hooks(hooks, event, entry)
     append_our_hooks(hooks, "PermissionRequest", blocking_entry)
-    append_our_hooks(hooks, "Stop", entry)
     data["hooks"] = hooks
     write_json(hooks_path, data)
     ensure_toml_codex_hooks(codex_root / "config.toml")

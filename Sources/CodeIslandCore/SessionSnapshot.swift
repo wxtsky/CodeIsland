@@ -980,6 +980,18 @@ public func reduceEvent(
         return effects
     }
 
+    // Codex may flush already queued tool hooks after an Interrupt. Keep the
+    // terminal state latched until a new prompt/session starts so stale work
+    // cannot revive the card as processing.
+    if sessions[sessionId]?.source == "codex",
+       sessions[sessionId]?.interrupted == true,
+       eventName != "SessionStart",
+       eventName != "UserPromptSubmit",
+       eventName != "SessionEnd",
+       eventName != "Interrupt" {
+        return effects
+    }
+
     // Route subagent-specific events
     if let agentId = event.agentId {
         let handled = handleSubagentEvent(
@@ -1032,7 +1044,7 @@ public func reduceEvent(
     case "PreToolUse":
         if !isWaiting {
             sessions[sessionId]?.status = .running
-            sessions[sessionId]?.currentTool = event.toolName
+            sessions[sessionId]?.currentTool = event.activityLabel
             sessions[sessionId]?.toolDescription = event.toolDescription
         }
     case "PostToolUse":
@@ -1335,7 +1347,22 @@ public func reduceEvent(
         }
     case "PreCompact":
         sessions[sessionId]?.status = .processing
+        if sessions[sessionId]?.source == "codex" {
+            sessions[sessionId]?.currentTool = "Compacting"
+        }
         sessions[sessionId]?.toolDescription = "Compacting context\u{2026}"
+    case "PostCompact":
+        if !isWaiting {
+            sessions[sessionId]?.status = .processing
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+        }
+    case "Interrupt":
+        sessions[sessionId]?.interrupted = true
+        sessions[sessionId]?.status = .idle
+        sessions[sessionId]?.currentTool = nil
+        sessions[sessionId]?.toolDescription = nil
+        effects.append(.enqueueCompletion(sessionId: sessionId))
     default:
         break
     }
@@ -1865,7 +1892,7 @@ private func handleSubagentEvent(
             return true
         }
         sessions[sessionId]?.subagents[agentId]?.status = .running
-        sessions[sessionId]?.subagents[agentId]?.currentTool = event.toolName
+        sessions[sessionId]?.subagents[agentId]?.currentTool = event.activityLabel
         sessions[sessionId]?.subagents[agentId]?.toolDescription = event.toolDescription
         sessions[sessionId]?.subagents[agentId]?.lastActivity = Date()
         // Keep parent session showing as active while subagents work

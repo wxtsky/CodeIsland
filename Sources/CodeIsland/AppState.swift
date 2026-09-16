@@ -1553,7 +1553,7 @@ final class AppState {
         drainQuestions(forSession: sessionId, reason: "newPermissionRequest", where: { $0.agentId == event.agentId })
 
         sessions[sessionId]?.status = .waitingApproval
-        sessions[sessionId]?.currentTool = event.toolName
+        sessions[sessionId]?.currentTool = event.activityLabel
         sessions[sessionId]?.toolDescription = event.toolDescription
         sessions[sessionId]?.lastActivity = Date()
         markMergedSubagentWaiting(sessionId: sessionId, agentId: event.agentId, status: .waitingApproval)

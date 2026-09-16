@@ -32,7 +32,7 @@ extension AppState {
 
         pendingToolUses[toolUseId] = PreToolUseRecord(
             sessionId: event.sessionId ?? "default",
-            toolName: event.toolName,
+            toolName: event.activityLabel,
             toolDescription: event.toolDescription,
             toolInput: event.toolInput,
             receivedAt: Date()

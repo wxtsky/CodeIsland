@@ -5,7 +5,7 @@ import socket
 import subprocess
 import sys
 
-VERSION = "0.1.4"
+VERSION = "0.2.0"
 # Per-user socket path (#193): CodeIsland injects CODEISLAND_SOCKET_PATH via the hook
 # command, but fall back to a uid-scoped path so multiple users on a shared host never
 # collide on a single /tmp/codeisland.sock.

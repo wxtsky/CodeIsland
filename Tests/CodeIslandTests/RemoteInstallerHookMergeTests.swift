@@ -179,11 +179,14 @@ final class RemoteInstallerHookMergeTests: XCTestCase {
             "a permission prompt waits on a person; a 60s timeout would abandon it: \(timeouts)"
         )
 
-        // The tool events the local installer registers must be there too, or the
-        // card sits on "running" with no idea what the agent is doing.
-        for event in ["PreToolUse", "PostToolUse", "SessionEnd"] {
-            XCTAssertNotNil(hooks[event] as? [[String: Any]], "missing \(event)")
-        }
+        // Remote Codex must mirror every officially supported local lifecycle
+        // event or remote cards lose status detail that local cards retain.
+        let expectedEvents: Set<String> = [
+            "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact",
+            "PostCompact", "SessionStart", "SessionEnd", "SubagentStart",
+            "SubagentStop", "UserPromptSubmit", "Stop", "Interrupt",
+        ]
+        XCTAssertEqual(Set(hooks.keys), expectedEvents)
     }
 
     func testQoderInstallIsIdempotentAcrossReconnects() throws {

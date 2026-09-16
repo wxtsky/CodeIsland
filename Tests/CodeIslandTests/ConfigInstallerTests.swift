@@ -176,6 +176,18 @@ final class ConfigInstallerTests: XCTestCase {
         XCTAssertEqual(hookList.first?["timeout"] as? Int, 3)
     }
 
+    func testCodexRegistersEverySupportedLifecycleEvent() throws {
+        let codex = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "codex" })
+        let configured = Set(codex.events.map { $0.0 })
+        let expected: Set<String> = [
+            "PreToolUse", "PermissionRequest", "PostToolUse", "PreCompact",
+            "PostCompact", "SessionStart", "SessionEnd", "SubagentStart",
+            "SubagentStop", "UserPromptSubmit", "Stop", "Interrupt",
+        ]
+
+        XCTAssertEqual(configured, expected)
+    }
+
     func testTraeIDEHooksUseOfficialNestedSchema() throws {
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
