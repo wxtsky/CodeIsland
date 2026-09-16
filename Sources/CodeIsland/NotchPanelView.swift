@@ -660,6 +660,25 @@ private func toolStatusColor(_ tool: String) -> Color {
     }
 }
 
+enum SessionLiveOutputDisplay {
+    static func summary(for session: SessionSnapshot?, maxCharacters: Int = 160) -> String? {
+        guard maxCharacters > 0,
+              let session,
+              session.status != .idle,
+              SessionSnapshot.normalizedSupportedSource(session.source) == "codex",
+              let liveOutput = session.liveCodexOutput else { return nil }
+
+        let normalized = liveOutput
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+        guard normalized.count > maxCharacters else { return normalized }
+        if maxCharacters == 1 { return "\u{2026}" }
+        return String(normalized.prefix(maxCharacters - 1)) + "\u{2026}"
+    }
+}
+
 // MARK: - Compact Tool Status (non-notch center area)
 
 /// Shows the current tool activity in the center of the bar on non-notch screens.
@@ -677,6 +696,7 @@ private struct CompactToolStatus: View {
     }
     private var liveTool: String? { displaySession?.currentTool }
     private var liveDesc: String? { displaySession?.toolDescription }
+    private var liveOutput: String? { SessionLiveOutputDisplay.summary(for: displaySession) }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
     private var projectName: String? {
         guard let cwd = displaySession?.cwd, !cwd.isEmpty else { return nil }
@@ -722,6 +742,17 @@ private struct CompactToolStatus: View {
                     )
                     .truncationMode(.tail)
                 }
+            } else if let liveOutput {
+                Text("$")
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                MorphText(
+                    text: liveOutput,
+                    font: .system(size: 11, weight: .medium, design: .monospaced),
+                    color: .white.opacity(0.78)
+                )
+                .truncationMode(.tail)
+                .help(liveOutput)
             } else if displayStatus == .processing {
                 TypingIndicator(fontSize: 11, label: "thinking", bright: true)
                     .id("thinking-\(appState.rotatingSessionId ?? "")")

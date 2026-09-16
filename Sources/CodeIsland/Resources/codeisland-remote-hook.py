@@ -5,7 +5,7 @@ import socket
 import subprocess
 import sys
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 # Per-user socket path (#193): CodeIsland injects CODEISLAND_SOCKET_PATH via the hook
 # command, but fall back to a uid-scoped path so multiple users on a shared host never
 # collide on a single /tmp/codeisland.sock.
@@ -19,6 +19,7 @@ TIMEOUT_SECONDS = 300
 # agent side, and a socket timeout of 5 minutes would silently drop the decision
 # of anyone who stepped away (#306).
 BLOCKING_TIMEOUT_SECONDS = 86400
+TRANSCRIPT_TAIL_BYTES = 262144
 
 
 def _normalize_event(name):
@@ -197,6 +198,91 @@ def _scan_codebuddy_jsonl(session_id, cwd):
     return _scan_session_jsonl(_codebuddy_jsonl_path(session_id, cwd))
 
 
+def _codex_public_text(payload, allow_agent_message=False):
+    """Return only Codex text that is intended for the user-facing transcript."""
+    if not isinstance(payload, dict):
+        return None
+
+    item_type = payload.get("type")
+    if allow_agent_message and item_type == "agent_message":
+        message = payload.get("message")
+        return message.strip() if isinstance(message, str) and message.strip() else None
+
+    blocks = None
+    accepted_types = set()
+    if item_type == "message" and payload.get("role") == "assistant":
+        blocks = payload.get("content")
+        accepted_types = {"output_text"}
+    if not isinstance(blocks, list):
+        return None
+    parts = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") not in accepted_types:
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text.strip():
+            parts.append(text.strip())
+    return "\n".join(parts) if parts else None
+
+
+def _scan_codex_jsonl(path):
+    """Read a bounded rollout tail and return the current turn's public output."""
+    if not isinstance(path, str) or not path.strip():
+        return {}
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        return {}
+
+    event_user_indices = []
+    fallback_user_indices = []
+    public_messages = []
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            start = max(0, size - TRANSCRIPT_TAIL_BYTES)
+            handle.seek(start)
+            if start:
+                handle.readline()  # discard a partial JSONL record
+            lines = handle.read().decode("utf-8", errors="ignore").splitlines()
+
+        for index, line in enumerate(lines):
+            try:
+                record = json.loads(line)
+            except Exception:
+                continue
+            record_type = record.get("type")
+            payload = record.get("payload")
+            if not isinstance(payload, dict):
+                continue
+
+            payload_type = payload.get("type")
+            if record_type == "event_msg" and payload_type == "user_message":
+                event_user_indices.append(index)
+            elif (record_type == "response_item" and payload_type == "message"
+                  and payload.get("role") == "user"):
+                fallback_user_indices.append(index)
+
+            if record_type == "event_msg" and payload_type == "agent_message":
+                text = _codex_public_text(payload, allow_agent_message=True)
+            elif record_type == "response_item":
+                text = _codex_public_text(payload)
+            else:
+                text = None
+            if text:
+                public_messages.append((index, text))
+    except Exception:
+        return {}
+
+    if not public_messages:
+        return {}
+    last_user_index = max(event_user_indices + fallback_user_indices, default=-1)
+    output_index, output = public_messages[-1]
+    if output_index <= last_user_index:
+        return {}
+    return {"last_assistant_message": output[:4000]}
+
+
 def _read_stdin_json():
     try:
         return json.load(sys.stdin)
@@ -307,6 +393,11 @@ def main():
             prompt = extras.get("last_user_message")
             if prompt:
                 payload["prompt"] = prompt
+
+    if SOURCE == "codex" and normalized_event not in {"SessionStart", "UserPromptSubmit"}:
+        extras = _scan_codex_jsonl(payload.get("transcript_path"))
+        if extras.get("last_assistant_message") and not payload.get("last_assistant_message"):
+            payload["last_assistant_message"] = extras["last_assistant_message"]
 
     # Blocking events: permission prompts + question prompts
     expects_response = normalized_event == "PermissionRequest" or (

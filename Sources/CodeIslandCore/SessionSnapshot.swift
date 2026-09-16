@@ -101,6 +101,9 @@ public struct SessionSnapshot: Sendable {
     public var startTime: Date = Date()
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
+    /// Public assistant text emitted during the active Codex turn. This is
+    /// transient UI state: a new turn clears it while chat history remains.
+    public var liveCodexOutput: String?
     /// Absolute path to the JSONL transcript currently backing this session. Populated
     /// by hooks (`transcript_path` field) and by filesystem discovery, consumed by the
     /// JSONLTailer for incremental streaming of the latest assistant reply.
@@ -1006,6 +1009,20 @@ public func reduceEvent(
         if handled { return effects }
     }
 
+    // Remote Codex hooks can enrich ordinary lifecycle events with the latest
+    // public assistant text because their transcript path is not readable on
+    // this Mac. Apply it only after stale/interrupted and subagent events have
+    // been filtered, and keep it separate from persisted chat history.
+    if sessions[sessionId]?.source == "codex",
+       eventName != "UserPromptSubmit",
+       eventName != "SessionStart",
+       let output = event.rawJSON["last_assistant_message"] as? String {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            sessions[sessionId]?.liveCodexOutput = trimmed
+        }
+    }
+
     // Preserve actionable states: don't let activity updates overwrite waiting states
     let isWaiting = sessions[sessionId]?.status == .waitingApproval
         || sessions[sessionId]?.status == .waitingQuestion
@@ -1015,6 +1032,9 @@ public func reduceEvent(
     case "UserPromptSubmit":
         sessions[sessionId]?.interrupted = false
         sessions[sessionId]?.taskRoundEnded = false
+        if sessions[sessionId]?.source == "codex" {
+            sessions[sessionId]?.liveCodexOutput = nil
+        }
         sessions[sessionId]?.status = .processing
         sessions[sessionId]?.currentTool = nil
         sessions[sessionId]?.toolDescription = nil

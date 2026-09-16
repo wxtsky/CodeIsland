@@ -5,6 +5,59 @@ import SQLite3
 
 @MainActor
 final class AppStateCodexTranscriptTests: XCTestCase {
+    func testCodexBackfillReadsPublicOutputButNotReasoning() throws {
+        let transcript = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-public-output-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: transcript) }
+
+        let lines = [
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"Inspect the parser"}}"#,
+            #"{"type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Checking public rollout fields"}],"content":[{"type":"text","text":"hidden chain of thought"}],"encrypted_content":"secret"}}"#,
+            #"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The parser is ready."}]}}"#
+        ].joined(separator: "\n") + "\n"
+        try lines.write(to: transcript, atomically: true, encoding: .utf8)
+
+        let messages = AppState.readRecentFromCodexTranscript(path: transcript.path).1
+
+        XCTAssertEqual(messages.map(\.text), [
+            "Inspect the parser",
+            "The parser is ready."
+        ])
+        XCTAssertFalse(messages.contains { $0.text.contains("hidden chain") })
+    }
+
+    func testTaskStartedClearsPreviousCodexLiveOutputWithoutDeletingHistory() {
+        let appState = AppState()
+        let sessionId = "codex-live-output"
+        var session = SessionSnapshot()
+        session.source = "codex"
+        session.status = .processing
+        session.liveCodexOutput = "Previous turn"
+        session.recentMessages = [ChatMessage(isUser: false, text: "Previous turn")]
+        appState.sessions[sessionId] = session
+
+        appState.applyTranscriptDelta(ConversationTailDelta(
+            sessionId: sessionId,
+            lastUserPrompt: nil,
+            lastAssistantMessage: nil,
+            turnStatus: .processing,
+            hasActivity: true
+        ))
+
+        XCTAssertNil(appState.sessions[sessionId]?.liveCodexOutput)
+        XCTAssertEqual(appState.sessions[sessionId]?.recentMessages.map(\.text), ["Previous turn"])
+    }
+
+    func testCodexHookEnrichmentUpdatesTransientLiveOutput() throws {
+        var sessions: [String: SessionSnapshot] = [:]
+        let data = Data(#"{"session_id":"remote-turn","hook_event_name":"PostToolUse","_source":"codex","last_assistant_message":" Inspecting the failing test. "}"#.utf8)
+        let event = try XCTUnwrap(HookEvent(from: data))
+
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 5)
+
+        XCTAssertEqual(sessions["remote-turn"]?.liveCodexOutput, "Inspecting the failing test.")
+    }
+
     func testDelayedDeltaFromDetachedGenerationCannotMutateRecreatedSession() throws {
         let appState = AppState()
         let sessionId = "codexapp:reused-thread"

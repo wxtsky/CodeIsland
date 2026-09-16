@@ -196,11 +196,16 @@ final class JSONLTailerCursorQuestionTests: XCTestCase {
         XCTAssertEqual(JSONLTailer.quickTypeProbe(lineBytes: Data(claude.utf8)), .assistant)
     }
 
-    func testQuickTypeProbeIgnoresNestedRoleInNonLeadingPosition() {
-        // Codex rollout `response_item` lines carry a nested role — they must stay
-        // on the fast irrelevant path (the cursor writer always emits `role` as
-        // the first key, so a strict prefix check is safe and cheap).
+    func testQuickTypeProbeClassifiesPublicCodexResponseItem() {
         let codex = #"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[]}}"#
+        let withOutput = codex.replacingOccurrences(of: "[]", with: #"[{"type":"output_text","text":"ok"}]"#)
+        XCTAssertEqual(JSONLTailer.quickTypeProbe(lineBytes: Data(withOutput.utf8)), .codexResponseItem)
+    }
+
+    func testQuickTypeProbeKeepsLargeCodexToolOutputOnFastIrrelevantPath() {
+        let huge = String(repeating: "x", count: 200_000)
+        let codex = #"{"type":"response_item","payload":{"type":"function_call_output","output":"\#(huge)"}}"#
+
         XCTAssertEqual(JSONLTailer.quickTypeProbe(lineBytes: Data(codex.utf8)), .irrelevant)
     }
 

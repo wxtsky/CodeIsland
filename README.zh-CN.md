@@ -129,6 +129,8 @@ CodeIsland 在每个 AI 工具的配置中安装轻量级 hooks。当工具触�
 
 **Codex** 多一步，而且这一步只能你自己做：Codex 不会执行没给它过目的 hook。装好之后启动 Codex，它会提示 `1 hook needs review before it can run.`，执行 `/hooks` 把 CodeIsland 的条目 review 并信任即可。在此之前 Codex 对这些 hook 不做任何事，也不报错——看起来就跟 CodeIsland 不支持 Codex 一模一样。Codex 会在 `~/.codex/config.toml` 的 `[hooks.state]` 里按内容哈希记录信任状态，所以 CodeIsland 更新重写了 `~/.codex/hooks.json` 之后，需要再 review 一次。
 
+Codex 任务运行时，如果当前没有工具调用，紧凑状态栏会优先显示本轮公开输出，而不是笼统的 `thinking`。隐藏推理、加密内容、工具返回和子代理内部消息都不会显示。本机会直接跟随 rollout transcript 更新；远程会话则在下一次 hook 事件转发时刷新正文，因此是 hook 级刷新，不是逐 token 流式显示。
+
 **DeepSeek Harness（DSH）** 通过 [dsh-island](https://github.com/cdxiaodong/dsh-island) cordis 插件接入：插件监听 DSH 内置事件（`session/created`、`tools/pre-execute`、`approval/request` 等），把同样的 JSON 写入 Unix socket。在 DSH 内安装：
 
 ```bash

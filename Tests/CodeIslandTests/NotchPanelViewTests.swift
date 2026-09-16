@@ -1,5 +1,6 @@
 import XCTest
 @testable import CodeIsland
+import CodeIslandCore
 
 final class NotchPanelViewTests: XCTestCase {
     func testEffectiveNotchWidthAppliesCollapsedWidthScaleOnNonNotchScreens() {
@@ -61,6 +62,42 @@ final class NotchPanelViewTests: XCTestCase {
         XCTAssertTrue(compact.hasPrefix("mcp"))
         XCTAssertTrue(compact.hasSuffix("document_page"))
         XCTAssertTrue(compact.contains("..."))
+    }
+
+    func testCodexLiveOutputSummaryNormalizesAndTruncatesPublicText() {
+        var session = SessionSnapshot()
+        session.source = "codex"
+        session.status = .processing
+        session.liveCodexOutput = "  Checking\n  the affected call sites now.  "
+
+        XCTAssertEqual(
+            SessionLiveOutputDisplay.summary(for: session, maxCharacters: 24),
+            "Checking the affected c\u{2026}"
+        )
+    }
+
+    func testCodexLiveOutputSummaryDoesNotFallBackToStaleHistory() {
+        var session = SessionSnapshot()
+        session.source = "codex"
+        session.status = .processing
+        session.recentMessages = [
+            ChatMessage(isUser: false, text: "Old answer"),
+            ChatMessage(isUser: true, text: "New task")
+        ]
+
+        XCTAssertNil(SessionLiveOutputDisplay.summary(for: session))
+    }
+
+    func testLiveOutputSummaryIsLimitedToActiveCodexSessions() {
+        var session = SessionSnapshot()
+        session.source = "claude"
+        session.status = .processing
+        session.liveCodexOutput = "Claude output"
+        XCTAssertNil(SessionLiveOutputDisplay.summary(for: session))
+
+        session.source = "codex"
+        session.status = .idle
+        XCTAssertNil(SessionLiveOutputDisplay.summary(for: session))
     }
 
     func testShouldTriggerJumpFailureFeedbackWhenAllAttemptsFail() {

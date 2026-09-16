@@ -129,6 +129,8 @@ For **OpenCode**, a JS plugin connects directly to the socket — no bridge bina
 
 For **Codex**, one extra step is yours and not something CodeIsland can do for you: Codex will not run a hook it has not been shown. After installing, start Codex and it reports `1 hook needs review before it can run.` — run `/hooks`, review the CodeIsland entries and trust them. Until then Codex simply does nothing with them, with no error, which looks exactly like CodeIsland not supporting Codex. Codex records a content hash per trusted hook in `~/.codex/config.toml` under `[hooks.state]`, so if a CodeIsland update rewrites `~/.codex/hooks.json`, the review is needed once more.
 
+While a Codex turn is active, the compact bar prefers the current public assistant output over the generic `thinking` label whenever no tool is running. Hidden reasoning, encrypted content, tool results, and internal subagent messages are never displayed. Local sessions follow rollout transcript updates directly; remote sessions refresh the text when the next hook event is forwarded, so remote output is hook-granular rather than token-streamed.
+
 For **DeepSeek Harness (DSH)**, the [dsh-island](https://github.com/cdxiaodong/dsh-island) cordis plugin listens to DSH's built-in events (`session/created`, `tools/pre-execute`, `approval/request`, …) and writes the same JSON over the Unix socket. Install it inside DSH:
 
 ```bash

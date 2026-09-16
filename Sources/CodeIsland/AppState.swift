@@ -7158,7 +7158,7 @@ final class AppState {
     }
 
     /// Read model and recent messages from a Codex transcript file
-    private nonisolated static func readRecentFromCodexTranscript(path: String) -> (String?, [ChatMessage]) {
+    nonisolated static func readRecentFromCodexTranscript(path: String) -> (String?, [ChatMessage]) {
         guard let text = readTranscriptTail(path: path) else { return (nil, []) }
 
         var model: String?
@@ -7180,40 +7180,31 @@ final class AppState {
                     ?? payload["model_provider"] as? String
             }
 
-            // Prefer event_msg (cleaner user/agent messages from Codex)
+            // Prefer event_msg (cleaner user messages from Codex).
             if type == "event_msg",
                let payload = json["payload"] as? [String: Any],
                let msgType = payload["type"] as? String,
                let msg = payload["message"] as? String, !msg.isEmpty {
                 if msgType == "user_message" {
                     userMessages.append((index, msg))
-                } else if msgType == "agent_message" {
-                    assistantMessages.append((index, msg))
                 }
             }
 
-            // Fallback: extract from response_item only if event_msg didn't provide the same content
-            // (user messages come from event_msg which is cleaner — response_item user entries
-            //  often contain injected system/tool context, not actual user input)
-            if type == "response_item",
-               let payload = json["payload"] as? [String: Any],
-               let role = payload["role"] as? String {
+            if let assistantText = JSONLTailer.codexPublicAssistantText(from: json),
+               assistantMessages.last?.1 != assistantText {
+                assistantMessages.append((index, assistantText))
+            }
 
-                if let content = payload["content"] as? [[String: Any]] {
-                    for item in content {
-                        let itemType = item["type"] as? String ?? ""
-                        if let t = item["text"] as? String, !t.isEmpty {
-                            if role == "user" && itemType == "input_text" && userMessages.isEmpty {
-                                // Only use response_item for user messages if no event_msg was found
-                                userMessages.append((index, t))
-                            } else if role == "assistant" && itemType == "output_text" && assistantMessages.last?.1 != t {
-                                // Only add if not a duplicate of the last event_msg entry
-                                assistantMessages.append((index, t))
-                            }
-                            break
-                        }
-                    }
-                }
+            // response_item user entries often include injected system/tool
+            // context, so only use them when no cleaner event_msg was found.
+            if type == "response_item", userMessages.isEmpty,
+               let payload = json["payload"] as? [String: Any],
+               payload["type"] as? String == "message",
+               payload["role"] as? String == "user",
+               let content = payload["content"] as? [[String: Any]],
+               let text = content.first(where: { $0["type"] as? String == "input_text" })?["text"] as? String,
+               !text.isEmpty {
+                userMessages.append((index, text))
             }
             index += 1
         }
