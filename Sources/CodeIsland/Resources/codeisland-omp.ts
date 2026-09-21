@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v7
+// version: v8
 // OMP-compatible install
 
 /**
@@ -380,8 +380,6 @@ export function classifyCodeIslandAskResponse(
 // ── Extension ─────────────────────────────────────────────────────────────────
 
 export default function codeislandExtension(pi: ExtensionAPI) {
-  const askToolRenderer = pi.pi.askToolRenderer;
-
   class ToolAbortError extends Error {
     override name = "ToolAbortError";
   }
@@ -646,12 +644,22 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   // info first, only ask on major tradeoffs, never hand-write "Other", etc.).
   const nativeAskMetadata = createNativeAskTool();
 
+  // OMP 18.2.x moved the tool renderers into @oh-my-pi/pi-tui and no longer
+  // exports this one. It only affects how the shadow Ask tool is drawn in the
+  // terminal, so its absence must not stop the extension from loading.
+  const { askToolRenderer } = pi.pi as typeof pi.pi & {
+    askToolRenderer?: Pick<
+      ToolDefinition<typeof askParameters, CompatibleAskToolDetails>,
+      "renderCall" | "renderResult"
+    > & { mergeCallAndResult: boolean };
+  };
+
   const askToolDefinition: ToolDefinition<
     typeof askParameters,
     CompatibleAskToolDetails
   > & {
     concurrency: "exclusive";
-    mergeCallAndResult: boolean;
+    mergeCallAndResult?: boolean;
     strict: true;
     approval: "read";
   } = {
@@ -662,9 +670,13 @@ export default function codeislandExtension(pi: ExtensionAPI) {
     strict: true,
     approval: "read",
     concurrency: "exclusive",
-    mergeCallAndResult: askToolRenderer.mergeCallAndResult,
-    renderCall: askToolRenderer.renderCall,
-    renderResult: askToolRenderer.renderResult,
+    ...(askToolRenderer
+      ? {
+          mergeCallAndResult: askToolRenderer.mergeCallAndResult,
+          renderCall: askToolRenderer.renderCall,
+          renderResult: askToolRenderer.renderResult,
+        }
+      : {}),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
       const sid = `pi-${sessionId}`;

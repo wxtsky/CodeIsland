@@ -249,4 +249,54 @@ describe("OMP Ask racing settlement", () => {
     expect(result).toBe(nativeResult);
     expect(contextAborted).toBe(false);
   });
+
+  // OMP 18.2.x moved the tool renderers into @oh-my-pi/pi-tui, so
+  // `pi.pi.askToolRenderer` is undefined there. The extension must still load.
+  function registerAskTool(piExports: Record<string, unknown>) {
+    class FakeAskTool {
+      readonly label = "Ask";
+      readonly description = "Native Ask";
+      constructor(_session: unknown) {}
+    }
+    let registeredTool: Record<string, unknown> | undefined;
+    codeislandExtension({
+      zod: {
+        string: fakeSchema,
+        number: fakeSchema,
+        boolean: fakeSchema,
+        array: fakeSchema,
+        object: fakeSchema,
+      },
+      pi: { AskTool: FakeAskTool, settings: {}, ...piExports },
+      getSessionName: () => undefined,
+      registerTool: (tool: Record<string, unknown>) => {
+        registeredTool = tool;
+      },
+      on: () => undefined,
+    } as never);
+    return registeredTool;
+  }
+
+  test("loads without the native Ask renderer and leaves rendering to OMP", () => {
+    const tool = registerAskTool({});
+
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe("ask");
+    expect("renderCall" in tool!).toBe(false);
+    expect("renderResult" in tool!).toBe(false);
+    expect("mergeCallAndResult" in tool!).toBe(false);
+  });
+
+  test("reuses the native Ask renderer when OMP still exports it", () => {
+    const renderer = {
+      mergeCallAndResult: true,
+      renderCall: () => null,
+      renderResult: () => null,
+    };
+    const tool = registerAskTool({ askToolRenderer: renderer });
+
+    expect(tool!.renderCall).toBe(renderer.renderCall);
+    expect(tool!.renderResult).toBe(renderer.renderResult);
+    expect(tool!.mergeCallAndResult).toBe(true);
+  });
 });
