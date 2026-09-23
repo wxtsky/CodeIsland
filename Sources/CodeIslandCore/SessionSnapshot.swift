@@ -986,11 +986,17 @@ public func reduceEvent(
     // Codex may flush already queued tool hooks after an Interrupt. Keep the
     // terminal state latched until a new prompt/session starts so stale work
     // cannot revive the card as processing.
+    //
+    // SubagentStop still passes: interrupting the root turn does not stop
+    // spawned agents, and dropping their stop would leave them in `subagents`
+    // so the next root Stop sees "active subagents" and pins the card to
+    // running/Agent. Removing a subagent never revives an idle parent.
     if sessions[sessionId]?.source == "codex",
        sessions[sessionId]?.interrupted == true,
        eventName != "SessionStart",
        eventName != "UserPromptSubmit",
        eventName != "SessionEnd",
+       eventName != "SubagentStop",
        eventName != "Interrupt" {
         return effects
     }

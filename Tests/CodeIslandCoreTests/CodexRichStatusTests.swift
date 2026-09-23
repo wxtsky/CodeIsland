@@ -221,6 +221,55 @@ final class CodexRichStatusTests: XCTestCase {
         XCTAssertEqual(sessions["codex-rich-status"]?.status, .processing)
     }
 
+    /// Interrupting the root turn leaves spawned Codex agents running. Their
+    /// SubagentStop must still clear them, or the next root Stop treats the
+    /// session as having active subagents and pins it to running/Agent.
+    func testSubagentStopAfterRootInterruptStillClearsSubagent() throws {
+        var session = SessionSnapshot()
+        session.source = "codex"
+        session.status = .processing
+        var sessions = ["codex-rich-status": session]
+
+        _ = reduceEvent(sessions: &sessions, event: try decode([
+            "hook_event_name": "SubagentStart",
+            "session_id": "codex-rich-status",
+            "agent_id": "worker-1",
+            "agent_type": "worker",
+            "_source": "codex",
+        ]), maxHistory: 10)
+        _ = reduceEvent(sessions: &sessions, event: try decode([
+            "hook_event_name": "Interrupt",
+            "session_id": "codex-rich-status",
+            "_source": "codex",
+        ]), maxHistory: 10)
+        _ = reduceEvent(sessions: &sessions, event: try decode([
+            "hook_event_name": "SubagentStop",
+            "session_id": "codex-rich-status",
+            "agent_id": "worker-1",
+            "agent_type": "worker",
+            "_source": "codex",
+        ]), maxHistory: 10)
+
+        XCTAssertTrue(sessions["codex-rich-status"]?.subagents.isEmpty == true)
+        XCTAssertEqual(sessions["codex-rich-status"]?.status, .idle)
+        XCTAssertTrue(sessions["codex-rich-status"]?.interrupted == true)
+
+        _ = reduceEvent(sessions: &sessions, event: try decode([
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "codex-rich-status",
+            "_source": "codex",
+            "prompt": "next",
+        ]), maxHistory: 10)
+        _ = reduceEvent(sessions: &sessions, event: try decode([
+            "hook_event_name": "Stop",
+            "session_id": "codex-rich-status",
+            "_source": "codex",
+        ]), maxHistory: 10)
+
+        XCTAssertEqual(sessions["codex-rich-status"]?.status, .idle)
+        XCTAssertNil(sessions["codex-rich-status"]?.currentTool)
+    }
+
     private func decode(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
