@@ -104,4 +104,89 @@ final class ClaudeQuotaTests: XCTestCase {
         XCTAssertEqual(err(503), .http(503))
         XCTAssertEqual(err(200, Data("{}".utf8)), .parse)
     }
+
+    // MARK: token hygiene
+
+    func testRequestAndSessionKeepTheTokenOffDisk() {
+        XCTAssertEqual(ClaudeQuotaClient.request(token: "tok").cachePolicy, .reloadIgnoringLocalCacheData)
+        let config = ClaudeQuotaClient.session.configuration
+        XCTAssertNil(config.urlCache)
+        XCTAssertNil(config.httpCookieStorage)
+        XCTAssertFalse(config.httpShouldSetCookies)
+    }
+
+    func testRedirectsAreNeverFollowed() async {
+        // Never resumed — no network.
+        let task = ClaudeQuotaClient.session.dataTask(with: ClaudeQuotaClient.endpoint)
+        let redirect = HTTPURLResponse(url: ClaudeQuotaClient.endpoint, statusCode: 302, httpVersion: nil,
+                                       headerFields: ["Location": "https://example.com/"])!
+        let next = await ClaudeQuotaClient.RedirectRefusal.shared.urlSession(
+            ClaudeQuotaClient.session, task: task,
+            willPerformHTTPRedirection: redirect,
+            newRequest: URLRequest(url: URL(string: "https://example.com/")!)
+        )
+        XCTAssertNil(next)
+    }
+
+    /// Counts requests that reach the wire; answers every one with a 500.
+    private final class CountingProtocol: URLProtocol {
+        nonisolated(unsafe) static var count = 0
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            Self.count += 1
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!,
+                                cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
+    func testKnownExpiredTokenIsNeverSent() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CountingProtocol.self]
+        let session = URLSession(configuration: config)
+        CountingProtocol.count = 0
+        // `fetch(using:)` skips the utility-QoS credential hop, which a loaded
+        // machine can starve for tens of seconds.
+        let expired = ClaudeOAuthCredential(accessToken: "tok", expiresAt: now.addingTimeInterval(-60))
+        do {
+            _ = try await ClaudeQuotaClient.fetch(using: expired, session: session, now: now)
+            XCTFail("expected unauthorized")
+        } catch {
+            XCTAssertEqual(error as? ClaudeQuotaClientError, .unauthorized)
+        }
+        XCTAssertEqual(CountingProtocol.count, 0)
+        // A live token does go out (and the stubbed 500 maps through).
+        let live = ClaudeOAuthCredential(accessToken: "tok", expiresAt: now.addingTimeInterval(3600))
+        do {
+            _ = try await ClaudeQuotaClient.fetch(using: live, session: session, now: now)
+            XCTFail("expected http(500)")
+        } catch {
+            XCTAssertEqual(error as? ClaudeQuotaClientError, .http(500))
+        }
+        XCTAssertEqual(CountingProtocol.count, 1)
+    }
+
+    // MARK: security(1) runner
+
+    func testRunnerReturnsStdoutAndSecretIsTrimmed() throws {
+        let out = try XCTUnwrap(ClaudeCredentialStore.runCapturingStdout(path: "/bin/echo", args: ["secret"], timeout: 5))
+        XCTAssertEqual(ClaudeCredentialStore.trimmingSecretOutput(out), Data("secret".utf8))
+        XCTAssertNil(ClaudeCredentialStore.trimmingSecretOutput(Data("\n".utf8)))
+        XCTAssertNil(ClaudeCredentialStore.runCapturingStdout(path: "/usr/bin/false", args: [], timeout: 5))
+        // Larger than a pipe buffer: must not wedge the child.
+        let big = ClaudeCredentialStore.runCapturingStdout(
+            path: "/bin/dd", args: ["if=/dev/zero", "bs=1024", "count=200"], timeout: 5)
+        XCTAssertEqual(big?.count, 200 * 1024)
+    }
+
+    func testRunnerDeadlineCoversAChildThatNeverExits() {
+        // A security(1) waiting on a keychain dialog looks like this: alive,
+        // stdout open, nothing written. The deadline must still fire.
+        let started = Date()
+        XCTAssertNil(ClaudeCredentialStore.runCapturingStdout(path: "/bin/sleep", args: ["30"], timeout: 0.3))
+        // Generous bound for a loaded CI box; the point is "not 30s".
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+    }
 }

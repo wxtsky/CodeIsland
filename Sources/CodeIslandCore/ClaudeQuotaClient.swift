@@ -44,20 +44,65 @@ public enum ClaudeCredentialStore {
     /// confidential information" prompt — and, for an ad-hoc signed build,
     /// raise it again after every rebuild.
     public static func readKeychain(service: String = keychainService, timeout: TimeInterval = 5) -> Data? {
+        runCapturingStdout(
+            path: "/usr/bin/security",
+            args: ["find-generic-password", "-s", service, "-w"],
+            timeout: timeout
+        ).flatMap(trimmingSecretOutput)
+    }
+
+    /// Set once the child has exited, so the watchdog never signals a pid
+    /// that may already have been reaped and reused.
+    private final class ExitFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var exited = false
+        func markExited() { lock.lock(); exited = true; lock.unlock() }
+        var hasExited: Bool { lock.lock(); defer { lock.unlock() }; return exited }
+    }
+
+    /// Runs `path` with `args` (no shell) and returns stdout when the child
+    /// exits normally with status 0.
+    ///
+    /// stdout is read on the calling thread until EOF; a watchdog kills the
+    /// child at the deadline, which closes the pipe and ends the read. So the
+    /// deadline covers the whole run — including a `security` blocked on a
+    /// keychain unlock or access dialog — and the success path never depends
+    /// on another thread being scheduled.
+    static func runCapturingStdout(path: String, args: [String], timeout: TimeInterval) -> Data? {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        proc.arguments = ["find-generic-password", "-s", service, "-w"]
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = args
         let out = Pipe()
         proc.standardOutput = out
         proc.standardError = FileHandle.nullDevice
         proc.standardInput = FileHandle.nullDevice
+        let flag = ExitFlag()
+        let exited = DispatchSemaphore(value: 0)
+        proc.terminationHandler = { _ in
+            flag.markExited()
+            exited.signal()
+        }
         do { try proc.run() } catch { return nil }
+
+        let pid = proc.processIdentifier
+        let watchdog = DispatchWorkItem {
+            guard !flag.hasExited else { return }
+            kill(pid, SIGTERM)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1) {
+                if !flag.hasExited { kill(pid, SIGKILL) }
+            }
+        }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout, execute: watchdog)
+
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        let deadline = Date().addingTimeInterval(timeout)
-        while proc.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-        if proc.isRunning { proc.terminate(); return nil }
-        guard proc.terminationStatus == 0 else { return nil }
-        // `-w` prints the secret followed by a newline.
+        exited.wait()
+        watchdog.cancel()
+        guard proc.terminationReason == .exit, proc.terminationStatus == 0 else { return nil }
+        return data
+    }
+
+    /// `-w` prints the secret followed by a newline.
+    static func trimmingSecretOutput(_ data: Data) -> Data? {
         var bytes = data
         while let last = bytes.last, last == UInt8(ascii: "\n") || last == UInt8(ascii: "\r") { bytes.removeLast() }
         return bytes.isEmpty ? nil : bytes
@@ -94,6 +139,7 @@ public enum ClaudeQuotaClient {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "GET"
         req.timeoutInterval = 15
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -114,24 +160,64 @@ public enum ClaudeQuotaClient {
         }
     }
 
+    /// Dedicated session for the bearer-token call: ephemeral, so nothing
+    /// about the request lands in the app's on-disk URL cache or cookie jar.
+    public static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }()
+
+    /// Refuses every redirect, so the Authorization header is only ever sent
+    /// to `endpoint`; a 3xx surfaces as `.http(3xx)` instead of being followed.
+    final class RedirectRefusal: NSObject, URLSessionTaskDelegate, Sendable {
+        static let shared = RedirectRefusal()
+
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest
+        ) async -> URLRequest? {
+            nil
+        }
+    }
+
     /// One fetch. The credential is re-read every call so a token Claude Code
     /// rotated in the meantime is picked up without any state here.
     public static func fetch(
         credential: @escaping @Sendable () -> ClaudeOAuthCredential? = ClaudeCredentialStore.load,
-        session: URLSession = .shared,
+        session: URLSession = ClaudeQuotaClient.session,
         now: Date = Date()
     ) async throws -> ClaudeQuotaSnapshot {
-        // Off the caller's actor: SecItemCopyMatching blocks while macOS shows
-        // its keychain access prompt, and that must never stall the UI. A GCD
-        // queue rather than a detached Task — the blocking call must not sit
-        // on a cooperative-pool thread either.
+        // Off the caller's actor: the credential read runs security(1), which
+        // can block on a keychain unlock / access dialog until its timeout.
+        // A GCD queue rather than a detached Task — the blocking wait must not
+        // sit on a cooperative-pool thread either.
         let loaded: ClaudeOAuthCredential? = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async { continuation.resume(returning: credential()) }
         }
         guard let cred = loaded else { throw ClaudeQuotaClientError.noCredential }
+        return try await fetch(using: cred, session: session, now: now)
+    }
+
+    /// The network half of `fetch`, for a credential already in hand.
+    static func fetch(
+        using cred: ClaudeOAuthCredential,
+        session: URLSession,
+        now: Date
+    ) async throws -> ClaudeQuotaSnapshot {
+        // Known-expired: the server would reject it anyway, so don't send it.
+        if let expiresAt = cred.expiresAt, expiresAt <= now { throw ClaudeQuotaClientError.unauthorized }
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await session.data(for: request(token: cred.accessToken))
+            (data, response) = try await session.data(
+                for: request(token: cred.accessToken),
+                delegate: RedirectRefusal.shared
+            )
         } catch {
             throw ClaudeQuotaClientError.transport(error.localizedDescription)
         }
