@@ -55,6 +55,52 @@ public struct ClaudeQuotaLimit: Equatable, Sendable {
         return used - elapsed
     }
 
+    /// Below this share of the window elapsed the pace readout is hidden:
+    /// any early burst looks far ahead of pace, so the number means nothing.
+    public static let paceMinElapsed: Double = 0.10
+    /// Within this many points of even pace the readout is neutral.
+    public static let paceNeutralPoints: Double = 5
+
+    /// How this window's usage compares with spending it evenly.
+    public struct Pace: Equatable, Sendable {
+        public enum Tone: Sendable { case neutral, ahead, behind }
+        /// Used share minus elapsed share, in percentage points
+        /// (+ = burning faster than even pace).
+        public let points: Double
+        /// `points` as window time: how much of the window's budget is used
+        /// ahead of (+) or behind (−) schedule.
+        public let duration: TimeInterval
+        /// Percent the window reaches at reset if the current rate holds.
+        public let projectedPercent: Double
+        /// Time until 100% at the current rate; nil if the window resets
+        /// first or is already at its limit.
+        public let exhaustsIn: TimeInterval?
+        public let tone: Tone
+    }
+
+    /// Pace readout, or nil without a reset time or this early in the window.
+    public func pace(now: Date = Date()) -> Pace? {
+        guard resetsAt != nil, let elapsed = elapsedFraction(now: now),
+              elapsed >= Self.paceMinElapsed else { return nil }
+        let points = percent - elapsed * 100
+        let rounded = points.rounded()
+        let tone: Pace.Tone = abs(rounded) <= Self.paceNeutralPoints ? .neutral : (rounded > 0 ? .ahead : .behind)
+        let projected = percent / elapsed
+        var exhaustsIn: TimeInterval?
+        if percent < 100, projected > 100 {
+            // percent per second so far; the rest of the budget at that rate.
+            let rate = percent / (elapsed * kind.windowSeconds)
+            exhaustsIn = (100 - percent) / rate
+        }
+        return Pace(
+            points: points,
+            duration: points / 100 * kind.windowSeconds,
+            projectedPercent: projected,
+            exhaustsIn: exhaustsIn,
+            tone: tone
+        )
+    }
+
     public var isOverLimit: Bool { percent >= 100 }
 
     /// Severity bucket for colouring; tolerant of unknown server strings.
@@ -256,9 +302,15 @@ public enum ClaudeQuotaFormat {
     /// "2d 4h" / "1h20m" / "45m" (minutes round up, so 30s shows "1m");
     /// nil once the reset time has passed.
     public static func countdown(until resetsAt: Date, now: Date = Date()) -> String? {
-        let remaining = Int(resetsAt.timeIntervalSince(now).rounded(.down))
-        guard remaining > 0 else { return nil }
-        let minutes = (remaining + 59) / 60
+        let remaining = resetsAt.timeIntervalSince(now)
+        guard Int(remaining.rounded(.down)) > 0 else { return nil }
+        return duration(remaining)
+    }
+
+    /// Countdown-style length of any span, sign dropped: "2d 17h" / "1h36m" / "47m".
+    public static func duration(_ seconds: TimeInterval) -> String {
+        let total = max(Int(abs(seconds).rounded(.down)), 1)
+        let minutes = (total + 59) / 60
         if minutes < 60 { return "\(minutes)m" }
         let hours = minutes / 60
         if hours < 24 {
@@ -272,5 +324,13 @@ public enum ClaudeQuotaFormat {
 
     public static func percent(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
+    }
+
+    /// Signed pace points: "+32" / "−39" / "±0". U+2212 so the minus is as
+    /// long as the plus rather than a hyphen.
+    public static func paceDelta(_ points: Double) -> String {
+        let n = Int(points.rounded())
+        if n == 0 { return "\u{00B1}0" }
+        return n > 0 ? "+\(n)" : "\u{2212}\(-n)"
     }
 }

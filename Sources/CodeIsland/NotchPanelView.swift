@@ -2240,6 +2240,34 @@ private enum QuotaStyle {
         return color(limit.level)
     }
 
+    /// Pace mark colour: amber when spending faster than even pace, green
+    /// when behind it, dim within the neutral band.
+    static func color(_ tone: ClaudeQuotaLimit.Pace.Tone) -> Color {
+        switch tone {
+        case .ahead: return warning
+        case .behind: return surplus
+        case .neutral: return .white.opacity(0.4)
+        }
+    }
+
+    /// "32 pts ahead of pace (≈1h36m) · runs out in 47m at this rate".
+    static func paceSentence(_ pace: ClaudeQuotaLimit.Pace, l10n: L10n) -> String {
+        let points = "\(abs(Int(pace.points.rounded())))"
+        let span = ClaudeQuotaFormat.duration(pace.duration)
+        var parts: [String]
+        switch pace.tone {
+        case .ahead: parts = [String(format: l10n["quota_pace_ahead"], points, span)]
+        case .behind: parts = [String(format: l10n["quota_pace_behind"], points, span)]
+        case .neutral: parts = [l10n["quota_pace_even"]]
+        }
+        if let exhaustsIn = pace.exhaustsIn {
+            parts.append(String(format: l10n["quota_pace_exhausts"], ClaudeQuotaFormat.duration(exhaustsIn)))
+        } else {
+            parts.append(String(format: l10n["quota_pace_projected"], ClaudeQuotaFormat.percent(pace.projectedPercent)))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     static func label(_ limit: ClaudeQuotaLimit, l10n: L10n) -> String {
         switch limit.kind {
         case .session: return "5h"
@@ -2254,6 +2282,9 @@ private enum QuotaStyle {
             var line = "\(label(limit, l10n: l10n)) \(ClaudeQuotaFormat.percent(limit.percent))"
             if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
                 line += " · ↻ \(cd)"
+            }
+            if let pace = limit.pace(now: now) {
+                line += " · " + paceSentence(pace, l10n: l10n)
             }
             return line
         }
@@ -2270,7 +2301,29 @@ struct QuotaChipWidthKey: PreferenceKey {
     }
 }
 
-/// Collapsed-island chip: window label, a 9pt ring, and percent.
+/// Signed pace points hung under a percent like a subscript: drawn as an
+/// overlay so it never moves or widens what it annotates.
+private struct QuotaPaceMark: ViewModifier {
+    let pace: ClaudeQuotaLimit.Pace?
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if let pace {
+                Text(ClaudeQuotaFormat.paceDelta(pace.points))
+                    .font(.system(size: 7, weight: .medium, design: .monospaced))
+                    .foregroundStyle(QuotaStyle.color(pace.tone))
+                    .fixedSize()
+                    // Bottom-aligned, then pushed down by about its own line
+                    // height so it hangs just under the percent.
+                    .offset(y: 7.5)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Collapsed-island chip: window label, a 9pt ring, and percent with its
+/// pace mark hung underneath.
 struct QuotaChip: View {
     let limit: ClaudeQuotaLimit
     let snapshot: ClaudeQuotaSnapshot
@@ -2298,8 +2351,14 @@ struct QuotaChip: View {
     }
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            chip(now: context.date)
+        }
+    }
+
+    private func chip(now: Date) -> some View {
         let color = QuotaStyle.color(limit)
-        HStack(spacing: 3) {
+        return HStack(spacing: 3) {
             // Which window this is: 5h / week / model name.
             Text(QuotaStyle.label(limit, l10n: l10n))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -2316,9 +2375,10 @@ struct QuotaChip: View {
             Text(ClaudeQuotaFormat.percent(limit.percent))
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(color)
+                .modifier(QuotaPaceMark(pace: limit.pace(now: now)))
         }
         .opacity(stale ? 0.55 : 1)
-        .help(QuotaStyle.tooltip(snapshot, stale: stale, l10n: l10n))
+        .help(QuotaStyle.tooltip(snapshot, stale: stale, l10n: l10n, now: now))
     }
 }
 
@@ -2353,7 +2413,9 @@ private struct QuotaFooterLine: View {
             .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundStyle(.white.opacity(0.45))
             .padding(.horizontal, 14)
-            .padding(.vertical, 5)
+            .padding(.top, 5)
+            // Room for the pace marks hung under the percents.
+            .padding(.bottom, snapshot.ordered.contains { $0.pace(now: context.date) != nil } ? 12 : 5)
             .help(QuotaStyle.tooltip(snapshot, stale: error != nil, l10n: l10n, now: context.date))
         }
     }
@@ -2366,10 +2428,18 @@ private struct QuotaFooterLine: View {
                 Capsule().fill(.white.opacity(0.12))
                 Capsule().fill(color)
                     .frame(width: 30 * min(limit.percent / 100, 1))
+                // Even-pace tick: where usage would be if spread evenly.
+                if let elapsed = limit.elapsedFraction(now: now) {
+                    Rectangle()
+                        .fill(.white.opacity(0.6))
+                        .frame(width: 1, height: 7)
+                        .offset(x: 30 * elapsed - 0.5)
+                }
             }
             .frame(width: 30, height: 4)
             Text(ClaudeQuotaFormat.percent(limit.percent))
                 .foregroundStyle(color)
+                .modifier(QuotaPaceMark(pace: limit.pace(now: now)))
             if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
                 Text("↻\(cd)")
                     .foregroundStyle(.white.opacity(0.3))

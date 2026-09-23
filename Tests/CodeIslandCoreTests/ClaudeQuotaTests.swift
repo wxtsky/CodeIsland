@@ -220,6 +220,61 @@ final class ClaudeQuotaTests: XCTestCase {
         XCTAssertNil(ClaudeQuotaSelector.pick(from: noScoped, mode: .weeklyScoped))
     }
 
+    // MARK: pace readout
+
+    func testPaceHiddenEarlyInWindow() {
+        // 12 minutes into a 5h window (4%): any burst looks far ahead of pace.
+        let limit = ClaudeQuotaLimit(kind: .session, percent: 20, resetsAt: now.addingTimeInterval(5 * 3600 - 12 * 60))
+        XCTAssertNil(limit.pace(now: now))
+    }
+
+    func testPaceNilWithoutResetTime() {
+        XCTAssertNil(ClaudeQuotaLimit(kind: .weeklyAll, percent: 30).pace(now: now))
+    }
+
+    func testPaceAheadProjectsExhaustion() throws {
+        // 72% used with 3h of 5h left → 40% elapsed → 32pp ahead.
+        let limit = ClaudeQuotaLimit(kind: .session, percent: 72, resetsAt: now.addingTimeInterval(3 * 3600))
+        let pace = try XCTUnwrap(limit.pace(now: now))
+        XCTAssertEqual(pace.points, 32, accuracy: 0.01)
+        XCTAssertEqual(pace.tone, .ahead)
+        // 32pp of a 5h window = 1h36m of budget.
+        XCTAssertEqual(pace.duration, 96 * 60, accuracy: 1)
+        XCTAssertEqual(pace.projectedPercent, 180, accuracy: 0.01)
+        // 36%/h → the remaining 28% lasts 46m40s.
+        XCTAssertEqual(try XCTUnwrap(pace.exhaustsIn), 2800, accuracy: 1)
+    }
+
+    func testPaceBehindProjectsPercentAtReset() throws {
+        // 30% used with 52h of 168h left → 69% elapsed → 39pp behind.
+        let limit = ClaudeQuotaLimit(kind: .weeklyAll, percent: 30, resetsAt: now.addingTimeInterval(52 * 3600))
+        let pace = try XCTUnwrap(limit.pace(now: now))
+        XCTAssertEqual(pace.points, 30 - 11_600.0 / 168, accuracy: 0.01)
+        XCTAssertEqual(pace.tone, .behind)
+        XCTAssertLessThan(pace.duration, 0)
+        XCTAssertEqual(pace.projectedPercent, 30 * 168 / 116, accuracy: 0.01)
+        XCTAssertNil(pace.exhaustsIn)
+    }
+
+    func testPaceNeutralBandAndOverLimit() throws {
+        // 52% used at 50% elapsed → +2 → within ±5.
+        let even = ClaudeQuotaLimit(kind: .weeklyAll, percent: 52, resetsAt: now.addingTimeInterval(84 * 3600))
+        XCTAssertEqual(try XCTUnwrap(even.pace(now: now)).tone, .neutral)
+        // Already at the limit: nothing left to run out.
+        let over = ClaudeQuotaLimit(kind: .session, percent: 100, resetsAt: now.addingTimeInterval(3600))
+        XCTAssertNil(try XCTUnwrap(over.pace(now: now)).exhaustsIn)
+    }
+
+    func testPaceDeltaAndDurationFormats() {
+        XCTAssertEqual(ClaudeQuotaFormat.paceDelta(32.4), "+32")
+        XCTAssertEqual(ClaudeQuotaFormat.paceDelta(-39.05), "\u{2212}39")
+        XCTAssertEqual(ClaudeQuotaFormat.paceDelta(0.3), "\u{00B1}0")
+        XCTAssertEqual(ClaudeQuotaFormat.paceDelta(4.6), "+5")
+        XCTAssertEqual(ClaudeQuotaFormat.duration(2800), "47m")
+        XCTAssertEqual(ClaudeQuotaFormat.duration(-96 * 60), "1h36m")
+        XCTAssertEqual(ClaudeQuotaFormat.duration(236_160), "2d 17h")
+    }
+
     // MARK: formatting + levels
 
     func testCountdownFormats() {

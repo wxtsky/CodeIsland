@@ -348,6 +348,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "Plan limits: sign in / run Claude Code once to refresh",
         "quota_unreachable": "Plan limits: could not reach Anthropic",
         "quota_stale": "Last refresh failed — showing cached values",
+        "quota_pace_ahead": "%@ pts ahead of even pace (≈%@)",
+        "quota_pace_behind": "%@ pts behind even pace (≈%@)",
+        "quota_pace_even": "on even pace",
+        "quota_pace_exhausts": "runs out in %@ at this rate",
+        "quota_pace_projected": "≈%@ at reset at this rate",
 
         // Mascots
         "preview_status": "Preview Status",
@@ -858,6 +863,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "Planlimits: Claude Code einmal ausführen / anmelden",
         "quota_unreachable": "Planlimits: Anthropic nicht erreichbar",
         "quota_stale": "Letzte Aktualisierung fehlgeschlagen — zeige zwischengespeicherte Werte",
+        "quota_pace_ahead": "%@ Pkt. über gleichmäßigem Tempo (≈%@)",
+        "quota_pace_behind": "%@ Pkt. unter gleichmäßigem Tempo (≈%@)",
+        "quota_pace_even": "im gleichmäßigen Tempo",
+        "quota_pace_exhausts": "bei diesem Tempo in %@ aufgebraucht",
+        "quota_pace_projected": "bei diesem Tempo ≈%@ beim Zurücksetzen",
 
         // Mascots
         "preview_status": "Statusvorschau",
@@ -1372,6 +1382,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "套餐额度：请在 Claude Code 里登录或运行一次后刷新",
         "quota_unreachable": "套餐额度：无法连接 Anthropic",
         "quota_stale": "上次刷新失败，显示的是缓存值",
+        "quota_pace_ahead": "比匀速多用 %@ 点（≈%@）",
+        "quota_pace_behind": "比匀速少用 %@ 点（≈%@）",
+        "quota_pace_even": "与匀速持平",
+        "quota_pace_exhausts": "照此速度 %@ 后用完",
+        "quota_pace_projected": "照此速度重置时约 %@",
 
         // Mascots
         "preview_status": "预览状态",
@@ -1886,6 +1901,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "方案額度：請在 Claude Code 裡登入或執行一次後重新整理",
         "quota_unreachable": "方案額度：無法連線 Anthropic",
         "quota_stale": "上次重新整理失敗，顯示的是快取值",
+        "quota_pace_ahead": "比勻速多用 %@ 點（≈%@）",
+        "quota_pace_behind": "比勻速少用 %@ 點（≈%@）",
+        "quota_pace_even": "與勻速持平",
+        "quota_pace_exhausts": "照此速度 %@ 後用完",
+        "quota_pace_projected": "照此速度重置時約 %@",
 
         // Mascots
         "preview_status": "預覽狀態",
@@ -2400,6 +2420,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "プラン上限: Claude Code でサインインまたは一度実行してください",
         "quota_unreachable": "プラン上限: Anthropic に接続できません",
         "quota_stale": "前回の更新に失敗 — キャッシュ値を表示中",
+        "quota_pace_ahead": "均等ペースより %@pt 多い（≈%@）",
+        "quota_pace_behind": "均等ペースより %@pt 少ない（≈%@）",
+        "quota_pace_even": "均等ペース",
+        "quota_pace_exhausts": "このペースだと %@ で上限",
+        "quota_pace_projected": "このペースだとリセット時に約 %@",
 
         // Mascots
         "preview_status": "プレビュー状態",
@@ -2914,6 +2939,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "플랜 한도: Claude Code에서 로그인하거나 한 번 실행하세요",
         "quota_unreachable": "플랜 한도: Anthropic에 연결할 수 없음",
         "quota_stale": "마지막 갱신 실패 — 캐시된 값 표시 중",
+        "quota_pace_ahead": "균등 속도보다 %@p 많음 (≈%@)",
+        "quota_pace_behind": "균등 속도보다 %@p 적음 (≈%@)",
+        "quota_pace_even": "균등 속도",
+        "quota_pace_exhausts": "이 속도면 %@ 후 소진",
+        "quota_pace_projected": "이 속도면 초기화 시 약 %@",
 
         // Mascots
         "preview_status": "미리보기 상태",
@@ -3428,6 +3458,11 @@ final class L10n: ObservableObject {
         "quota_login_needed": "Plan limitleri: Claude Code’da oturum açın / bir kez çalıştırın",
         "quota_unreachable": "Plan limitleri: Anthropic’e ulaşılamadı",
         "quota_stale": "Son yenileme başarısız — önbellekteki değerler gösteriliyor",
+        "quota_pace_ahead": "eşit hızın %@ puan önünde (≈%@)",
+        "quota_pace_behind": "eşit hızın %@ puan gerisinde (≈%@)",
+        "quota_pace_even": "eşit hızda",
+        "quota_pace_exhausts": "bu hızla %@ içinde biter",
+        "quota_pace_projected": "bu hızla sıfırlamada ≈%@",
 
         // Mascots
         "preview_status": "Durumu Önizleme",
