@@ -198,6 +198,11 @@ final class AppState {
     /// Daemon session ids that already received a `sessions.get` title/cwd hydrate.
     @ObservationIgnored
     var aiworkHydratedSessionIds: Set<String> = []
+    /// Agentix state dir to discover daemons under; nil = `$AGENTIX_STATE_DIR`
+    /// or `~/.agentix`. Tests point this at a temp dir so they never reach a
+    /// real daemon on the developer's machine.
+    @ObservationIgnored
+    var aiworkStateDirOverride: String?
     /// Guards overlapping `agent.stats` reconciles from the 3s rediscovery timer.
     @ObservationIgnored
     var aiworkReconcileInFlight = false

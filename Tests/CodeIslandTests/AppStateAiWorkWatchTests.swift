@@ -5,6 +5,15 @@ import XCTest
 @MainActor
 final class AppStateAiWorkWatchTests: XCTestCase {
 
+    /// Stream events hydrate through `sessions.get`, and hydrate falls back to
+    /// daemon discovery. Point discovery at a dir that doesn't exist so these
+    /// tests can never reach a real Agentix daemon on the developer's machine.
+    private func makeAppState() -> AppState {
+        let appState = AppState()
+        appState.aiworkStateDirOverride = "/nonexistent/codeisland-tests/agentix"
+        return appState
+    }
+
     func testSessionPrefixKeepsNamespaceDisjoint() {
         XCTAssertEqual(AppState.aiworkSessionPrefix, "aiwork:")
     }
@@ -158,7 +167,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testHandleStreamEventCreatesPrefixedSession() {
-        let appState = AppState()
+        let appState = makeAppState()
         let frame = AiWorkWatchClient.parseFrame(Data(#"""
         {"kind":"event","category":"session","operation":"sessions.watch","event":{"name":"stream.started","phase":"start"},"data":{"session":{"session_id":"acp:coder:abc","cwd":"/tmp/proj","title":"Hello"}},"meta":{"session_id":"acp:coder:abc"}}
         """#.utf8))!
@@ -180,7 +189,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testSessionInfoChangedUpdatesTitleWithoutStatusMapper() {
-        let appState = AppState()
+        let appState = makeAppState()
         appState.sessions["aiwork:acp:coder:abc"] = {
             var s = SessionSnapshot()
             s.source = "aiwork"
@@ -263,7 +272,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testRemoveAiWorkSessionsByAgent() {
-        let appState = AppState()
+        let appState = makeAppState()
         appState.sessions["aiwork:acp:coder:1"] = {
             var s = SessionSnapshot(); s.source = "aiwork"; s.providerSessionId = "acp:coder:1"; return s
         }()
@@ -371,7 +380,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testIgnoresEventsWithoutSessionId() {
-        let appState = AppState()
+        let appState = makeAppState()
         let frame = AiWorkWatchClient.parseFrame(Data(#"""
         {"kind":"event","category":"session","operation":"sessions.watch","event":{"name":"stream.started","phase":"start"},"data":{},"meta":{}}
         """#.utf8))!
@@ -413,7 +422,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testApplyBusyReconcileClearsStuckRunningSession() {
-        let appState = AppState()
+        let appState = makeAppState()
         let key = "aiwork:acp:coder:cc8c"
         appState.sessions[key] = {
             var s = SessionSnapshot(startTime: Date().addingTimeInterval(-120))
@@ -439,7 +448,7 @@ final class AppStateAiWorkWatchTests: XCTestCase {
     }
 
     func testApplyBusyReconcileKeepsTrulyBusySession() {
-        let appState = AppState()
+        let appState = makeAppState()
         let key = "aiwork:acp:coder:busy"
         appState.sessions[key] = {
             var s = SessionSnapshot()

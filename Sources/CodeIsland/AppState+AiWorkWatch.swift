@@ -50,6 +50,11 @@ extension AppState {
         aiworkHydratedSessionIds.removeAll()
     }
 
+    /// Ready daemons under the Agentix state dir (or the test override).
+    func discoverAiWorkDaemons() -> [(agentId: String, socketPath: String)] {
+        AiWorkWatchClient.discoverReadyDaemons(stateDir: aiworkStateDirOverride)
+    }
+
     // MARK: - Client lifecycle
 
     func reconcileAiWorkWatchClients() {
@@ -60,7 +65,7 @@ extension AppState {
             }
             return
         }
-        let ready = AiWorkWatchClient.discoverReadyDaemons()
+        let ready = discoverAiWorkDaemons()
         let readyIds = Set(ready.map(\.agentId))
 
         // Drop clients whose daemon disappeared.
@@ -158,7 +163,7 @@ extension AppState {
         for (agentId, client) in aiworkWatchClients {
             sockets[agentId] = client.socketPath
         }
-        for daemon in AiWorkWatchClient.discoverReadyDaemons()
+        for daemon in discoverAiWorkDaemons()
         where sockets[daemon.agentId] == nil {
             sockets[daemon.agentId] = daemon.socketPath
         }
@@ -660,7 +665,7 @@ extension AppState {
         aiworkHydratedSessionIds.insert(daemonSessionId)
 
         let socketPath = aiworkWatchClients[agentId]?.socketPath
-            ?? AiWorkWatchClient.discoverReadyDaemons()
+            ?? discoverAiWorkDaemons()
                 .first(where: { $0.agentId == agentId })?
                 .socketPath
         guard let socketPath else {
