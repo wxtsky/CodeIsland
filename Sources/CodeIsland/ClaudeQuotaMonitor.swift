@@ -140,6 +140,9 @@ final class ClaudeQuotaMonitor {
 
     private func apply(_ result: Result<ClaudeQuotaSnapshot, Error>) {
         inFlight = false
+        // Turned off while the request was in flight: settingsChanged already
+        // cleared the state — don't resurrect it with a late result.
+        guard isEnabled else { return }
         switch result {
         case .success(let snap):
             snapshot = snap

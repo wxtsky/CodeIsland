@@ -104,6 +104,21 @@ final class ClaudeQuotaMonitorTests: XCTestCase {
         XCTAssertEqual(counter.value, 1)
     }
 
+    func testResultLandingAfterDisableIsDropped() async {
+        let counter = Counter()
+        let m = ClaudeQuotaMonitor(scheduler: .init(config: fastConfig()), defaults: defaults, fetcher: {
+            _ = counter.bump()
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            return Self.snapshot
+        })
+        m.noteExpanded()
+        await waitUntil { counter.value == 1 }
+        defaults.set(false, forKey: SettingsKey.showClaudeQuota)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertNil(m.snapshot, "a fetch that finishes after the setting is off must not repopulate the snapshot")
+        XCTAssertNil(m.lastError)
+    }
+
     func testUnauthorizedSurfacesLoginErrorAndStopsPolling() async {
         let counter = Counter()
         let m = ClaudeQuotaMonitor(scheduler: .init(config: fastConfig()), defaults: defaults, fetcher: {
