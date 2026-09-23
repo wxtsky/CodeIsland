@@ -231,7 +231,9 @@ enum DebugHarness {
         )
         state.claudeQuota.applyPreview(ClaudeQuotaSnapshot(
             limits: [
-                ClaudeQuotaLimit(kind: .session, percent: 72, severity: "warning", resetsAt: Date().addingTimeInterval(80 * 60)),
+                // 72% with 3h of 5h left → 32pp ahead of pace → blocking, so
+                // the preview chip shows the session window in warning.
+                ClaudeQuotaLimit(kind: .session, percent: 72, severity: "warning", resetsAt: Date().addingTimeInterval(3 * 3600)),
                 ClaudeQuotaLimit(kind: .weeklyAll, percent: 30, resetsAt: Date().addingTimeInterval(2 * 86_400 + 4 * 3600)),
                 ClaudeQuotaLimit(kind: .weeklyScoped, percent: 48, resetsAt: Date().addingTimeInterval(2 * 86_400 + 4 * 3600), scopeLabel: "Fable"),
             ],

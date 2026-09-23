@@ -123,6 +123,8 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.showSessionRecap) private var showSessionRecap = SettingsDefaults.showSessionRecap
@@ -141,6 +143,9 @@ struct NotchPanelView: View {
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
     /// Window and panel heights for the completion card's reply area.
     @State private var cardSpace = CompletionCardSpace()
+    /// Measured width of the plan-limit chip (0 until first laid out) — the
+    /// bar reserves exactly this instead of guessing from the label length.
+    @State private var quotaChipWidth: CGFloat = 0
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -196,9 +201,17 @@ struct NotchPanelView: View {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
+        // Plan-limit chip shares the left-wing tool slot, so only the part its
+        // width exceeds the tool reserve needs adding. Measured when possible;
+        // the label-length estimate only covers the first frame.
+        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
+            .map { limit in
+                let width = quotaChipWidth > 0 ? quotaChipWidth + 6 : QuotaChip.reservedWidth(for: limit)
+                return Swift.max(0, width - toolExtra)
+            } ?? 0
         // Immediate hover acknowledgement: a slight widen while the expand delay runs
         let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        return nw + wing * 2 + extra + toolExtra + prehoverExtra
+        return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
     }
 
     var body: some View {
@@ -236,6 +249,7 @@ struct NotchPanelView: View {
                         including: !shouldShowExpanded && appState.hiddenPendingQuestionSessionId != nil
                             ? .all : .subviews
                     )
+                    .onPreferenceChange(QuotaChipWidthKey.self) { quotaChipWidth = $0 }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -523,6 +537,8 @@ private struct CompactLeftWing: View {
     // Bound via @AppStorage so flipping the default mascot in Settings rerenders this view
     // even when AppState.primarySource wasn't recomputed (no session mutations in flight).
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
 
     private var displaySession: SessionSnapshot? {
         let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -593,6 +609,17 @@ private struct CompactLeftWing: View {
                         .frame(maxWidth: ToolNameDisplay.compactMaxWidth, alignment: .leading)
                         .transition(.opacity)
                         .help(tool)
+                } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                          let snapshot = appState.claudeQuota.snapshot {
+                    // Plan-limit chip takes the tool slot while no tool is
+                    // running: window label + ring + percent, all windows in
+                    // the tooltip.
+                    QuotaChip(limit: limit, snapshot: snapshot, stale: appState.claudeQuota.lastError != nil)
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: QuotaChipWidthKey.self, value: geo.size.width)
+                        })
+                        .transition(.opacity)
                 }
             }
         }
@@ -2195,6 +2222,8 @@ private enum QuotaStyle {
     static let normal = Color.white.opacity(0.85)
     static let warning = Color(red: 1.0, green: 0.7, blue: 0.28)
     static let critical = Color(red: 1.0, green: 0.4, blue: 0.4)
+    /// A weekly window in surplus — budget worth burning before it resets.
+    static let surplus = Color(red: 0.42, green: 0.85, blue: 0.58)
 
     static func color(_ level: ClaudeQuotaLimit.Level) -> Color {
         switch level {
@@ -2202,6 +2231,13 @@ private enum QuotaStyle {
         case .warning: return warning
         case .critical: return critical
         }
+    }
+
+    /// Chip colour for the picked window: green for a weekly in surplus,
+    /// otherwise the severity colour.
+    static func color(_ limit: ClaudeQuotaLimit) -> Color {
+        if limit.level == .normal, ClaudeQuotaSelector.isSurplus(limit) { return surplus }
+        return color(limit.level)
     }
 
     static func label(_ limit: ClaudeQuotaLimit, l10n: L10n) -> String {
@@ -2223,6 +2259,66 @@ private enum QuotaStyle {
         }
         if stale { lines.append(l10n["quota_stale"]) }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// Reports the collapsed chip's laid-out width up to the bar for its reserve.
+struct QuotaChipWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = Swift.max(value, nextValue())
+    }
+}
+
+/// Collapsed-island chip: window label, a 9pt ring, and percent.
+struct QuotaChip: View {
+    let limit: ClaudeQuotaLimit
+    let snapshot: ClaudeQuotaSnapshot
+    let stale: Bool
+    @ObservedObject private var l10n = L10n.shared
+
+    /// Width reserved in the collapsed bar when the chip is shown: ring +
+    /// percent plus the window label (10pt monospaced ≈ 6.2pt per glyph).
+    static func reservedWidth(for limit: ClaudeQuotaLimit) -> CGFloat {
+        44 + CGFloat(QuotaStyle.label(limit, l10n: L10n.shared).count) * 6.2
+    }
+
+    init(limit: ClaudeQuotaLimit, snapshot: ClaudeQuotaSnapshot, stale: Bool) {
+        self.limit = limit
+        self.snapshot = snapshot
+        self.stale = stale
+    }
+
+    /// Shared resolution for the chip's limit so the bar width and the wing
+    /// agree on whether it is shown.
+    static func limit(appState: AppState, enabled: Bool, modeRaw: String) -> ClaudeQuotaLimit? {
+        guard enabled, let mode = ClaudeQuotaChipMode(rawValue: modeRaw), mode != .off,
+              let snapshot = appState.claudeQuota.snapshot else { return nil }
+        return ClaudeQuotaSelector.pick(from: snapshot, mode: mode)
+    }
+
+    var body: some View {
+        let color = QuotaStyle.color(limit)
+        HStack(spacing: 3) {
+            // Which window this is: 5h / week / model name.
+            Text(QuotaStyle.label(limit, l10n: l10n))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
+            ZStack {
+                Circle().stroke(.white.opacity(0.18), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: min(limit.percent / 100, 1))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            .frame(width: 9, height: 9)
+            Text(ClaudeQuotaFormat.percent(limit.percent))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+        }
+        .opacity(stale ? 0.55 : 1)
+        .help(QuotaStyle.tooltip(snapshot, stale: stale, l10n: l10n))
     }
 }
 

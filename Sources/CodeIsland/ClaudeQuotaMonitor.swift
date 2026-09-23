@@ -58,9 +58,21 @@ final class ClaudeQuotaMonitor {
         defaults.bool(forKey: SettingsKey.showClaudeQuota)
     }
 
-    /// The expanded footer is on screen — the only place the numbers show,
-    /// so nothing is scheduled while the island is collapsed.
-    var wantsLive: Bool { isEnabled && isExpanded }
+    var chipMode: ClaudeQuotaChipMode {
+        ClaudeQuotaChipMode(rawValue: defaults.string(forKey: SettingsKey.claudeQuotaChip) ?? "") ?? .auto
+    }
+
+    /// The collapsed chip is on screen (setting-wise) — keeps the idle tick alive.
+    var chipVisible: Bool { isEnabled && chipMode != .off }
+
+    /// Something on screen shows the numbers right now.
+    var wantsLive: Bool { isEnabled && (chipVisible || isExpanded) }
+
+    /// Limit for the collapsed chip under the current mode, nil to hide it.
+    func chipLimit(now: Date = Date()) -> ClaudeQuotaLimit? {
+        guard chipVisible, let snapshot else { return nil }
+        return ClaudeQuotaSelector.pick(from: snapshot, mode: chipMode, now: now)
+    }
 
     // MARK: Events
 

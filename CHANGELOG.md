@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### English
+- Claude plan limits on the collapsed island: with "Show Claude plan limits" on, a labelled ring chip (window, ring, percent; every window in the tooltip) takes the left-wing tool slot while no tool is running. "Auto" shows a weekly budget — a pressing one first (ahead of pace or past 80%), else one in surplus late in the week (ring in green: budget worth burning before it resets), else the tighter — and yields to the 5-hour window only when that one is genuinely blocking (past 50% used and more than 10 points ahead of pace). Or pin 5h / weekly / weekly (current model), or turn the chip off. While the chip is visible, refreshes also run with the island collapsed (Stop hooks as before, plus a 10-minute idle tick to catch resets). With the setting off, the collapsed bar is unchanged
+
+### 中文
+- 收起态显示 Claude 套餐额度：开启「显示 Claude 套餐额度」后，没有工具在运行时，左翼的工具位显示一个带窗口标签的环形 chip（窗口、圆环、百分比；悬停可看全部窗口）。「自动」常态显示周额度——吃紧的优先（进度超前或超过 80%）；都不吃紧且本周已过半时，显示最富余的那条并标绿（值得在重置前用掉的额度）；否则更紧的那条——只在 5 小时窗口真正会阻断时（用量过半且进度超前 10 个百分点以上）才让给它。也可固定为 5 小时 / 周 / 周（当前模型），或关闭 chip。chip 可见时，收起状态下也会刷新（照旧由 Stop hook 驱动，另有 10 分钟一次的空闲刷新以赶上窗口重置）。设置关闭时收起栏完全不变
+
 ## [v1.0.35] - 2026-09-24
 
 ### English

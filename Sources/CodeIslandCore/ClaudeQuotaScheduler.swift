@@ -7,8 +7,8 @@ import Foundation
 ///   burst of sessions finishing together costs one request.
 /// - Never more often than `throttle`; a Stop inside the window is remembered
 ///   and served once the window ends (trailing fetch).
-/// - While the numbers are on screen and no Stops arrive, a slow `idleFloor`
-///   tick catches window resets.
+/// - With the collapsed chip visible and no Stops, a slow `idleFloor` tick
+///   catches window resets.
 /// - Failures back off exponentially; a rejected token stops background
 ///   fetches entirely until the user expands the panel again.
 ///
@@ -68,8 +68,8 @@ public struct ClaudeQuotaScheduler: Equatable, Sendable {
     }
 
     /// Earliest time a background fetch may run. `wantsLive` is true while
-    /// something on screen shows the numbers (the expanded footer). nil
-    /// means nothing to schedule.
+    /// anything on screen shows the numbers (collapsed chip, or expanded
+    /// footer). nil means nothing to schedule.
     public func nextFireTime(wantsLive: Bool, now: Date) -> Date? {
         guard wantsLive, !needsLogin else { return nil }
         var candidate: Date
