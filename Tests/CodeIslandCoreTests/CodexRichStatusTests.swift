@@ -221,6 +221,67 @@ final class CodexRichStatusTests: XCTestCase {
         XCTAssertEqual(sessions["codex-rich-status"]?.status, .processing)
     }
 
+    /// Codex fires SubagentStop per child *turn* and reuses the child's thread
+    /// id as agent_id for follow-up turns (send_message / followup_task) with
+    /// no new SubagentStart. The second turn's hooks must still be processed.
+    func testCodexSubagentSecondTurnAfterSubagentStopIsStillTracked() throws {
+        var session = SessionSnapshot()
+        session.source = "codex"
+        session.status = .processing
+        var sessions = ["codex-rich-status": session]
+        func send(_ payload: [String: Any]) throws {
+            var payload = payload
+            payload["session_id"] = "codex-rich-status"
+            payload["_source"] = "codex"
+            _ = reduceEvent(sessions: &sessions, event: try decode(payload), maxHistory: 10)
+        }
+
+        try send(["hook_event_name": "SubagentStart", "agent_id": "worker-1", "agent_type": "worker"])
+        try send(["hook_event_name": "PreToolUse", "agent_id": "worker-1", "tool_name": "exec_command"])
+        try send(["hook_event_name": "PostToolUse", "agent_id": "worker-1", "tool_name": "exec_command"])
+        try send(["hook_event_name": "SubagentStop", "agent_id": "worker-1", "agent_type": "worker"])
+        XCTAssertTrue(sessions["codex-rich-status"]?.subagents.isEmpty == true)
+        XCTAssertFalse(sessions["codex-rich-status"]?.hasClosedSubagentId("worker-1") == true)
+
+        // Follow-up turn on the same child thread.
+        try send(["hook_event_name": "UserPromptSubmit", "agent_id": "worker-1", "agent_type": "worker", "prompt": "follow up"])
+        try send([
+            "hook_event_name": "PreToolUse", "agent_id": "worker-1", "agent_type": "worker",
+            "tool_name": "read_file", "tool_input": ["file_path": "/tmp/Second.swift"],
+        ])
+        XCTAssertEqual(sessions["codex-rich-status"]?.subagents["worker-1"]?.status, .running)
+        XCTAssertEqual(sessions["codex-rich-status"]?.subagents["worker-1"]?.currentTool, "Reading")
+        XCTAssertEqual(sessions["codex-rich-status"]?.status, .running)
+
+        try send(["hook_event_name": "PostToolUse", "agent_id": "worker-1", "tool_name": "read_file"])
+        try send(["hook_event_name": "SubagentStop", "agent_id": "worker-1", "agent_type": "worker"])
+        try send(["hook_event_name": "Stop"])
+        XCTAssertTrue(sessions["codex-rich-status"]?.subagents.isEmpty == true)
+        XCTAssertEqual(sessions["codex-rich-status"]?.status, .idle)
+    }
+
+    /// Non-Codex providers keep the tombstone: a Claude Task agent_id is
+    /// single-use, and late hooks after its SubagentStop must stay dropped.
+    func testClaudeSubagentStopStillTombstonesAgentId() throws {
+        var session = SessionSnapshot()
+        session.source = "claude"
+        session.status = .running
+        var sessions = ["claude-session": session]
+        for payload: [String: Any] in [
+            ["hook_event_name": "SubagentStart", "agent_id": "task-1", "agent_type": "Explore"],
+            ["hook_event_name": "SubagentStop", "agent_id": "task-1"],
+            ["hook_event_name": "PreToolUse", "agent_id": "task-1", "tool_name": "Read"],
+        ] {
+            var payload = payload
+            payload["session_id"] = "claude-session"
+            payload["_source"] = "claude"
+            _ = reduceEvent(sessions: &sessions, event: try decode(payload), maxHistory: 10)
+        }
+
+        XCTAssertTrue(sessions["claude-session"]?.hasClosedSubagentId("task-1") == true)
+        XCTAssertNil(sessions["claude-session"]?.subagents["task-1"])
+    }
+
     /// Interrupting the root turn leaves spawned Codex agents running. Their
     /// SubagentStop must still clear them, or the next root Stop treats the
     /// session as having active subagents and pins it to running/Agent.

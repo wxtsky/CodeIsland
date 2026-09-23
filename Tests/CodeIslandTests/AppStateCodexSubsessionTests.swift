@@ -752,4 +752,51 @@ final class AppStateCodexSubsessionTests: XCTestCase {
             appState.findSessionId(forSource: "codex", ppid: 1234, excluding: "new-thread", requireActive: true)
         )
     }
+
+    /// Codex ends every child turn with SubagentStop and reuses the child's
+    /// thread id for follow-up turns. A permission request from the second
+    /// turn must reach the approval UI, not be auto-denied as a closed agent.
+    func testCodexSubagentSecondTurnPermissionIsNotAutoDenied() async throws {
+        let parentId = "codex-root-session"
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "codex"
+        parent.status = .processing
+        parent.cwd = "/repo"
+        appState.sessions[parentId] = parent
+
+        func event(_ payload: [String: Any]) throws -> HookEvent {
+            var payload = payload
+            payload["session_id"] = parentId
+            payload["_source"] = "codex"
+            payload["cwd"] = "/repo"
+            payload["transcript_path"] = "/tmp/codeisland-missing-parent-rollout.jsonl"
+            payload["agent_id"] = "worker-thread"
+            payload["agent_type"] = "worker"
+            return try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: payload)))
+        }
+
+        appState.handleEvent(try event(["hook_event_name": "SubagentStart"]))
+        appState.handleEvent(try event(["hook_event_name": "SubagentStop"]))
+        appState.handleEvent(try event(["hook_event_name": "UserPromptSubmit", "prompt": "follow up"]))
+
+        let request = try event([
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "exec_command",
+            "tool_input": ["command": "rm -rf build"],
+        ])
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(request, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.permissionQueue.count, 1, "second-turn approval was auto-denied")
+        XCTAssertEqual(appState.sessions[parentId]?.status, .waitingApproval)
+
+        appState.handleBuddyControlCommand(.denyCurrentPermission)
+        _ = await responseTask.value
+        XCTAssertTrue(appState.permissionQueue.isEmpty)
+    }
 }

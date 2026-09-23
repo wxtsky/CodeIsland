@@ -1561,6 +1561,13 @@ private func shouldReopenCursorSubagentOnPrompt(event: HookEvent, session: Sessi
     return source == "cursor" || source == "cursor-cli"
 }
 
+/// Whether a subagent-routed event comes from Codex (native child threads).
+private func isCodexSubagentEvent(_ event: HookEvent, session: SessionSnapshot?) -> Bool {
+    let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String)
+        ?? session?.source
+    return source == "codex"
+}
+
 /// Whether folded-child prompt/response text should appear on the parent card.
 private func shouldSurfaceCursorSubagentChat(event: HookEvent, session: SessionSnapshot?) -> Bool {
     if (event.rawJSON["_cursor_subagent"] as? Bool) == true {
@@ -1901,7 +1908,17 @@ private func handleSubagentEvent(
 
     case "SubagentStop", "Stop", "SessionEnd":
         sessions[sessionId]?.subagents.removeValue(forKey: agentId)
-        sessions[sessionId]?.recordClosedSubagentId(agentId)
+        // Codex fires SubagentStop at the end of every child *turn*, and its
+        // agent_id is the child's thread id, reused for follow-up turns sent
+        // via send_message / followup_task without a new SubagentStart. A
+        // tombstone here would drop those turns' hooks (ensureSubagent) and
+        // auto-deny their PermissionRequests (shouldSuppressClosedSubagentUI).
+        // Removing the entry is enough: Codex awaits each hook in order, so no
+        // stale tool hook can trail the stop, and the next turn's hooks
+        // recreate the entry.
+        if !(eventName == "SubagentStop" && isCodexSubagentEvent(event, session: sessions[sessionId])) {
+            sessions[sessionId]?.recordClosedSubagentId(agentId)
+        }
         // If no more subagents, revert parent to processing (waiting for main thread to continue)
         if sessions[sessionId]?.subagents.isEmpty == true {
             if sessions[sessionId]?.status == .running && sessions[sessionId]?.currentTool == "Agent" {
