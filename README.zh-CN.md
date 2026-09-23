@@ -58,7 +58,7 @@ CodeIsland 住在你 MacBook 的刘海区域，实时展示 AI 编码 Agent 的�
 | <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | 完整 |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/pi.png" width="16"> Pi / Oh My Pi | 8 | 终端 | 完整 |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="16"> DeepSeek Harness | 9 | 终端 | 完整 |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/aiwork.png" width="16"> AiWork | 20 | IDE/终端 | 完整 |
+| | <img src="Sources/CodeIsland/Resources/cli-icons/aiwork.png" width="16"> AiWork | 20 | IDE/终端 | 只读 |
 
 ## 安装
 

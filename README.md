@@ -58,7 +58,7 @@ It connects to **16 AI coding tools** via Unix socket IPC, displaying session st
 | <img src="docs/images/mascots/cline.gif" width="28"> | <img src="Sources/CodeIsland/Resources/cli-icons/cline.png" width="16"> Cline | 5 | VSCode | Full |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/pi.png" width="16"> Pi / Oh My Pi | 8 | Terminal | Full |
 | | <img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="16"> DeepSeek Harness | 9 | Terminal | Full |
-| | <img src="Sources/CodeIsland/Resources/cli-icons/aiwork.png" width="16"> AiWork | 20 | IDE/Terminal | Full |
+| | <img src="Sources/CodeIsland/Resources/cli-icons/aiwork.png" width="16"> AiWork | 20 | IDE/Terminal | Read-only |
 
 ## Installation
 
