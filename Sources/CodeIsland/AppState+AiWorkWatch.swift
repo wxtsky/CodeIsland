@@ -48,6 +48,7 @@ extension AppState {
             stopAiWorkWatchClient(agentId: agentId)
         }
         aiworkHydratedSessionIds.removeAll()
+        aiworkHydrateFailedAt.removeAll()
     }
 
     /// Ready daemons under the Agentix state dir (or the test override).
@@ -106,7 +107,7 @@ extension AppState {
         for id in stale {
             if let daemonId = sessions[id]?.providerSessionId
                 ?? id.dropPrefix(AppState.aiworkSessionPrefix) {
-                aiworkHydratedSessionIds.remove(daemonId)
+                forgetAiWorkHydrateState(daemonId)
             }
             sessions.removeValue(forKey: id)
         }
@@ -127,7 +128,7 @@ extension AppState {
         for id in stale {
             if let daemonId = sessions[id]?.providerSessionId
                 ?? id.dropPrefix(AppState.aiworkSessionPrefix) {
-                aiworkHydratedSessionIds.remove(daemonId)
+                forgetAiWorkHydrateState(daemonId)
             }
             sessions.removeValue(forKey: id)
         }
@@ -304,7 +305,7 @@ extension AppState {
         for id in stale {
             sessions.removeValue(forKey: id)
             if let daemonId = id.dropPrefix(AppState.aiworkSessionPrefix) {
-                aiworkHydratedSessionIds.remove(daemonId)
+                forgetAiWorkHydrateState(daemonId)
             }
         }
         if !stale.isEmpty {
@@ -370,7 +371,7 @@ extension AppState {
             // Surface toggled off — drop any leftover card for this session.
             if sessions[sessionId] != nil {
                 sessions.removeValue(forKey: sessionId)
-                aiworkHydratedSessionIds.remove(daemonSessionId)
+                forgetAiWorkHydrateState(daemonSessionId)
                 refreshDerivedState()
             }
             return
@@ -660,16 +661,16 @@ extension AppState {
         if snap?.sessionTitle != nil, snap?.aiworkClientType != nil {
             return
         }
-        // In-flight / already attempted — avoid spamming sessions.get on every event.
-        if aiworkHydratedSessionIds.contains(daemonSessionId) { return }
-        aiworkHydratedSessionIds.insert(daemonSessionId)
+        // In flight, done, or failed within the cooldown: this runs on every
+        // streamed token of an untitled session, so it must stay cheap.
+        guard beginAiWorkHydrateAttempt(daemonSessionId) else { return }
 
         let socketPath = aiworkWatchClients[agentId]?.socketPath
             ?? discoverAiWorkDaemons()
                 .first(where: { $0.agentId == agentId })?
                 .socketPath
         guard let socketPath else {
-            aiworkHydratedSessionIds.remove(daemonSessionId)
+            noteAiWorkHydrateFailed(daemonSessionId)
             return
         }
 
@@ -685,20 +686,49 @@ extension AppState {
             )
             guard let self else { return }
             guard let frame, case .response(_, true) = frame.kind else {
-                await self.releaseAiWorkHydrateMarker(daemonSessionId)
+                await self.noteAiWorkHydrateFailed(daemonSessionId)
                 return
             }
             guard let entry = frame.dataObject?["session"]?.asObject ?? frame.dataObject else {
-                await self.releaseAiWorkHydrateMarker(daemonSessionId)
+                await self.noteAiWorkHydrateFailed(daemonSessionId)
                 return
             }
             await self.applyAiWorkHydrate(key: key, daemonSessionId: daemonSessionId, entry: entry)
         }
     }
 
-    /// Let a later event retry `sessions.get` after a failed hydrate.
-    func releaseAiWorkHydrateMarker(_ daemonSessionId: String) {
+    /// How long a failed `sessions.get` blocks the next attempt for that session.
+    static let aiworkHydrateRetryCooldown: TimeInterval = 30
+
+    /// Claims the hydrate slot for `daemonSessionId`. False while an attempt is
+    /// in flight, after one succeeded, or within the cooldown of a failed one.
+    /// Before the cooldown, a failure released the marker outright, so a daemon
+    /// that kept failing `sessions.get` was re-dialled on every streamed token.
+    func beginAiWorkHydrateAttempt(_ daemonSessionId: String, now: Date = Date()) -> Bool {
+        if aiworkHydratedSessionIds.contains(daemonSessionId) {
+            guard let failedAt = aiworkHydrateFailedAt[daemonSessionId],
+                  now.timeIntervalSince(failedAt) >= Self.aiworkHydrateRetryCooldown else {
+                return false
+            }
+        }
+        aiworkHydratedSessionIds.insert(daemonSessionId)
+        aiworkHydrateFailedAt.removeValue(forKey: daemonSessionId)
+        return true
+    }
+
+    /// Records a failed hydrate. The marker stays set, so the next attempt waits
+    /// out `aiworkHydrateRetryCooldown`.
+    func noteAiWorkHydrateFailed(_ daemonSessionId: String, now: Date = Date()) {
+        // The session may have been dropped while the RPC was in flight; its
+        // marker is gone then, and a stamp would only leak.
+        guard aiworkHydratedSessionIds.contains(daemonSessionId) else { return }
+        aiworkHydrateFailedAt[daemonSessionId] = now
+    }
+
+    /// Forget all hydrate bookkeeping for a session that left the panel.
+    func forgetAiWorkHydrateState(_ daemonSessionId: String) {
         aiworkHydratedSessionIds.remove(daemonSessionId)
+        aiworkHydrateFailedAt.removeValue(forKey: daemonSessionId)
     }
 
     /// MainActor tail of `hydrateAiWorkSessionIfNeeded`.
@@ -718,7 +748,7 @@ extension AppState {
         )
         guard ConfigInstaller.isEnabled(source: snapshot.source) else {
             sessions.removeValue(forKey: key)
-            aiworkHydratedSessionIds.remove(daemonSessionId)
+            forgetAiWorkHydrateState(daemonSessionId)
             refreshDerivedState()
             return
         }
@@ -845,7 +875,9 @@ extension AppState {
             guard ConfigInstaller.isEnabled(source: snapshot.source) else { continue }
             sessions[sessionId] = snapshot
             applied = true
+            // The list row already carries title/cwd/client_type: count as hydrated.
             aiworkHydratedSessionIds.insert(sid)
+            aiworkHydrateFailedAt.removeValue(forKey: sid)
         }
         if applied {
             refreshDerivedState()

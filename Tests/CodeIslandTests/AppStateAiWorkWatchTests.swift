@@ -14,6 +14,30 @@ final class AppStateAiWorkWatchTests: XCTestCase {
         return appState
     }
 
+    func testHydrateRetryWaitsOutCooldownAfterFailure() {
+        let appState = makeAppState()
+        let id = "acp:coder:gate"
+        let t0 = Date()
+        let cooldown = AppState.aiworkHydrateRetryCooldown
+
+        XCTAssertTrue(appState.beginAiWorkHydrateAttempt(id, now: t0))
+        XCTAssertFalse(appState.beginAiWorkHydrateAttempt(id, now: t0), "attempt already in flight")
+
+        appState.noteAiWorkHydrateFailed(id, now: t0)
+        XCTAssertFalse(appState.beginAiWorkHydrateAttempt(id, now: t0.addingTimeInterval(1)))
+        XCTAssertFalse(appState.beginAiWorkHydrateAttempt(id, now: t0.addingTimeInterval(cooldown - 1)))
+        XCTAssertTrue(appState.beginAiWorkHydrateAttempt(id, now: t0.addingTimeInterval(cooldown)))
+        // The retry is in flight (and stays closed if it succeeds).
+        XCTAssertFalse(appState.beginAiWorkHydrateAttempt(id, now: t0.addingTimeInterval(cooldown * 3)))
+
+        // A session that left the panel starts clean, and a failure landing after
+        // it was dropped leaves no stamp behind.
+        appState.forgetAiWorkHydrateState(id)
+        appState.noteAiWorkHydrateFailed(id, now: t0)
+        XCTAssertNil(appState.aiworkHydrateFailedAt[id])
+        XCTAssertTrue(appState.beginAiWorkHydrateAttempt(id, now: t0))
+    }
+
     func testSessionPrefixKeepsNamespaceDisjoint() {
         XCTAssertEqual(AppState.aiworkSessionPrefix, "aiwork:")
     }

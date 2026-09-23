@@ -75,4 +75,45 @@ final class AiWorkFakeDaemonTests: XCTestCase {
         // stop() (deferred) closes the held connection; queued callers then find
         // the socket gone and return at once.
     }
+
+    /// `sessions.get` failing used to release the hydrate marker, and an untitled
+    /// session re-hydrates on every event — so each streamed token opened a new
+    /// connection to the daemon.
+    @MainActor
+    func testFailedHydrateIsNotRedialledPerToken() async throws {
+        let daemon = try FakeAgentixDaemon { method in
+            .reply(#"{"kind":"response","operation":"\#(method)","ok":false,"error":{"message":"unavailable"}}"#)
+        }
+        defer { daemon.stop() }
+
+        let appState = AppState()
+        appState.aiworkStateDirOverride = daemon.stateDir
+        let sid = "acp:coder:storm"
+
+        let started = try XCTUnwrap(AiWorkWatchClient.parseFrame(Data(#"""
+        {"kind":"event","event":{"name":"stream.started"},"data":{"session":{"session_id":"acp:coder:storm"}},"meta":{"session_id":"acp:coder:storm"}}
+        """#.utf8)))
+        appState.handleAiWorkStreamEvent(name: "stream.started", frame: started, agentId: "coder")
+
+        let deadline = ProcessInfo.processInfo.systemUptime + 5
+        while appState.aiworkHydrateFailedAt[sid] == nil,
+              ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNotNil(appState.aiworkHydrateFailedAt[sid], "first sessions.get never failed")
+        XCTAssertEqual(daemon.connectionCount, 1)
+
+        let delta = try XCTUnwrap(AiWorkWatchClient.parseFrame(Data(#"""
+        {"kind":"event","event":{"name":"stream.text_delta"},"data":{"text":"tok "},"meta":{"session_id":"acp:coder:storm"}}
+        """#.utf8)))
+        for _ in 0..<25 {
+            appState.handleAiWorkStreamEvent(name: "stream.text_delta", frame: delta, agentId: "coder")
+        }
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(daemon.connectionCount, 1, "failed sessions.get was re-dialled per token")
+        XCTAssertEqual(daemon.methods, ["sessions.get"])
+        // The session itself keeps streaming; only the metadata lookup waits.
+        XCTAssertEqual(appState.sessions["aiwork:" + sid]?.status, .processing)
+    }
 }

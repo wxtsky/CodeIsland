@@ -198,6 +198,11 @@ final class AppState {
     /// Daemon session ids that already received a `sessions.get` title/cwd hydrate.
     @ObservationIgnored
     var aiworkHydratedSessionIds: Set<String> = []
+    /// When a `sessions.get` hydrate last failed, per daemon session id. The id
+    /// stays in `aiworkHydratedSessionIds` until the cooldown elapses, so a
+    /// failing daemon is not re-dialled on every streamed token.
+    @ObservationIgnored
+    var aiworkHydrateFailedAt: [String: Date] = [:]
     /// Agentix state dir to discover daemons under; nil = `$AGENTIX_STATE_DIR`
     /// or `~/.agentix`. Tests point this at a temp dir so they never reach a
     /// real daemon on the developer's machine.
@@ -548,7 +553,7 @@ final class AppState {
             && session.status == .idle {
             guard -session.lastActivity.timeIntervalSinceNow > aiworkIdleGrace else { continue }
             if let daemonId = session.providerSessionId {
-                aiworkHydratedSessionIds.remove(daemonId)
+                forgetAiWorkHydrateState(daemonId)
             }
             removeSession(key)
         }
