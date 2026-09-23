@@ -747,9 +747,10 @@ public final class JSONLTailer: @unchecked Sendable {
 
     private static let eventMsgBytes: [UInt8] = Array(#"event_msg""#.utf8)
     private static let responseItemBytes: [UInt8] = Array(#"response_item""#.utf8)
-    private static let codexAssistantPayloadMarker: [UInt8] = Array(
-        #""payload":{"type":"message","role":"assistant""#.utf8
+    private static let codexMessagePayloadMarker: [UInt8] = Array(
+        #""payload":{"type":"message","#.utf8
     )
+    private static let codexAssistantRoleMarker: [UInt8] = Array(#""role":"assistant""#.utf8)
     private static let codexOutputTextMarker: [UInt8] = Array(#""type":"output_text""#.utf8)
 
     /// Keep large tool results on the no-parse path. Only response items with
@@ -761,11 +762,16 @@ public final class JSONLTailer: @unchecked Sendable {
         // Codex writes the payload type and content block at the front of a
         // response item. Bound the probe so a multi-megabyte tool result stays
         // O(1) here instead of being scanned once before the fast rejection.
+        //
+        // Model output carries a Responses API id between `type` and `role`
+        // (`{"type":"message","id":"msg_…","role":"assistant",…}`), so match
+        // the three markers independently instead of as one contiguous run.
+        // Quotes inside string values are escaped, so a user message quoting
+        // `"role":"assistant"` cannot match; `apply` re-checks the parsed role.
         let prefixLength = min(total, 4096)
-        if containsMarker(ptr, total: prefixLength, marker: codexAssistantPayloadMarker) {
-            return containsMarker(ptr, total: prefixLength, marker: codexOutputTextMarker)
-        }
-        return false
+        return containsMarker(ptr, total: prefixLength, marker: codexMessagePayloadMarker)
+            && containsMarker(ptr, total: prefixLength, marker: codexAssistantRoleMarker)
+            && containsMarker(ptr, total: prefixLength, marker: codexOutputTextMarker)
     }
 
     private static func containsMarker(
