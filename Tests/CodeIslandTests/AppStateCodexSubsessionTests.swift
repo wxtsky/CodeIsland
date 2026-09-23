@@ -431,6 +431,25 @@ final class AppStateCodexSubsessionTests: XCTestCase {
         XCTAssertEqual(metadata.agentNickname, "Galileo")
     }
 
+    func testCodexGuardianReviewMetadataReadsTopLevelParentThread() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-guardian-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("rollout.jsonl")
+        // Auto-review (guardian) threads carry no thread_spawn edge; Codex records
+        // the parent beside `source` instead of inside it.
+        let line = """
+        {"timestamp":"2026-09-23T07:13:36Z","type":"session_meta","payload":{"id":"guardian-thread","parent_thread_id":"parent-thread","cwd":"/repo","originator":"Codex Desktop","source":{"subagent":{"other":"guardian"}},"thread_source":"guardian_review"}}
+        """
+        try (line + "\n").write(to: file, atomically: true, encoding: .utf8)
+
+        let metadata = try XCTUnwrap(AppState.codexSubagentMetadata(inTranscriptPath: file.path))
+
+        XCTAssertEqual(metadata.parentThreadId, "parent-thread")
+        XCTAssertEqual(metadata.agentType, "guardian")
+        XCTAssertNil(metadata.agentNickname)
+    }
+
     func testCodexSubagentMetadataFallsBackToThreadSpawnEdgesDatabase() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("codeisland-codex-subagent-db-\(UUID().uuidString)")
