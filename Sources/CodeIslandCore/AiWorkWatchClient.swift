@@ -109,6 +109,12 @@ public final class AiWorkWatchClient: @unchecked Sendable {
             lock.unlock()
             throw AiWorkWatchError.connectFailed("socket() failed: \(errno)")
         }
+        // The app does not ignore SIGPIPE, and the daemon is an independent process
+        // that can hang up at any moment (restart, quit). Without this, a send()
+        // racing that hang-up delivers SIGPIPE and kills CodeIsland; with it, send()
+        // fails with EPIPE and writeEnvelope throws.
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -426,9 +432,58 @@ public final class AiWorkWatchClient: @unchecked Sendable {
         return results
     }
 
+    /// Where the blocking `unaryCall` actually runs when reached through
+    /// `unaryCallAsync`. Serial on purpose: an unresponsive daemon then pins
+    /// exactly one GCD thread for its timeout, never a thread of Swift's
+    /// cooperative pool (sized to the core count and shared with every other
+    /// `Task` in the app). Callers queue behind each other, which is fine for
+    /// a handful of small, rate-limited RPCs.
+    private static let blockingCallQueue = DispatchQueue(
+        label: "com.codeisland.aiwork-unary-blocking",
+        qos: .utility
+    )
+
+    /// `params` is `Any?` (JSON-shaped), which is not Sendable; it is only read
+    /// once on `blockingCallQueue` after the hop.
+    private struct UncheckedParams: @unchecked Sendable {
+        let value: Any?
+    }
+
+    /// Resolves an `AiWorkFrame?` across the queue hop; `AiWorkFrame` carries
+    /// `AnyCodableLike`, which is not declared Sendable, and is immutable here.
+    private struct UncheckedFrame: @unchecked Sendable {
+        let value: AiWorkFrame?
+    }
+
+    /// Async form of `unaryCall` for Swift concurrency callers. The blocking
+    /// wait runs on `blockingCallQueue` and the caller just suspends.
+    public static func unaryCallAsync(
+        socketPath: String,
+        method: String,
+        params: Any? = nil,
+        timeoutSeconds: TimeInterval = 5.0
+    ) async -> AiWorkFrame? {
+        let boxedParams = UncheckedParams(value: params)
+        let result: UncheckedFrame = await withCheckedContinuation { continuation in
+            blockingCallQueue.async {
+                let frame = unaryCall(
+                    socketPath: socketPath,
+                    method: method,
+                    params: boxedParams.value,
+                    timeoutSeconds: timeoutSeconds
+                )
+                continuation.resume(returning: UncheckedFrame(value: frame))
+            }
+        }
+        return result.value
+    }
+
     /// Perform a one-shot unary RPC on a fresh connection and return the
     /// response frame (or nil on failure / timeout). Used for backfill via
     /// `sessions.list` / `agent.stats` without disturbing the watch stream.
+    ///
+    /// Blocks the calling thread for up to `timeoutSeconds`. Never call it from
+    /// a `Task` — use `unaryCallAsync`, which moves the wait off the cooperative pool.
     public static func unaryCall(
         socketPath: String,
         method: String,
@@ -771,8 +826,8 @@ public enum AiWorkStatusMapper {
     /// Session ids currently executing a turn, from `agent.stats`.
     /// Returns `nil` when the RPC fails so callers do not treat "unreachable"
     /// as "nothing is busy" and mass-idle every session.
-    public static func fetchBusyDaemonSessionIds(socketPath: String) -> Set<String>? {
-        guard let stats = AiWorkWatchClient.unaryCall(
+    public static func fetchBusyDaemonSessionIds(socketPath: String) async -> Set<String>? {
+        guard let stats = await AiWorkWatchClient.unaryCallAsync(
             socketPath: socketPath,
             method: "agent.stats",
             params: [String: Any](),

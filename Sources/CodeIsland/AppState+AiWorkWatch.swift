@@ -179,7 +179,7 @@ extension AppState {
             for (agentId, entries) in groups {
                 guard let socketPath = sockets[agentId] else { continue }
                 // nil = stats unreachable for this daemon — leave its sessions alone.
-                guard let busy = AiWorkStatusMapper.fetchBusyDaemonSessionIds(
+                guard let busy = await AiWorkStatusMapper.fetchBusyDaemonSessionIds(
                     socketPath: socketPath
                 ) else { continue }
                 results.append(AiWorkBusyReconcileResult(sessions: entries, busyDaemonIds: busy))
@@ -672,7 +672,7 @@ extension AppState {
         // nested MainActor.run closures — that pattern is a captured-var-in-
         // concurrent-code warning today and an error under the Swift 6 language mode.
         Task.detached(priority: .utility) { [weak self] in
-            let frame = AiWorkWatchClient.unaryCall(
+            let frame = await AiWorkWatchClient.unaryCallAsync(
                 socketPath: socketPath,
                 method: "sessions.get",
                 params: ["sessionId": daemonSessionId],
@@ -724,16 +724,16 @@ extension AppState {
     /// On connect, pull currently-busy sessions so the notch isn't empty until
     /// the next live event. Idle historical sessions are intentionally skipped.
     ///
-    /// Both RPCs below block their calling thread (`unaryCall` waits on a
-    /// DispatchGroup), so they must never run on this MainActor-isolated type: a
-    /// daemon that accepts the connection but never answers would otherwise freeze
-    /// the UI for the full timeout. Same off-main shape as
-    /// `hydrateAiWorkSessionIfNeeded` — only the apply steps hop back to main.
+    /// Both RPCs below go through `unaryCallAsync`, whose blocking wait runs on a
+    /// dedicated GCD queue: a daemon that accepts the connection but never answers
+    /// then neither freezes the UI nor pins a cooperative-pool thread for the full
+    /// timeout. Same shape as `hydrateAiWorkSessionIfNeeded` — only the apply steps
+    /// hop back to main.
     func backfillAiWorkActiveSessions(agentId: String, socketPath: String) {
         Task.detached(priority: .utility) { [weak self] in
             // Prefer agent.stats active_request_details when present; fall back to
             // sessions.list filtered by AiWorkStatusMapper.isActiveListEntry.
-            let stats = AiWorkWatchClient.unaryCall(
+            let stats = await AiWorkWatchClient.unaryCallAsync(
                 socketPath: socketPath,
                 method: "agent.stats",
                 params: [String: Any]()
@@ -748,7 +748,7 @@ extension AppState {
                 return
             }
 
-            let list = AiWorkWatchClient.unaryCall(
+            let list = await AiWorkWatchClient.unaryCallAsync(
                 socketPath: socketPath,
                 method: "sessions.list",
                 params: ["limit": 50]

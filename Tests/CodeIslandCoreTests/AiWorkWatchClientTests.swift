@@ -157,29 +157,9 @@ final class AiWorkWatchClientTests: XCTestCase {
         XCTAssertEqual(fallback, "/Users/test/.agentix")
     }
 
-    /// Live smoke against a running local Agentix daemon (skipped when absent).
-    func testLiveUnaryAgentStatsIfDaemonPresent() throws {
-        let daemons = AiWorkWatchClient.discoverReadyDaemons()
-        try XCTSkipIf(daemons.isEmpty, "No Agentix daemon ready under ~/.agentix/run")
-        let sock = try XCTUnwrap(daemons.first?.socketPath)
-        let frame = AiWorkWatchClient.unaryCall(
-            socketPath: sock,
-            method: "agent.stats",
-            params: [String: Any](),
-            timeoutSeconds: 5
-        )
-        guard let frame else {
-            XCTFail("unary agent.stats returned nil")
-            return
-        }
-        guard case .response(let op, let ok) = frame.kind else {
-            XCTFail("expected response frame, got \(frame.kind)")
-            return
-        }
-        XCTAssertEqual(op, "agent.stats")
-        XCTAssertTrue(ok)
-        XCTAssertNotNil(frame.dataObject?["agent_id"])
-    }
+    // Socket round trips (unary RPC, agent.stats parsing, hung/closing daemons)
+    // run against an in-process fake in CodeIslandTests/AiWorkFakeDaemonTests —
+    // never against a real Agentix daemon on the developer's machine.
 
     func testToolDescriptionPrefersCommandAndDisplayTitle() {
         let withCommand: [String: AnyCodableLike] = [
