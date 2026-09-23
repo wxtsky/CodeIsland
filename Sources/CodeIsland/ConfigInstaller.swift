@@ -1115,19 +1115,22 @@ struct ConfigInstaller {
         }
     }
 
-    /// AiWork CLI (`aiwork` / legacy `aiwork` on PATH, or Agentix state).
+    /// AiWork CLI (`aiwork` / legacy `dtcoder` on PATH, or Agentix state).
     static func aiworkCliIsPresent(fileManager fm: FileManager = .default) -> Bool {
         let pathDirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
             .split(separator: ":")
             .map(String.init)
-        let binaries = ["aiwork", "aiwork"]
+        let binaries = ["aiwork", "dtcoder"]
         for dir in pathDirs {
             for binary in binaries where fm.isExecutableFile(atPath: (dir as NSString).appendingPathComponent(binary)) {
                 return true
             }
         }
         // TUI brings up the Agentix daemon under ~/.agentix even without the GUI app.
-        return fm.fileExists(atPath: NSHomeDirectory() + "/.agentix/run")
+        // A GUI-launched CodeIsland inherits launchd's minimal PATH, so this state
+        // directory — the same root the watcher discovers sockets under — is the
+        // check that actually decides in practice.
+        return fm.fileExists(atPath: AiWorkWatchClient.defaultStateDir() + "/run")
     }
 
     /// Either GUI or CLI/TUI is available.

@@ -11,13 +11,18 @@ extension AppState {
 
     /// Start discovering Agentix daemons and maintaining `sessions.watch`
     /// subscriptions. Idempotent. No-ops when both AiWork GUI and CLI monitoring
-    /// are disabled in Hooks settings.
+    /// are disabled in Hooks settings, or when AiWork is not on this machine at all.
     func startAiWorkWatcher() {
         guard ConfigInstaller.isAnyAiWorkMonitoringEnabled() else {
             stopAiWorkWatcher()
             return
         }
         if aiworkWatchReconnectTimer != nil { return }
+        // Both toggles default to on, so without this every install would carry a
+        // 3s rediscovery timer for a tool it doesn't have. Presence is re-checked
+        // whenever the Hooks toggle calls back in here; a fresh AiWork install is
+        // picked up on the next launch or toggle.
+        guard ConfigInstaller.aiworkIsPresent() else { return }
 
         // Periodic rediscovery covers daemon restarts and late launches
         // (AiWork GUI / `aiwork tui` bring the coder daemon up on demand).
@@ -329,6 +334,7 @@ extension AppState {
 
         let sessionId = AppState.aiworkSessionPrefix + daemonSessionId
         let isNew = sessions[sessionId] == nil
+        let previousStatus = sessions[sessionId]?.status
         // A status-less event for a conversation we are not already tracking is
         // history, not activity. Creating a card from one would surface long-
         // finished conversations (backfill deliberately skips idle entries for the
@@ -336,9 +342,9 @@ extension AppState {
         if mappedStatus == nil, isNew { return }
         var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())
         snapshot.providerSessionId = daemonSessionId
-        AppState.applyAiWorkAppIdentity(&snapshot)
-
         AppState.applyAiWorkSessionMetadata(&snapshot, data: frame.dataObject)
+        // After metadata: identity depends on the client_type it may carry.
+        AppState.applyAiWorkAppIdentity(&snapshot)
 
         let source = AiWorkStatusMapper.codeIslandSource(
             clientType: snapshot.aiworkClientType,
@@ -405,7 +411,15 @@ extension AppState {
             break
         }
 
-        refreshDerivedState()
+        // Token deltas only move preview text. refreshDerivedState() pushes to the
+        // iPhone/Watch companion (Multipeer + BLE) and the Buddy (ESP32 BLE) on every
+        // call, so running it per token floods both links while a reply streams. The
+        // notch itself still redraws from `sessions`; the publishers catch up on the
+        // next status-bearing event.
+        let isDelta = name == "stream.text_delta" || name == "stream.thinking_delta"
+        if isNew || !isDelta || previousStatus != snapshot.status {
+            refreshDerivedState()
+        }
 
         // Title/cwd/client_type often arrive only via sessions.get —
         // hydrate when we first see the session or when those fields are missing.
@@ -761,12 +775,12 @@ extension AppState {
             let sessionId = AppState.aiworkSessionPrefix + sid
             var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())
             snapshot.providerSessionId = sid
-            AppState.applyAiWorkAppIdentity(&snapshot)
             // Prefer client_type from the stats row when present; otherwise
             // keep existing / fall back via session id until hydrate.
             if let clientType = obj["client_type"]?.asString, !clientType.isEmpty {
                 snapshot.aiworkClientType = clientType
             }
+            AppState.applyAiWorkAppIdentity(&snapshot)
             let source = AiWorkStatusMapper.codeIslandSource(
                 clientType: snapshot.aiworkClientType,
                 daemonSessionId: sid
@@ -839,8 +853,23 @@ extension AppState {
     static let aiworkAppBundleId = "com.alipay.dtcoder.ide"
 
     static func applyAiWorkAppIdentity(_ snapshot: inout SessionSnapshot) {
-        snapshot.termBundleId = aiworkAppBundleId
-        snapshot.termApp = "AiWork"
+        let source = AiWorkStatusMapper.codeIslandSource(
+            clientType: snapshot.aiworkClientType,
+            daemonSessionId: snapshot.providerSessionId
+        )
+        if source == "aiwork-cli" {
+            // A TUI session lives in a terminal. Carrying the IDE bundle made
+            // TerminalActivator take its native-app branch and raise — or launch —
+            // the AiWork desktop app on click, and made isIDETerminal claim an IDE
+            // host. Clear what an earlier GUI guess (acp: prefix before sessions.get
+            // returned client_type) may have set; the badge icon still resolves via
+            // TerminalBadge's per-source bundle map.
+            if snapshot.termBundleId == aiworkAppBundleId { snapshot.termBundleId = nil }
+            if snapshot.termApp == "AiWork" { snapshot.termApp = nil }
+        } else {
+            snapshot.termBundleId = aiworkAppBundleId
+            snapshot.termApp = "AiWork"
+        }
     }
 
     /// Test seam / shared apply for list/get projections.
@@ -851,7 +880,6 @@ extension AppState {
         preserveLiveStatus: Bool = false
     ) {
         snapshot.providerSessionId = daemonSessionId
-        applyAiWorkAppIdentity(&snapshot)
         if let cwd = entry["cwd"]?.asString, !cwd.isEmpty {
             snapshot.cwd = cwd
         }
@@ -864,6 +892,7 @@ extension AppState {
         if let clientType = entry["client_type"]?.asString, !clientType.isEmpty {
             snapshot.aiworkClientType = clientType
         }
+        applyAiWorkAppIdentity(&snapshot)
         snapshot.source = AiWorkStatusMapper.codeIslandSource(
             clientType: snapshot.aiworkClientType,
             daemonSessionId: daemonSessionId

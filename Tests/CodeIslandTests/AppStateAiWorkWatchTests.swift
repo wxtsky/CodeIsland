@@ -298,10 +298,31 @@ final class AppStateAiWorkWatchTests: XCTestCase {
         XCTAssertEqual(snapshot.cwd, "/work")
         XCTAssertEqual(snapshot.sessionTitle, "Need approve")
         XCTAssertEqual(snapshot.sourceLabel, "AiWork CLI")
-        XCTAssertEqual(snapshot.termBundleId, AppState.aiworkAppBundleId)
+        // A TUI session must not carry the IDE bundle: TerminalActivator would take
+        // its native-app branch and raise/launch the desktop app on click.
+        XCTAssertNil(snapshot.termBundleId)
         XCTAssertEqual(snapshot.terminalName, "AiWork CLI")
-        // TUI uses the IDE bundle for badging but is not native-app mode.
         XCTAssertFalse(snapshot.isNativeAppMode)
+        XCTAssertFalse(snapshot.isIDETerminal)
+    }
+
+    /// A session first seen as GUI (acp: prefix, no client_type yet) that hydrate
+    /// reveals as TUI must drop the IDE identity it was given on the first guess.
+    func testTUIRevealedByHydrateDropsIDEIdentity() {
+        var snapshot = SessionSnapshot()
+        snapshot.providerSessionId = "acp:coder:7"
+        AppState.applyAiWorkAppIdentity(&snapshot)
+        XCTAssertEqual(snapshot.termBundleId, AppState.aiworkAppBundleId)
+
+        AppState.applyAiWorkListEntry(
+            &snapshot,
+            daemonSessionId: "acp:coder:7",
+            entry: ["client_type": .string("DTCoderTUI")],
+            preserveLiveStatus: true
+        )
+        XCTAssertEqual(snapshot.source, "aiwork-cli")
+        XCTAssertNil(snapshot.termBundleId)
+        XCTAssertNil(snapshot.termApp)
     }
 
     func testGUISessionShowsAiWorkAppBadge() {
