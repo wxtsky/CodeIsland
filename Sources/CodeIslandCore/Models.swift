@@ -457,6 +457,25 @@ public struct HookEvent {
         return sanitizedSummary((trimmed as NSString).lastPathComponent, limit: 80)
     }
 
+    /// Credential / home-path redactions applied by ``sanitizedSummary(_:limit:)``,
+    /// compiled once — the summary runs on every Codex PreToolUse and approval.
+    private static let summaryRedactions: [(regex: NSRegularExpression, template: String)] = [
+        (#"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
+        (#"(?i)((?:aws[-_]?secret[-_]?access[-_]?key|aws[-_]?(?:session|security)[-_]?token|x[-_]amz[-_]security[-_]token)\s*[:=]\s*)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
+        (#"(?i)((?:x[-_])?(?:api[-_]?key|auth[-_]?token|access[-_]?token|secret|password)\s*:\s*)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
+        (#"(?i)((?:--)?(?:api[-_]?key|token|secret|password|passwd|auth)(?:\s+|=))([^\s]+)"#, "$1[REDACTED]"),
+        (#"(?i)([?&](?:api[-_]?key|token|secret|signature|sig|password)=)[^&\s\"']+"#, "$1[REDACTED]"),
+        (#"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"#, "[REDACTED]"),
+        (#"/(?:Users|home)/[^/\s]+"#, "~"),
+        (#"\b[A-Za-z0-9_\-+/=]{48,}\b"#, "[REDACTED]"),
+    ].compactMap { pattern, template in
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            assertionFailure("invalid redaction pattern: \(pattern)")
+            return nil
+        }
+        return (regex, template)
+    }
+
     /// Removes common credential shapes and home-directory usernames before a
     /// bounded detail string reaches the notch, companion payloads, or history.
     private static func sanitizedSummary(_ value: String, limit: Int) -> String? {
@@ -466,18 +485,7 @@ public struct HookEvent {
             .joined(separator: " ")
         guard !result.isEmpty else { return nil }
 
-        let replacements: [(String, String)] = [
-            (#"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
-            (#"(?i)((?:aws[-_]?secret[-_]?access[-_]?key|aws[-_]?(?:session|security)[-_]?token|x[-_]amz[-_]security[-_]token)\s*[:=]\s*)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
-            (#"(?i)((?:x[-_])?(?:api[-_]?key|auth[-_]?token|access[-_]?token|secret|password)\s*:\s*)([\"']?)[^\"'\s]+"#, "$1[REDACTED]"),
-            (#"(?i)((?:--)?(?:api[-_]?key|token|secret|password|passwd|auth)(?:\s+|=))([^\s]+)"#, "$1[REDACTED]"),
-            (#"(?i)([?&](?:api[-_]?key|token|secret|signature|sig|password)=)[^&\s\"']+"#, "$1[REDACTED]"),
-            (#"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"#, "[REDACTED]"),
-            (#"/(?:Users|home)/[^/\s]+"#, "~"),
-            (#"\b[A-Za-z0-9_\-+/=]{48,}\b"#, "[REDACTED]"),
-        ]
-        for (pattern, template) in replacements {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        for (regex, template) in summaryRedactions {
             let range = NSRange(result.startIndex..., in: result)
             result = regex.stringByReplacingMatches(
                 in: result,
