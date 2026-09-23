@@ -4,9 +4,11 @@
 
 ### English
 - Add AiWork, both the GUI and the CLI/TUI, as a read-only view: session title, working directory, live status, the running tool, and streaming reply/thinking text all reach the notch, and a request for approval, a plan confirmation or a question lights up its waiting state and shows what is being asked — but approving, denying and answering still happen on the AiWork side, so the panel offers no buttons for them. Completion and failure each play their sound, an abort is silent. GUI and CLI are independent toggles in Hooks settings and neither installs a hook or a plugin — a running AiWork is picked up as-is. A finished conversation leaves the panel about a minute after its last activity, much sooner than the ten-minute timeout every other tool uses, and the iPhone/Watch companion shows AiWork sessions with their own AiWorkBot
+- Claude plan limits: an opt-in "Show Claude plan limits" setting reads the Claude Code sign-in from Keychain and asks Anthropic for the same 5-hour / weekly windows `/usage` shows. The expanded session list gets a footer line with every window — mini bar, percent, reset countdown, coloured by severity. Refreshes only while the panel is open: on expand when the numbers are over a minute old, then driven by Stop hooks (15s coalesce, at most once a minute), with exponential backoff on errors and no token refresh ever — an expired token just says "run Claude Code once". Off by default; nothing is read or sent while it is off. The login is read through `security`, the tool Claude Code stores it with, so there is no Keychain prompt (#338, thanks @mutoe)
 
 ### 中文
 - 新增 AiWork，GUI 与 CLI/TUI 都支持，本期为只读展示：会话标题、工作目录、实时状态、正在执行的工具，以及回复正文与思考过程的流式增量都会进刘海；需要授权、确认计划或被反问时会亮起等待状态并显示请求内容，但同意、拒绝与作答仍要回 AiWork 侧操作，面板不提供按钮。完成与失败各有提示音，中断静默。GUI 与 CLI 在 Hooks 设置里是两个独立开关，而且都不需要装 hook 或插件——AiWork 只要在跑就能被识别。跑完的会话会在最后一次活动后约一分钟离开面板，比其他工具的十分钟超时快得多；iPhone / Watch 端也能看到 AiWork 会话与它的 AiWorkBot 形象
+- Claude 套餐额度：新增可选设置「显示 Claude 套餐额度」，用 Keychain 里的 Claude Code 登录向 Anthropic 查询和 `/usage` 一样的 5 小时 / 周窗口。展开的会话列表底部新增一行显示全部窗口（迷你进度条、百分比、重置倒计时，按严重程度着色）。只在面板打开时刷新：展开时若数据超过一分钟就拉取，之后由 Stop hook 驱动（15 秒合并、每分钟最多一次），出错指数退避，永不刷新 token——过期只提示「运行一次 Claude Code」。默认关闭，关闭时不读取也不发送任何内容。登录信息通过 `security` 命令读取（Claude Code 自己就是用它写入的），不会弹 Keychain 授权框 (#338, thanks @mutoe)
 
 ## [v1.0.33] - 2026-09-01
 

@@ -1883,6 +1883,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
+    @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
         if let only = onlySessionId, appState.sessions[only] != nil {
@@ -2040,7 +2041,133 @@ private struct SessionListView: View {
                !(usage.last5h.isEmpty && usage.today.isEmpty) {
                 UsageFooterLine(usage: usage)
             }
+            if showClaudeQuota, onlySessionId == nil {
+                if let snapshot = appState.claudeQuota.snapshot {
+                    QuotaFooterLine(snapshot: snapshot, error: appState.claudeQuota.lastError)
+                } else if let error = appState.claudeQuota.lastError {
+                    QuotaFooterMessage(error: error)
+                }
+            }
         }
+    }
+}
+
+// MARK: - Plan limits (Anthropic subscription windows)
+
+private enum QuotaStyle {
+    static let normal = Color.white.opacity(0.85)
+    static let warning = Color(red: 1.0, green: 0.7, blue: 0.28)
+    static let critical = Color(red: 1.0, green: 0.4, blue: 0.4)
+
+    static func color(_ level: ClaudeQuotaLimit.Level) -> Color {
+        switch level {
+        case .normal: return normal
+        case .warning: return warning
+        case .critical: return critical
+        }
+    }
+
+    static func label(_ limit: ClaudeQuotaLimit, l10n: L10n) -> String {
+        switch limit.kind {
+        case .session: return "5h"
+        case .weeklyAll: return l10n["quota_week"]
+        case .weeklyScoped: return limit.scopeLabel ?? l10n["quota_week"]
+        }
+    }
+
+    /// One line per window for tooltips: "5h 3% · resets in 1h20m".
+    static func tooltip(_ snapshot: ClaudeQuotaSnapshot, stale: Bool, l10n: L10n, now: Date = Date()) -> String {
+        var lines = snapshot.ordered.map { limit -> String in
+            var line = "\(label(limit, l10n: l10n)) \(ClaudeQuotaFormat.percent(limit.percent))"
+            if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+                line += " · ↻ \(cd)"
+            }
+            return line
+        }
+        if stale { lines.append(l10n["quota_stale"]) }
+        return lines.joined(separator: "\n")
+    }
+}
+
+/// Expanded footer: every window with a mini bar, percent, and reset countdown.
+private struct QuotaFooterLine: View {
+    let snapshot: ClaudeQuotaSnapshot
+    let error: ClaudeQuotaClientError?
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        // Countdowns tick once a minute; the panel is only open briefly.
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(l10n["quota_label"])
+                    .fontWeight(.semibold)
+                ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { index, limit in
+                    if index > 0 {
+                        Text("·").foregroundStyle(.white.opacity(0.25))
+                    }
+                    segment(limit, now: context.date)
+                }
+                Spacer()
+                if error != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(QuotaStyle.warning)
+                        .help(l10n["quota_stale"])
+                }
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white.opacity(0.45))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .help(QuotaStyle.tooltip(snapshot, stale: error != nil, l10n: l10n, now: context.date))
+        }
+    }
+
+    private func segment(_ limit: ClaudeQuotaLimit, now: Date) -> some View {
+        let color = QuotaStyle.color(limit.level)
+        return HStack(spacing: 4) {
+            Text(QuotaStyle.label(limit, l10n: l10n))
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.12))
+                Capsule().fill(color)
+                    .frame(width: 30 * min(limit.percent / 100, 1))
+            }
+            .frame(width: 30, height: 4)
+            Text(ClaudeQuotaFormat.percent(limit.percent))
+                .foregroundStyle(color)
+            if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+                Text("↻\(cd)")
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+    }
+}
+
+/// Footer fallback when there is no snapshot yet but the fetch failed.
+private struct QuotaFooterMessage: View {
+    let error: ClaudeQuotaClientError
+    @ObservedObject private var l10n = L10n.shared
+
+    private var text: String {
+        switch error {
+        case .unauthorized, .noCredential: return l10n["quota_login_needed"]
+        default: return l10n["quota_unreachable"]
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+            Spacer()
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.35))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
     }
 }
 
