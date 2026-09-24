@@ -198,20 +198,34 @@ struct NotchPanelView: View {
         if !isActive { return hasNotch ? nw - 20 : nw }
         if shouldShowExpanded { return min(max(nw + 200, 580), maxWidth) }
         let wing = compactWingWidth
+        // Immediate hover acknowledgement: a slight widen while the expand delay runs
+        let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
+        return nw + wing * 2 + collapsedStatusExtra + quotaReserve.extraWidth + prehoverExtra
+    }
+
+    /// Status and tool-status reserves, split evenly between the two wings.
+    private var collapsedStatusExtra: CGFloat {
         let extra: CGFloat = appState.status == .idle ? 0 : 20
         // Reserve space for tool status — proportional to screen width
         let toolExtra: CGFloat = displayedToolStatus ? (hasNotch ? screenWidth * 0.03 : screenWidth * 0.04) : 0
-        // Plan-limit chip shares the left-wing tool slot, so only the part its
-        // width exceeds the tool reserve needs adding. Measured when possible;
-        // the label-length estimate only covers the first frame.
-        let quotaExtra: CGFloat = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
-            .map { limit in
-                let width = quotaChipWidth > 0 ? quotaChipWidth + 6 : QuotaChip.reservedWidth(for: limit)
-                return Swift.max(0, width - toolExtra)
-            } ?? 0
-        // Immediate hover acknowledgement: a slight widen while the expand delay runs
-        let prehoverExtra: CGFloat = shouldShowPrehover ? NotchHoverInteraction.prehoverWidthDelta : 0
-        return nw + wing * 2 + extra + toolExtra + quotaExtra + prehoverExtra
+        return extra + toolExtra
+    }
+
+    /// Room for the plan-limit chip in the collapsed bar; `.none` whenever the
+    /// chip isn't shown, which leaves the bar exactly as it is without it.
+    private var quotaReserve: QuotaChipLayout.Reserve {
+        guard showBar, !shouldShowExpanded,
+              let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
+        else { return .none }
+        // Measured once laid out; the label-length estimate covers the first frame.
+        let chipWidth = quotaChipWidth > 0 ? quotaChipWidth : QuotaChip.estimatedWidth(for: limit)
+        return QuotaChipLayout.reserve(
+            chipWidth: chipWidth,
+            mascotSize: mascotSize,
+            wing: compactWingWidth,
+            statusExtra: collapsedStatusExtra,
+            hasNotch: hasNotch
+        )
     }
 
     var body: some View {
@@ -249,7 +263,9 @@ struct NotchPanelView: View {
                         including: !shouldShowExpanded && appState.hiddenPendingQuestionSessionId != nil
                             ? .all : .subviews
                     )
-                    .onPreferenceChange(QuotaChipWidthKey.self) { quotaChipWidth = $0 }
+                    // 0 means the chip isn't drawn right now (a tool name holds
+                    // the slot) — keep the last width so the bar doesn't twitch.
+                    .onPreferenceChange(QuotaChipWidthKey.self) { if $0 > 0 { quotaChipWidth = $0 } }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -506,6 +522,8 @@ struct NotchPanelView: View {
                     hoverPhase = .expanded
                 }
             }
+            // Outside onHover on purpose: the hover region moves with the bar.
+            .offset(x: quotaReserve.shift)
 
             Spacer()
                 .allowsHitTesting(false)
@@ -2293,6 +2311,51 @@ private enum QuotaStyle {
     }
 }
 
+/// How the collapsed bar makes room for the plan-limit chip.
+///
+/// The bar is centred on the notch, so extra width added to it is split
+/// evenly: the chip, which sits in the left wing, would only get half and
+/// its tail would slide under the notch. On notched screens the bar instead
+/// grows by exactly what the left wing lacks and shifts left by half of it,
+/// so the right wing stays put and the gap between the wings still lands on
+/// the notch. Nothing is spent on the right: menu-bar space on a MacBook is
+/// too scarce to pad for symmetry.
+enum QuotaChipLayout {
+    struct Reserve: Equatable {
+        /// Added to the collapsed bar's width.
+        let extraWidth: CGFloat
+        /// Horizontal offset of the whole bar (negative = left).
+        let shift: CGFloat
+
+        static let none = Reserve(extraWidth: 0, shift: 0)
+    }
+
+    /// Left wing padding before the mascot, and the spacing after it.
+    static let wingLeading: CGFloat = 6
+    static let wingSpacing: CGFloat = 6
+    /// Clearance between the chip's tail and the notch edge.
+    static let notchGap: CGFloat = 4
+
+    /// - Parameters:
+    ///   - wing: base width of each wing (`compactWingWidth`).
+    ///   - statusExtra: the status / tool-status reserves the bar already
+    ///     splits between both wings; half of it is left-wing room.
+    static func reserve(
+        chipWidth: CGFloat,
+        mascotSize: CGFloat,
+        wing: CGFloat,
+        statusExtra: CGFloat,
+        hasNotch: Bool
+    ) -> Reserve {
+        // No notch to clear: the flexible row just needs the chip's width.
+        guard hasNotch else { return Reserve(extraWidth: chipWidth + wingSpacing, shift: 0) }
+        let needed = wingLeading + mascotSize + wingSpacing + chipWidth + notchGap
+        let room = wing + statusExtra / 2
+        let missing = Swift.max(0, needed - room)
+        return Reserve(extraWidth: missing, shift: -missing / 2)
+    }
+}
+
 /// Reports the collapsed chip's laid-out width up to the bar for its reserve.
 struct QuotaChipWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -2330,10 +2393,10 @@ struct QuotaChip: View {
     let stale: Bool
     @ObservedObject private var l10n = L10n.shared
 
-    /// Width reserved in the collapsed bar when the chip is shown: ring +
+    /// First-frame guess at the chip's width before it is measured: ring and
     /// percent plus the window label (10pt monospaced ≈ 6.2pt per glyph).
-    static func reservedWidth(for limit: ClaudeQuotaLimit) -> CGFloat {
-        44 + CGFloat(QuotaStyle.label(limit, l10n: L10n.shared).count) * 6.2
+    static func estimatedWidth(for limit: ClaudeQuotaLimit) -> CGFloat {
+        38 + CGFloat(QuotaStyle.label(limit, l10n: L10n.shared).count) * 6.2
     }
 
     init(limit: ClaudeQuotaLimit, snapshot: ClaudeQuotaSnapshot, stale: Bool) {
