@@ -5,6 +5,7 @@ import CodeIslandCore
 //
 // Usage: launch with --preview <scenario> to inject mock sessions for UI development.
 //   e.g.  .build/debug/CodeIsland --preview approval
+//   Add --collapsed to keep the bar collapsed instead of auto-expanding.
 //
 // Scenarios:
 //   working     — single session actively running tools
@@ -54,6 +55,11 @@ enum DebugHarness {
         let args = ProcessInfo.processInfo.arguments
         guard let idx = args.firstIndex(of: "--preview"), idx + 1 < args.count else { return nil }
         return PreviewScenario(rawValue: args[idx + 1])
+    }
+
+    /// `--collapsed`: skip the auto-expand so the compact bar can be inspected.
+    static var keepsCollapsed: Bool {
+        ProcessInfo.processInfo.arguments.contains("--collapsed")
     }
 
     /// Inject mock data into appState for the given scenario
