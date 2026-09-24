@@ -7365,10 +7365,14 @@ final class AppState {
               !subagent.isEmpty else {
             return .root
         }
+        // Spawned workers nest the parent under `source.subagent.thread_spawn`;
+        // auto-review (guardian) threads record it on the payload itself.
         let parent = firstStringRecursively(in: subagent, key: "parent_thread_id")
+            ?? payload["parent_thread_id"] as? String
         guard let parent, !parent.isEmpty else { return .unavailable }
 
         let agentType = firstStringRecursively(in: subagent, key: "agent_role")
+            ?? subagent["other"] as? String
             ?? subagent.keys.sorted().first
         let nickname = firstStringRecursively(in: subagent, key: "agent_nickname")
         return .subagent(CodexSubagentMetadata(
