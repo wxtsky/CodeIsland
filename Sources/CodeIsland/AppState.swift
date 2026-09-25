@@ -447,10 +447,25 @@ final class AppState {
         return ids
     }
 
-    /// Question counterpart of `visiblePermissionRequestIds`.
+    /// Question requests the user closed without answering. Unlike approvals
+    /// these are keyed by request, not session: a new question from the same
+    /// session is a new thing to see. Hidden, never resolved — the agent keeps
+    /// waiting, and the collapsed bar's question badge reopens the card.
+    private var dismissedQuestionIds: Set<UUID> = [] {
+        didSet { followUps.waitingChanged() }
+    }
+
+    /// The first queued question the user has not closed — what may open by
+    /// itself, and what a question shortcut acts on.
+    var nextVisibleQuestion: QuestionRequest? {
+        questionQueue.first { !dismissedQuestionIds.contains($0.id) }
+    }
+
+    /// Question counterpart of `visiblePermissionRequestIds`: closed questions
+    /// are left out, so follow-up reminders stop for a card the user put away.
     var pendingQuestionRequestIds: [String: String] {
         var ids: [String: String] = [:]
-        for request in questionQueue {
+        for request in questionQueue where !dismissedQuestionIds.contains(request.id) {
             let sid = request.event.sessionId ?? "default"
             if ids[sid] == nil { ids[sid] = request.id.uuidString }
         }
@@ -1410,7 +1425,10 @@ final class AppState {
     /// auto-expand or Smart Suppress: those only decide what opens *by itself*.
     func openPendingQuestionCard(sessionId: String? = nil) {
         guard let sid = sessionId ?? hiddenPendingQuestionSessionId,
-              pendingQuestion(forSession: sid) != nil else { return }
+              let request = pendingQuestion(forSession: sid) else { return }
+        // Opening it again takes back a close: it is on screen, so it may
+        // stay up and remind like any other waiting question.
+        dismissedQuestionIds.remove(request.id)
         activeSessionId = sid
         withAnimation(NotchAnimation.open) {
             surface = .questionCard(sessionId: sid)
@@ -2778,6 +2796,33 @@ final class AppState {
         return updatedInput
     }
 
+    /// Close a question card without answering it. The request stays queued
+    /// and the agent keeps waiting: answer it in the terminal, or reopen the
+    /// card from the collapsed bar's question badge. Skip, by contrast,
+    /// answers — for AskUserQuestion it denies the tool call.
+    func dismissQuestion(expectedSessionId: String? = nil) {
+        guard let index = questionIndex(expecting: expectedSessionId) else {
+            if let expectedSessionId {
+                discardStalePanelAction(expected: expectedSessionId, kind: "dismiss")
+            }
+            return
+        }
+        // Forget closes whose requests have since left the queue.
+        let queued = Set(questionQueue.map(\.id))
+        dismissedQuestionIds = dismissedQuestionIds
+            .union([questionQueue[index].id])
+            .intersection(queued)
+
+        if case .questionCard = surface {
+            withAnimation(NotchAnimation.close) {
+                surface = .collapsed
+            }
+        }
+        // Hand the panel to whatever is still visibly waiting, if it may open.
+        showNextPending()
+        refreshDerivedState()
+    }
+
     func skipQuestion(expectedSessionId: String? = nil) {
         guard let index = questionIndex(expecting: expectedSessionId) else {
             if let expectedSessionId {
@@ -2940,7 +2985,7 @@ final class AppState {
             }
             // The approval stays hidden; a card already up stays with it.
             if surface.approvalSessionId != nil || surface.questionSessionId != nil { return true }
-        } else if let next = questionQueue.first {
+        } else if let next = nextVisibleQuestion {
             hasPending = true
             // A question card still showing the question it was opened for
             // stays, even when it is not the head (the user clicked "Answer"
