@@ -15,6 +15,7 @@ final class ClaudeQuotaMonitorTests: XCTestCase {
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
         defaults.set(true, forKey: SettingsKey.showClaudeQuota)
+        defaults.set(ClaudeQuotaChipMode.auto.rawValue, forKey: SettingsKey.claudeQuotaChip)
     }
 
     override func tearDown() {
@@ -59,6 +60,7 @@ final class ClaudeQuotaMonitorTests: XCTestCase {
         await waitUntil { m.snapshot != nil }
         XCTAssertEqual(m.snapshot, Self.snapshot)
         XCTAssertNil(m.lastError)
+        XCTAssertEqual(m.chipLimit()?.kind, .weeklyScoped)
         // Second expand inside the stale window does not refetch.
         m.noteCollapsed(); m.noteExpanded()
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -74,10 +76,11 @@ final class ClaudeQuotaMonitorTests: XCTestCase {
         m.noteExpanded(); m.noteStop()
         try? await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(counter.value, 0)
-        XCTAssertNil(m.snapshot)
+        XCTAssertNil(m.chipLimit())
     }
 
     func testBurstOfStopsCoalescesIntoOneFetch() async {
+        defaults.set(ClaudeQuotaChipMode.off.rawValue, forKey: SettingsKey.claudeQuotaChip)
         let counter = Counter()
         let m = ClaudeQuotaMonitor(scheduler: .init(config: fastConfig()), defaults: defaults, fetcher: {
             _ = counter.bump(); return Self.snapshot
@@ -90,14 +93,15 @@ final class ClaudeQuotaMonitorTests: XCTestCase {
         XCTAssertEqual(counter.value, 2, "three Stops inside the debounce window must produce exactly one trailing fetch")
     }
 
-    func testStopsWhileCollapsedScheduleNothing() async {
+    func testStopsWhileCollapsedScheduleNothingWithChipOff() async {
+        defaults.set(ClaudeQuotaChipMode.off.rawValue, forKey: SettingsKey.claudeQuotaChip)
         let counter = Counter()
         let m = ClaudeQuotaMonitor(scheduler: .init(config: fastConfig()), defaults: defaults, fetcher: {
             _ = counter.bump(); return Self.snapshot
         })
         m.noteStop(); m.noteStop()
         try? await Task.sleep(nanoseconds: 300_000_000)
-        XCTAssertEqual(counter.value, 0, "with the footer as the only surface, a collapsed island must not fetch")
+        XCTAssertEqual(counter.value, 0, "with the chip off the footer is the only surface, so a collapsed island must not fetch")
         // The pending Stop is served once the footer is on screen.
         m.noteExpanded()
         await waitUntil { counter.value == 1 }
