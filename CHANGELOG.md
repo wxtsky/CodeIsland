@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### English
+- **Question cards can be dismissed.** A question card used to stay up until it was answered: moving away or clicking elsewhere never folds a card, and Skip is an answer (for AskUserQuestion it denies the tool call). A new Dismiss button closes the card without answering, like the one on approval cards: the agent keeps waiting, so you can answer in the terminal, and the collapsed bar's question badge reopens the card. A closed question doesn't come back on its own, isn't followed up by reminders, and isn't acted on by the skip shortcut; a new question, even from the same session, opens as usual
+
+### 中文
+- **提问卡片可以关闭了。** 以前提问卡片不回答就一直停在那里：鼠标移开或点别处都不会收起卡片，而「跳过」本身就是一种回答（对 AskUserQuestion 来说是拒绝这次工具调用）。现在多了和审批卡片一样的「忽略」按钮：只关掉卡片、不作答，Agent 继续等待，你可以回终端回答，也可以点收起栏上的提问角标重新打开。关掉的提问不会自己弹回来，不再跟进提醒，跳过快捷键也不会动它；新的提问（哪怕来自同一个会话）照常弹出
+
 ## [v1.0.35] - 2026-09-24
 
 ### English

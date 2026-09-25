@@ -297,7 +297,8 @@ struct NotchPanelView: View {
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
                                 onAnswerMulti: { appState.answerQuestionMulti($0, expectedSessionId: sid) },
-                                onSkip: { appState.skipQuestion(expectedSessionId: sid) }
+                                onSkip: { appState.skipQuestion(expectedSessionId: sid) },
+                                onDismiss: { appState.dismissQuestion(expectedSessionId: sid) }
                             )
                             // One view per request. Answering a card promotes the
                             // next session's request into this same slot, and
@@ -322,7 +323,8 @@ struct NotchPanelView: View {
                                 queueTotal: 1,
                                 onAnswer: { _ in },
                                 onAnswerMulti: { _ in },
-                                onSkip: { }
+                                onSkip: { },
+                                onDismiss: { }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
@@ -1416,6 +1418,8 @@ private struct QuestionBar: View {
     let onAnswer: (String) -> Void
     let onAnswerMulti: ([AskUserQuestionAnswer]) -> Void
     let onSkip: () -> Void
+    /// Close the card without answering; the request keeps waiting.
+    let onDismiss: () -> Void
 
     @FocusState private var isFocused: Bool
 
@@ -1671,6 +1675,13 @@ private struct QuestionBar: View {
                 )
             }
             PixelButton(
+                label: L10n.shared["dismiss"],
+                fg: .white.opacity(0.6),
+                bg: Color.white.opacity(0.06),
+                border: Color.white.opacity(0.12),
+                action: onDismiss
+            )
+            PixelButton(
                 label: L10n.shared["skip"],
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
@@ -1845,6 +1856,13 @@ private struct QuestionBar: View {
         }
 
         HStack(spacing: 6) {
+            PixelButton(
+                label: L10n.shared["dismiss"],
+                fg: .white.opacity(0.6),
+                bg: Color.white.opacity(0.06),
+                border: Color.white.opacity(0.12),
+                action: onDismiss
+            )
             PixelButton(
                 label: L10n.shared["skip"],
                 fg: .white.opacity(0.6),

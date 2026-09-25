@@ -49,7 +49,8 @@ extension AppState {
                 skipQuestion(expectedSessionId: sid)
                 return .acted(sessionId: sid)
             }
-            guard let head = questionQueue.first else {
+            // A closed question stays hidden, as a dismissed approval does.
+            guard let head = nextVisibleQuestion else {
                 foldDeadCard()
                 return .ignored
             }
