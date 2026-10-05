@@ -1054,26 +1054,59 @@ public final class JSONLTailer: @unchecked Sendable {
     /// either a bare string or an array of content blocks.
     public static func extractText(from content: Any?) -> String? {
         if let raw = content as? String {
-            var text = raw
-            if let startRange = text.range(of: "<USER_REQUEST>"),
-               let endRange = text.range(of: "</USER_REQUEST>", range: startRange.upperBound..<text.endIndex) {
-                text = String(text[startRange.upperBound..<endRange.lowerBound])
-            }
+            let text = stripDisplayWrappers(raw)
+            guard !isThinkingBlob(text) else { return nil }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         }
         if let blocks = content as? [[String: Any]] {
             var parts: [String] = []
             for block in blocks {
-                guard (block["type"] as? String) == "text" else { continue }
-                if let text = block["text"] as? String {
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty { parts.append(trimmed) }
-                }
+                guard (block["type"] as? String) == "text",
+                      let raw = block["text"] as? String else { continue }
+                // mcode's compatible export writes the reasoning pass as a TEXT
+                // block whose content is a {"type":"thinking",…} JSON string —
+                // skip it so the public reply is the only thing on the card.
+                if isThinkingBlob(raw) { continue }
+                let trimmed = stripDisplayWrappers(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { parts.append(trimmed) }
             }
             if parts.isEmpty { return nil }
             return parts.joined(separator: "\n")
         }
         return nil
+    }
+
+    /// Remove transcript wrappers the user never typed that some CLIs embed
+    /// inside message text: Codex's `<USER_REQUEST>` (everything outside is
+    /// dropped) and `<system-reminder>` spans (mcode prepends its agent-context
+    /// block to every prompt — the spans go, the typed prompt after them stays).
+    static func stripDisplayWrappers(_ raw: String) -> String {
+        var text = raw
+        if let start = text.range(of: "<USER_REQUEST>"),
+           let end = text.range(of: "</USER_REQUEST>", range: start.upperBound..<text.endIndex) {
+            text = String(text[start.upperBound..<end.lowerBound])
+        }
+        while let start = text.range(of: "<system-reminder>"),
+              let end = text.range(of: "</system-reminder>", range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        return text
+    }
+
+    /// Detect a reasoning pass disguised as display text: mcode's compatible
+    /// export writes thinking as a text block whose content is the JSON string
+    /// `{"type":"thinking","thinking":"…","thinkingSignature":"…"}`. A real
+    /// user/assistant message is never this shape, so any row matching it is
+    /// skipped for display.
+    static func isThinkingBlob(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return false }
+        guard let obj = (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))) as? [String: Any] else {
+            return false
+        }
+        let typeIsThinking = (obj["type"] as? String)?.lowercased().contains("thinking") == true
+        guard typeIsThinking || obj["thinkingSignature"] != nil else { return false }
+        return obj["thinking"] is String
     }
 }
