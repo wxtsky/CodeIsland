@@ -1318,7 +1318,19 @@ public func reduceEvent(
         )
         if let msg = assistantMsg {
             sessions[sessionId]?.lastAssistantMessage = msg
-            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
+            // mcode's Stop carries the final reply text — the same reply the
+            // transcript tailer has usually already appended (maxCount is 3,
+            // so a duplicate crowds a real row off the card). Mirror the tail
+            // channel's dedup: skip the append when the newest assistant row
+            // is the same text.
+            let normalizedIncoming = JSONLTailer.normalizedCursorChatText(from: msg) ?? msg
+            let lastAssistantRow = sessions[sessionId]?.recentMessages.last(where: { !$0.isUser })
+            let lastNormalized = lastAssistantRow.map {
+                JSONLTailer.normalizedCursorChatText(from: $0.text) ?? $0.text
+            }
+            if lastNormalized != normalizedIncoming {
+                sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
+            }
         } else if sessions[sessionId]?.lastAssistantMessage == nil,
                   sessions[sessionId]?.recentMessages.last?.isUser == true {
             // No reply content from hook (e.g. CodeBuddy) -- add placeholder

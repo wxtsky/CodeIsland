@@ -260,6 +260,55 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(sessions["s1"]?.cwd, "\(home)/.cursor/projects/enc-proj")
     }
 
+    func testStopDoesNotDuplicateReplyAlreadyAppendedByTranscriptTailer() throws {
+        // mcode's Stop carries last_assistant_message — the same reply the
+        // transcript tailer appends when the assistant row lands. The Stop
+        // path must not append it a second time (maxCount 3 means a dupe
+        // crowds a real row off the card).
+        var session = SessionSnapshot()
+        session.source = "minimax"
+        session.lastUserPrompt = "你是谁"
+        session.recentMessages = [
+            ChatMessage(isUser: true, text: "你是谁"),
+            ChatMessage(isUser: false, text: "我是 MiniMax Code"),
+        ]
+        session.lastAssistantMessage = "我是 MiniMax Code"
+        var sessions = ["mvs_dup": session]
+
+        let event = try decode([
+            "hook_event_name": "Stop",
+            "session_id": "mvs_dup",
+            "_source": "minimax",
+            "last_assistant_message": "我是 MiniMax Code",
+        ])
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 3)
+
+        let assistantRows = sessions["mvs_dup"]?.recentMessages.filter { !$0.isUser }
+        XCTAssertEqual(assistantRows?.count, 1, "Stop must not re-append the tailer's reply")
+        XCTAssertEqual(sessions["mvs_dup"]?.status, .idle)
+    }
+
+    func testStopStillAppendsAReplyTheTailerHasNotSeen() throws {
+        // A Stop whose reply text differs from what the tail last appended
+        // (interrupted turn, tailer detached…) must still land on the card.
+        var session = SessionSnapshot()
+        session.source = "minimax"
+        session.recentMessages = [ChatMessage(isUser: true, text: "你好")]
+        var sessions = ["mvs_new": session]
+
+        let event = try decode([
+            "hook_event_name": "Stop",
+            "session_id": "mvs_new",
+            "_source": "minimax",
+            "last_assistant_message": "你好！有什么我可以帮你的吗？",
+        ])
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 3)
+
+        let assistantRows = sessions["mvs_new"]?.recentMessages.filter { !$0.isUser }
+        XCTAssertEqual(assistantRows?.count, 1)
+        XCTAssertEqual(assistantRows?.first?.text, "你好！有什么我可以帮你的吗？")
+    }
+
     private func decode(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
