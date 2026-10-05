@@ -81,6 +81,16 @@ public enum CLIProcessResolver {
             return lowercasedPath.hasSuffix("/agy")
                 || lowercasedPath.contains("/agy ")
                 || lowercasedPath.contains("/google-antigravity")
+        case "minimax":
+            // MiniMax Code CLI is `mcode` (npm @minimax-ai/code). The Node
+            // runtime renames the process title to `minimax-code`, so the
+            // renamed spelling shows up in argv where other CLIs carry their
+            // launch path; the npm layout covers launches that keep the
+            // original script path.
+            let basename = (lowercasedPath as NSString).lastPathComponent
+            return basename == "mcode"
+                || basename == "minimax-code"
+                || lowercasedPath.contains("/@minimax-ai/code/")
         default:
             return lowercasedPath.contains("/\(normalizedSource)")
         }

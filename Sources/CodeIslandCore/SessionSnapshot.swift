@@ -42,6 +42,7 @@ public struct SessionSnapshot: Sendable {
         "zcode",
         "aiwork",
         "aiwork-cli",
+        "minimax",
     ]
 
     /// Sources whose tool/description text arrives as a rapid delta stream
@@ -349,6 +350,15 @@ public struct SessionSnapshot: Sendable {
             "oh my pi": "pi",
             "z-code": "zcode",
             "z code": "zcode",
+            // MiniMax Code CLI — the executable is `mcode` (npm @minimax-ai/code)
+            // and the Node runtime renames the process title to `minimax-code`,
+            // so both spellings (and the product name) normalize onto `minimax`.
+            "mcode": "minimax",
+            "minimax-code": "minimax",
+            "minimaxcode": "minimax",
+            "minimax-cli": "minimax",
+            "minimaxcli": "minimax",
+            "minimax-code-cli": "minimax",
         ]
         let canonical = aliases[normalized] ?? normalized
         let dynamicSupportedSources = supportedSources.union(loadCustomSources())
@@ -366,6 +376,7 @@ public struct SessionSnapshot: Sendable {
         if canonical.hasPrefix("qwen") { return "qwen" }
         if canonical.hasPrefix("kiro") { return "kiro" }
         if canonical.hasPrefix("kimi") { return "kimi" }
+        if canonical.hasPrefix("minimax") { return "minimax" }
         if canonical.hasPrefix("codybuddycn") || canonical.hasPrefix("codebuddycn") { return "codybuddycn" }
         if canonical.hasPrefix("stepfun") { return "stepfun" }
         if canonical.hasPrefix("traecn") { return "traecn" }
@@ -688,6 +699,7 @@ public struct SessionSnapshot: Sendable {
         case "zcode": return "ZCode"
         case "aiwork": return "AiWork"
         case "aiwork-cli": return "AiWork CLI"
+        case "minimax": return "MiniMax Code CLI"
         default:
             if let customName = Self.loadCustomSourceNames()[source] {
                 return customName

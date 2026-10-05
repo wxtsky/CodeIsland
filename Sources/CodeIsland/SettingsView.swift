@@ -1558,6 +1558,7 @@ private struct MascotsPage: View {
         ("QwenBot", "qwen", "Qwen Code", Color(red: 0.486, green: 0.228, blue: 0.929)),
         ("KimiBot", "kimi", "Kimi Code CLI", Color(red: 0.29, green: 0.56, blue: 1.0)),
         ("Kiro", "kiro", "Kiro", Color(red: 0.62, green: 0.45, blue: 1.0)),
+        ("MiniMax", "minimax", "MiniMax Code CLI", Color(red: 1.0, green: 0.36, blue: 0.30)),
         ("Pi", "pi", "Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
         ("Oh My Pi", "omp", "Oh My Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
         ("OpBot", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),

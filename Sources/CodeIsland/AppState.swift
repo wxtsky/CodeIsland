@@ -1236,6 +1236,7 @@ final class AppState {
         case "pi":         return findPiPids(candidatePids: candidatePids)
         case "cline":      return findClinePids(candidatePids: candidatePids)
         case "zcode":      return findZcodePids(candidatePids: candidatePids)
+        case "minimax":    return findMinimaxPids(candidatePids: candidatePids)
         default:           return []
         }
     }
@@ -5383,6 +5384,25 @@ final class AppState {
             guard let path = executablePath(for: pid) else { return false }
             return CLIProcessResolver.sourceMatchesExecutablePath(path, source: "grok")
         }
+    }
+
+    private nonisolated static func findMinimaxPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        // The Node runtime renames mcode's process title to `minimax-code`, so
+        // proc_pidpath/argv rarely carry the launch path — match the renamed
+        // title and the npm package layout instead (see CLIProcessResolver).
+        findPids(
+            matchingPathSubstrings: [
+                "/mcode",
+                "/minimax-code",
+                "/@minimax-ai/code/",
+            ],
+            argSubstrings: [
+                "minimax-code",
+                "/@minimax-ai/code/",
+                "/bin/mcode",
+            ],
+            candidatePids: candidatePids
+        )
     }
 
     private nonisolated static func findPiPids(candidatePids: [pid_t]? = nil) -> [pid_t] {

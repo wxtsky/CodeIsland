@@ -2096,6 +2096,7 @@ private struct SessionListView: View {
                 ("kiro", "Kiro"),
                 ("cline", "Cline"),
                 ("zcode", "ZCode"),
+                ("minimax", "MiniMax Code CLI"),
                 ("aiwork", "AiWork"),
                 ("aiwork-cli", "AiWork CLI"),
             ]
@@ -3560,6 +3561,7 @@ private let cliIconFiles: [String: String] = [
     // MascotRenderHarness/testRenderCliIcons (MASCOT_ICON_DIR=…).
     "kiro": "kiro",
     "openclaw": "openclaw",
+    "minimax": "minimax",
 ]
 
 private var cliIconCache: [String: NSImage] = [:]
