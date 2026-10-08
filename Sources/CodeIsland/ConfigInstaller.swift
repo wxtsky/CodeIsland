@@ -1002,10 +1002,10 @@ struct ConfigInstaller {
             if installHooks(inExtraDir: cli, fm: fm) == .failed { ok = false }
         }
 
-        // Codex requires hooks = true in config.toml
+        // Codex's required feature flag is installed by installExternalHooks;
+        // its failure contributes to `ok` above, rather than reporting success.
         if isEnabled(source: "codex"),
            fm.fileExists(atPath: codexHome()) {
-            enableCodexHooksConfig(fm: fm)
             repairCodexMCPApprovalTables(fm: fm)
         }
 
@@ -1237,8 +1237,7 @@ struct ConfigInstaller {
             } else if cli.format == .zcode {
                 return installZcodeHooks(fm: fm)
             } else {
-                installExternalHooks(cli: cli, fm: fm)
-                if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
+                guard installExternalHooks(cli: cli, fm: fm) else { return false }
                 return isHooksInstalled(for: cli, fm: fm)
             }
         } else {
@@ -1338,8 +1337,7 @@ struct ConfigInstaller {
                     repaired.append(cli.name)
                 }
             } else {
-                installExternalHooks(cli: cli, fm: fm)
-                if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
+                guard installExternalHooks(cli: cli, fm: fm) else { continue }
                 if isHooksInstalled(for: cli, fm: fm) {
                     repaired.append(cli.name)
                 }
@@ -1348,7 +1346,9 @@ struct ConfigInstaller {
         // Codex config.toml: ensure hooks = true
         if isEnabled(source: "codex"),
            fm.fileExists(atPath: codexHome()) {
-            enableCodexHooksConfig(fm: fm)
+            if !enableCodexHooksConfig(fm: fm) {
+                repaired.removeAll { $0 == "Codex" }
+            }
         }
         repaired.append(contentsOf: repairExtraConfigDirs(fm: fm))
         // OpenCode plugin
@@ -1760,13 +1760,18 @@ struct ConfigInstaller {
             """
         }
 
-        return writeJSONWithKey(
+        guard writeJSONWithKey(
             cli: cli,
             originalText: seeded,
             key: cli.configKey,
             value: hooks,
             fm: fm
-        )
+        ) else { return false }
+        // A hooks.json without the activation flag is not an installed Codex
+        // integration. Extra roots perform their own shared-file ownership check
+        // before activating; primary install/toggle/repair must propagate failure.
+        return cli.source != "codex" || cli.extraConfigDir != nil
+            || enableCodexHooksConfig(fm: fm, codexHome: cli.dirPath)
     }
 
     private static func managedTraecliHookObject(source: String = "traecli") -> [String: Any] {
@@ -2613,8 +2618,11 @@ struct ConfigInstaller {
         return ConfigPathIdentity.write(Data(repaired.utf8), to: configPath, fileManager: fm)
     }
 
-    /// Ensure hooks = true under [features] in $CODEX_HOME/config.toml
+    /// Ensure the Codex hooks feature flag is true in $CODEX_HOME/config.toml
     /// (or ~/.codex/config.toml when unset) so Codex actually fires hook events.
+    /// The source editor recognizes quoted/bare keys and table scope without
+    /// touching comments, unrelated flags or strings containing TOML examples.
+    /// An unsupported/conflicting layout is left untouched and returns false.
     /// `codexHome` is overridden for extra Codex roots registered in Settings —
     /// each root has its own config.toml, and a hooks.json without the flag
     /// next to it is never read. A symlinked config.toml is edited at its
@@ -2626,58 +2634,15 @@ struct ConfigInstaller {
             atPath: (configPath as NSString).deletingLastPathComponent,
             withIntermediateDirectories: true
         )
-        var contents = ""
+        let contents: String
         if fm.fileExists(atPath: configPath) {
-            contents = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
-        }
-
-        let currentHooksPattern = #"(?m)^\s*hooks\s*=\s*(true|false)\s*(#.*)?$"#
-        let hooksTruePattern = #"(?m)^\s*hooks\s*=\s*true\s*(#.*)?$"#
-        let hooksFalsePattern = #"(?m)^\s*hooks\s*=\s*false\s*(#.*)?$"#
-        let legacyHooksPattern = #"(?m)^\s*codex_hooks\s*=\s*(true|false)\s*(#.*)?$"#
-        let hasCurrentHooks = contents.range(of: currentHooksPattern, options: .regularExpression) != nil
-        let hasLegacyHooks = contents.range(of: legacyHooksPattern, options: .regularExpression) != nil
-
-        // Remove the retired feature name used by older Codex releases. If the
-        // current flag is absent, turn the legacy flag into the current one.
-        if hasLegacyHooks {
-            contents = contents.replacingOccurrences(
-                of: legacyHooksPattern,
-                with: hasCurrentHooks ? "" : "hooks = true",
-                options: .regularExpression
-            )
-        }
-
-        // Already set to true (non-commented) — don't touch beyond legacy cleanup.
-        if contents.range(of: hooksTruePattern, options: .regularExpression) != nil {
-            if hasLegacyHooks {
-                return ConfigPathIdentity.write(Data(contents.utf8), to: configPath, fileManager: fm)
-            }
-            return true
-        }
-
-        // Set to false (non-commented) — flip it to true in place.
-        if contents.range(of: hooksFalsePattern, options: .regularExpression) != nil {
-            contents = contents.replacingOccurrences(
-                of: hooksFalsePattern,
-                with: "hooks = true",
-                options: .regularExpression
-            )
-            return ConfigPathIdentity.write(Data(contents.utf8), to: configPath, fileManager: fm)
-        }
-
-        // Not present — insert into [features] section or create it
-        var lines = contents.components(separatedBy: "\n")
-        if let featIdx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[features]" }) {
-            // Insert after [features] line
-            lines.insert("hooks = true", at: featIdx + 1)
+            guard let existing = try? String(contentsOfFile: configPath, encoding: .utf8) else { return false }
+            contents = existing
         } else {
-            // No [features] section — append one
-            if !(lines.last ?? "").isEmpty { lines.append("") }
-            lines.append("[features]")
-            lines.append("hooks = true")
+            contents = ""
         }
-        let result = lines.joined(separator: "\n")
+        guard let result = CodexHooksConfig.enablingHooks(in: contents) else { return false }
+        if result == contents { return true }
         return ConfigPathIdentity.write(Data(result.utf8), to: configPath, fileManager: fm)
     }
 

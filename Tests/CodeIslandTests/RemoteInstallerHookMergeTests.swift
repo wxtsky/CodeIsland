@@ -150,6 +150,20 @@ final class RemoteInstallerHookMergeTests: XCTestCase {
         XCTAssertTrue(cmds.contains { $0.contains("codeisland-remote-hook.py") }, "our hook missing: \(cmds)")
     }
 
+    func testCodexConfigFailureIsReportedWithoutChangingConfig() throws {
+        let root = sandboxHome.appendingPathComponent(".codex", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let config = root.appendingPathComponent("config.toml")
+        let original = "features = { hooks = false }\n"
+        try original.write(to: config, atomically: true, encoding: .utf8)
+
+        let status = try runConfigureScript()
+
+        XCTAssertTrue(status.contains("Codex config update failed"), status)
+        XCTAssertFalse(status.contains("Codex ok"), status)
+        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), original)
+    }
+
     func testCodeBuddyInstallPreservesUserHooks() throws {
         let userEntry: [String: Any] = [
             "matcher": "*",

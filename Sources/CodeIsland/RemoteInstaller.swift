@@ -808,37 +808,257 @@ def install_hermes():
     write_text_atomic(config_path, merged)
     return "Hermes ok"
 
-def ensure_toml_codex_hooks(path):
-    content = path.read_text() if path.exists() else ""
-    current_hooks_pattern = r"(?m)^\\s*hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
-    hooks_true_pattern = r"(?m)^\\s*hooks\\s*=\\s*true\\s*(#.*)?$"
-    hooks_false_pattern = r"(?m)^\\s*hooks\\s*=\\s*false\\s*(#.*)?$"
-    legacy_hooks_pattern = r"(?m)^\\s*codex_hooks\\s*=\\s*(true|false)\\s*(#.*)?$"
-    has_current_hooks = re.search(current_hooks_pattern, content) is not None
-    had_legacy_hooks = re.search(legacy_hooks_pattern, content) is not None
-    if re.search(legacy_hooks_pattern, content):
-        replacement = "" if has_current_hooks else "hooks = true"
-        content = re.sub(legacy_hooks_pattern, replacement, content)
-    if re.search(hooks_true_pattern, content):
-        if had_legacy_hooks:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content.rstrip() + "\\n")
-        return
-    if re.search(hooks_false_pattern, content):
-        content = re.sub(hooks_false_pattern, "hooks = true", content)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.rstrip() + "\\n")
-        return
-    lines = content.splitlines()
+# Codex TOML editing (#354).
+def _codex_toml_string(text, i, allow_multiline=False):
+    quote = text[i]
+    triple = text.startswith(quote * 3, i)
+    if triple and not allow_multiline:
+        raise ValueError("multiline key")
+    i += 3 if triple else 1
+    out = []
+    escapes = {'b': '\\b', 't': '\\t', 'n': '\\n', 'f': '\\f', 'r': '\\r', '"': '"', '\\\\': '\\\\'}
+    while i < len(text):
+        ch = text[i]
+        if ch == quote:
+            end = i + 1
+            if triple:
+                while end < len(text) and text[end] == quote:
+                    end += 1
+                count = end - i
+                if count < 3:
+                    out.append(quote * count)
+                    i = end
+                    continue
+                if count > 5:
+                    raise ValueError("quote run")
+                out.append(quote * (count - 3))
+            return end, ''.join(out)
+        if ch == '\\\\' and quote == '"':
+            i += 1
+            if i == len(text):
+                break
+            ch = text[i]
+            if triple and ch in ' \\t\\r\\n':
+                end = i
+                while end < len(text) and text[end] in ' \\t\\r\\n':
+                    if text[end] == '\\r' and not text.startswith('\\r\\n', end):
+                        raise ValueError("bare carriage return")
+                    end += 1
+                if '\\n' not in text[i:end]:
+                    raise ValueError("invalid continuation")
+                i = end
+                continue
+            if ch in escapes:
+                out.append(escapes[ch])
+                i += 1
+                continue
+            if ch in ('u', 'U'):
+                end = i + (5 if ch == 'u' else 9)
+                digits = text[i + 1:end]
+                if len(digits) != end - i - 1 or any(c not in '0123456789abcdefABCDEF' for c in digits):
+                    raise ValueError("unicode escape")
+                value = int(digits, 16)
+                if value > 0x10ffff or 0xd800 <= value <= 0xdfff:
+                    raise ValueError("unicode scalar")
+                out.append(chr(value))
+                i = end
+                continue
+            raise ValueError("escape")
+        if ch in '\\r\\n' and not triple:
+            raise ValueError("newline in ordinary string")
+        if ch == '\\r' and not text.startswith('\\r\\n', i):
+            raise ValueError("bare carriage return")
+        if (ord(ch) < 32 and ch not in '\\t\\r\\n') or ord(ch) == 127:
+            raise ValueError("control character")
+        out.append(ch)
+        i += 1
+    raise ValueError("unclosed string")
+
+def _codex_toml_statements(text):
+    # Source ranges include their newline. This is a lexer, not a TOML serializer.
+    ranges, stack = [], []
+    start = i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in ('"', "'"):
+            i, _ = _codex_toml_string(text, i, True)
+            continue
+        if ch == '#':
+            end = text.find('\\n', i)
+            i = len(text) if end < 0 else end
+            continue
+        if ch in '[{':
+            stack.append(ch)
+        elif ch in ']}':
+            if not stack or stack.pop() != ('[' if ch == ']' else '{'):
+                raise ValueError("mismatched delimiter")
+        elif ch == '\\r' and not text.startswith('\\r\\n', i):
+            raise ValueError("bare carriage return")
+        elif (ord(ch) < 32 and ch not in '\\t\\r\\n') or ord(ch) == 127:
+            raise ValueError("control character")
+        if ch == '\\n' and not stack:
+            ranges.append((start, i + 1))
+            start = i + 1
+        i += 1
+    if stack:
+        raise ValueError("unclosed delimiter")
+    if start < len(text):
+        ranges.append((start, len(text)))
+    return ranges
+
+def _codex_toml_key(text, i):
+    path = []
+    while True:
+        i += len(text[i:]) - len(text[i:].lstrip(' \\t'))
+        if i == len(text):
+            raise ValueError("missing key")
+        if text[i] in ('"', "'"):
+            i, name = _codex_toml_string(text, i)
+        else:
+            start = i
+            while i < len(text) and text[i] in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-':
+                i += 1
+            if i == start:
+                raise ValueError("invalid key")
+            name = text[start:i]
+        path.append(name)
+        key_end = i
+        i += len(text[i:]) - len(text[i:].lstrip(' \\t'))
+        if i == len(text) or text[i] != '.':
+            return tuple(path), key_end, i
+        i += 1
+
+def _codex_toml_tail(text, i):
+    tail = text[i:].lstrip(' \\t\\r\\n')
+    return not tail or tail.startswith('#')
+
+def _codex_hooks_toml(content):
+    # Narrow source editor: root features.hooks only; opaque values stay verbatim.
+    # tomllib, when available, validates both documents. Older Python still gets
+    # lexical, key/scope and conflicting-layout guards, not a full TOML parser.
     try:
-        idx = next(i for i, line in enumerate(lines) if line.strip() == "[features]")
-        lines.insert(idx + 1, "hooks = true")
-    except StopIteration:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.extend(["[features]", "hooks = true"])
+        import tomllib
+    except ImportError:
+        tomllib = None
+    try:
+        if tomllib is not None:
+            tomllib.loads(content)
+        scope = ()
+        current = legacy = features_header = first_table = None
+        for start, end in _codex_toml_statements(content):
+            text = content[start:end]
+            i = len(text) - len(text.lstrip(' \\t'))
+            if i == len(text) or text[i] in '#\\r\\n':
+                continue
+            if text[i] == '[':
+                array = text.startswith('[[', i)
+                scope, _, pos = _codex_toml_key(text, i + (2 if array else 1))
+                closing = ']]' if array else ']'
+                if not text.startswith(closing, pos) or not _codex_toml_tail(text, pos + len(closing)):
+                    return None
+                if scope[:2] == ('features', 'hooks') or (array and scope == ('features',)):
+                    return None
+                if first_table is None:
+                    first_table = start
+                if scope == ('features',):
+                    if features_header is not None:
+                        return None
+                    features_header = end
+                continue
+            key_start = i
+            key, key_end, pos = _codex_toml_key(text, i)
+            if pos == len(text) or text[pos] != '=':
+                return None
+            pos += 1
+            pos += len(text[pos:]) - len(text[pos:].lstrip(' \\t'))
+            if pos == len(text) or text[pos] in '#\\r\\n':
+                return None
+            absolute = scope + key
+            if absolute == ('features',) or (absolute[:2] == ('features', 'hooks') and len(absolute) > 2):
+                return None
+            if absolute not in (('features', 'hooks'), ('features', 'codex_hooks')):
+                continue
+            value = next((v for v in ('true', 'false') if text.startswith(v, pos) and _codex_toml_tail(text, pos + len(v))), None)
+            if value is None:
+                return None
+            flag = (start, end, start + key_start, start + key_end, start + pos, start + pos + len(value), len(key))
+            if absolute == ('features', 'hooks'):
+                if current is not None:
+                    return None
+                current = flag
+            else:
+                if legacy is not None:
+                    return None
+                legacy = flag
+        edits = []
+        if current is not None:
+            edits.append((current[4], current[5], 'true'))
+            if legacy is not None:
+                edits.append((legacy[0], legacy[1], ''))
+        elif legacy is not None:
+            name = 'hooks' if legacy[6] == 1 else 'features.hooks'
+            edits.extend([(legacy[2], legacy[3], name), (legacy[4], legacy[5], 'true')])
+        else:
+            newline = '\\r\\n' if '\\r\\n' in content else '\\n'
+            if features_header is not None:
+                pos = features_header
+                addition = ('' if content[:pos].endswith('\\n') else newline) + 'hooks = true' + newline
+            elif first_table is not None:
+                pos = first_table
+                addition = 'features.hooks = true' + newline
+            else:
+                pos = len(content)
+                addition = (newline if content and not content.endswith('\\n') else '') + 'features.hooks = true' + newline
+            edits.append((pos, pos, addition))
+        candidate = content
+        for start, end, replacement in sorted(edits, reverse=True):
+            candidate = candidate[:start] + replacement + candidate[end:]
+        if tomllib is not None:
+            features = tomllib.loads(candidate).get('features')
+            if not isinstance(features, dict) or features.get('hooks') is not True:
+                return None
+        return candidate
+    except (ValueError, TypeError):
+        return None
+
+def _write_codex_toml(path, content):
+    import stat
+    import tempfile
+    # A unique sibling avoids collisions and pre-existing .tmp symlinks. Keep
+    # private configs private, including when the config path itself is a link.
+    path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\\n".join(lines).rstrip() + "\\n")
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=str(path.parent))
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(content)
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+def ensure_toml_codex_hooks(path):
+    try:
+        # newline='' avoids read_text's universal-newline normalization.
+        with path.open('r', encoding='utf-8', newline='') as stream:
+            content = stream.read()
+    except FileNotFoundError:
+        content = ''
+    except (OSError, UnicodeError):
+        return False
+    result = _codex_hooks_toml(content)
+    if result is None:
+        return False
+    if result != content:
+        try:
+            _write_codex_toml(path, result)
+        except (OSError, UnicodeError, RuntimeError):
+            return False
+    return True
 
 def install_codex():
     codex_root = _codex_home()
@@ -865,7 +1085,8 @@ def install_codex():
     append_our_hooks(hooks, "PermissionRequest", blocking_entry)
     data["hooks"] = hooks
     write_json(hooks_path, data)
-    ensure_toml_codex_hooks(codex_root / "config.toml")
+    if not ensure_toml_codex_hooks(codex_root / "config.toml"):
+        return "Codex config update failed"
     return "Codex ok"
 
 def install_codebuddy():
