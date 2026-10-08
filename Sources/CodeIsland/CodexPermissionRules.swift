@@ -36,12 +36,57 @@ struct CodexPermissionRules {
             return isAutoReviewReviewer(reviewer)
         }
 
+        // Desktop selections and per-turn overrides need not be written to
+        // config.toml or included in PermissionRequest. The matching rollout
+        // turn_context records the effective reviewer, including an explicit
+        // switch back to human review, so it takes precedence over config.
+        if let reviewer = transcriptReviewerValue(event.rawJSON) {
+            return isAutoReviewReviewer(reviewer)
+        }
+
         let configPath = codexHome(for: event) + "/config.toml"
         guard fileManager.fileExists(atPath: configPath),
               let contents = try? String(contentsOfFile: configPath, encoding: .utf8) else {
             return false
         }
         return configEnablesAutoReview(contents)
+    }
+
+    static func transcriptReviewerValue(_ rawJSON: [String: Any], maxBytes: Int = 4 * 1024 * 1024) -> String? {
+        // A remote rollout path belongs to the SSH host, not this Mac.
+        guard rawJSON["_remote_host_id"] == nil,
+              let turnId = rawJSON["turn_id"] as? String, !turnId.isEmpty,
+              let path = rawJSON["transcript_path"] as? String, !path.isEmpty,
+              maxBytes > 0,
+              let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+
+        do {
+            let end = try handle.seekToEnd()
+            let start = end > UInt64(maxBytes) ? end - UInt64(maxBytes) : 0
+            try handle.seek(toOffset: start)
+            guard var data = try handle.read(upToCount: Int(end - start)) else { return nil }
+            if start > 0 {
+                // The first line can start in the middle of JSON or UTF-8.
+                guard let newline = data.firstIndex(of: 0x0A) else { return nil }
+                data.removeSubrange(...newline)
+            }
+
+            let contextMarker = Data(#""turn_context""#.utf8)
+            for line in data.split(separator: 0x0A).reversed() {
+                guard line.range(of: contextMarker) != nil,
+                      let record = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                      record["type"] as? String == "turn_context",
+                      let payload = record["payload"] as? [String: Any],
+                      payload["turn_id"] as? String == turnId else { continue }
+                // Do not borrow a reviewer from a different turn, or from an
+                // older snapshot when this turn's latest context omits it.
+                return eventReviewerValue(payload)
+            }
+        } catch {
+            // Missing/unreadable/rotated rollouts retain the config fallback.
+        }
+        return nil
     }
 
     static func configEnablesAutoReview(_ contents: String) -> Bool {

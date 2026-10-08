@@ -219,6 +219,8 @@ companion 源码就在本仓库的 `ios/CodeIslandCompanion` 和 `apple-companio
 
 Codex 不会执行没审核过的 hook。安装后启动 Codex，它会提示 `1 hook needs review before it can run.`，运行 `/hooks`，审核并信任 CodeIsland 的条目即可。审核之前 Codex 会静默忽略这些 hook，不报任何错，看起来就像 CodeIsland 不支持 Codex。Codex 会在 `~/.codex/config.toml` 的 `[hooks.state]` 里为每个已信任的 hook 记录内容哈希，所以 CodeIsland 更新后如果改写了 `~/.codex/hooks.json`，需要再审核一次。
 
+Codex 自动审查仍由 Codex 处理。CodeIsland 依次检查 hook 事件里的审批模式、本地 rollout 中匹配当前轮次的 `turn_context`（覆盖桌面界面的权限选择），最后才读取 `config.toml`。自动审查请求会交还 Codex，不代替它批准或拒绝；明确采用人工审批的请求和提问仍在刘海里处理。若 rollout 最后 4 MiB 中没有可用的当前轮次记录，则沿用配置文件判断。
+
 Codex 回合进行中、且没有工具在运行时，收起状态的刘海会显示 Agent 最新的公开输出。隐藏推理、加密内容、工具结果和内部子 Agent 消息永远不会显示。
 
 </details>

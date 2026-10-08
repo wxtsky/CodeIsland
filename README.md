@@ -219,6 +219,8 @@ A small ESP32 screen on your desk, driven over Bluetooth: it sleeps when your ag
 
 Codex won't run a hook it hasn't been shown. After installing, Codex prints `1 hook needs review before it can run.` — run `/hooks`, review the CodeIsland entries and trust them. Until you do, Codex silently ignores them, which looks exactly like CodeIsland not supporting Codex. Codex stores a hash per trusted hook in `~/.codex/config.toml` under `[hooks.state]`, so if a CodeIsland update rewrites `~/.codex/hooks.json`, review them once more.
 
+Codex Auto Review stays with Codex. CodeIsland checks the reviewer in the hook event, then the matching `turn_context` in the local rollout (which covers the desktop permission selector), then `config.toml`. Auto-review requests are deferred without approving or denying them; explicitly human-reviewed requests and questions still use the island. If the matching context is unavailable in the last 4 MiB of the rollout, the config fallback applies.
+
 While a Codex turn runs, the collapsed bar shows the agent's latest public output when no tool is active. Hidden reasoning, encrypted content, tool results and internal subagent messages are never displayed.
 
 </details>
