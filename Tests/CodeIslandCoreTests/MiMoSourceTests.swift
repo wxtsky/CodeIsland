@@ -116,6 +116,20 @@ final class MiMoSourceTests: XCTestCase {
         XCTAssertEqual(SessionSnapshot.sourceForAppBundleId("com.xiaomi.mimo.desktop-ai"), "mimo")
     }
 
+    /// The plugin attaches MiMo's generated session title to Stop as
+    /// `session_title`; the card shows it as its name.
+    func testStopCarriesTheSessionTitle() throws {
+        var sessions: [String: SessionSnapshot] = [:]
+        for payload: [String: Any] in [
+            ["hook_event_name": "SessionStart", "session_id": "mimo-ses_t", "_source": "mimo", "cwd": "/Users/u/proj"],
+            ["hook_event_name": "Stop", "session_id": "mimo-ses_t", "_source": "mimo", "cwd": "/Users/u/proj",
+             "session_title": "List the project files"],
+        ] {
+            _ = reduceEvent(sessions: &sessions, event: try hookEvent(payload), maxHistory: 20)
+        }
+        XCTAssertEqual(sessions["mimo-ses_t"]?.sessionLabel, "List the project files")
+    }
+
     func testCLISessionInATerminalIsNotNativeAppMode() throws {
         var sessions: [String: SessionSnapshot] = [:]
         _ = reduceEvent(sessions: &sessions, event: try hookEvent([

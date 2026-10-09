@@ -9,6 +9,7 @@ import plugin, {
   answersFromDecision,
   createV2Mapper,
   createV2Runtime,
+  isPlaceholderTitle,
   permissionReplyFromDecision,
   v2BridgeEnv,
   v2FormAnswer,
@@ -108,7 +109,7 @@ describe("OpenCode 2 event mapping", () => {
     expect(map(ev("session.renamed", { sessionID: "ses_a", title: "Fix the build" }))).toBeNull();
     expect(map(ev("session.text.ended", { sessionID: "ses_a", assistantMessageID: "msg_a", ordinal: 0, text: "Done." }))).toBeNull();
     expect(map(ev("session.status", { sessionID: "ses_a", status: { type: "idle" } })))
-      .toMatchObject({ hook_event_name: "Stop", last_assistant_message: "Done.", codex_title: "Fix the build" });
+      .toMatchObject({ hook_event_name: "Stop", last_assistant_message: "Done.", session_title: "Fix the build" });
     expect(map(ev("session.deleted", { sessionID: "ses_a" })))
       .toMatchObject({ session_id: "opencode-ses_a", hook_event_name: "SessionEnd" });
   });
@@ -283,7 +284,7 @@ describe("OpenCode 2 runtime round-trips", () => {
     await handle(ev("session.status", { sessionID: "ses_late", status: { type: "idle" } }));
     expect(lookups).toEqual(["ses_late"]);
     expect(sent[0]).toMatchObject({ hook_event_name: "UserPromptSubmit", cwd: "/p/late" });
-    expect(sent[1]).toMatchObject({ hook_event_name: "Stop", cwd: "/p/late", codex_title: "Earlier work" });
+    expect(sent[1]).toMatchObject({ hook_event_name: "Stop", cwd: "/p/late", session_title: "Earlier work" });
   });
 
   test("an event seen by two plugin instances is handled once", async () => {
@@ -348,6 +349,14 @@ describe("MiMo Code copy", () => {
   const SOURCE_MARKER = 'const SOURCE = "opencode";';
   const pluginPath = join(import.meta.dir, "../../Sources/CodeIsland/Resources/codeisland-opencode.js");
 
+  test("stand-in titles are never sent as a session's name", () => {
+    expect(isPlaceholderTitle(undefined)).toBe(true);
+    expect(isPlaceholderTitle("New session - 2026-10-09T01:02:03.456Z")).toBe(true);
+    expect(isPlaceholderTitle("Child session - 2026-10-09T01:02:03.456Z")).toBe(true);
+    expect(isPlaceholderTitle("New sessions page layout")).toBe(false);
+    expect(isPlaceholderTitle("Fix the build")).toBe(false);
+  });
+
   test("the shipped plugin carries the SOURCE line exactly once", () => {
     expect(readFileSync(pluginPath, "utf8").split(SOURCE_MARKER).length).toBe(2);
   });
@@ -379,6 +388,9 @@ describe("MiMo Code copy", () => {
       await fire("message.part.updated", {
         part: { type: "tool", sessionID: "ses_m1", tool: "bash", state: { status: "running", input: { command: "ls" } } },
       });
+      // Placeholder titles are not names; MiMo's generated one rides on Stop.
+      await fire("session.updated", { info: { id: "ses_m1", title: "New session - 2026-10-09T01:02:03.456Z" } });
+      await fire("session.updated", { info: { id: "ses_m1", title: "List the project files" } });
       await fire("session.status", { sessionID: "ses_m1", status: { type: "idle" } });
 
       for (let i = 0; i < 200 && received.length < 3; i++) await new Promise((r) => setTimeout(r, 10));
@@ -390,7 +402,8 @@ describe("MiMo Code copy", () => {
       }
       expect(byEvent("SessionStart")).toMatchObject({ cwd: "/p/mimo" });
       expect(byEvent("PreToolUse")).toMatchObject({ tool_name: "Bash", tool_input: { command: "ls" }, cwd: "/p/mimo" });
-      expect(byEvent("Stop")).toMatchObject({ cwd: "/p/mimo" });
+      // `session_title` is what the island shows as the card's name.
+      expect(byEvent("Stop")).toMatchObject({ cwd: "/p/mimo", session_title: "List the project files" });
     } finally {
       if (saved === undefined) delete process.env.CODEISLAND_SOCKET_PATH;
       else process.env.CODEISLAND_SOCKET_PATH = saved;

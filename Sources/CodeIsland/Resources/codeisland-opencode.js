@@ -65,6 +65,12 @@ function sendAndWaitResponse(json, timeoutMs = 300000, env = undefined) {
 // default export's server() and OpenCode 2 decodes only `default`.
 // ---------------------------------------------------------------------------
 
+/// OpenCode's (and MiMo Code's) stand-in title until one is generated:
+/// "New session - <ISO date>", or "Child session - …" for a subagent's.
+export function isPlaceholderTitle(title) {
+  return !title || /^(New|Child) session\b/i.test(title);
+}
+
 export function prettyToolName(name) {
   const raw = String(name || "");
   return raw.charAt(0).toUpperCase() + raw.slice(1);
@@ -211,7 +217,6 @@ export function createV2Mapper(base) {
   };
   const cwdFor = (id) => cwdBySession.get(id) || "";
   const setCwd = (id, dir) => { if (id && dir) cwdBySession.set(id, dir); };
-  const isPlaceholderTitle = (title) => !title || /^New session/i.test(title);
   const remember = (map, key, value) => {
     map.set(key, value);
     if (map.size > 500) map.delete(map.keys().next().value);
@@ -255,7 +260,8 @@ export function createV2Mapper(base) {
         if (type === "idle") {
           const s = session(id);
           const extra = { hook_event_name: "Stop", cwd: cwdFor(id), last_assistant_message: s.lastAssistantText || undefined };
-          if (s.pendingTitle) { extra.codex_title = s.pendingTitle; s.pendingTitle = null; }
+          // `session_title` is the key the island reads (as for Pi).
+          if (s.pendingTitle) { extra.session_title = s.pendingTitle; s.pendingTitle = null; }
           return base(sid(id), extra);
         }
         return null;
@@ -661,7 +667,7 @@ export default {
           sessions.delete(p.info.id); sessionCwd.delete(sessionKey(p.info.id));
           return base(islandSessionId(p.info.id), { hook_event_name: "SessionEnd" });
         }
-        if (p.info.title && !p.info.title.startsWith("New session")) {
+        if (!isPlaceholderTitle(p.info.title)) {
           const s = getSession(p.info.id);
           s.pendingTitle = p.info.title;
           setTabTitle(islandSessionId(p.info.id), cwdFor(p.info.id), null, p.info.title);
@@ -721,7 +727,7 @@ export default {
         if (p.status?.type === "idle") {
           const extra = { hook_event_name: "Stop", cwd,
             last_assistant_message: s.lastAssistantText || undefined };
-          if (s.pendingTitle) { extra.codex_title = s.pendingTitle; s.pendingTitle = null; }
+          if (s.pendingTitle) { extra.session_title = s.pendingTitle; s.pendingTitle = null; }
           return base(sid, extra);
         }
       }
