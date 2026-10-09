@@ -622,7 +622,7 @@ private struct CompactLeftWing: View {
                             } label: {
                                 PixelText(
                                     text: tab.pixelLabel,
-                                    color: selected ? Color(red: 0.3, green: 0.85, blue: 0.4) : .white.opacity(0.3),
+                                    color: selected ? Color(red: 0.3, green: 0.85, blue: 0.4) : .white.opacity(0.5),
                                     pixelSize: 1.3
                                 )
                                 .padding(.horizontal, 5)
@@ -766,7 +766,7 @@ private struct CompactRightWing: View {
                 if inQuietHours {
                     Image(systemName: "moon.fill")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(.white.opacity(0.5))
                         .help(l10n["quiet_hours"])
                 }
 
@@ -815,7 +815,7 @@ private struct CompactRightWing: View {
                             Text("\(active)")
                                 .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
                             Text("/")
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                         Text("\(total)")
                             .foregroundStyle(.white.opacity(0.9))
@@ -830,7 +830,7 @@ private struct CompactRightWing: View {
                             Text("\(active)")
                                 .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
                             Text("/")
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                         Text("\(total)")
                             .foregroundStyle(.white.opacity(0.9))
@@ -1097,7 +1097,7 @@ private struct IdleIndicatorBar: View {
                 HStack(spacing: 8) {
                     Text("0")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.white.opacity(0.5))
 
                     HStack(spacing: 4) {
                         NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
@@ -1160,7 +1160,7 @@ private struct ApprovalToolDetailView: View {
                     if let fp = filePath {
                         Text(fp)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1171,7 +1171,7 @@ private struct ApprovalToolDetailView: View {
                                 .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4))
                             Text(old.prefix(120))
                                 .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.7))
+                                .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.85))
                                 .lineLimit(maxLines ?? 2)
                         }
                     }
@@ -1193,7 +1193,7 @@ private struct ApprovalToolDetailView: View {
                     if let fp = filePath {
                         Text(fp)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1218,7 +1218,7 @@ private struct ApprovalToolDetailView: View {
                        let limit = toolInput?["limit"] as? Int {
                         Text("\(L10n.shared["lines"]) \(offset + 1)–\(offset + limit)")
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                     }
                 }
@@ -1239,7 +1239,7 @@ private struct ApprovalToolDetailView: View {
                     if let path = toolInput?["path"] as? String {
                         Text(path)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1256,7 +1256,7 @@ private struct ApprovalToolDetailView: View {
                     if let path = toolInput?["path"] as? String {
                         Text(path)
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1336,7 +1336,7 @@ private struct NotchCardContextRow: View {
             if canJump {
                 Image(systemName: "arrow.up.forward.app")
                     .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.35))
+                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.5))
             }
             Spacer()
         }
@@ -1746,7 +1746,7 @@ private struct QuestionBar: View {
             if queueTotal > 1 {
                 Text("\(queuePosition)/\(queueTotal)")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
         .padding(.horizontal, 14)
@@ -2080,7 +2080,7 @@ private struct MultiSelectRow: View {
             HStack(spacing: 8) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 11))
-                    .foregroundStyle(isChecked ? accent : .white.opacity(0.4))
+                    .foregroundStyle(isChecked ? accent : .white.opacity(0.5))
                     .frame(width: 14)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
@@ -2089,7 +2089,7 @@ private struct MultiSelectRow: View {
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(2)
                     }
                 }
@@ -2148,7 +2148,7 @@ private struct OptionRow: View {
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.45))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(2)
                     }
                 }
@@ -2727,7 +2727,7 @@ private struct QuotaFooterLine: View {
                 }
             }
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.45))
+            .foregroundStyle(.white.opacity(0.55))
             .padding(.horizontal, 14)
             .padding(.top, 5)
             // Room for the pace marks hung under the percents.
@@ -2758,7 +2758,7 @@ private struct QuotaFooterLine: View {
                 .modifier(QuotaPaceMark(pace: limit.pace(now: now)))
             if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
                 Text("↻\(cd)")
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
     }
@@ -2784,7 +2784,7 @@ private struct QuotaFooterMessage: View {
             Spacer()
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.35))
+        .foregroundStyle(.white.opacity(0.5))
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
     }
@@ -2810,7 +2810,7 @@ private struct UsageFooterLine: View {
             UsageSparkline(buckets: usage.hourlyOutputTokens)
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.45))
+        .foregroundStyle(.white.opacity(0.55))
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
         .help(detail)
@@ -2990,7 +2990,7 @@ private struct SessionsExpandLink: View {
                 Rectangle().fill(.white.opacity(0.15)).frame(height: 1)
                 Text("\(count) \(L10n.shared["n_sessions"])")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(hovering ? 0.7 : 0.45))
+                    .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.55))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.white.opacity(hovering ? 0.5 : 0.3))
@@ -3357,7 +3357,7 @@ private struct SessionCard: View {
                         case .text(let s):
                             Text(s)
                                 .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.45))
+                                .foregroundStyle(.white.opacity(0.55))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         case .bashCommand(let cmd):
@@ -3448,7 +3448,7 @@ private struct SessionCard: View {
                    session.recentMessages.isEmpty {
                     Text(prompt)
                         .font(.system(size: fontSize, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }

@@ -137,7 +137,7 @@ struct AgentTaskProgressView: View, Equatable {
                 // Nothing claimed yet — show what is next, dimmed.
                 Text(title)
                     .font(.system(size: smallSize, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1)
                     .truncationMode(.tail)
             case nil:
@@ -148,7 +148,7 @@ struct AgentTaskProgressView: View, Equatable {
 
             Image(systemName: showAll ? "chevron.up" : "chevron.down")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(.white.opacity(0.5))
         }
         .contentShape(Rectangle())
     }
@@ -185,7 +185,7 @@ struct AgentTaskProgressView: View, Equatable {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(Self.symbol(item.status))
                         // The bar's pending grey is too faint for a glyph.
-                        .foregroundStyle(item.status == .pending ? .white.opacity(0.4) : Self.color(item.status))
+                        .foregroundStyle(item.status == .pending ? .white.opacity(0.5) : Self.color(item.status))
                     Text(item.title)
                         .foregroundStyle(Self.titleColor(item.status))
                         .lineLimit(1)
@@ -196,7 +196,7 @@ struct AgentTaskProgressView: View, Equatable {
             if tasks.items.count > Self.maxListedItems {
                 Text(String(format: L10n.shared["task_progress_more"], tasks.items.count - Self.maxListedItems))
                     .font(.system(size: smallSize, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
         .padding(.leading, 2)
@@ -230,7 +230,7 @@ struct AgentTaskProgressView: View, Equatable {
 
     private static func titleColor(_ status: AgentTaskStatus) -> Color {
         switch status {
-        case .completed: return .white.opacity(0.4)
+        case .completed: return .white.opacity(0.5)
         case .inProgress: return .white.opacity(0.9)
         case .pending: return .white.opacity(0.6)
         }

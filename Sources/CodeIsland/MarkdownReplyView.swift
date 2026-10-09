@@ -274,7 +274,7 @@ extension EnvironmentValues {
 enum IslandMarkdownStyle {
     static let body = Color.white.opacity(0.85)
     static let strong = Color.white.opacity(0.95)
-    static let muted = Color.white.opacity(0.45)
+    static let muted = Color.white.opacity(0.5)
     static let ordinal = Color.white.opacity(0.55)
     static let hairline = Color.white.opacity(0.14)
     static let quoteBar = Color.white.opacity(0.25)
