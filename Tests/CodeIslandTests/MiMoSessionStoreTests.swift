@@ -23,6 +23,13 @@ final class MiMoSessionStoreTests: XCTestCase {
                                   data TEXT NOT NULL);
             INSERT INTO session VALUES ('ses_root', NULL, '/Users/u/proj', 1000, 2000, NULL);
             INSERT INTO session VALUES ('ses_child', 'ses_root', '/Users/u/proj', 1500, 3000, NULL);
+            INSERT INTO session VALUES ('ses_other', NULL, '/Users/u/proj', 1200, 1900, NULL);
+            INSERT INTO message VALUES ('msg_root', 'ses_root', 1000, 2000,
+                                        '{"role":"assistant","modelID":"mimo-v2-pro"}');
+            INSERT INTO message VALUES ('msg_child', 'ses_child', 1500, 3000,
+                                        '{"role":"assistant","modelID":"mimo-v2-flash"}');
+            INSERT INTO message VALUES ('msg_other', 'ses_other', 1200, 1900,
+                                        '{"role":"assistant","model":{"modelID":"mimo-v2-omni"}}');
             """
         XCTAssertEqual(sqlite3_exec(db, schema, nil, nil, nil), SQLITE_OK)
     }
@@ -45,6 +52,22 @@ final class MiMoSessionStoreTests: XCTestCase {
 
     func testOpenCodeLookupIsUnchanged() {
         XCTAssertEqual(recent(rootSessionsOnly: false), "ses_child")
+    }
+
+    /// A card keyed `mimo-<id>` reads that row's model — another conversation
+    /// in the same folder (the desktop runs several) or a subagent's child row
+    /// must not lend it theirs. Without a known row, the cwd match decides.
+    func testModelComesFromTheCardsOwnStoreRow() {
+        func model(_ storeSessionId: String?) -> String? {
+            AppState.readModelFromOpenCodeStore(
+                cwd: "/Users/u/proj", processStart: nil, dbPath: dbPath,
+                rootSessionsOnly: true, storeSessionId: storeSessionId
+            )
+        }
+        XCTAssertEqual(model("ses_other"), "mimo-v2-omni")
+        XCTAssertEqual(model("ses_child"), "mimo-v2-flash")
+        XCTAssertEqual(model(nil), "mimo-v2-pro")
+        XCTAssertEqual(model("ses_unknown"), "mimo-v2-pro")
     }
 
     func testStorePaths() {

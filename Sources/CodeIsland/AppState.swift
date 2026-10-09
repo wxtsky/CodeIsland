@@ -3160,9 +3160,13 @@ final class AppState {
         case "opencode":
             return readModelFromOpenCodeStore(cwd: session.cwd, processStart: processStart)
         case "mimo":
+            // The plugin keys cards `mimo-<store session id>`. Read that row:
+            // the desktop holds several conversations per folder, and a
+            // subagent's card is a child row the cwd match skips.
             return readModelFromOpenCodeStore(
                 cwd: session.cwd, processStart: processStart,
-                dbPath: mimoDatabasePath(), rootSessionsOnly: true
+                dbPath: mimoDatabasePath(), rootSessionsOnly: true,
+                storeSessionId: sessionId.hasPrefix("mimo-") ? String(sessionId.dropFirst("mimo-".count)) : nil
             )
         case "grok":
             return readModelFromGrokStore(cwd: session.cwd, processStart: processStart)
@@ -3365,15 +3369,21 @@ final class AppState {
         return readRecentFromCopilotTranscript(path: best.path).0
     }
 
-    private nonisolated static func readModelFromOpenCodeStore(
+    /// `storeSessionId`, when the card's key names the store row, is read
+    /// first; the cwd match is the fallback.
+    nonisolated static func readModelFromOpenCodeStore(
         cwd: String?,
         processStart: Date?,
         dbPath: String = openCodeDatabasePath(),
-        rootSessionsOnly: Bool = false
+        rootSessionsOnly: Bool = false,
+        storeSessionId: String? = nil
     ) -> String? {
-        guard let cwd else { return nil }
         return withSQLiteDatabase(at: dbPath) { db in
-            guard let session = findRecentOpenCodeSession(
+            if let storeSessionId,
+               let model = readRecentFromOpenCodeSession(db: db, sessionId: storeSessionId).0 {
+                return model
+            }
+            guard let cwd, let session = findRecentOpenCodeSession(
                 in: db, cwd: cwd, after: processStart, rootSessionsOnly: rootSessionsOnly
             ) else {
                 return nil
