@@ -58,6 +58,31 @@ final class PanelFitLayoutTests: XCTestCase {
         XCTAssertGreaterThan(try panel.gapUnderPanel(), 0, "the session list runs off the bottom of the window")
     }
 
+    // MARK: - Question card
+
+    func testQuestionWithManyOptionsKeepsItsButtonsInsideTheWindow() async throws {
+        // Ten options with descriptions used to push option 10, "Other" and
+        // the Dismiss / Skip row past the bottom of the 510pt window.
+        let state = AppState()
+        var s = SessionSnapshot()
+        s.source = "claude"
+        s.cwd = "/Users/dev/code/web-app"
+        s.status = .waitingQuestion
+        state.sessions = ["q": s]
+        state.activeSessionId = "q"
+        let regions = (1...10).map { ("region-\($0)", Optional("Latency to the team: medium")) }
+        let release = try await DemoRequests.enqueueQuestion(state, sessionId: "q", cwd: "/Users/dev/code/web-app", items: [
+            ("Which region should the staging stack deploy to?", "Region", regions, false),
+        ])
+        defer { release() }
+        state.refreshDerivedState()
+        state.surface = .questionCard(sessionId: "q")
+        let panel = try PanelHost(state, notchHeight: 32)
+        defer { panel.close() }
+        panel.settle()
+        XCTAssertGreaterThan(try panel.gapUnderPanel(), 0, "the question card runs off the bottom of the window")
+    }
+
     // MARK: - Fixtures
 
     private struct Demo {

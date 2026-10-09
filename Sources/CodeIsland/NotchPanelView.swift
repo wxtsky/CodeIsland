@@ -1513,6 +1513,8 @@ private struct QuestionBar: View {
     @FocusState private var otherFocused: Bool
 
     private let cyan = Color(red: 0.4, green: 0.7, blue: 1.0)
+    /// The options never shrink below about two rows.
+    static let optionsMinimumHeight: CGFloat = 72
 
     private var currentItem: AskUserQuestionItem? {
         guard !allQuestions.isEmpty, wizard.currentQuestionIndex < allQuestions.count else { return nil }
@@ -1661,63 +1663,66 @@ private struct QuestionBar: View {
         }
         .padding(.horizontal, 14)
 
-        // Options
+        // Options — scroll past what the window holds, so a long list never
+        // pushes "Other" and the buttons out of reach.
         if let opts = item.payload.options, !opts.isEmpty {
-            VStack(spacing: 4) {
-                ForEach(Array(opts.enumerated()), id: \.offset) { idx, option in
-                    let desc = item.payload.descriptions?.indices.contains(idx) == true ? item.payload.descriptions?[idx] : nil
-                    if item.multiSelect {
-                        MultiSelectRow(index: idx + 1, label: option, description: desc,
-                                       isChecked: wizard.selectedIndices.contains(idx), accent: cyan) {
-                            if wizard.selectedIndices.contains(idx) {
-                                wizard.selectedIndices.remove(idx)
-                            } else {
-                                wizard.selectedIndices.insert(idx)
-                            }
-                        }
-                    } else {
-                        OptionRow(index: idx + 1, label: option, description: desc,
-                                  isSelected: wizard.selectedIndex == idx, accent: cyan) {
-                            wizard.selectedIndex = idx
-                            wizard.showOtherInput = false
-                            advanceWithAnswer(option, selectedOptions: [option])
-                        }
-                    }
-                }
-
-                // "Other" option
-                otherOptionRow(isMultiSelect: item.multiSelect)
-
-                // "Other" text input
-                if wizard.showOtherInput {
-                    HStack(spacing: 6) {
-                        Text(">")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                        TextField(L10n.shared["type_answer"], text: $wizard.otherText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white)
-                            .focused($otherFocused)
-                            .onSubmit {
-                                if !item.multiSelect && !wizard.otherText.isEmpty {
-                                    advanceWithAnswer(wizard.otherText, customInput: wizard.otherText)
+            PanelFittedScrollArea(minimumHeight: Self.optionsMinimumHeight) {
+                VStack(spacing: 4) {
+                    ForEach(Array(opts.enumerated()), id: \.offset) { idx, option in
+                        let desc = item.payload.descriptions?.indices.contains(idx) == true ? item.payload.descriptions?[idx] : nil
+                        if item.multiSelect {
+                            MultiSelectRow(index: idx + 1, label: option, description: desc,
+                                           isChecked: wizard.selectedIndices.contains(idx), accent: cyan) {
+                                if wizard.selectedIndices.contains(idx) {
+                                    wizard.selectedIndices.remove(idx)
+                                } else {
+                                    wizard.selectedIndices.insert(idx)
                                 }
                             }
+                        } else {
+                            OptionRow(index: idx + 1, label: option, description: desc,
+                                      isSelected: wizard.selectedIndex == idx, accent: cyan) {
+                                wizard.selectedIndex = idx
+                                wizard.showOtherInput = false
+                                advanceWithAnswer(option, selectedOptions: [option])
+                            }
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(4)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                    )
-                    .padding(.horizontal, 14)
-                    .onAppear { otherFocused = true }
+    
+                    // "Other" option
+                    otherOptionRow(isMultiSelect: item.multiSelect)
+    
+                    // "Other" text input
+                    if wizard.showOtherInput {
+                        HStack(spacing: 6) {
+                            Text(">")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                            TextField(L10n.shared["type_answer"], text: $wizard.otherText)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.white)
+                                .focused($otherFocused)
+                                .onSubmit {
+                                    if !item.multiSelect && !wizard.otherText.isEmpty {
+                                        advanceWithAnswer(wizard.otherText, customInput: wizard.otherText)
+                                    }
+                                }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                        )
+                        .padding(.horizontal, 14)
+                        .onAppear { otherFocused = true }
+                    }
                 }
+                .padding(.horizontal, 14)
             }
-            .padding(.horizontal, 14)
         } else {
             // No options — text input only
             HStack(spacing: 6) {
@@ -1899,16 +1904,18 @@ private struct QuestionBar: View {
         .padding(.horizontal, 14)
 
         if let options = options, !options.isEmpty {
-            VStack(spacing: 4) {
-                ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
-                    let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
-                    OptionRow(index: idx + 1, label: option, description: desc, isSelected: wizard.selectedIndex == idx, accent: cyan) {
-                        wizard.selectedIndex = idx
-                        onAnswer(option)
+            PanelFittedScrollArea(minimumHeight: Self.optionsMinimumHeight) {
+                VStack(spacing: 4) {
+                    ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
+                        let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
+                        OptionRow(index: idx + 1, label: option, description: desc, isSelected: wizard.selectedIndex == idx, accent: cyan) {
+                            wizard.selectedIndex = idx
+                            onAnswer(option)
+                        }
                     }
                 }
+                .padding(.horizontal, 14)
             }
-            .padding(.horizontal, 14)
         } else {
             HStack(spacing: 6) {
                 Text(">")

@@ -47,6 +47,30 @@ struct AssistantReplyText: View {
 private struct CompletionReplyView: View {
     let text: String
     let fontSize: CGFloat
+
+    var body: some View {
+        PanelFittedScrollArea(
+            minimumHeight: CompletionReplyMetrics.minimumHeight(lineHeight: IslandMarkdownStyle.lineHeight(fontSize))
+        ) {
+            MarkdownBlocksView(blocks: ChatMessageTextFormatter.markdownBlocks(text), fontSize: fontSize)
+                // One scroll area for the whole reply: code and tables inside
+                // show their full height instead of nesting a second
+                // vertical scroller.
+                .environment(\.islandMarkdownCapsBlockHeight, false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .tint(IslandMarkdownStyle.link)
+    }
+}
+
+/// A scroll area that hugs its content and stops growing where the panel
+/// window ends — the completion card's reply, a question card's options.
+/// Its height is capped by what the window leaves once the rest of the card
+/// is laid out (CompletionReplyMetrics.maxHeight); longer content scrolls
+/// inside it instead of running off the bottom of the window.
+struct PanelFittedScrollArea<Content: View>: View {
+    let minimumHeight: CGFloat
+    @ViewBuilder let content: Content
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.maxPanelHeight) private var maxPanelHeight = SettingsDefaults.maxPanelHeight
     @Environment(CompletionCardSpace.self) private var space: CompletionCardSpace?
@@ -57,26 +81,20 @@ private struct CompletionReplyView: View {
             chrome: space?.chrome,
             maxVisibleSessions: maxVisibleSessions,
             maxPanelHeight: maxPanelHeight,
-            minimumHeight: CompletionReplyMetrics.minimumHeight(lineHeight: IslandMarkdownStyle.lineHeight(fontSize))
+            minimumHeight: minimumHeight
         )
         ScrollView(.vertical) {
-            MarkdownBlocksView(blocks: ChatMessageTextFormatter.markdownBlocks(text), fontSize: fontSize)
-                // One scroll area for the whole reply: code and tables inside
-                // show their full height instead of nesting a second
-                // vertical scroller.
-                .environment(\.islandMarkdownCapsBlockHeight, false)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            content
         }
         // Order matters: fixedSize proposes no height, so the ScrollView
         // reports its content's height and the frame clamps that — the area
-        // hugs a short reply and stops growing at maxHeight.
+        // hugs short content and stops growing at maxHeight.
         .frame(maxHeight: maxHeight)
         .fixedSize(horizontal: false, vertical: true)
         // Found in the panel by NotchPanelView, which measures the rest of
         // the card around it (recordsCompletionCardChrome).
         .anchorPreference(key: CompletionReplyBounds.self, value: .bounds) { [$0] }
         .scrollIndicatorsFlash(onAppear: true)
-        .tint(IslandMarkdownStyle.link)
     }
 }
 
