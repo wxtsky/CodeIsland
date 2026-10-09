@@ -388,3 +388,39 @@ final class CompactSessionListLayoutTests: XCTestCase {
         return panel.height - gap
     }
 }
+
+/// The session list's scroll view keeps its thin overlay scroller. AppKit
+/// put the system's legacy style back on its own schedule, and the 13pt
+/// scroller it then drew took that much off every card's width.
+@MainActor
+final class SessionListScrollWidthTests: XCTestCase {
+    func testTheScrollingListKeepsItsFullWidth() async throws {
+        _ = NSApplication.shared
+        let sandbox = DefaultsSandbox(keys: DefaultsSandbox.allSettingsKeys)
+        MascotAnimationGate.shared.setPanelVisible(false)
+        defer {
+            MascotAnimationGate.shared.setPanelVisible(true)
+            sandbox.restore()
+        }
+        let demo = try await GalleryDemo.list(count: 8, lang: .en, quota: false)
+        defer { demo.release() }
+        let panel = try PanelHost(demo.state, notchHeight: 32)
+        defer { panel.close() }
+        panel.settle()
+
+        let scroll = try XCTUnwrap(Self.scrollView(in: panel.host), "eight cards should scroll")
+        XCTAssertEqual(scroll.scrollerStyle, .overlay)
+        XCTAssertEqual(scroll.contentView.frame.width, scroll.frame.width, accuracy: 0.5,
+                       "a legacy scroller is narrowing the cards")
+        scroll.scrollerStyle = .legacy
+        XCTAssertEqual(scroll.scrollerStyle, .overlay, "the system's style came back")
+    }
+
+    private static func scrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for subview in view.subviews {
+            if let found = scrollView(in: subview) { return found }
+        }
+        return nil
+    }
+}

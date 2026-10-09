@@ -3674,8 +3674,18 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
 
+    /// AppKit puts the system's preferred style back (legacy with a mouse
+    /// attached or "Show scroll bars: Always") on its own schedule; a legacy
+    /// scroller took 13pt off the session list's width until the next update.
+    private final class OverlayScrollView: NSScrollView {
+        override var scrollerStyle: NSScroller.Style {
+            get { super.scrollerStyle }
+            set { super.scrollerStyle = .overlay }
+        }
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = OverlayScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller?.controlSize = .mini
@@ -4222,8 +4232,7 @@ private struct SessionCard: View {
 
             HStack(spacing: 4) {
                 if let remote = session.remoteDisplayName {
-                    SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
-                        .frame(maxWidth: 110)
+                    SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0), maxWidth: 110)
                         .help("@\(remote)")
                 }
                 if !session.subagents.isEmpty {
@@ -4233,9 +4242,7 @@ private struct SessionCard: View {
                     SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                 }
                 if showModelLabel, let modelLabel = session.modelLabel {
-                    SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor)
-                        .lineLimit(1)
-                        .frame(maxWidth: 120)
+                    SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor, maxWidth: 120)
                         .help(session.model ?? modelLabel)
                 }
                 SessionTag(timeAgo(session.startTime))
@@ -5139,7 +5146,7 @@ private struct TerminalBadge: View {
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(remoteColor)
                             .lineLimit(1)
-                            .frame(maxWidth: TerminalBadge.labelMaxWidth, alignment: .leading)
+                            .hugWidth(of: term, fontSize: 9.5, upTo: Self.labelMaxWidth)
                     }
                     multiplexerChip(fg: remoteColor, bg: remoteColor.opacity(0.16))
                 }
@@ -5161,7 +5168,7 @@ private struct TerminalBadge: View {
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
-                            .frame(maxWidth: TerminalBadge.labelMaxWidth, alignment: .leading)
+                            .hugWidth(of: term, fontSize: 9.5, upTo: Self.labelMaxWidth)
                     }
                     multiplexerChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
                     hostHarnessChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
@@ -5373,23 +5380,46 @@ private func monogramIcon(for source: String, size: CGFloat) -> NSImage {
 private struct SessionTag: View {
     let text: String
     var color: Color = .white.opacity(0.7)
+    /// Widest the tag gets (host names, model labels); it still hugs a
+    /// short text and gives way when the header runs out of room.
+    var maxWidth: CGFloat?
 
-    init(_ text: String, color: Color = .white.opacity(0.7)) {
+    static let fontSize: CGFloat = 9.5
+
+    init(_ text: String, color: Color = .white.opacity(0.7), maxWidth: CGFloat? = nil) {
         self.text = text
         self.color = color
+        self.maxWidth = maxWidth
     }
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            .font(.system(size: Self.fontSize, weight: .medium, design: .monospaced))
             .foregroundStyle(color)
             .lineLimit(1)
+            .hugWidth(of: text, fontSize: Self.fontSize, upTo: maxWidth.map { $0 - 12 })
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 5)
                     .fill(color.opacity(0.12))
             )
+    }
+}
+
+private extension View {
+    /// Monospaced label that hugs its text up to `cap` and truncates below
+    /// that only when its row runs out of room. `.frame(maxWidth:)` alone
+    /// would stretch a short label to the cap.
+    @ViewBuilder
+    func hugWidth(of text: String, fontSize: CGFloat, upTo cap: CGFloat?) -> some View {
+        if let cap {
+            let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
+            let width = min(((text as NSString).size(withAttributes: [.font: font]).width + 1).rounded(.up), cap)
+            frame(minWidth: 0, idealWidth: width, maxWidth: width, alignment: .leading)
+        } else {
+            self
+        }
     }
 }
 
