@@ -883,6 +883,8 @@ final class AppState {
         case "stepfun":    return path.contains("/stepfun.app/contents/")
         case "codex":      return isCodexExecutablePath(executable)
         case "opencode":   return path.contains("/opencode.app/contents/")
+        // Xiaomi MiMo desktop runs MiMo Code inside its own main process.
+        case "mimo":       return CLIProcessResolver.isMimoDesktopBundlePath(path)
         case "antigravity": return path.contains("/antigravity.app/contents/")
         // Google Antigravity IDE — host app is Antigravity.app. Same .app path as
         // the fork, but the check is per-source so a "google-antigravity" session
@@ -1226,6 +1228,7 @@ final class AppState {
         case "codybuddycn": return findCodyBuddyCNPids(candidatePids: candidatePids)
         case "stepfun":    return findStepFunPids(candidatePids: candidatePids)
         case "opencode":   return findOpenCodePids(candidatePids: candidatePids)
+        case "mimo":       return findMimoPids(candidatePids: candidatePids)
         case "antigravity": return findAntiGravityPids(candidatePids: candidatePids)
         case "google-antigravity": return findGoogleAntigravityPids(candidatePids: candidatePids)
         case "workbuddy":  return findWorkBuddyPids(candidatePids: candidatePids)
@@ -2813,10 +2816,12 @@ final class AppState {
         // Structured picks for plugins that answer with label arrays: OMP/Pi,
         // and OpenCode, whose multi-select answers are `string[]` (v1) or a
         // multiselect form field (v2) — a ", "-joined display string can't be
-        // split back when a label itself contains ", " (#332).
+        // split back when a label itself contains ", " (#332). MiMo Code runs
+        // the same plugin against OpenCode 1.x's question API.
         let detailsSource = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String)
         if !answerDetails.isEmpty,
-           (detailsSource == "pi" && event.toolUseId != nil) || detailsSource == "opencode" {
+           (detailsSource == "pi" && event.toolUseId != nil)
+            || detailsSource == "opencode" || detailsSource == "mimo" {
             updatedInput["_codeislandAnswerDetails"] = answerDetails
         }
         return updatedInput
@@ -3154,6 +3159,11 @@ final class AppState {
             return readModelFromCopilotStore(cwd: session.cwd, processStart: processStart)
         case "opencode":
             return readModelFromOpenCodeStore(cwd: session.cwd, processStart: processStart)
+        case "mimo":
+            return readModelFromOpenCodeStore(
+                cwd: session.cwd, processStart: processStart,
+                dbPath: mimoDatabasePath(), rootSessionsOnly: true
+            )
         case "grok":
             return readModelFromGrokStore(cwd: session.cwd, processStart: processStart)
         default:
@@ -3355,12 +3365,17 @@ final class AppState {
         return readRecentFromCopilotTranscript(path: best.path).0
     }
 
-    private nonisolated static func readModelFromOpenCodeStore(cwd: String?, processStart: Date?) -> String? {
+    private nonisolated static func readModelFromOpenCodeStore(
+        cwd: String?,
+        processStart: Date?,
+        dbPath: String = openCodeDatabasePath(),
+        rootSessionsOnly: Bool = false
+    ) -> String? {
         guard let cwd else { return nil }
-        let dbPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local/share/opencode/opencode.db").path
         return withSQLiteDatabase(at: dbPath) { db in
-            guard let session = findRecentOpenCodeSession(in: db, cwd: cwd, after: processStart) else {
+            guard let session = findRecentOpenCodeSession(
+                in: db, cwd: cwd, after: processStart, rootSessionsOnly: rootSessionsOnly
+            ) else {
                 return nil
             }
             return readRecentFromOpenCodeSession(db: db, sessionId: session.sessionId).0
@@ -3539,6 +3554,9 @@ final class AppState {
         if ConfigInstaller.isEnabled(source: "opencode") {
             discovered.append(contentsOf: findActiveOpenCodeSessions(candidatePids: candidatePids))
         }
+        if ConfigInstaller.isEnabled(source: "mimo") {
+            discovered.append(contentsOf: findActiveMimoSessions(candidatePids: candidatePids))
+        }
         if ConfigInstaller.isEnabled(source: "kimi") {
             discovered.append(contentsOf: findActiveKimiSessions(candidatePids: candidatePids))
         }
@@ -3566,6 +3584,7 @@ final class AppState {
             ("cursor", "\(home)/.cursor/projects"),
             ("copilot", "\(home)/.copilot/session-state"),
             ("opencode", "\(home)/.local/share/opencode"),
+            ("mimo", "\(home)/.local/share/mimocode"),
             ("kimi", "\(home)/.kimi-code/sessions"),
             ("kimi", "\(home)/.kimi/sessions"),
             ("grok", "\(ConfigInstaller.grokHome())/sessions"),
@@ -6144,6 +6163,17 @@ final class AppState {
         }
     }
 
+    /// The `mimo` CLI (MiMo Code). The Xiaomi MiMo desktop app is left out on
+    /// purpose: its engine shares the app's main process, whose cwd is `/`, so
+    /// a cwd match could never pick one of its sessions — its plugin reports
+    /// the process instead.
+    private nonisolated static func findMimoPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        (candidatePids ?? allProcessIds()).filter { pid in
+            guard let path = executablePath(for: pid) else { return false }
+            return CLIProcessResolver.isMimoCLIPath(path)
+        }
+    }
+
     /// `opencode serve --service` — OpenCode 2's per-user shared server.
     nonisolated static func isOpenCodeSharedService(arguments: [String]) -> Bool {
         arguments.contains("serve") && arguments.contains("--service")
@@ -6655,35 +6685,74 @@ final class AppState {
         return false
     }
 
-    private nonisolated static func findActiveOpenCodeSessions(candidatePids: [pid_t]? = nil) -> [DiscoveredSession] {
-        let openCodePids = findOpenCodePids(candidatePids: candidatePids)
-        guard !openCodePids.isEmpty else { return [] }
-
-        let dbPath = FileManager.default.homeDirectoryForCurrentUser
+    nonisolated static func openCodeDatabasePath() -> String {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".local/share/opencode/opencode.db").path
+    }
+
+    /// MiMo Code keeps OpenCode's SQLite layout under its own name; release
+    /// builds (channels latest / beta / prod) write `mimocode.db`.
+    nonisolated static func mimoDatabasePath() -> String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/share/mimocode/mimocode.db").path
+    }
+
+    private nonisolated static func findActiveOpenCodeSessions(candidatePids: [pid_t]? = nil) -> [DiscoveredSession] {
+        findActiveOpenCodeStoreSessions(
+            pids: findOpenCodePids(candidatePids: candidatePids),
+            dbPath: openCodeDatabasePath(),
+            source: "opencode",
+            sessionIdPrefix: "",
+            rootSessionsOnly: false
+        )
+    }
+
+    /// Running `mimo` CLIs, matched to their session in MiMo Code's store.
+    /// Keyed `mimo-<id>`, the id the plugin reports, so a session found here
+    /// and the plugin's events for it land on one card.
+    private nonisolated static func findActiveMimoSessions(candidatePids: [pid_t]? = nil) -> [DiscoveredSession] {
+        findActiveOpenCodeStoreSessions(
+            pids: findMimoPids(candidatePids: candidatePids),
+            dbPath: mimoDatabasePath(),
+            source: "mimo",
+            sessionIdPrefix: "mimo-",
+            rootSessionsOnly: true
+        )
+    }
+
+    private nonisolated static func findActiveOpenCodeStoreSessions(
+        pids: [pid_t],
+        dbPath: String,
+        source: String,
+        sessionIdPrefix: String,
+        rootSessionsOnly: Bool
+    ) -> [DiscoveredSession] {
+        guard !pids.isEmpty else { return [] }
         guard FileManager.default.fileExists(atPath: dbPath) else { return [] }
 
         return withSQLiteDatabase(at: dbPath) { db in
             var results: [DiscoveredSession] = []
             var seenSessionIds: Set<String> = []
 
-            for pid in openCodePids {
+            for pid in pids {
                 guard let cwd = getCwd(for: pid), !cwd.isEmpty, !isSubagentWorktree(cwd) else { continue }
                 let processStart = getProcessStartTime(pid)
-                guard let session = findRecentOpenCodeSession(in: db, cwd: cwd, after: processStart) else { continue }
+                guard let session = findRecentOpenCodeSession(
+                    in: db, cwd: cwd, after: processStart, rootSessionsOnly: rootSessionsOnly
+                ) else { continue }
                 guard !seenSessionIds.contains(session.sessionId) else { continue }
                 seenSessionIds.insert(session.sessionId)
 
                 let (model, messages) = readRecentFromOpenCodeSession(db: db, sessionId: session.sessionId)
                 results.append(DiscoveredSession(
-                    sessionId: session.sessionId,
+                    sessionId: sessionIdPrefix + session.sessionId,
                     cwd: cwd,
                     tty: nil,
                     model: model,
                     pid: pid,
                     modifiedAt: session.modifiedAt,
                     recentMessages: messages,
-                    source: "opencode"
+                    source: source
                 ))
             }
 
@@ -6691,7 +6760,7 @@ final class AppState {
         } ?? []
     }
 
-    private nonisolated static func withSQLiteDatabase<T>(
+    nonisolated static func withSQLiteDatabase<T>(
         at path: String,
         body: (OpaquePointer) -> T?
     ) -> T? {
@@ -6749,15 +6818,21 @@ final class AppState {
         return String(cString: UnsafeRawPointer(value).assumingMemoryBound(to: CChar.self))
     }
 
-    private nonisolated static func findRecentOpenCodeSession(
+    /// `rootSessionsOnly` skips child sessions (`parent_id` set): MiMo Code
+    /// spawns subagent sessions in the same directory, and while one runs it
+    /// is the most recently updated row — but it is never the CLI's own.
+    nonisolated static func findRecentOpenCodeSession(
         in db: OpaquePointer,
         cwd: String,
-        after processStart: Date?
+        after processStart: Date?,
+        rootSessionsOnly: Bool = false
     ) -> (sessionId: String, modifiedAt: Date)? {
+        let rootFilter = rootSessionsOnly ? "AND parent_id IS NULL" : ""
         let sql = """
             SELECT id, time_updated
             FROM session
             WHERE time_archived IS NULL
+              \(rootFilter)
               AND (
                 directory = ?
                 OR EXISTS (

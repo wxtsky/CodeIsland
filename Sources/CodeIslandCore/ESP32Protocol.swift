@@ -251,7 +251,9 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         case "droid":                                self = .droid
         case "codebuddy", "codybuddycn":             self = .codebuddy
         case "stepfun":                              self = .stepfun
-        case "opencode":                             self = .opencode
+        // MiMo Code is an OpenCode fork (and the Xiaomi MiMo desktop's
+        // engine); every firmware slot is taken, so it shares OpenCode's.
+        case "opencode", "mimo":                     self = .opencode
         case "qwen":                                 self = .qwen
         case "antigravity":                          self = .antigravity
         case "workbuddy":                            self = .workbuddy

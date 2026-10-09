@@ -84,6 +84,14 @@ struct TerminalActivator {
         "ai.opencode.desktop": "OpenCode",
         "com.workbuddy.workbuddy": "WorkBuddy",
         "com.alipay.dtcoder.ide": "AiWork",
+        // Xiaomi MiMo desktop, mainland and overseas editions. Like Claude
+        // Desktop, deliberately NOT in sourceToNativeAppBundleId: the `mimo`
+        // CLI is a separate product, and an open MiMo app must not steal the
+        // jump of a terminal session. The app registers `xiaomi-mimo://`, but
+        // only for share-join links — nothing opens a given session — so the
+        // jump raises the app's window.
+        "com.xiaomi.mimo.desktop": "Xiaomi MiMo",
+        "com.xiaomi.mimo.desktop-ai": "Xiaomi MiMo AI",
         // Claude Code Desktop (#211). Deliberately NOT in sourceToNativeAppBundleId:
         // most "claude" sessions are terminal CLI runs, and that fallback would
         // steal their click-to-jump whenever the desktop app happens to be open.

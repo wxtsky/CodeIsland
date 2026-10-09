@@ -51,6 +51,8 @@ struct MascotView: View {
                 StepFunView(status: status, size: size)
             case "opencode":
                 OpenCodeView(status: status, size: size)
+            case "mimo":
+                MiMoView(status: status, size: size)
             case "qwen":
                 QwenView(status: status, size: size)
             case "antigravity":

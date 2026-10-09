@@ -1105,6 +1105,11 @@ struct ConfigInstaller {
             if !installOpencodePlugin(fm: fm) { ok = false }
         }
 
+        // MiMo Code / Xiaomi MiMo: the same plugin, labelled for MiMo
+        if isEnabled(source: "mimo") {
+            if !installMimoPlugin(fm: fm) { ok = false }
+        }
+
         // Install pi extension
         if isEnabled(source: "pi") {
             if !installPiExtension(fm: fm) { ok = false }
@@ -1156,6 +1161,7 @@ struct ConfigInstaller {
         }
 
         uninstallOpencodePlugin(fm: fm)
+        uninstallMimoPlugin(fm: fm)
     }
 
     /// Check if Claude Code hooks are installed
@@ -1173,6 +1179,7 @@ struct ConfigInstaller {
             return isEnabled(source: source) && cliExists(source: source)
         }
         if source == "opencode" { return isOpencodePluginInstalled(fm: FileManager.default) }
+        if source == "mimo" { return isMimoPluginInstalled(fm: FileManager.default) }
         if source == "pi" { return isPiExtensionInstalled(fm: FileManager.default) }
         if source == "omp" { return isOmpExtensionInstalled(fm: FileManager.default) }
         if source == "openclaw" { return isOpenclawPluginInstalled(fm: FileManager.default) }
@@ -1193,6 +1200,7 @@ struct ConfigInstaller {
         if source == "aiwork" { return aiworkGuiIsPresent() }
         if source == "aiwork-cli" { return aiworkCliIsPresent() }
         if source == "opencode" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.config/opencode") }
+        if source == "mimo" { return mimoPresenceDetected() }
         if source == "pi" { return FileManager.default.fileExists(atPath: piAgentDir) }
         if source == "omp" { return FileManager.default.fileExists(atPath: ompAgentDir) }
         if source == "openclaw" { return FileManager.default.fileExists(atPath: openclawDir) }
@@ -1315,6 +1323,9 @@ struct ConfigInstaller {
             if source == "opencode" {
                 return installOpencodePlugin(fm: fm)
             }
+            if source == "mimo" {
+                return installMimoPlugin(fm: fm)
+            }
             if source == "pi" {
                 return installPiExtension(fm: fm)
             }
@@ -1339,6 +1350,8 @@ struct ConfigInstaller {
                 return true
             } else if source == "opencode" {
                 uninstallOpencodePlugin(fm: fm)
+            } else if source == "mimo" {
+                uninstallMimoPlugin(fm: fm)
             } else if source == "pi" {
                 uninstallPiExtension(fm: fm)
             } else if source == "omp" {
@@ -1455,6 +1468,12 @@ struct ConfigInstaller {
            fm.fileExists(atPath: (opencodeConfigPath as NSString).deletingLastPathComponent),
            !isOpencodePluginInstalled(fm: fm) {
             if installOpencodePlugin(fm: fm) { repaired.append("OpenCode") }
+        }
+        // MiMo Code plugin
+        if isEnabled(source: "mimo"),
+           mimoPresenceDetected(fileManager: fm),
+           !isMimoPluginInstalled(fm: fm) {
+            if installMimoPlugin(fm: fm, present: true) { repaired.append("MiMo") }
         }
         // pi extension
         if isEnabled(source: "pi"),
@@ -3736,7 +3755,8 @@ struct ConfigInstaller {
     }
 
     /// Current OpenCode plugin version — bump when codeisland-opencode.js changes
-    private static let opencodePluginVersion = "v8"
+    /// (the MiMo Code copy is the same file, so it follows this too).
+    private static let opencodePluginVersion = "v9"
 
     private static func isOpencodePluginInstalled(fm: FileManager) -> Bool {
         guard fm.fileExists(atPath: opencodePluginPath) else { return false }
@@ -3760,6 +3780,83 @@ struct ConfigInstaller {
             }
         }
         return false
+    }
+
+    // MARK: - MiMo Code plugin
+
+    /// MiMo Code's global config dir. Xiaomi MiMo desktop runs MiMo Code in its
+    /// main process with no `MIMOCODE_HOME` / `XDG_CONFIG_HOME` of its own, so
+    /// the app and the `mimo` CLI read the same one.
+    static let mimoConfigDir = NSHomeDirectory() + "/.config/mimocode"
+    /// Where the curl installer puts the `mimo` CLI (`~/.mimocode/bin/mimo`).
+    private static let mimoInstallDir = NSHomeDirectory() + "/.mimocode"
+    static let mimoDesktopBundleIds = ["com.xiaomi.mimo.desktop", "com.xiaomi.mimo.desktop-ai"]
+
+    static func mimoPluginPath(configDir: String = mimoConfigDir) -> String {
+        configDir + "/plugins/codeisland.js"
+    }
+
+    /// The line `mimoPluginSource(from:)` rewrites.
+    static let mimoPluginSourceMarker = #"const SOURCE = "opencode";"#
+    static let mimoPluginSourceLine = #"const SOURCE = "mimo";"#
+
+    /// The OpenCode plugin, re-labelled for MiMo Code. MiMo Code kept OpenCode
+    /// 1.x's plugin contract — `server()` entrypoint, `{type, properties}` bus
+    /// events, `/permission|question/:requestID/reply` — so only the identity
+    /// the events carry changes. nil when the marker is not there exactly once,
+    /// rather than shipping a copy that would report as OpenCode.
+    static func mimoPluginSource(from opencodeSource: String) -> String? {
+        guard opencodeSource.components(separatedBy: mimoPluginSourceMarker).count == 2 else { return nil }
+        return opencodeSource.replacingOccurrences(of: mimoPluginSourceMarker, with: mimoPluginSourceLine)
+    }
+
+    /// MiMo Code or Xiaomi MiMo is on this machine: its config dir exists, the
+    /// CLI's install dir does, or either desktop edition is installed (the app
+    /// only creates the config dir the first time its engine starts, and loads
+    /// plugins at that very start).
+    static func mimoPresenceDetected(fileManager fm: FileManager = .default) -> Bool {
+        if fm.fileExists(atPath: mimoConfigDir) || fm.fileExists(atPath: mimoInstallDir) { return true }
+        let appNames = ["Xiaomi MiMo.app", "Xiaomi MiMo AI.app"]
+        let roots = ["/Applications", NSHomeDirectory() + "/Applications"]
+        if appNames.contains(where: { name in roots.contains { fm.fileExists(atPath: "\($0)/\(name)") } }) {
+            return true
+        }
+        return mimoDesktopBundleIds.contains {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil
+        }
+    }
+
+    /// Writes the plugin to `<configDir>/plugins/codeisland.js`. MiMo Code
+    /// loads every `{plugin,plugins}/*.{js,ts}` under its config dir on its
+    /// own, so — unlike OpenCode — no config file is touched. Skips (and
+    /// reports success) when MiMo is not on this machine.
+    @discardableResult
+    static func installMimoPlugin(
+        fm: FileManager,
+        configDir: String = mimoConfigDir,
+        present: Bool? = nil
+    ) -> Bool {
+        guard present ?? mimoPresenceDetected(fileManager: fm) else { return true }
+        guard let base = opencodePluginSource(), let source = mimoPluginSource(from: base) else { return false }
+        let path = mimoPluginPath(configDir: configDir)
+        try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        return fm.createFile(atPath: path, contents: Data(source.utf8))
+    }
+
+    static func uninstallMimoPlugin(fm: FileManager, configDir: String = mimoConfigDir) {
+        let path = mimoPluginPath(configDir: configDir)
+        // Only our own file: the name is generic enough for a user's plugin.
+        guard let data = fm.contents(atPath: path),
+              String(decoding: data, as: UTF8.self).contains("codeisland-opencode-plugin") else { return }
+        try? fm.removeItem(atPath: path)
+    }
+
+    /// Installed = the current version of our plugin, labelled for MiMo.
+    static func isMimoPluginInstalled(fm: FileManager, configDir: String = mimoConfigDir) -> Bool {
+        guard let data = fm.contents(atPath: mimoPluginPath(configDir: configDir)) else { return false }
+        let source = String(decoding: data, as: UTF8.self)
+        return source.contains("// version: \(opencodePluginVersion)")
+            && source.contains(mimoPluginSourceLine)
     }
 }
 

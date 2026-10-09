@@ -23,7 +23,7 @@ final class OpenCodeV2SupportTests: XCTestCase {
                 ?? Bundle.appModule.url(forResource: "codeisland-opencode", withExtension: "js")
         )
         let source = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(source.contains("// version: v8"), "bump ConfigInstaller.opencodePluginVersion with the plugin")
+        XCTAssertTrue(source.contains("// version: v9"), "bump ConfigInstaller.opencodePluginVersion with the plugin")
         XCTAssertTrue(source.contains("setup: setupV2"), "OpenCode 2 loads {id, setup}")
         XCTAssertTrue(source.contains("server: async"), "OpenCode 1.x loads {id, server}")
         XCTAssertTrue(source.contains("_untracked_process: true"), "the shared service must never become a session's pid")

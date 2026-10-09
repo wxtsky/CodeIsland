@@ -691,6 +691,7 @@ private struct HooksPage: View {
             cliStatuses[cli.source] = ConfigInstaller.isInstalled(source: cli.source)
         }
         cliStatuses["opencode"] = ConfigInstaller.isInstalled(source: "opencode")
+        cliStatuses["mimo"] = ConfigInstaller.isInstalled(source: "mimo")
         cliStatuses["aiwork"] = ConfigInstaller.isInstalled(source: "aiwork")
         cliStatuses["aiwork-cli"] = ConfigInstaller.isInstalled(source: "aiwork-cli")
         extraDirStatuses = ConfigInstaller.extraConfigDirStatuses()
@@ -805,6 +806,19 @@ private struct HooksPage: View {
                     exists: ocExists
                 ) { enabled in applySourceToggle(source: "opencode", enabled: enabled) }
                 .id("opencode-\(refreshKey)")
+
+                // MiMo Code CLI + Xiaomi MiMo desktop (one plugin, auto-loaded)
+                let mimoInstalled = cliStatuses["mimo"] ?? false
+                let mimoExists = ConfigInstaller.cliExists(source: "mimo")
+                CLIStatusRow(
+                    name: "MiMo Code / Xiaomi MiMo",
+                    source: "mimo",
+                    configPath: "~/.config/mimocode/plugins/codeisland.js",
+                    fullPath: ConfigInstaller.mimoPluginPath(),
+                    installed: mimoInstalled,
+                    exists: mimoExists
+                ) { enabled in applySourceToggle(source: "mimo", enabled: enabled) }
+                .id("mimo-\(refreshKey)")
 
                 // AiWork GUI + CLI/TUI (Agentix daemon watch — no hooks)
                 let dtInstalled = cliStatuses["aiwork"] ?? false
@@ -952,6 +966,9 @@ private struct HooksPage: View {
                         if ConfigInstaller.cliExists(source: "opencode") {
                             UserDefaults.standard.set(true, forKey: "cli_enabled_opencode")
                         }
+                        if ConfigInstaller.cliExists(source: "mimo") {
+                            UserDefaults.standard.set(true, forKey: "cli_enabled_mimo")
+                        }
                         if ConfigInstaller.cliExists(source: "aiwork") {
                             UserDefaults.standard.set(true, forKey: "cli_enabled_aiwork")
                         }
@@ -985,6 +1002,7 @@ private struct HooksPage: View {
                             UserDefaults.standard.set(false, forKey: "cli_enabled_\(cli.source)")
                         }
                         UserDefaults.standard.set(false, forKey: "cli_enabled_opencode")
+                        UserDefaults.standard.set(false, forKey: "cli_enabled_mimo")
                         UserDefaults.standard.set(false, forKey: "cli_enabled_aiwork")
                         UserDefaults.standard.set(false, forKey: "cli_enabled_aiwork-cli")
                         appState?.stopAiWorkWatcher()
@@ -1571,6 +1589,7 @@ private struct MascotsPage: View {
         ("Pi", "pi", "Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
         ("Oh My Pi", "omp", "Oh My Pi", Color(red: 0.55, green: 0.43, blue: 0.95)),
         ("OpBot", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),
+        ("MiMoBot", "mimo", "MiMo Code / Xiaomi MiMo", Color(red: 1.0, green: 0.41, blue: 0.0)),
         ("ClineBot", "cline", "Cline", Color(red: 0.00, green: 0.70, blue: 0.49)),
         ("Gemini", "google-antigravity", "Google Antigravity", Color(red: 0.278, green: 0.588, blue: 0.894)),
         ("AiWorkBot", "aiwork", "AiWork", Color(red: 0.12, green: 0.72, blue: 0.28)),

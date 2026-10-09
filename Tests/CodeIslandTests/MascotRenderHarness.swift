@@ -225,6 +225,9 @@ private struct ReadmeGifSpec {
                       isCalm: calm(blinkSeed: 0x100E, pause: (12.6, 1.2, 0x100D))),
         ReadmeGifSpec(name: "opencode", source: "opencode", period: 1.2, frames: 15,
                       isCalm: calm(blinkSeed: 0xC89, pause: (11.1, 1.2, 0xC88))),
+        // MiMo: 0.4s bounce ×3, and the orange runs the 4-glyph grid once.
+        ReadmeGifSpec(name: "mimo", source: "mimo", period: 1.2, frames: 15,
+                      isCalm: calm(blinkSeed: 0x31F1, pause: (11.7, 1.2, 0x31F0))),
         ReadmeGifSpec(name: "qwen", source: "qwen", period: 1.2, frames: 15,
                       isCalm: calm(blinkSeed: 0x7F6, pause: (9.6, 1.2, 0x7F5))),
         ReadmeGifSpec(name: "antigravity", source: "antigravity", period: 1.2, frames: 15,
@@ -470,6 +473,7 @@ private struct MascotContactSheet: View {
         case "codebuddy": BuddyView(status: status, size: size)
         case "stepfun": StepFunView(status: status, size: size)
         case "opencode": OpenCodeView(status: status, size: size)
+        case "mimo": MiMoView(status: status, size: size)
         case "qwen": QwenView(status: status, size: size)
         case "antigravity": AntiGravityView(status: status, size: size)
         case "workbuddy": WorkBuddyView(status: status, size: size)

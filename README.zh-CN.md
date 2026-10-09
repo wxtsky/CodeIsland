@@ -134,6 +134,9 @@
 <td align="center"><img src="Sources/CodeIsland/Resources/cli-icons/minimax.png" width="40" alt=""><br><sub><b>MiniMax Code CLI</b></sub></td>
 <td align="center"><img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="40" alt=""><br><sub><b>DeepSeek Harness</b></sub></td>
 <td align="center"><img src="docs/images/mascots/aiwork.gif" width="48" alt=""><br><sub><b>AiWork</b></sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/images/mascots/mimo.gif" width="48" alt=""><br><sub><b>MiMo Code /<br>Xiaomi MiMo</b></sub></td>
 <td align="center"><sub><b>+ 更多</b><br>见下方 ↓</sub></td>
 </tr>
 </table>
@@ -144,7 +147,7 @@
 
 **知道它跑在哪：** 运行在 **tmux**、**zellij**、**Herdr** 或 **T3 Code** 里的会话，终端徽标旁会多一个标签，点击跳转会直达对应的面板或线程。
 
-**审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、OpenCode、Pi / Oh My Pi、DeepSeek Harness 等；MiniMax Code CLI 限 mcode 允许 hook 等待的 10 秒内。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
+**审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、OpenCode、MiMo Code / Xiaomi MiMo、Pi / Oh My Pi、DeepSeek Harness 等；MiniMax Code CLI 限 mcode 允许 hook 等待的 10 秒内。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
 
 <details>
 <summary><b>各集成安装在哪里</b></summary>
@@ -173,6 +176,7 @@ CodeIsland 启动时会自动写入以下配置，配置被改动时会自动修
 | MiniMax Code CLI | 插件 `~/.minimax/plugins/codeisland/`（支持 `$MINIMAX_DATA_DIR`） |
 | Cline | `~/Documents/Cline/Hooks` |
 | OpenCode | 插件 `~/.config/opencode/plugins/codeisland.js` |
+| MiMo Code / Xiaomi MiMo | 插件 `~/.config/mimocode/plugins/codeisland.js`，见[下文](#mimo) |
 | Pi / Oh My Pi | 扩展 `~/.pi/agent/extensions/codeisland.ts` / `~/.omp/agent/extensions/codeisland.ts` |
 | OpenClaw | 插件 `~/.openclaw/codeisland-plugin/` |
 | DeepSeek Harness | [dsh-island](https://github.com/cdxiaodong/dsh-island) 插件，见[下文](#deepseek-harness) |
@@ -233,6 +237,16 @@ Codex 回合进行中、且没有工具在运行时，收起状态的刘海会�
 <br>
 
 OpenCode 通过一个 JS 插件直连 socket，不需要 bridge 程序。同一个插件文件同时支持 OpenCode 1.x（`server()`）和 OpenCode 2（`setup()`），OpenCode 2 会从 `~/.config/opencode/plugins/` 自动加载它。在 OpenCode 2 的共享后台服务模式下，点击跳转只能定位到终端 App、到不了具体标签页；提问通过该服务的本机 HTTP 接口回答。
+
+</details>
+
+<a name="mimo"></a>
+<details>
+<summary><b>MiMo Code 与 Xiaomi MiMo 桌面端</b></summary>
+
+<br>
+
+MiMo Code 是 OpenCode 1.x 的分支，Xiaomi MiMo 桌面端又以 MiMo Code 作为内核，所以两者都会从 `~/.config/mimocode/plugins/` 加载 OpenCode 插件。CodeIsland 把插件以 MiMo 的身份写到这里，不改动 `mimocode.json`。MiMo 只在内核启动时读取插件，插件装好后需要重启一次 App（或 `mimo`）。审批和提问可以在刘海上处理，也可以在 MiMo 里处理，以先操作的一方为准。点击桌面端会话会把 Xiaomi MiMo 切到前台；它的 `xiaomi-mimo://` 链接只用于加入分享的会话，没办法直接打开某个对话。
 
 </details>
 

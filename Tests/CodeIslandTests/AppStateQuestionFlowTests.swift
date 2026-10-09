@@ -150,6 +150,34 @@ final class AppStateQuestionFlowTests: XCTestCase {
         XCTAssertEqual(picks["selectedOptions"] as? [String], ["macOS, arm64", "iOS"])
     }
 
+    /// #355: MiMo Code runs the same plugin against OpenCode 1.x's question
+    /// API (one `string[]` of labels per question), so it needs the same picks.
+    func testMimoQuestionsCarryStructuredAnswerDetails() async throws {
+        let appState = AppState()
+        var multiQuestion = question(header: "Targets", text: "Which targets?", options: ["macOS, arm64", "iOS"])
+        multiQuestion["multiSelect"] = true
+        let event = try makeAskUserQuestionEvent(
+            sessionId: "mimo-ses_multi",
+            questions: [multiQuestion],
+            source: "mimo"
+        )
+
+        let responseTask = await startHookRequest { appState.handleAskUserQuestion(event, continuation: $0) }
+        appState.answerQuestionMulti([
+            AskUserQuestionAnswer(
+                question: "Which targets?",
+                answer: "macOS, arm64, iOS",
+                selectedOptions: ["macOS, arm64", "iOS"],
+                customInput: nil
+            ),
+        ])
+
+        let updatedInput = try extractUpdatedInput(from: await awaitValue(of: responseTask))
+        let details = try XCTUnwrap(updatedInput["_codeislandAnswerDetails"] as? [String: Any])
+        let picks = try XCTUnwrap(details["Which targets?"] as? [String: Any])
+        XCTAssertEqual(picks["selectedOptions"] as? [String], ["macOS, arm64", "iOS"])
+    }
+
     func testQuestionBarFreeTextAnswerPreservesCustomInput() throws {
         let answer = try XCTUnwrap(
             makeQuestionBarFreeTextAnswer(question: "请填写补充内容", text: "自由输入")

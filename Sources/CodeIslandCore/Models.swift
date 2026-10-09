@@ -19,6 +19,38 @@ public enum CLIProcessResolver {
         return traeCNBundlePathMarkers.contains { lowercasedPath.contains($0) }
     }
 
+    /// The MiMo Code CLI binary, however it was installed: the curl installer
+    /// writes `~/.mimocode/bin/mimo`; npm's `@mimo-ai/cli` keeps the real
+    /// binary at `bin/.mimocode` (its `bin/mimo` is a Node launcher, so the
+    /// process is `node`) or runs `@mimo-ai/mimocode-<os>-<arch>/bin/mimo`.
+    ///
+    /// Deliberately not the Xiaomi MiMo desktop app: it runs the same engine
+    /// inside its Electron main process and has an integrated terminal, so
+    /// claiming its bundle here would pin any agent started in that terminal
+    /// on MiMo during ancestry inference. The desktop reports itself through
+    /// the plugin's `_source` instead.
+    public static func isMimoCLIPath(_ path: String) -> Bool {
+        let lowercasedPath = path.lowercased()
+        let basename = (lowercasedPath as NSString).lastPathComponent
+        return basename == "mimo"
+            || (basename == ".mimocode" && lowercasedPath.contains("/@mimo-ai/cli/"))
+            || lowercasedPath.contains("/@mimo-ai/mimocode-")
+    }
+
+    /// Lowercased bundle markers of the Xiaomi MiMo desktop app: the mainland
+    /// edition (`Xiaomi MiMo.app`, com.xiaomi.mimo.desktop) and the overseas
+    /// one (`Xiaomi MiMo AI.app`, com.xiaomi.mimo.desktop-ai). Read from the
+    /// 26.929 builds' Info.plist and product table.
+    public static let mimoDesktopBundlePathMarkers = [
+        "/xiaomi mimo.app/contents/",
+        "/xiaomi mimo ai.app/contents/",
+    ]
+
+    public static func isMimoDesktopBundlePath(_ path: String) -> Bool {
+        let lowercasedPath = path.lowercased()
+        return mimoDesktopBundlePathMarkers.contains { lowercasedPath.contains($0) }
+    }
+
     public static func sourceMatchesExecutablePath(_ path: String, source: String?) -> Bool {
         guard let normalizedSource = SessionSnapshot.normalizedSupportedSource(source) else { return false }
         let lowercasedPath = path.lowercased()
@@ -91,6 +123,8 @@ public enum CLIProcessResolver {
             return basename == "mcode"
                 || basename == "minimax-code"
                 || lowercasedPath.contains("/@minimax-ai/code/")
+        case "mimo":
+            return isMimoCLIPath(lowercasedPath)
         default:
             return lowercasedPath.contains("/\(normalizedSource)")
         }

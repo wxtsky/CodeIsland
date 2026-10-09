@@ -27,6 +27,9 @@ public struct SessionSnapshot: Sendable {
         "codybuddycn",
         "stepfun",
         "opencode",
+        // MiMo Code (Xiaomi's OpenCode 1.x fork) and the Xiaomi MiMo desktop
+        // app, which runs MiMo Code as its engine — one plugin feeds both.
+        "mimo",
         "antigravity",
         "google-antigravity",
         "workbuddy",
@@ -359,6 +362,21 @@ public struct SessionSnapshot: Sendable {
             "minimax-cli": "minimax",
             "minimaxcli": "minimax",
             "minimax-code-cli": "minimax",
+            // MiMo Code (`mimo` CLI, npm @mimo-ai/cli) and the Xiaomi MiMo
+            // desktop app share one source: the app's engine is MiMo Code.
+            // No prefix rule — "mimo…" is too short a stem to claim.
+            "mimocode": "mimo",
+            "mimo-code": "mimo",
+            "mimo_code": "mimo",
+            "mimo code": "mimo",
+            "mimo-cli": "mimo",
+            "mimocli": "mimo",
+            "mimo-desktop": "mimo",
+            "mimodesktop": "mimo",
+            "xiaomi-mimo": "mimo",
+            "xiaomimimo": "mimo",
+            "xiaomi mimo": "mimo",
+            "xiaomi-mimo-ai": "mimo",
         ]
         let canonical = aliases[normalized] ?? normalized
         let dynamicSupportedSources = supportedSources.union(loadCustomSources())
@@ -685,6 +703,7 @@ public struct SessionSnapshot: Sendable {
         case "codybuddycn": return "CodyBuddyCN"
         case "stepfun": return "StepFun"
         case "opencode": return "OpenCode"
+        case "mimo": return "MiMo"
         case "antigravity": return "AntiGravity"
         case "google-antigravity": return "Google Antigravity"
         case "workbuddy": return "WorkBuddy"
@@ -762,6 +781,10 @@ public struct SessionSnapshot: Sendable {
         // and fire the same ~/.claude/settings.json hooks as the CLI.
         "com.anthropic.claudefordesktop": "Claude",
         "com.alipay.dtcoder.ide": "AiWork",
+        // Xiaomi MiMo desktop — mainland and overseas ("AI") editions are
+        // separate installs with their own bundle ids.
+        "com.xiaomi.mimo.desktop": "Xiaomi MiMo",
+        "com.xiaomi.mimo.desktop-ai": "Xiaomi MiMo AI",
     ]
 
     /// Maps native app bundle IDs to their expected source identifier.
@@ -785,6 +808,10 @@ public struct SessionSnapshot: Sendable {
         // __CFBundleIdentifier, so desktop Code sessions arrive tagged with it.
         "com.anthropic.claudefordesktop": "claude",
         "com.alipay.dtcoder.ide": "aiwork",
+        // Xiaomi MiMo desktop runs MiMo Code in its own main process, so the
+        // plugin's events carry the app's __CFBundleIdentifier.
+        "com.xiaomi.mimo.desktop": "mimo",
+        "com.xiaomi.mimo.desktop-ai": "mimo",
     ]
 
     /// Source id for the native app that owns `bundleId`, if any.

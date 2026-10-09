@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { createServer } from "net";
+import { tmpdir } from "os";
+import { join } from "path";
 
 import plugin, {
   answerKeys,
@@ -333,5 +337,65 @@ describe("OpenCode 2 server placement", () => {
     expect(signal?.aborted).toBe(false);
     cleanup();
     expect(signal?.aborted).toBe(true);
+  });
+});
+
+// MiMo Code (XiaomiMiMo/MiMo-Code, an OpenCode 1.x fork) — and the Xiaomi MiMo
+// desktop app, whose engine it is — loads this file through `server()` with the
+// v1 event shapes (`{type, properties}`). CodeIsland installs it with the SOURCE
+// line rewritten (ConfigInstaller.mimoPluginSource), exactly as done here (#355).
+describe("MiMo Code copy", () => {
+  const SOURCE_MARKER = 'const SOURCE = "opencode";';
+  const pluginPath = join(import.meta.dir, "../../Sources/CodeIsland/Resources/codeisland-opencode.js");
+
+  test("the shipped plugin carries the SOURCE line exactly once", () => {
+    expect(readFileSync(pluginPath, "utf8").split(SOURCE_MARKER).length).toBe(2);
+  });
+
+  test("server() reports MiMo sessions as mimo, over CODEISLAND_SOCKET_PATH", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "codeisland-mimo-"));
+    const file = join(dir, "codeisland.js");
+    writeFileSync(file, readFileSync(pluginPath, "utf8").replace(SOURCE_MARKER, 'const SOURCE = "mimo";'));
+
+    // A stand-in for CodeIsland's socket: never the real one.
+    const socketPath = join(dir, "island.sock");
+    const received: Record<string, unknown>[] = [];
+    const island = createServer((sock) => {
+      let buf = "";
+      sock.on("data", (d) => { buf += d; });
+      sock.on("end", () => { received.push(JSON.parse(buf)); });
+    });
+    await new Promise<void>((resolve) => island.listen(socketPath, resolve));
+    const saved = process.env.CODEISLAND_SOCKET_PATH;
+    process.env.CODEISLAND_SOCKET_PATH = socketPath;
+
+    try {
+      const mod = await import(file);
+      // MiMo's in-process client (no network) and its placeholder server URL.
+      const hooks = await mod.default.server({ client: {}, serverUrl: new URL("http://mimocode.internal") });
+      const fire = (type: string, properties: Record<string, unknown>) => hooks.event({ event: { type, properties } });
+
+      await fire("session.created", { info: { id: "ses_m1", directory: "/p/mimo" } });
+      await fire("message.part.updated", {
+        part: { type: "tool", sessionID: "ses_m1", tool: "bash", state: { status: "running", input: { command: "ls" } } },
+      });
+      await fire("session.status", { sessionID: "ses_m1", status: { type: "idle" } });
+
+      for (let i = 0; i < 200 && received.length < 3; i++) await new Promise((r) => setTimeout(r, 10));
+      const byEvent = (name: string) => received.find((p) => p.hook_event_name === name);
+
+      expect(received.length).toBe(3);
+      for (const payload of received) {
+        expect(payload).toMatchObject({ session_id: "mimo-ses_m1", _source: "mimo", _ppid: process.pid });
+      }
+      expect(byEvent("SessionStart")).toMatchObject({ cwd: "/p/mimo" });
+      expect(byEvent("PreToolUse")).toMatchObject({ tool_name: "Bash", tool_input: { command: "ls" }, cwd: "/p/mimo" });
+      expect(byEvent("Stop")).toMatchObject({ cwd: "/p/mimo" });
+    } finally {
+      if (saved === undefined) delete process.env.CODEISLAND_SOCKET_PATH;
+      else process.env.CODEISLAND_SOCKET_PATH = saved;
+      await new Promise<void>((resolve) => island.close(() => resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

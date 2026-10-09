@@ -2153,6 +2153,7 @@ private struct SessionListView: View {
                 ("qwen", "Qwen Code"),
                 ("kimi", "Kimi Code CLI"),
                 ("opencode", "OpenCode"),
+                ("mimo", "MiMo"),
                 ("pi", "Pi"),
                 ("kiro", "Kiro"),
                 ("cline", "Cline"),
@@ -3834,6 +3835,7 @@ private let cliIconFiles: [String: String] = [
     "kiro": "kiro",
     "openclaw": "openclaw",
     "minimax": "minimax",
+    "mimo": "mimo",
 ]
 
 private var cliIconCache: [String: NSImage] = [:]

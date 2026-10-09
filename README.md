@@ -134,6 +134,9 @@ It works with **30+ AI coding tools**, installs its hooks for you, and keeps eve
 <td align="center"><img src="Sources/CodeIsland/Resources/cli-icons/minimax.png" width="40" alt=""><br><sub><b>MiniMax Code CLI</b></sub></td>
 <td align="center"><img src="Sources/CodeIsland/Resources/cli-icons/dsh.png" width="40" alt=""><br><sub><b>DeepSeek Harness</b></sub></td>
 <td align="center"><img src="docs/images/mascots/aiwork.gif" width="48" alt=""><br><sub><b>AiWork</b></sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/images/mascots/mimo.gif" width="48" alt=""><br><sub><b>MiMo Code /<br>Xiaomi MiMo</b></sub></td>
 <td align="center"><sub><b>+ more</b><br>see below ↓</sub></td>
 </tr>
 </table>
@@ -144,7 +147,7 @@ It works with **30+ AI coding tools**, installs its hooks for you, and keeps eve
 
 **Knows where it runs:** sessions inside **tmux**, **zellij**, **Herdr** or **T3 Code** get a chip next to the terminal badge, and click-to-jump goes to the right pane or thread.
 
-**Approvals & questions** can be answered from the island for tools whose hooks wait for a decision — Claude Code, Codex, Gemini CLI, Qoder, Qwen Code, Trae CLI Next, ZCode, OpenCode, Pi / Oh My Pi, DeepSeek Harness and others; MiniMax Code CLI for the 10 seconds mcode lets a hook wait. Tools whose hooks can't carry a decision (Google Antigravity, AiWork) are shown read-only, and approvals stay in their own UI.
+**Approvals & questions** can be answered from the island for tools whose hooks wait for a decision — Claude Code, Codex, Gemini CLI, Qoder, Qwen Code, Trae CLI Next, ZCode, OpenCode, MiMo Code / Xiaomi MiMo, Pi / Oh My Pi, DeepSeek Harness and others; MiniMax Code CLI for the 10 seconds mcode lets a hook wait. Tools whose hooks can't carry a decision (Google Antigravity, AiWork) are shown read-only, and approvals stay in their own UI.
 
 <details>
 <summary><b>Where each integration is installed</b></summary>
@@ -173,6 +176,7 @@ CodeIsland writes these for you on launch (and repairs them if they drift); each
 | MiniMax Code CLI | plugin at `~/.minimax/plugins/codeisland/` (honours `$MINIMAX_DATA_DIR`) |
 | Cline | `~/Documents/Cline/Hooks` |
 | OpenCode | plugin at `~/.config/opencode/plugins/codeisland.js` |
+| MiMo Code / Xiaomi MiMo | plugin at `~/.config/mimocode/plugins/codeisland.js` — [see below](#mimo) |
 | Pi / Oh My Pi | extension at `~/.pi/agent/extensions/codeisland.ts` / `~/.omp/agent/extensions/codeisland.ts` |
 | OpenClaw | plugin at `~/.openclaw/codeisland-plugin/` |
 | DeepSeek Harness | [dsh-island](https://github.com/cdxiaodong/dsh-island) plugin — see [below](#deepseek-harness) |
@@ -233,6 +237,16 @@ While a Codex turn runs, the collapsed bar shows the agent's latest public outpu
 <br>
 
 A single JS plugin talks to the socket directly — no bridge binary. The same file serves OpenCode 1.x (`server()`) and OpenCode 2 (`setup()`); OpenCode 2 auto-loads it from `~/.config/opencode/plugins/`. Under OpenCode 2's shared background service, click-to-jump reaches the terminal app but not the exact tab, and questions are answered through the service's local HTTP API.
+
+</details>
+
+<a name="mimo"></a>
+<details>
+<summary><b>MiMo Code and Xiaomi MiMo desktop</b></summary>
+
+<br>
+
+MiMo Code is an OpenCode 1.x fork, and the Xiaomi MiMo desktop app runs it as its engine, so both load the OpenCode plugin from `~/.config/mimocode/plugins/` — CodeIsland writes it there labelled as MiMo and leaves `mimocode.json` alone. MiMo reads plugins when its engine starts, so restart the app (or `mimo`) once after the plugin is installed. Approvals and questions can be answered on the island or in MiMo, whichever comes first. Clicking a desktop session brings Xiaomi MiMo to the front; the app's `xiaomi-mimo://` links only join shared sessions, so there is no way to open one specific conversation.
 
 </details>
 
