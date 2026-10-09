@@ -715,6 +715,15 @@ struct ConfigInstaller {
         )
     ]
 
+    /// How many agents CodeIsland integrates with out of the box, for the
+    /// About page: the hook-based CLIs above plus the plugin / extension
+    /// integrations the Hooks page lists on their own rows (OpenCode, MiMo,
+    /// AiWork, AiWork CLI). Counted, so the copy can't go stale again — it
+    /// said 11 long after there were 30.
+    static var builtInIntegrationCount: Int {
+        builtInCLIs.count + 4
+    }
+
     static var allCLIs: [CLIConfig] {
         builtInCLIs + customCLIs()
     }

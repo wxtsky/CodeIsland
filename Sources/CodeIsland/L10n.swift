@@ -490,7 +490,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "Real-time AI coding agent status panel for macOS",
-        "about_desc2": "Supports 11 CLI/IDE tools via Unix socket IPC",
+        "about_desc2": "Supports %d CLI/IDE tools via Unix socket IPC",
 
         // Window
         "settings_title": "CodeIsland Settings",
@@ -1012,7 +1012,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "Echtzeit-Statuspanel für AI-Coding-Agenten unter macOS",
-        "about_desc2": "Unterstützt 11 CLI/IDE-Tools über Unix-Socket-IPC",
+        "about_desc2": "Unterstützt %d CLI/IDE-Tools über Unix-Socket-IPC",
 
         // Window
         "settings_title": "CodeIsland-Einstellungen",
@@ -1538,7 +1538,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS 实时 AI 编码 Agent 状态面板",
-        "about_desc2": "通过 Unix socket IPC 支持 11 种 CLI/IDE 工具",
+        "about_desc2": "通过 Unix socket IPC 支持 %d 种 CLI/IDE 工具",
 
         // Window
         "settings_title": "CodeIsland 设置",
@@ -2064,7 +2064,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS 即時 AI 編碼 Agent 狀態面板",
-        "about_desc2": "透過 Unix socket IPC 支援 11 種 CLI/IDE 工具",
+        "about_desc2": "透過 Unix socket IPC 支援 %d 種 CLI/IDE 工具",
 
         // Window
         "settings_title": "CodeIsland 設定",
@@ -2590,7 +2590,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS 向けリアルタイム AI コーディングエージェント状態パネル",
-        "about_desc2": "Unix socket IPC を通じて 11 種類の CLI/IDE ツールをサポート",
+        "about_desc2": "Unix socket IPC を通じて %d 種類の CLI/IDE ツールをサポート",
 
         // Window
         "settings_title": "CodeIsland 設定",
@@ -3116,7 +3116,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS용 실시간 AI 코딩 에이전트 상태 패널",
-        "about_desc2": "Unix socket IPC를 통해 11개의 CLI/IDE 도구를 지원합니다",
+        "about_desc2": "Unix socket IPC를 통해 %d개의 CLI/IDE 도구를 지원합니다",
 
         // Window
         "settings_title": "CodeIsland 설정",
@@ -3642,7 +3642,7 @@ final class L10n: ObservableObject {
 
         // About
         "about_desc1": "macOS için gerçek zamanlı AI kodlama ajanı durum paneli",
-        "about_desc2": "Unix socket IPC üzerinden 11 CLI/IDE aracını destekler",
+        "about_desc2": "Unix socket IPC üzerinden %d CLI/IDE aracını destekler",
 
         // Window
         "settings_title": "CodeIsland Ayarları",
