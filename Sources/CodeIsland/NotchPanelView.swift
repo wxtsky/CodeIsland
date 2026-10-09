@@ -2988,16 +2988,8 @@ private struct SessionListView: View {
 
             // Full session list only — the completion card stays focused on
             // the finished session.
-            if showUsageStats, onlySessionId == nil, let usage = appState.claudeUsage,
-               !(usage.last5h.isEmpty && usage.today.isEmpty) {
-                UsageFooterLine(usage: usage)
-            }
-            if showClaudeQuota, onlySessionId == nil {
-                if let snapshot = appState.claudeQuota.snapshot {
-                    QuotaFooterLine(snapshot: snapshot, error: appState.claudeQuota.lastError)
-                } else if let error = appState.claudeQuota.lastError {
-                    QuotaFooterMessage(error: error)
-                }
+            if onlySessionId == nil {
+                SessionListFooter(appState: appState, showUsageStats: showUsageStats, showClaudeQuota: showClaudeQuota)
             }
         }
     }
@@ -3268,69 +3260,242 @@ struct QuotaChip: View {
     }
 }
 
-/// Expanded footer: every window with a mini bar, percent, and reset countdown.
+// MARK: - Session list footer (plan limits, token usage)
+
+/// Which lines the session list's footer shows.
+struct SessionListFooterContent: Equatable {
+    /// Plan limits on one line, the token totals in its tooltip.
+    var limits = false
+    /// The token totals in words, on a line of their own.
+    var tokens = false
+    /// "Plan limits: could not reach Anthropic" — limits on, nothing fetched.
+    var quotaMessage = false
+
+    /// With plan limits on and fetched, they lead and the tokens fold into
+    /// their line; otherwise (setting off, first fetch pending or failed) the
+    /// token line shows as before, with the fetch error under it.
+    static func resolve(showClaudeQuota: Bool, hasSnapshot: Bool, hasError: Bool, hasUsage: Bool) -> Self {
+        if showClaudeQuota && hasSnapshot { return Self(limits: true) }
+        return Self(tokens: hasUsage, quotaMessage: showClaudeQuota && hasError)
+    }
+}
+
+/// The footer's words: token totals ("last 5h: 422K in · 96K out") and the
+/// plan-limit tooltip ("5h 64% · resets in 2h20m · …").
+enum UsageFooterText {
+    /// A model-scoped window is named by the server; past this many
+    /// characters the line shows it cut, the tooltip in full.
+    static let maxWindowLabelLength = 10
+
+    /// Token usage worth a footer: the setting is on and there is some.
+    static func shownUsage(_ usage: ClaudeUsageScanner.Snapshot?, enabled: Bool) -> ClaudeUsageScanner.Snapshot? {
+        guard enabled, let usage, !(usage.last5h.isEmpty && usage.today.isEmpty) else { return nil }
+        return usage
+    }
+
+    /// "422K in · 96K out". In is billed input: new input plus cache writes.
+    static func inOut(_ totals: ClaudeUsageTotals, l10n: L10n) -> String {
+        String(
+            format: l10n["usage_in_out"],
+            ClaudeUsageScanner.formatTokens(totals.inputTokens + totals.cacheCreationTokens),
+            ClaudeUsageScanner.formatTokens(totals.outputTokens)
+        )
+    }
+
+    /// "last 5h: 422K in · 96K out"
+    static func last5h(_ usage: ClaudeUsageScanner.Snapshot, l10n: L10n) -> String {
+        String(format: l10n["usage_span"], l10n["usage_last_5h"], inOut(usage.last5h, l10n: l10n))
+    }
+
+    /// "Today: 922K in · 233K out"
+    static func today(_ usage: ClaudeUsageScanner.Snapshot, l10n: L10n) -> String {
+        String(format: l10n["usage_span"], l10n["usage_today"], inOut(usage.today, l10n: l10n))
+    }
+
+    /// Capitalises a span that starts a line ("last 5h" → "Last 5h").
+    static func leading(_ text: String) -> String {
+        text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    /// Token totals for a tooltip: where they come from, then each window
+    /// with what its "in" is made of.
+    static func usageTooltip(_ usage: ClaudeUsageScanner.Snapshot, l10n: L10n) -> String {
+        func breakdown(_ t: ClaudeUsageTotals) -> String {
+            "  " + String(
+                format: l10n["usage_tooltip_breakdown"],
+                ClaudeUsageScanner.formatTokens(t.inputTokens),
+                ClaudeUsageScanner.formatTokens(t.cacheCreationTokens),
+                ClaudeUsageScanner.formatTokens(t.cacheReadTokens)
+            )
+        }
+        return [
+            l10n["usage_tooltip_title"],
+            leading(last5h(usage, l10n: l10n)), breakdown(usage.last5h),
+            today(usage, l10n: l10n), breakdown(usage.today),
+        ].joined(separator: "\n")
+    }
+
+    /// The footer's name for a window: "5h", "Week", or the model's name, cut
+    /// to `maxWindowLabelLength`.
+    static func windowLabel(_ limit: ClaudeQuotaLimit, l10n: L10n) -> String {
+        let full = QuotaStyle.label(limit, l10n: l10n)
+        guard full.count > maxWindowLabelLength else { return full }
+        return full.prefix(maxWindowLabelLength - 1).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Colour level in the footer: the server's severity, raised to a warning
+    /// near the cap (the alert threshold the chip's Auto mode uses) in case
+    /// the server still calls it normal there.
+    static func level(_ limit: ClaudeQuotaLimit) -> ClaudeQuotaLimit.Level {
+        if limit.level == .normal, limit.percent >= ClaudeQuotaSelector.alertPercent { return .warning }
+        return limit.level
+    }
+
+    /// "5h 64% · resets in 2h20m · 11 pts ahead of even pace (≈33m) · runs
+    /// out in 1h40m at this rate".
+    static func limitLine(_ limit: ClaudeQuotaLimit, l10n: L10n, now: Date) -> String {
+        var parts = ["\(QuotaStyle.label(limit, l10n: l10n)) \(ClaudeQuotaFormat.percent(limit.percent))"]
+        if let resetsAt = limit.resetsAt, let countdown = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+            parts.append(String(format: l10n["quota_resets_in"], countdown))
+        }
+        if let pace = limit.pace(now: now) {
+            parts.append(QuotaStyle.paceSentence(pace, l10n: l10n))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The limit line's tooltip: every window with its reset and pace, a
+    /// stale note, then the token totals the line no longer shows.
+    static func limitsTooltip(
+        _ snapshot: ClaudeQuotaSnapshot,
+        stale: Bool,
+        usage: ClaudeUsageScanner.Snapshot?,
+        l10n: L10n,
+        now: Date
+    ) -> String {
+        var lines = snapshot.ordered.map { limitLine($0, l10n: l10n, now: now) }
+        if stale { lines.append(l10n["quota_stale"]) }
+        if let usage { lines += ["", usageTooltip(usage, l10n: l10n)] }
+        return lines.joined(separator: "\n")
+    }
+}
+
+/// The session list's footer (SessionListFooterContent): plan limits first
+/// when they're on, otherwise the token totals in words.
+private struct SessionListFooter: View {
+    var appState: AppState
+    let showUsageStats: Bool
+    let showClaudeQuota: Bool
+
+    var body: some View {
+        let usage = UsageFooterText.shownUsage(appState.claudeUsage, enabled: showUsageStats)
+        let snapshot = appState.claudeQuota.snapshot
+        let error = appState.claudeQuota.lastError
+        let content = SessionListFooterContent.resolve(
+            showClaudeQuota: showClaudeQuota,
+            hasSnapshot: snapshot != nil,
+            hasError: error != nil,
+            hasUsage: usage != nil
+        )
+        if content.limits, let snapshot {
+            QuotaFooterLine(snapshot: snapshot, error: error, usage: usage)
+        }
+        if content.tokens, let usage {
+            UsageFooterLine(usage: usage)
+        }
+        if content.quotaMessage, let error {
+            QuotaFooterMessage(error: error)
+        }
+    }
+}
+
+/// Plan limits on one line, what can stop you first: each window's bar,
+/// percent (warning colours near the cap) and reset countdown, then the
+/// token sparkline. Token totals and pace numbers are in the tooltip.
 private struct QuotaFooterLine: View {
     let snapshot: ClaudeQuotaSnapshot
     let error: ClaudeQuotaClientError?
+    let usage: ClaudeUsageScanner.Snapshot?
     @ObservedObject private var l10n = L10n.shared
+
+    static let barWidth: CGFloat = 46
 
     var body: some View {
         // Countdowns tick once a minute; the panel is only open briefly.
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            HStack(spacing: 6) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(l10n["quota_label"])
-                    .fontWeight(.semibold)
-                ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { index, limit in
-                    if index > 0 {
-                        Text("·").foregroundStyle(.white.opacity(0.25))
-                    }
-                    segment(limit, now: context.date)
+            let now = context.date
+            let tooltip = UsageFooterText.limitsTooltip(
+                snapshot, stale: error != nil, usage: usage, l10n: l10n, now: now
+            )
+            HStack(spacing: 8) {
+                // Too narrow for every window with its countdown (long
+                // model name, large text): the countdowns go first, to the
+                // tooltip.
+                ViewThatFits(in: .horizontal) {
+                    windows(now: now, countdowns: true)
+                    windows(now: now, countdowns: false)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if error != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(QuotaStyle.warning)
                         .help(l10n["quota_stale"])
                 }
+                if let usage {
+                    UsageSparkline(buckets: usage.hourlyOutputTokens)
+                }
             }
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.55))
             .padding(.horizontal, 14)
-            .padding(.top, 5)
-            // Room for the pace marks hung under the percents.
-            .padding(.bottom, snapshot.ordered.contains { $0.pace(now: context.date) != nil } ? 12 : 5)
-            .help(QuotaStyle.tooltip(snapshot, stale: error != nil, l10n: l10n, now: context.date))
+            .padding(.top, 7)
+            .padding(.bottom, 9)
+            .contentShape(Rectangle())
+            .help(tooltip)
+            // The tooltip is the whole story, tokens included.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tooltip)
         }
     }
 
-    private func segment(_ limit: ClaudeQuotaLimit, now: Date) -> some View {
-        let color = QuotaStyle.color(limit.level)
-        return HStack(spacing: 4) {
-            Text(QuotaStyle.label(limit, l10n: l10n))
+    private func windows(now: Date, countdowns: Bool) -> some View {
+        HStack(spacing: 12) {
+            ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { _, limit in
+                segment(limit, now: now, countdown: countdowns)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func segment(_ limit: ClaudeQuotaLimit, now: Date, countdown: Bool) -> some View {
+        let color = QuotaStyle.color(UsageFooterText.level(limit))
+        return HStack(spacing: 5) {
+            Text(UsageFooterText.windowLabel(limit, l10n: l10n))
+                .foregroundStyle(.white.opacity(0.6))
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.12))
+                Capsule().fill(.white.opacity(0.14))
                 Capsule().fill(color)
-                    .frame(width: 30 * min(limit.percent / 100, 1))
+                    .frame(width: Self.barWidth * min(limit.percent / 100, 1))
                 // Even-pace tick: where usage would be if spread evenly.
                 if let elapsed = limit.elapsedFraction(now: now) {
                     Rectangle()
                         .fill(.white.opacity(0.6))
-                        .frame(width: 1, height: 7)
-                        .offset(x: 30 * elapsed - 0.5)
+                        .frame(width: 1, height: 8)
+                        .offset(x: Self.barWidth * elapsed - 0.5)
                 }
             }
-            .frame(width: 30, height: 4)
+            .frame(width: Self.barWidth, height: 5)
             Text(ClaudeQuotaFormat.percent(limit.percent))
+                .fontWeight(.semibold)
                 .foregroundStyle(color)
-                .modifier(QuotaPaceMark(pace: limit.pace(now: now)))
-            if let resetsAt = limit.resetsAt, let cd = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
-                Text("↻\(cd)")
+            if countdown, let resetsAt = limit.resetsAt,
+               let left = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
+                Text(left)
+                    .font(.system(size: 9.5, weight: .regular, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.5))
             }
         }
+        .fixedSize()
     }
 }
 
@@ -3351,50 +3516,80 @@ private struct QuotaFooterMessage: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 9, weight: .semibold))
             Text(text)
-            Spacer()
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.5))
+        .foregroundStyle(.white.opacity(0.55))
         .padding(.horizontal, 14)
-        .padding(.vertical, 5)
+        .padding(.top, 5)
+        .padding(.bottom, 8)
+        .help(text)
     }
 }
 
-/// Token totals from the local Claude transcripts — "in" is billed input
-/// (input + cache writes); cache reads live in the tooltip.
+/// Token totals from the local Claude transcripts, in words: "Claude · last
+/// 5h: 422K in · 96K out   Today: 922K in · 233K out". "In" is billed input
+/// (new input + cache writes); the tooltip breaks it down.
 private struct UsageFooterLine: View {
     let usage: ClaudeUsageScanner.Snapshot
     @ObservedObject private var l10n = L10n.shared
 
     var body: some View {
-        HStack(spacing: 5) {
+        let last5h = UsageFooterText.last5h(usage, l10n: l10n)
+        let today = UsageFooterText.today(usage, l10n: l10n)
+        let tooltip = UsageFooterText.usageTooltip(usage, l10n: l10n)
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
             Image(systemName: "gauge.with.needle")
                 .font(.system(size: 9, weight: .semibold))
-            Text("Claude")
-                .fontWeight(.semibold)
-            Text("5h \(compact(usage.last5h))")
-            Text("·")
-                .foregroundStyle(.white.opacity(0.25))
-            Text("\(l10n["usage_today"]) \(compact(usage.today))")
-            Spacer()
+            // A long translation ("Eingabe" / "Ausgabe") sheds the "Claude ·"
+            // lead, then takes a second line rather than cut a number off.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    span5h(last5h, brand: true)
+                    Text(today)
+                }
+                .fixedSize()
+                HStack(spacing: 14) {
+                    span5h(last5h, brand: false)
+                    Text(today)
+                }
+                .fixedSize()
+                VStack(alignment: .leading, spacing: 3) {
+                    span5h(last5h, brand: true)
+                    Text(today)
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.tail)
+            Spacer(minLength: 8)
             UsageSparkline(buckets: usage.hourlyOutputTokens)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.55))
+        .foregroundStyle(.white.opacity(0.6))
         .padding(.horizontal, 14)
-        .padding(.vertical, 5)
-        .help(detail)
+        .padding(.top, 5)
+        .padding(.bottom, 8)
+        .contentShape(Rectangle())
+        .help(tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tooltip)
     }
 
-    private func compact(_ t: ClaudeUsageTotals) -> String {
-        "\(ClaudeUsageScanner.formatTokens(t.inputTokens + t.cacheCreationTokens))↑ \(ClaudeUsageScanner.formatTokens(t.outputTokens))↓"
-    }
-
-    private var detail: String {
-        func line(_ label: String, _ t: ClaudeUsageTotals) -> String {
-            "\(label): in \(ClaudeUsageScanner.formatTokens(t.inputTokens)) · out \(ClaudeUsageScanner.formatTokens(t.outputTokens)) · cache write \(ClaudeUsageScanner.formatTokens(t.cacheCreationTokens)) · cache read \(ClaudeUsageScanner.formatTokens(t.cacheReadTokens))"
+    /// "Claude · last 5h: 422K in · 96K out", or without the lead
+    /// ("Last 5h: …").
+    private func span5h(_ last5h: String, brand: Bool) -> some View {
+        HStack(spacing: 5) {
+            if brand {
+                Text("Claude").fontWeight(.semibold)
+                Text("·").foregroundStyle(.white.opacity(0.5))
+                Text(last5h)
+            } else {
+                Text(UsageFooterText.leading(last5h))
+            }
         }
-        return line("5h", usage.last5h) + "\n" + line(l10n["usage_today"], usage.today)
     }
 }
 
@@ -3412,6 +3607,8 @@ private struct UsageSparkline: View {
             }
         }
         .frame(height: 10, alignment: .bottom)
+        // Decorative: the tooltip and the line's label carry the numbers.
+        .accessibilityHidden(true)
     }
 }
 

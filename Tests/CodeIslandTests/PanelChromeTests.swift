@@ -4,7 +4,7 @@ import AppKit
 import CodeIslandCore
 
 /// The expanded panel's chrome: the header (grouping tabs, Quit that asks
-/// once).
+/// once) and the session list's usage footer.
 @MainActor
 final class PanelChromeTests: XCTestCase {
 
@@ -184,10 +184,141 @@ final class PanelChromeTests: XCTestCase {
         XCTAssertLessThanOrEqual(SessionGroupingTabsLayout.hitHeight, 25)
     }
 
+    // MARK: - Usage footer
+
+    private func usage(empty: Bool = false) -> ClaudeUsageScanner.Snapshot {
+        var fiveHours = ClaudeUsageTotals()
+        var today = ClaudeUsageTotals()
+        if !empty {
+            fiveHours.inputTokens = 148_000
+            fiveHours.cacheCreationTokens = 274_000
+            fiveHours.outputTokens = 96_400
+            fiveHours.cacheReadTokens = 11_800_000
+            fiveHours.messageCount = 131
+            today.inputTokens = 392_000
+            today.cacheCreationTokens = 530_000
+            today.outputTokens = 233_000
+            today.cacheReadTokens = 29_600_000
+            today.messageCount = 388
+        }
+        return ClaudeUsageScanner.Snapshot(last5h: fiveHours, today: today, hourlyOutputTokens: [0, 1, 2], scannedAt: Date())
+    }
+
+    private func withLanguage(_ lang: String, _ body: () throws -> Void) rethrows {
+        let saved = L10n.shared.language
+        defer { L10n.shared.language = saved }
+        L10n.shared.language = lang
+        try body()
+    }
+
+    func testFooterLeadsWithLimitsOnceTheyAreFetched() {
+        typealias C = SessionListFooterContent
+        // Limits on and fetched: one line, tokens folded into it.
+        XCTAssertEqual(C.resolve(showClaudeQuota: true, hasSnapshot: true, hasError: false, hasUsage: true), C(limits: true))
+        XCTAssertEqual(C.resolve(showClaudeQuota: true, hasSnapshot: true, hasError: true, hasUsage: false), C(limits: true))
+        // Limits off: the token line alone.
+        XCTAssertEqual(C.resolve(showClaudeQuota: false, hasSnapshot: true, hasError: false, hasUsage: true), C(tokens: true))
+        XCTAssertEqual(C.resolve(showClaudeQuota: false, hasSnapshot: false, hasError: true, hasUsage: false), C())
+        // On, first fetch pending: tokens; failed: tokens and the error.
+        XCTAssertEqual(C.resolve(showClaudeQuota: true, hasSnapshot: false, hasError: false, hasUsage: true), C(tokens: true))
+        XCTAssertEqual(C.resolve(showClaudeQuota: true, hasSnapshot: false, hasError: true, hasUsage: true),
+                       C(tokens: true, quotaMessage: true))
+        XCTAssertEqual(C.resolve(showClaudeQuota: true, hasSnapshot: false, hasError: true, hasUsage: false),
+                       C(quotaMessage: true))
+    }
+
+    func testTokenUsageIsShownOnlyWhenOnAndNonEmpty() {
+        XCTAssertNil(UsageFooterText.shownUsage(usage(), enabled: false))
+        XCTAssertNil(UsageFooterText.shownUsage(nil, enabled: true))
+        XCTAssertNil(UsageFooterText.shownUsage(usage(empty: true), enabled: true))
+        XCTAssertNotNil(UsageFooterText.shownUsage(usage(), enabled: true))
+    }
+
+    func testTokenLineUsesWordsInsteadOfArrows() {
+        withLanguage("en") {
+            // "In" is billed input: new input plus cache writes.
+            XCTAssertEqual(UsageFooterText.last5h(usage(), l10n: .shared), "last 5h: 422K in · 96.4K out")
+            XCTAssertEqual(UsageFooterText.today(usage(), l10n: .shared), "Today: 922K in · 233K out")
+            XCTAssertEqual(UsageFooterText.leading("last 5h: 1K in"), "Last 5h: 1K in")
+        }
+        withLanguage("zh") {
+            XCTAssertEqual(UsageFooterText.last5h(usage(), l10n: .shared), "近 5 小时：输入 422K · 输出 96.4K")
+            XCTAssertEqual(UsageFooterText.today(usage(), l10n: .shared), "今日：输入 922K · 输出 233K")
+        }
+        withLanguage("de") {
+            XCTAssertEqual(UsageFooterText.last5h(usage(), l10n: .shared), "letzte 5 Std.: 422K Eingabe · 96.4K Ausgabe")
+        }
+        for lang in L10n.strings.keys {
+            withLanguage(lang) {
+                let text = UsageFooterText.last5h(usage(), l10n: .shared) + UsageFooterText.usageTooltip(usage(), l10n: .shared)
+                XCTAssertFalse(text.contains("↑") || text.contains("↓"), "\(lang): \(text)")
+                XCTAssertTrue(text.contains("422K") && text.contains("96.4K") && text.contains("11.8M"), "\(lang): \(text)")
+            }
+        }
+    }
+
+    func testTokenTooltipBreaksDownWhatInMeans() {
+        withLanguage("en") {
+            let tip = UsageFooterText.usageTooltip(usage(), l10n: .shared)
+            XCTAssertEqual(tip, """
+            Claude tokens, from the local transcripts
+            Last 5h: 422K in · 96.4K out
+              148K new input + 274K cache writes · 11.8M cache reads
+            Today: 922K in · 233K out
+              392K new input + 530K cache writes · 29.6M cache reads
+            """)
+        }
+    }
+
+    func testLimitTooltipSpellsOutResetsAndPaceAndCarriesTheTokens() {
+        let now = Date()
+        let snapshot = ClaudeQuotaSnapshot(limits: [
+            // 3h of 5h gone (60%), 72% used: 12 points ahead.
+            ClaudeQuotaLimit(kind: .session, percent: 72, resetsAt: now.addingTimeInterval(2 * 3600)),
+            ClaudeQuotaLimit(kind: .weeklyScoped, percent: 10, resetsAt: nil, scopeLabel: "Opus"),
+        ], fetchedAt: now)
+        withLanguage("en") {
+            let line = UsageFooterText.limitLine(snapshot.ordered[0], l10n: .shared, now: now)
+            XCTAssertTrue(line.hasPrefix("5h 72% · resets in 2h · 12 pts ahead of even pace"), line)
+            XCTAssertFalse(line.contains("↻"))
+            XCTAssertEqual(UsageFooterText.limitLine(snapshot.ordered[1], l10n: .shared, now: now), "Opus 10%")
+
+            let withTokens = UsageFooterText.limitsTooltip(snapshot, stale: true, usage: usage(), l10n: .shared, now: now)
+            let lines = withTokens.components(separatedBy: "\n")
+            XCTAssertEqual(lines[2], L10n.shared["quota_stale"])
+            XCTAssertEqual(lines[3], "", "a blank line before the tokens")
+            XCTAssertEqual(lines[4], "Claude tokens, from the local transcripts")
+            XCTAssertTrue(withTokens.contains("Last 5h: 422K in · 96.4K out"))
+
+            let limitsOnly = UsageFooterText.limitsTooltip(snapshot, stale: false, usage: nil, l10n: .shared, now: now)
+            XCTAssertEqual(limitsOnly.components(separatedBy: "\n").count, 2)
+        }
+    }
+
+    func testLimitsTurnWarningNearTheCap() {
+        XCTAssertEqual(UsageFooterText.level(ClaudeQuotaLimit(kind: .weeklyAll, percent: 79)), .normal)
+        XCTAssertEqual(UsageFooterText.level(ClaudeQuotaLimit(kind: .weeklyAll, percent: 80)), .warning)
+        XCTAssertEqual(UsageFooterText.level(ClaudeQuotaLimit(kind: .session, percent: 40, severity: "warning")), .warning)
+        XCTAssertEqual(UsageFooterText.level(ClaudeQuotaLimit(kind: .session, percent: 85, severity: "critical")), .critical)
+        XCTAssertEqual(UsageFooterText.level(ClaudeQuotaLimit(kind: .session, percent: 100)), .critical)
+    }
+
+    func testLongModelNamesAreCutOnTheLineButNotInTheTooltip() {
+        let limit = ClaudeQuotaLimit(kind: .weeklyScoped, percent: 50, scopeLabel: "Claude Opus 4.5 Max")
+        withLanguage("en") {
+            let label = UsageFooterText.windowLabel(limit, l10n: .shared)
+            XCTAssertEqual(label.count, UsageFooterText.maxWindowLabelLength)
+            XCTAssertTrue(label.hasSuffix("…"))
+            XCTAssertTrue(UsageFooterText.limitLine(limit, l10n: .shared, now: Date()).hasPrefix("Claude Opus 4.5 Max 50%"))
+            XCTAssertEqual(UsageFooterText.windowLabel(ClaudeQuotaLimit(kind: .weeklyAll, percent: 1), l10n: .shared), "Week")
+        }
+    }
+
     // MARK: - Strings
 
     func testEveryLanguageHasTheNewChromeStrings() {
-        let keys = ["quit_confirm", "quit_confirm_hint"]
+        let keys = ["usage_last_5h", "usage_span", "usage_in_out", "usage_tooltip_title", "usage_tooltip_breakdown",
+                    "quota_resets_in", "quit_confirm", "quit_confirm_hint"]
         func placeholders(_ s: String) -> [String] {
             let regex = try! NSRegularExpression(pattern: "%(\\d\\$)?@")
             return regex.matches(in: s, range: NSRange(s.startIndex..., in: s))
