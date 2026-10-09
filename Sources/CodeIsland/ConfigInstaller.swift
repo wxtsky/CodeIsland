@@ -1583,11 +1583,7 @@ struct ConfigInstaller {
         cachedClaudeVersionLock.unlock()
 
         // Find claude binary — GUI apps don't inherit user's shell PATH
-        let candidates = [
-            NSHomeDirectory() + "/.local/bin/claude",
-            "/usr/local/bin/claude",
-        ]
-        guard let claudePath = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        guard let claudePath = claudeBinaryCandidates().first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             return nil
         }
         // 5s timeout: a stuck `claude --version` used to freeze app launch (#139).
@@ -1603,6 +1599,20 @@ struct ConfigInstaller {
         cachedClaudeVersion = version
         cachedClaudeVersionLock.unlock()
         return version
+    }
+
+    /// Where `claude` lives, in the order a login shell would usually find it:
+    /// the native installer, Homebrew on Apple Silicon (the cask, or npm with
+    /// Homebrew's node), Intel Homebrew / a /usr/local npm prefix, and the old
+    /// `claude migrate-installer` local install. Without a version, the
+    /// version-gated events (PostToolUseFailure, StopFailure) are skipped.
+    static func claudeBinaryCandidates(home: String = NSHomeDirectory()) -> [String] {
+        [
+            home + "/.local/bin/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            home + "/.claude/local/claude",
+        ]
     }
 
     /// Compare semver strings: returns true if `installed` >= `required`

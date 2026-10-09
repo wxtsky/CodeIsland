@@ -100,6 +100,17 @@ final class TurnFailureSoundBehaviourTests: XCTestCase {
         XCTAssertFalse(ConfigInstaller.versionAtLeast("2.1.77", "2.1.78"))
     }
 
+    /// An undetected version drops the gated events, so every common install
+    /// location must be probed: Homebrew on Apple Silicon (cask or npm) puts
+    /// `claude` in /opt/homebrew/bin, which a GUI app's PATH doesn't reach.
+    func testClaudeVersionProbeCoversTheCommonInstallLocations() {
+        let candidates = ConfigInstaller.claudeBinaryCandidates(home: "/Users/u")
+        XCTAssertEqual(candidates.first, "/Users/u/.local/bin/claude")
+        for path in ["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "/Users/u/.claude/local/claude"] {
+            XCTAssertTrue(candidates.contains(path), path)
+        }
+    }
+
     private func event(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         return try XCTUnwrap(HookEvent(from: data))
