@@ -120,6 +120,31 @@ final class NotchCardRedesignTests: XCTestCase {
         XCTAssertNil(CardShortcutHint.text(for: .deny))
     }
 
+    // MARK: - Question card's primary button
+
+    func testPrimaryButtonIsAvailableOnlyWithSomethingToSend() {
+        var wizard = QuestionWizardState(requestId: UUID())
+        XCTAssertFalse(wizard.canSubmitText)
+        XCTAssertFalse(wizard.canSubmitOther)
+        XCTAssertFalse(wizard.canConfirmMultiSelect)
+
+        wizard.textInput = "Last 30 days"
+        XCTAssertTrue(wizard.canSubmitText)
+
+        wizard.selectedIndices = [1]
+        XCTAssertTrue(wizard.canConfirmMultiSelect)
+        wizard.selectedIndices = []
+        // "Other" ticked but still empty sends nothing.
+        wizard.showOtherInput = true
+        XCTAssertFalse(wizard.canConfirmMultiSelect)
+        wizard.otherText = "Region"
+        XCTAssertTrue(wizard.canConfirmMultiSelect)
+        XCTAssertTrue(wizard.canSubmitOther)
+
+        wizard.resetInput()
+        XCTAssertFalse(wizard.canSubmitText || wizard.canSubmitOther || wizard.canConfirmMultiSelect)
+    }
+
     // MARK: - Content Font Size
 
     func testCardTextFollowsContentFontSizeWithinTheOfferedRange() {
@@ -170,6 +195,18 @@ final class NotchCardRedesignTests: XCTestCase {
         }
     }
 
+    func testQuestionCardsFitTheWindowAtTheLargestTextSize() async throws {
+        UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
+        for language in ["en", "de", "tr"] {
+            L10n.shared.language = language
+            for kind in QuestionKind.allCases {
+                let demo = try await GalleryDemo.question(kind, lang: language == "de" ? .de : .en)
+                defer { demo.release() }
+                try assertFits(demo.state, "\(kind.rawValue) question in \(language)", primaryVisible: false)
+            }
+        }
+    }
+
     func testCardsFitANarrowPanelAtTheLargestTextSize() async throws {
         // The panel is min(620, screen − 40) wide; on a small display it has
         // less than the usual 580pt for German and Turkish labels.
@@ -182,6 +219,12 @@ final class NotchCardRedesignTests: XCTestCase {
                 defer { demo.release() }
                 try assertFits(demo.state, "\(kind.rawValue) in \(language) on a narrow screen",
                                screenWidth: 520, primaryVisible: true)
+            }
+            for kind in [QuestionKind.multi, .freeText] {
+                let demo = try await GalleryDemo.question(kind, lang: language == "de" ? .de : .en)
+                defer { demo.release() }
+                try assertFits(demo.state, "\(kind.rawValue) question in \(language) on a narrow screen",
+                               screenWidth: 520, primaryVisible: false)
             }
         }
     }

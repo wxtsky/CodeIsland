@@ -2034,6 +2034,19 @@ struct QuestionWizardState {
         otherText = ""
         textInput = ""
     }
+
+    // What the card's primary button would send. While it would send
+    // nothing, the button shows as unavailable instead of doing nothing.
+
+    /// Submit on a question answered by typing.
+    var canSubmitText: Bool { !textInput.isEmpty }
+    /// Submit under "Other" on a single-choice question.
+    var canSubmitOther: Bool { !otherText.isEmpty }
+    /// Confirm on a multiple-choice question: something ticked, or an
+    /// "Other" answer typed.
+    var canConfirmMultiSelect: Bool {
+        !selectedIndices.isEmpty || (showOtherInput && !otherText.isEmpty)
+    }
 }
 
 enum QuestionTextMetrics {
@@ -2087,6 +2100,7 @@ private struct QuestionBar: View {
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
 
     // Multi-question wizard state, bound to `requestId` (#333)
     @State private var wizard = QuestionWizardState()
@@ -2095,6 +2109,8 @@ private struct QuestionBar: View {
     private let cyan = Color(red: 0.4, green: 0.7, blue: 1.0)
     /// The options never shrink below about two rows.
     static let optionsMinimumHeight: CGFloat = 72
+
+    private var type: NotchCardTypography { NotchCardTypography(contentFontSize: contentFontSize) }
 
     private var currentItem: AskUserQuestionItem? {
         guard !allQuestions.isEmpty, wizard.currentQuestionIndex < allQuestions.count else { return nil }
@@ -2110,9 +2126,10 @@ private struct QuestionBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             // Session context — doubles as the click-to-jump target
-            if NotchCardContextRow.isShown(source: sessionSource, cwd: sessionContext, canJump: canJumpToTerminal) {
+            if NotchCardContextRow.isShown(source: sessionSource, cwd: sessionContext,
+                                           canJump: canJumpToTerminal, queueTotal: queueTotal) {
                 sessionContextRow
             }
 
@@ -2122,6 +2139,7 @@ private struct QuestionBar: View {
                 legacyQuestionContent
             }
         }
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .offset(x: failureShakeOffset)
         .onAppear {
@@ -2147,10 +2165,11 @@ private struct QuestionBar: View {
             cwd: sessionContext,
             session: session,
             canJump: canJumpToTerminal,
-            type: NotchCardTypography(contentFontSize: SettingsDefaults.contentFontSize),
+            queuePosition: queuePosition,
+            queueTotal: queueTotal,
+            type: type,
             onJump: handleCardClick
         )
-        .padding(.horizontal, 14)
     }
 
     // MARK: - Click-to-jump handling
@@ -2170,47 +2189,115 @@ private struct QuestionBar: View {
         )
     }
 
-    // MARK: - Multi-question content (AskUserQuestion)
+    // MARK: - Shared pieces
 
-    @ViewBuilder
-    private func multiQuestionContent(_ item: AskUserQuestionItem) -> some View {
-        // Header with progress. Top-aligned: the question may wrap.
+    /// "?" + optional header chip + the whole question (up to
+    /// QuestionTextMetrics.lineLimit lines; the tooltip has the rest).
+    private func questionHeader(_ text: String, header: String?, progress: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("?")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: type.title, weight: .bold))
                 .foregroundStyle(cyan)
-            if let header = item.payload.header, !header.isEmpty {
-                Text(header)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(cyan.opacity(0.7))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(cyan.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                .accessibilityHidden(true)
+            if let header, !header.isEmpty {
+                NotchCardTag(text: header, color: cyan, fontSize: type.badge)
             }
-            Text(item.payload.question)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
+            Text(text)
+                .font(.system(size: type.title, weight: .medium))
+                .foregroundStyle(.white.opacity(0.92))
                 .lineLimit(QuestionTextMetrics.lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
-                .help(item.payload.question)
-            Spacer()
-            if allQuestions.count > 1 {
-                Text("\(wizard.currentQuestionIndex + 1)/\(allQuestions.count)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
+                .help(text)
+            Spacer(minLength: 0)
+            if let progress {
+                Text(progress)
+                    .font(.system(size: type.badge, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .fixedSize()
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(Color.white.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
-            if queueTotal > 1 {
-                Text("\(queuePosition)/\(queueTotal)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
         }
-        .padding(.horizontal, 14)
+    }
+
+    private func answerField(_ text: Binding<String>, focus: FocusState<Bool>.Binding, onSubmit: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Text(">")
+                .font(.system(size: type.secondary, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                .accessibilityHidden(true)
+            TextField(L10n.shared["type_answer"], text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: type.link))
+                .foregroundStyle(.white)
+                .focused(focus)
+                .onSubmit(onSubmit)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    /// The card's one filled button, when the question needs one: a tap on
+    /// a single-choice option already answers it.
+    private struct PrimaryAction {
+        let label: String
+        let isEnabled: Bool
+        let action: () -> Void
+    }
+
+    /// Back (later wizard steps) leading; Hide, Skip and the primary trailing
+    /// — the approval card's order, Skip standing where Deny does.
+    private func actionRow(showsBack: Bool, primary: PrimaryAction?) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                if showsBack { backButton(expands: false) }
+                Spacer(minLength: 12)
+                trailingButtons(primary: primary, expands: false)
+            }
+            HStack(spacing: 6) {
+                if showsBack { backButton(expands: false) }
+                trailingButtons(primary: primary, expands: true)
+            }
+            .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity)
+        }
+    }
+
+    private func backButton(expands: Bool) -> some View {
+        NotchCardButton(label: L10n.shared["card_back"], role: .quiet, fontSize: type.button,
+                        expands: expands, systemImage: "chevron.left", action: goBack)
+    }
+
+    @ViewBuilder
+    private func trailingButtons(primary: PrimaryAction?, expands: Bool) -> some View {
+        NotchCardButton(label: L10n.shared["card_hide"], role: .quiet, fontSize: type.button,
+                        help: L10n.shared["dismiss_card_hint"], action: onDismiss)
+        NotchCardButton(label: L10n.shared["card_skip"], role: .secondary, fontSize: type.button,
+                        hint: CardShortcutHint.text(for: .skipQuestion),
+                        help: L10n.shared["skip_question_hint"], expands: expands, action: onSkip)
+        if let primary {
+            NotchCardButton(label: primary.label, role: .primary, fontSize: type.button,
+                            isEnabled: primary.isEnabled, expands: expands, action: primary.action)
+        }
+    }
+
+    // MARK: - Multi-question content (AskUserQuestion)
+
+    @ViewBuilder
+    private func multiQuestionContent(_ item: AskUserQuestionItem) -> some View {
+        // Header with the wizard's progress. Top-aligned: the question may wrap.
+        questionHeader(
+            item.payload.question,
+            header: item.payload.header,
+            progress: allQuestions.count > 1 ? "\(wizard.currentQuestionIndex + 1)/\(allQuestions.count)" : nil
+        )
 
         // Options — scroll past what the window holds, so a long list never
         // pushes "Other" and the buttons out of reach.
@@ -2221,7 +2308,7 @@ private struct QuestionBar: View {
                         let desc = item.payload.descriptions?.indices.contains(idx) == true ? item.payload.descriptions?[idx] : nil
                         if item.multiSelect {
                             MultiSelectRow(index: idx + 1, label: option, description: desc,
-                                           isChecked: wizard.selectedIndices.contains(idx), accent: cyan) {
+                                           isChecked: wizard.selectedIndices.contains(idx), accent: cyan, type: type) {
                                 if wizard.selectedIndices.contains(idx) {
                                     wizard.selectedIndices.remove(idx)
                                 } else {
@@ -2230,126 +2317,54 @@ private struct QuestionBar: View {
                             }
                         } else {
                             OptionRow(index: idx + 1, label: option, description: desc,
-                                      isSelected: wizard.selectedIndex == idx, accent: cyan) {
+                                      isSelected: wizard.selectedIndex == idx, accent: cyan, type: type) {
                                 wizard.selectedIndex = idx
                                 wizard.showOtherInput = false
                                 advanceWithAnswer(option, selectedOptions: [option])
                             }
                         }
                     }
-    
+
                     // "Other" option
                     otherOptionRow(isMultiSelect: item.multiSelect)
-    
-                    // "Other" text input
+
+                    // "Other" text input, indented under its row
                     if wizard.showOtherInput {
-                        HStack(spacing: 6) {
-                            Text(">")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                            TextField(L10n.shared["type_answer"], text: $wizard.otherText)
-                                .textFieldStyle(.plain)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.white)
-                                .focused($otherFocused)
-                                .onSubmit {
-                                    if !item.multiSelect && !wizard.otherText.isEmpty {
-                                        advanceWithAnswer(wizard.otherText, customInput: wizard.otherText)
-                                    }
-                                }
+                        answerField($wizard.otherText, focus: $otherFocused) {
+                            if !item.multiSelect && wizard.canSubmitOther {
+                                advanceWithAnswer(wizard.otherText, customInput: wizard.otherText)
+                            }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                        )
                         .padding(.horizontal, 14)
                         .onAppear { otherFocused = true }
                     }
                 }
                 .padding(.horizontal, 14)
             }
+            // The scroller runs along the panel's edge, not over the rows.
+            .padding(.horizontal, -14)
         } else {
             // No options — text input only
-            HStack(spacing: 6) {
-                Text(">")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                TextField(L10n.shared["type_answer"], text: $wizard.textInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.white)
-                    .focused($isFocused)
-                    .onSubmit(submitFreeText)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .padding(.horizontal, 14)
+            answerField($wizard.textInput, focus: $isFocused, onSubmit: submitFreeText)
         }
 
-        // Buttons
-        HStack(spacing: 6) {
-            if wizard.currentQuestionIndex > 0 {
-                PixelButton(
-                    label: L10n.shared["back"],
-                    fg: .white.opacity(0.6),
-                    bg: Color.white.opacity(0.06),
-                    border: Color.white.opacity(0.12),
-                    action: goBack
-                )
-            }
-            PixelButton(
-                label: L10n.shared["dismiss"],
-                fg: .white.opacity(0.6),
-                bg: Color.white.opacity(0.06),
-                border: Color.white.opacity(0.12),
-                help: L10n.shared["dismiss_card_hint"],
-                action: onDismiss
-            )
-            PixelButton(
-                label: L10n.shared["skip"],
-                fg: .white.opacity(0.6),
-                bg: Color.white.opacity(0.06),
-                border: Color.white.opacity(0.12),
-                help: L10n.shared["skip_question_hint"],
-                action: onSkip
-            )
-            if item.payload.options?.isEmpty != false {
-                PixelButton(
-                    label: L10n.shared["submit"],
-                    fg: .white.opacity(0.95),
-                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: submitFreeText
-                )
-            } else if item.multiSelect {
-                PixelButton(
-                    label: L10n.shared["confirm"],
-                    fg: .white.opacity(0.95),
-                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: confirmMultiSelect
-                )
-            } else if wizard.showOtherInput && !item.multiSelect {
-                PixelButton(
-                    label: L10n.shared["submit"],
-                    fg: .white.opacity(0.95),
-                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: { if !wizard.otherText.isEmpty { advanceWithAnswer(wizard.otherText, customInput: wizard.otherText) } }
-                )
+        actionRow(showsBack: wizard.currentQuestionIndex > 0, primary: primaryAction(for: item))
+    }
+
+    private func primaryAction(for item: AskUserQuestionItem) -> PrimaryAction? {
+        if item.payload.options?.isEmpty != false {
+            return PrimaryAction(label: L10n.shared["card_submit"], isEnabled: wizard.canSubmitText, action: submitFreeText)
+        }
+        if item.multiSelect {
+            return PrimaryAction(label: L10n.shared["card_confirm"], isEnabled: wizard.canConfirmMultiSelect,
+                                 action: confirmMultiSelect)
+        }
+        if wizard.showOtherInput {
+            return PrimaryAction(label: L10n.shared["card_submit"], isEnabled: wizard.canSubmitOther) {
+                if wizard.canSubmitOther { advanceWithAnswer(wizard.otherText, customInput: wizard.otherText) }
             }
         }
-        .padding(.horizontal, 14)
+        return nil
     }
 
     // MARK: - "Other" option row
@@ -2358,13 +2373,13 @@ private struct QuestionBar: View {
     private func otherOptionRow(isMultiSelect: Bool) -> some View {
         if isMultiSelect {
             MultiSelectRow(index: -1, label: L10n.shared["other"], description: nil,
-                           isChecked: wizard.showOtherInput, accent: cyan) {
+                           isChecked: wizard.showOtherInput, accent: cyan, type: type) {
                 wizard.showOtherInput.toggle()
                 if !wizard.showOtherInput { wizard.otherText = "" }
             }
         } else {
             OptionRow(index: -1, label: L10n.shared["other"], description: nil,
-                      isSelected: wizard.showOtherInput, accent: cyan) {
+                      isSelected: wizard.showOtherInput, accent: cyan, type: type) {
                 wizard.showOtherInput = true
                 wizard.selectedIndex = nil
             }
@@ -2433,35 +2448,15 @@ private struct QuestionBar: View {
 
     @ViewBuilder
     private var legacyQuestionContent: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("?")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(cyan)
-            Text(question)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(QuestionTextMetrics.lineLimit)
-                .fixedSize(horizontal: false, vertical: true)
-                .help(question)
-            if queueTotal > 1 {
-                Text("\(queuePosition)/\(queueTotal)")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 14)
+        questionHeader(question, header: nil, progress: nil)
 
         if let options = options, !options.isEmpty {
             PanelFittedScrollArea(minimumHeight: Self.optionsMinimumHeight) {
                 VStack(spacing: 4) {
                     ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
                         let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
-                        OptionRow(index: idx + 1, label: option, description: desc, isSelected: wizard.selectedIndex == idx, accent: cyan) {
+                        OptionRow(index: idx + 1, label: option, description: desc,
+                                  isSelected: wizard.selectedIndex == idx, accent: cyan, type: type) {
                             wizard.selectedIndex = idx
                             onAnswer(option)
                         }
@@ -2469,59 +2464,18 @@ private struct QuestionBar: View {
                 }
                 .padding(.horizontal, 14)
             }
+            .padding(.horizontal, -14)
+            actionRow(showsBack: false, primary: nil)
         } else {
-            HStack(spacing: 6) {
-                Text(">")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                TextField(L10n.shared["type_answer"], text: $wizard.textInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.white)
-                    .focused($isFocused)
-                    .onSubmit {
-                        if !wizard.textInput.isEmpty { onAnswer(wizard.textInput) }
-                    }
+            answerField($wizard.textInput, focus: $isFocused) {
+                if wizard.canSubmitText { onAnswer(wizard.textInput) }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .padding(.horizontal, 14)
+            actionRow(showsBack: false, primary: PrimaryAction(
+                label: L10n.shared["card_submit"], isEnabled: wizard.canSubmitText
+            ) {
+                if wizard.canSubmitText { onAnswer(wizard.textInput) }
+            })
         }
-
-        HStack(spacing: 6) {
-            PixelButton(
-                label: L10n.shared["dismiss"],
-                fg: .white.opacity(0.6),
-                bg: Color.white.opacity(0.06),
-                border: Color.white.opacity(0.12),
-                help: L10n.shared["dismiss_card_hint"],
-                action: onDismiss
-            )
-            PixelButton(
-                label: L10n.shared["skip"],
-                fg: .white.opacity(0.6),
-                bg: Color.white.opacity(0.06),
-                border: Color.white.opacity(0.12),
-                help: L10n.shared["skip_question_hint"],
-                action: onSkip
-            )
-            if options == nil || options?.isEmpty == true {
-                PixelButton(
-                    label: L10n.shared["submit"],
-                    fg: .white.opacity(0.95),
-                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                    action: { if !wizard.textInput.isEmpty { onAnswer(wizard.textInput) } }
-                )
-            }
-        }
-        .padding(.horizontal, 14)
     }
 }
 
@@ -2533,24 +2487,25 @@ private struct MultiSelectRow: View {
     let description: String?
     let isChecked: Bool
     let accent: Color
+    let type: NotchCardTypography
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 11))
-                    .foregroundStyle(isChecked ? accent : .white.opacity(0.5))
-                    .frame(width: 14)
+                    .font(.system(size: type.body))
+                    .foregroundStyle(isChecked ? accent : .white.opacity(0.55))
+                    .frame(width: type.body + 3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 10.5, weight: hovering || isChecked ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1 : 0.75))
+                        .font(.system(size: type.body, weight: hovering || isChecked ? .semibold : .regular))
+                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .font(.system(size: type.caption))
+                            .foregroundStyle(.white.opacity(0.58))
                             .lineLimit(2)
                     }
                 }
@@ -2566,9 +2521,11 @@ private struct MultiSelectRow: View {
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(isChecked ? accent.opacity(0.4) : (hovering ? accent.opacity(0.2) : Color.clear), lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .accessibilityAddTraits(isChecked ? .isSelected : [])
     }
 }
 
@@ -2580,33 +2537,35 @@ private struct OptionRow: View {
     let description: String?
     let isSelected: Bool
     let accent: Color
+    let type: NotchCardTypography
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 // Selector arrow
                 Text(hovering ? "▸" : " ")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: type.caption, weight: .bold))
                     .foregroundStyle(accent)
                     .frame(width: 10)
+                    .accessibilityHidden(true)
                 // Number (or ellipsis for "Other"), in a fixed column so the
                 // labels line up whatever the digit ("1." is narrower than
                 // "2.", "10." wider still).
                 Text(index > 0 ? "\(index)." : "…")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: type.secondary, weight: .semibold))
                     .foregroundStyle(accent.opacity(hovering ? 1 : 0.8))
-                    .frame(minWidth: 18, alignment: .trailing)
+                    .frame(minWidth: (type.secondary * 1.8).rounded(), alignment: .trailing)
                 // Label + Description
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 10.5, weight: hovering ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering ? 1 : 0.75))
+                        .font(.system(size: type.body, weight: hovering ? .semibold : .regular))
+                        .foregroundStyle(.white.opacity(hovering ? 1 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 9))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .font(.system(size: type.caption))
+                            .foregroundStyle(.white.opacity(0.58))
                             .lineLimit(2)
                     }
                 }
@@ -2622,51 +2581,11 @@ private struct OptionRow: View {
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(hovering ? accent.opacity(0.4) : Color.clear, lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
-    }
-}
-
-private struct PixelButton: View {
-    let label: String
-    let fg: Color
-    let bg: Color
-    let border: Color
-    /// Optional keyboard-shortcut badge (e.g. "⌘⇧A") — discoverability for the
-    /// global approve/deny shortcuts that already exist in Settings (#12 UX).
-    var hint: String? = nil
-    /// Tooltip spelling out what the one-word label does.
-    var help: String? = nil
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(fg)
-                if let hint {
-                    Text(hint)
-                        .font(.system(size: 8, weight: .medium, design: .monospaced))
-                        .foregroundStyle(fg.opacity(0.55))
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(hovering ? bg.opacity(1.5) : bg)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(hovering ? border : border.opacity(0.4), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
-        .help(help ?? "")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

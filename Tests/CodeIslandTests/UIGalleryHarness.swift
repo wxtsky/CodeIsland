@@ -156,12 +156,21 @@ final class UIGalleryHarness: XCTestCase {
 
     private func renderQuestions(_ lang: GalleryLang) async throws {
         for kind in QuestionKind.allCases {
-            GallerySettings.reset()
-            let demo = try await GalleryDemo.question(kind, lang: lang)
-            defer { demo.release() }
-            try renderOnStage(demo, group: "question", name: kind.rawValue, lang: lang, screen: .macBook14,
-                              layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
+            for big in [false, true] {
+                GallerySettings.reset()
+                if big { GallerySettings.set(16, SettingsKey.contentFontSize) }
+                let demo = try await GalleryDemo.question(kind, lang: lang)
+                defer { demo.release() }
+                try renderOnStage(demo, group: "question", name: kind.rawValue + (big ? "-f16" : ""), lang: lang,
+                                  screen: .macBook14, layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
+            }
         }
+        GallerySettings.reset()
+        GallerySettings.setCardShortcutsEnabled()
+        let demo = try await GalleryDemo.question(.multi, lang: lang)
+        defer { demo.release() }
+        try renderOnStage(demo, group: "question", name: "multi-keys", lang: lang, screen: .macBook14,
+                          layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
     }
 
     private func renderCompletion(_ lang: GalleryLang) async throws {
