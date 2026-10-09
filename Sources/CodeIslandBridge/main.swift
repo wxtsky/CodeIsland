@@ -412,20 +412,20 @@ let coreAncestry = ancestry.map { (pid: Int32($0.pid), executablePath: $0.execut
 // the matching desktop IDE, so a `--source cursor` tag from a hook fired by
 // cursor-agent should be promoted to "cursor-cli" (#134). The override only
 // applies when ancestry actually shows a CLI binary.
-let inferredSource = sourceTag ?? CLIProcessResolver.inferSource(ancestry: coreAncestry)
-let cliPromoted = CLIProcessResolver.cliVariantOverride(
-    declaredSource: inferredSource,
+// Events that arrived via a plugin proxy (no declared source but ancestry
+// inferred a real source — e.g. the omo OpenCode plugin firing Claude hooks)
+// are marked `_via_plugin` so the host app can route them per
+// pluginSessionMode (#123). A direct plugin's own `_source` counts as declared.
+let bridgeSource = CLIProcessResolver.bridgeSource(
+    sourceTag: sourceTag,
+    payloadSource: json["_source"] as? String,
     ancestry: coreAncestry
 )
-let effectiveSource = cliPromoted ?? inferredSource
+let effectiveSource = bridgeSource.source
 if let source = effectiveSource {
     json["_source"] = source
 }
-// Mark events that arrived via a plugin proxy (no explicit --source but
-// ancestry inferred a real source — e.g. the omo OpenCode plugin firing
-// Claude hooks) so the host app can route them per pluginSessionMode.
-// See issue #123.
-if sourceTag == nil && effectiveSource != nil {
+if bridgeSource.viaPlugin {
     json["_via_plugin"] = true
 }
 

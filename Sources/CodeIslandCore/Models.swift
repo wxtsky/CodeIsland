@@ -157,6 +157,27 @@ public enum CLIProcessResolver {
         return nil
     }
 
+    /// The source the bridge stamps on an event, and whether it came through
+    /// another agent's hook (`_via_plugin`).
+    ///
+    /// Declared = `--source`, or — for a direct plugin (OpenCode, MiMo Code,
+    /// Pi / OMP, OpenClaw) piping its own blocking request in without the flag
+    /// — the supported `_source` already in its payload. Only an undeclared
+    /// event is attributed by ancestry and marked as proxied. Treating a
+    /// plugin's own request as proxied let ancestry relabel it, and handed its
+    /// approval to Agent Sub-Sessions, whose "hide" mode answers `_via_plugin`
+    /// permission requests with an automatic allow.
+    public static func bridgeSource(
+        sourceTag: String?,
+        payloadSource: String?,
+        ancestry: [(pid: Int32, executablePath: String?)]
+    ) -> (source: String?, viaPlugin: Bool) {
+        let declared = sourceTag ?? SessionSnapshot.normalizedSupportedSource(payloadSource)
+        let inferred = declared ?? inferSource(ancestry: ancestry)
+        let effective = cliVariantOverride(declaredSource: inferred, ancestry: ancestry) ?? inferred
+        return (effective, declared == nil && effective != nil)
+    }
+
     public static func resolvedTrackedPID(
         immediateParentPID: Int32,
         source: String?,
