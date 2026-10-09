@@ -1462,6 +1462,14 @@ struct QuestionWizardState {
     }
 }
 
+enum QuestionTextMetrics {
+    /// Lines the question itself may take. At three, a question that sets out
+    /// its options first lost the actual ask ("Which approach should I
+    /// take?") to the ellipsis. The options scroll now, so the question gets
+    /// the room; the tooltip has anything past this.
+    static let lineLimit = 8
+}
+
 /// When a notch card may pull keyboard focus into its own text field (#297).
 enum NotchCardFocusPolicy {
     /// The island is a non-activating overlay: a question card usually appears
@@ -1627,8 +1635,8 @@ private struct QuestionBar: View {
 
     @ViewBuilder
     private func multiQuestionContent(_ item: AskUserQuestionItem) -> some View {
-        // Header with progress
-        HStack(spacing: 6) {
+        // Header with progress. Top-aligned: the question may wrap.
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("?")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(cyan)
@@ -1644,7 +1652,9 @@ private struct QuestionBar: View {
             Text(item.payload.question)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(3)
+                .lineLimit(QuestionTextMetrics.lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(item.payload.question)
             Spacer()
             if allQuestions.count > 1 {
                 Text("\(wizard.currentQuestionIndex + 1)/\(allQuestions.count)")
@@ -1882,14 +1892,16 @@ private struct QuestionBar: View {
 
     @ViewBuilder
     private var legacyQuestionContent: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("?")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(cyan)
             Text(question)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.9))
-                .lineLimit(3)
+                .lineLimit(QuestionTextMetrics.lineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(question)
             if queueTotal > 1 {
                 Text("\(queuePosition)/\(queueTotal)")
                     .font(.system(size: 9, weight: .bold))
