@@ -34,9 +34,15 @@ final class MascotAnimationGate: ObservableObject {
     /// mascot is asleep in a ~20pt strip and nothing is happening.
     @Published private(set) var isIdleSettled: Bool = false
 
+    /// System Settings › Accessibility › Display › Reduce motion. Read in
+    /// `start()`, so a test process (which never starts the gate) keeps
+    /// animating whatever the machine running it is set to.
+    @Published private(set) var reduceMotion: Bool = false
+
     /// Whether mascot per-frame animations should run right now.
     var animationsActive: Bool {
-        Self.shouldAnimate(isVisible: isPanelVisible, isAwake: isAwake, isIdleSettled: isIdleSettled)
+        Self.shouldAnimate(isVisible: isPanelVisible, isAwake: isAwake, isIdleSettled: isIdleSettled,
+                           reduceMotion: reduceMotion)
     }
 
     private var observers: [NSObjectProtocol] = []
@@ -56,11 +62,15 @@ final class MascotAnimationGate: ObservableObject {
     /// So when the island is collapsed and nothing is running, the mascot holds
     /// a static sleeping frame instead. Any state change — a session waking, the
     /// panel expanding on hover — re-enables it immediately. (#299)
-    static func shouldAnimate(isVisible: Bool, isAwake: Bool, isIdleSettled: Bool = false) -> Bool {
-        isVisible && isAwake && !isIdleSettled
+    ///
+    /// With Reduce Motion on, the mascots hold their status pose instead of
+    /// looping forever next to whatever the user is reading.
+    static func shouldAnimate(isVisible: Bool, isAwake: Bool, isIdleSettled: Bool = false,
+                              reduceMotion: Bool = false) -> Bool {
+        isVisible && isAwake && !isIdleSettled && !reduceMotion
     }
 
-    /// Begin observing system sleep/wake. Idempotent.
+    /// Begin observing system sleep/wake and the Reduce Motion setting. Idempotent.
     func start() {
         guard observers.isEmpty else { return }
         let wsCenter = NSWorkspace.shared.notificationCenter
@@ -84,6 +94,21 @@ final class MascotAnimationGate: ObservableObject {
                 Task { @MainActor in self?.setAwake(true) }
             })
         }
+
+        setReduceMotion(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        observers.append(wsCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.setReduceMotion(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) }
+        })
+    }
+
+    /// Follow the Reduce Motion setting. Turning it off re-anchors the
+    /// schedules like any other resume.
+    func setReduceMotion(_ reduce: Bool) {
+        guard reduceMotion != reduce else { return }
+        reduceMotion = reduce
+        if !reduce { epoch &+= 1 }
     }
 
     /// Report the panel's current on-screen visibility (called from the

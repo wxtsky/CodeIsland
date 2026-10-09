@@ -728,6 +728,9 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
+    /// The waiting badges pulse forever; with Reduce Motion they hold still
+    /// (a one-off follow-up bounce still marks a reminder).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Re-evaluated on every re-render; the compact bar redraws often enough
     /// that the moon appears/disappears close to the window edges.
@@ -786,7 +789,7 @@ private struct CompactRightWing: View {
                     Image(systemName: "questionmark.bubble.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                         .symbolEffect(.bounce, value: appState.followUps.hintPulse)
                         .help(l10n["question_waiting_hint"])
                 } else if appState.followUps.hintActive {
@@ -803,7 +806,7 @@ private struct CompactRightWing: View {
                     Image(systemName: "bell.fill")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                 }
 
                 if showToolStatus {
@@ -4125,6 +4128,7 @@ private struct TypingIndicator: View {
     var bright: Bool = false
     var color: Color? = nil
     @State private var phase: CGFloat = -60
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if let label {
@@ -4161,6 +4165,8 @@ private struct TypingIndicator: View {
                 )
                 .onAppear {
                     phase = startPhase
+                    // Reduce Motion: the label stays, the endless shimmer goes.
+                    guard !reduceMotion else { return }
                     withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: false)) {
                         phase = endPhase
                     }

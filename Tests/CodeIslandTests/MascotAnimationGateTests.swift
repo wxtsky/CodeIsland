@@ -68,6 +68,20 @@ final class MascotAnimationGateTests: XCTestCase {
         )
     }
 
+    func testReduceMotionHoldsTheMascotsStill() {
+        XCTAssertFalse(MascotAnimationGate.shouldAnimate(isVisible: true, isAwake: true, reduceMotion: true))
+        let gate = MascotAnimationGate.shared
+        gate.setPanelVisible(true)
+        gate.setIdleSettled(false)
+        defer { gate.setReduceMotion(false) }
+        gate.setReduceMotion(true)
+        XCTAssertFalse(gate.animationsActive)
+        let stillEpoch = gate.epoch
+        gate.setReduceMotion(false)
+        XCTAssertTrue(gate.animationsActive)
+        XCTAssertEqual(gate.epoch, stillEpoch + 1, "resuming must re-anchor the schedules")
+    }
+
     func testSettlingDoesNotReAnchor() {
         let gate = MascotAnimationGate.shared
         gate.setIdleSettled(false)
