@@ -44,7 +44,20 @@ final class HermesHookFlowTests: XCTestCase {
         XCTAssertEqual(EventNormalizer.normalize("post_llm_call"), "AgentTurnSettled")
         // Fired after EVERY turn (agent/turn_finalizer.py); it used to delete the card.
         XCTAssertEqual(EventNormalizer.normalize("on_session_end"), "Stop")
+        XCTAssertEqual(EventNormalizer.normalize("on_session_finalize"), "SessionEnd")
         XCTAssertEqual(EventNormalizer.normalize("on_session_reset"), "SessionEnd")
+    }
+
+    /// The card outlives its turns and goes when the session does: `/new`,
+    /// quitting, closing a desktop conversation, the gateway shutting down.
+    func testSessionFinalizeRemovesTheCard() throws {
+        var sessions: [String: SessionSnapshot] = [:]
+        try send("pre_llm_call", ["user_message": "hi", "platform": "cli"], to: &sessions)
+        try send("on_session_end", turnEnd(), to: &sessions)
+        XCTAssertNotNil(sessions[sessionId])
+
+        let effects = try send("on_session_finalize", ["platform": "cli", "reason": "session_boundary"], to: &sessions)
+        XCTAssertTrue(effects.contains(.removeSession(sessionId: sessionId)))
     }
 
     /// A whole turn with every hook approved: the prompt shows from the start,

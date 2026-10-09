@@ -10,6 +10,8 @@ import Foundation
 /// - `on_session_end` (end of every turn, whatever the outcome): `completed`, `failed`,
 ///   `interrupted`, `model`, `platform`
 /// - `on_session_start` (first turn of a new session): `model`, `platform`
+/// - `on_session_finalize` (the session really ends: `/new`, quitting the CLI,
+///   closing a desktop / TUI session, the gateway's `/new` or shutdown): `platform`, `reason`
 public enum HermesHookPayload {
     /// `extra` keys nothing in CodeIsland reads that grow with the conversation:
     /// `conversation_history` is the whole transcript, sent again on every

@@ -62,6 +62,10 @@ public enum EventNormalizer {
         case "post_llm_call":         return "AgentTurnSettled"
         case "on_session_start":      return "SessionStart"
         case "on_session_end":        return "Stop"
+        // The real end of a session: `/new`, quitting the CLI, closing a
+        // desktop / TUI session, the gateway's `/new` or shutdown — with the
+        // id of the session that ended (hermes_cli/lifecycle.py).
+        case "on_session_finalize":   return "SessionEnd"
         case "on_session_reset":      return "SessionEnd"
         // Cline (VSCode extension)
         case "TaskStart":             return "SessionStart"

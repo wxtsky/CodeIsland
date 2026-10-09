@@ -109,6 +109,9 @@ def _normalize_event(name):
     # Despite its name, Hermes fires on_session_end at the end of every turn.
     if name == "on_session_end":
         return "Stop"
+    # The real end of a session (/new, quitting, gateway shutdown).
+    if name == "on_session_finalize":
+        return "SessionEnd"
     if name == "on_session_reset":
         return "SessionEnd"
     return name

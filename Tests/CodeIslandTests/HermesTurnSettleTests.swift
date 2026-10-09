@@ -63,6 +63,12 @@ final class HermesTurnSettleTests: XCTestCase {
         XCTAssertEqual(session.status, .idle)
         XCTAssertEqual(session.lastUserPrompt, "Fix the login bug")
         XCTAssertEqual(session.lastAssistantMessage, "Fixed.")
+
+        // `/new`, quitting, closing the conversation: now the card goes.
+        appState.handleEvent(try makeEvent("on_session_finalize", sessionId: "hermes-turn", extra: [
+            "platform": "cli", "reason": "session_boundary",
+        ]))
+        XCTAssertNil(appState.sessions["hermes-turn"])
     }
 
     /// A gateway chat's card is monitored through the gateway daemon, which
@@ -101,6 +107,10 @@ final class HermesTurnSettleTests: XCTestCase {
         XCTAssertTrue(
             cli.events.contains { $0.0 == "pre_llm_call" },
             "the prompt only rides on pre_llm_call before the turn ends"
+        )
+        XCTAssertTrue(
+            cli.events.contains { $0.0 == "on_session_finalize" },
+            "the only signal that a gateway or desktop session is over"
         )
     }
 

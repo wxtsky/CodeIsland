@@ -153,8 +153,9 @@ final class RemoteHookHermesStoreTests: XCTestCase {
 
     func testOnSessionEndNormalizesToStop() throws {
         let names = try XCTUnwrap(runDriver("""
-            print(json.dumps([hook._normalize_event(n) for n in ("on_session_end", "post_llm_call", "pre_llm_call")]))
+            print(json.dumps([hook._normalize_event(n) for n in (
+                "on_session_end", "post_llm_call", "pre_llm_call", "on_session_finalize")]))
             """) as? [String])
-        XCTAssertEqual(names, ["Stop", "AgentTurnSettled", "UserPromptSubmit"])
+        XCTAssertEqual(names, ["Stop", "AgentTurnSettled", "UserPromptSubmit", "SessionEnd"])
     }
 }

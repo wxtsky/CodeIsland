@@ -560,7 +560,7 @@ final class RemoteInstallerHookMergeTests: XCTestCase {
 
         let hookScript = sandboxHome.appendingPathComponent(".codeisland/codeisland-remote-hook.py").path
         for event in ["pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call",
-                      "on_session_start", "on_session_end", "subagent_stop"] {
+                      "on_session_start", "on_session_end", "on_session_finalize", "subagent_stop"] {
             let ours = (hooks[event] ?? []).filter { $0.joined().contains("codeisland-remote-hook") }
             XCTAssertEqual(ours.count, 1, "\(event): \(hooks[event] ?? [])", file: file, line: line)
             let argv = try XCTUnwrap(ours.first, file: file, line: line)

@@ -936,7 +936,7 @@ hooks:
         // Every status event registered under snake_case keys.
         for event in [
             "pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call",
-            "on_session_start", "on_session_end", "subagent_stop",
+            "on_session_start", "on_session_end", "on_session_finalize", "subagent_stop",
         ] {
             let entries = try XCTUnwrap(hooks[event], "missing event \(event)")
             let cmd = entries.first?["command"] as? String
@@ -1030,6 +1030,7 @@ hooks:
         // Turn start / end carry the prompt and the reply (#364).
         XCTAssertTrue(script.contains(#""pre_llm_call""#))
         XCTAssertTrue(script.contains(#""post_llm_call""#))
+        XCTAssertTrue(script.contains(#""on_session_finalize""#))
         XCTAssertTrue(script.contains("_merge_hermes_hooks"))
         XCTAssertTrue(script.contains(#""Hermes ok""#))
         XCTAssertTrue(script.contains("install_hermes()"))

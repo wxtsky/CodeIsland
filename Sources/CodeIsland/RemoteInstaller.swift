@@ -662,6 +662,7 @@ HERMES_EVENTS = [
     ("post_llm_call", 5),
     ("on_session_start", 5),
     ("on_session_end", 5),
+    ("on_session_finalize", 5),
     ("subagent_stop", 5),
 ]
 

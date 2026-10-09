@@ -845,6 +845,9 @@ struct ConfigInstaller {
                 ("post_llm_call", 5, false),
                 ("on_session_start", 5, false),
                 ("on_session_end", 5, false),
+                // Session end: the card goes. Without it a card stays until its
+                // process exits — never, for the gateway and the desktop app.
+                ("on_session_finalize", 5, false),
                 ("subagent_stop", 5, false),
             ]
         case .cline:
