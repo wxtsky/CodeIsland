@@ -64,8 +64,15 @@ private let sidebarGroups: [SidebarGroup] = [
 
 struct SettingsView: View {
     @ObservedObject private var l10n = L10n.shared
-    @State private var selectedPage: SettingsPage = .general
+    @State private var selectedPage: SettingsPage
     var appState: AppState?
+
+    /// `initialPage` opens the window on that page (the offscreen UI gallery
+    /// renders every page through it).
+    init(appState: AppState? = nil, initialPage: SettingsPage = .general) {
+        self.appState = appState
+        _selectedPage = State(initialValue: initialPage)
+    }
 
     var body: some View {
         NavigationSplitView {

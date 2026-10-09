@@ -18,7 +18,7 @@ import CodeIslandCore
 ///     python3 -c "import glob; from PIL import Image; [Image.open(f).save(f, optimize=True) for f in glob.glob('docs/images/readme-*.png')]"
 ///
 /// Optional filters: `README_SHOT_ONLY=hero,approval,question`,
-/// `README_SHOT_LANGS=en,zh`. Every settings key the panel reads is cleared
+/// `README_SHOT_LANGS=en,zh`. Every settings key (`SettingsKey`) is cleared
 /// for the render (so the shots show shipped defaults) and restored after.
 /// Terminal badges use the icons of whatever terminals are installed on the
 /// rendering Mac (Ghostty, iTerm2, Cursor, Warp); a missing app shows its
@@ -38,7 +38,7 @@ final class ReadmeScreenshotHarness: XCTestCase {
         // Views touch NSApp (e.g. QuestionBar.onAppear); make sure it exists.
         _ = NSApplication.shared
 
-        let sandbox = DefaultsSandbox(keys: DefaultsSandbox.panelKeys)
+        let sandbox = DefaultsSandbox(keys: DefaultsSandbox.allSettingsKeys)
         let savedLanguage = L10n.shared.language
         // Gate the mascots off so MascotTimeline renders one pinned frame
         // (`mascotStaticTime`) instead of a live TimelineView.
@@ -56,8 +56,9 @@ final class ReadmeScreenshotHarness: XCTestCase {
                 defer { demo.release() }
 
                 let panel = try renderPanel(demo.state)
-                let stage = Stage(panel: panel.image, panelHeight: panel.height, lang: lang, layout: shot.layout)
-                let image = try XCTUnwrap(rasterize(stage), "stage render failed for \(shot)/\(lang)")
+                let stage = Stage(panel: panel.image, panelHeight: panel.height, layout: shot.layout,
+                                  clock: lang == .zh ? "周二 9:41" : "Tue 9:41")
+                let image = try XCTUnwrap(OffscreenRender.rasterize(stage), "stage render failed for \(shot)/\(lang)")
                 let rep = NSBitmapImageRep(cgImage: image)
                 let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
                 try png.write(to: URL(fileURLWithPath: "\(outDir)/\(shot.fileName(lang)).png"))
@@ -69,63 +70,23 @@ final class ReadmeScreenshotHarness: XCTestCase {
     /// MacBook Pro (1512pt wide, 185×32pt notch), then trims the transparent
     /// window area below the panel.
     private func renderPanel(_ state: AppState) throws -> (image: CGImage, height: CGFloat) {
+        let screen = StageScreen.macBook14
         let view = NotchPanelView(
             appState: state,
             hasNotch: true,
-            notchHeight: StageGeometry.notchHeight,
-            notchW: StageGeometry.notchWidth,
-            screenWidth: StageGeometry.screenWidth
+            notchHeight: screen.notchHeight,
+            notchW: screen.notchWidth,
+            screenWidth: screen.screenWidth
         )
         .environment(\.mascotStaticTime, ReadmeDemo.mascotTime)
         .environment(\.colorScheme, .dark)
-        .frame(width: StageGeometry.windowWidth, height: 900)
+        .frame(width: screen.windowWidth, height: 900)
 
-        let full = try XCTUnwrap(rasterize(view), "panel render failed")
-        let bottom = try XCTUnwrap(Self.lastOpaqueRow(full), "panel rendered blank")
+        let full = try XCTUnwrap(OffscreenRender.rasterize(view), "panel render failed")
+        let bottom = try XCTUnwrap(OffscreenRender.lastOpaqueRow(full), "panel rendered blank")
         let rows = (bottom + 2) / 2 * 2  // whole points at 2×
         let cropped = try XCTUnwrap(full.cropping(to: CGRect(x: 0, y: 0, width: full.width, height: rows)))
         return (cropped, CGFloat(rows) / 2)
-    }
-
-    /// Renders `view` at 2× into an 8-bit sRGB bitmap.
-    ///
-    /// `ImageRenderer.cgImage` picks its own pixel format and switches to
-    /// 16-bit extended range (even HDR PQ) as soon as some content asks for
-    /// it — the installed terminals' app icons do — and the down-conversion
-    /// back to 8 bit is dithered, which put noise on every flat colour and
-    /// tripled the file size. Drawing into our own context pins the format.
-    private func rasterize<V: View>(_ view: V, scale: CGFloat = 2) -> CGImage? {
-        let renderer = ImageRenderer(content: view)
-        var result: CGImage?
-        renderer.render(rasterizationScale: scale) { size, draw in
-            let w = Int((size.width * scale).rounded()), h = Int((size.height * scale).rounded())
-            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-                  let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return }
-            ctx.scaleBy(x: scale, y: scale)
-            draw(ctx)
-            result = ctx.makeImage()
-        }
-        return result
-    }
-
-    /// Index of the lowest pixel row holding anything visible.
-    private static func lastOpaqueRow(_ image: CGImage) -> Int? {
-        let w = image.width, h = image.height
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
-              let data = ctx.data
-        else { return nil }
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        let px = data.assumingMemoryBound(to: UInt8.self)
-        // Bitmap memory starts at the image's top row.
-        for y in stride(from: h - 1, through: 0, by: -1) {
-            let row = px + y * w * 4
-            for x in 0..<w where row[x * 4 + 3] > 4 { return y }
-        }
-        return nil
     }
 }
 
@@ -389,253 +350,5 @@ private enum ReadmeDemo {
     private static func hookEvent(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         return try XCTUnwrap(HookEvent(from: data), "HookEvent parse failed")
-    }
-}
-
-// MARK: - Defaults sandbox
-
-/// Clears the settings the panel reads so every `@AppStorage` falls back to
-/// its shipped default, and puts the previous values back afterwards.
-private struct DefaultsSandbox {
-    private let keys: [String]
-    private let saved: [String: Any]
-
-    init(keys: [String]) {
-        let defaults = UserDefaults.standard
-        self.keys = keys
-        var saved: [String: Any] = [:]
-        for key in keys {
-            if let value = defaults.object(forKey: key) { saved[key] = value }
-            defaults.removeObject(forKey: key)
-        }
-        self.saved = saved
-    }
-
-    func restore() {
-        let defaults = UserDefaults.standard
-        for key in keys {
-            if let value = saved[key] {
-                defaults.set(value, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-    }
-
-    static var panelKeys: [String] {
-        [
-            SettingsKey.appLanguage, SettingsKey.contentFontSize, SettingsKey.showAgentDetails,
-            SettingsKey.smartSuppress, SettingsKey.hideWhenNoSession, SettingsKey.showToolStatus,
-            SettingsKey.collapsedWidthScale, SettingsKey.hapticOnHover, SettingsKey.hapticIntensity,
-            SettingsKey.sessionGroupingMode, SettingsKey.defaultSource, SettingsKey.soundEnabled,
-            SettingsKey.quietHoursEnabled, SettingsKey.quietHoursStart, SettingsKey.quietHoursEnd,
-            SettingsKey.autoCollapseAfterSessionJump, SettingsKey.maxVisibleSessions,
-            SettingsKey.showUsageStats, SettingsKey.showClaudeQuota, SettingsKey.showGitBranch,
-            SettingsKey.aiMessageLines, SettingsKey.mascotSpeed, SettingsKey.notchHeightMode,
-            SettingsKey.customNotchHeight, SettingsKey.collapseOnMouseLeave, SettingsKey.maxToolHistory,
-            SettingsKey.showSessionRecap, SettingsKey.showModelLabel, SettingsKey.showTaskProgress,
-            SettingsKey.showProjectName, SettingsKey.autoExpandOnQuestion, SettingsKey.followUpReminderMinutes,
-        ] + ShortcutAction.allCases.flatMap { action in
-            [
-                SettingsKey.shortcutEnabled(action.rawValue),
-                SettingsKey.shortcutKeyCode(action.rawValue),
-                SettingsKey.shortcutModifiers(action.rawValue),
-            ]
-        }
-    }
-}
-
-// MARK: - Stage (stylised MacBook top edge)
-
-private enum StageGeometry {
-    // 14" MacBook Pro at its default 1512×982pt resolution.
-    static let screenWidth: CGFloat = 1512
-    static let notchWidth: CGFloat = 185
-    static let notchHeight: CGFloat = 32
-    /// PanelWindowController.panelSize: min(620, screenWidth - 40).
-    static let windowWidth: CGFloat = 620
-    static let bezelHeight: CGFloat = 10
-    static let cornerRadius: CGFloat = 20
-}
-
-private struct StageLayout {
-    let width: CGFloat
-    let bottomMargin: CGFloat
-    let menuItems: Bool
-}
-
-private struct Stage: View {
-    let panel: CGImage
-    let panelHeight: CGFloat
-    let lang: ShotLang
-    let layout: StageLayout
-
-    private var height: CGFloat {
-        StageGeometry.bezelHeight + panelHeight + layout.bottomMargin
-    }
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            Wallpaper(size: CGSize(width: layout.width, height: height))
-            VStack(spacing: 0) {
-                Bezel()
-                    .frame(height: StageGeometry.bezelHeight)
-                ZStack(alignment: .top) {
-                    MenuBarStrip(lang: lang, showItems: layout.menuItems)
-                    PhysicalNotch()
-                        .fill(Color.black)
-                        .frame(width: StageGeometry.notchWidth, height: StageGeometry.notchHeight)
-                    Image(decorative: panel, scale: 2)
-                        .shadow(color: .black.opacity(0.45), radius: 26, x: 0, y: 14)
-                        .shadow(color: .black.opacity(0.25), radius: 6, x: 0, y: 3)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .frame(width: layout.width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: StageGeometry.cornerRadius, style: .continuous))
-        .environment(\.colorScheme, .dark)
-    }
-}
-
-private func rgb(_ hex: UInt32) -> Color {
-    Color(
-        red: Double((hex >> 16) & 0xFF) / 255,
-        green: Double((hex >> 8) & 0xFF) / 255,
-        blue: Double(hex & 0xFF) / 255
-    )
-}
-
-/// Dark indigo → purple → teal with a few soft glows, rasterised by hand.
-///
-/// SwiftUI/CoreGraphics gradients are dithered, and that per-pixel noise
-/// alone tripled the PNG size. Computing the gradient directly keeps it
-/// smooth, so the image stays truecolour yet compresses well.
-private struct Wallpaper: View {
-    let size: CGSize
-
-    var body: some View {
-        if let image = Self.raster(size: size, scale: 2) {
-            Image(decorative: image, scale: 2)
-        }
-    }
-
-    private struct RGB {
-        var r: Float, g: Float, b: Float
-        init(_ hex: UInt32) {
-            r = Float((hex >> 16) & 0xFF) / 255
-            g = Float((hex >> 8) & 0xFF) / 255
-            b = Float(hex & 0xFF) / 255
-        }
-        func mixed(with o: RGB, _ t: Float) -> RGB {
-            var c = self
-            c.r += (o.r - r) * t; c.g += (o.g - g) * t; c.b += (o.b - b) * t
-            return c
-        }
-    }
-
-    private struct Glow {
-        let x: Float, y: Float, radius: Float, color: RGB, alpha: Float
-    }
-
-    static func raster(size: CGSize, scale: CGFloat) -> CGImage? {
-        let w = Int(size.width * scale), h = Int(size.height * scale)
-        let fw = Float(w), fh = Float(h), longest = max(fw, fh)
-        let stops = [RGB(0x1B1845), RGB(0x34205F), RGB(0x15405A)]
-        let glows = [
-            Glow(x: 0.03, y: 1.00, radius: 0.62, color: RGB(0x2FB5A6), alpha: 0.55),
-            Glow(x: 0.97, y: 0.06, radius: 0.58, color: RGB(0xA35BE8), alpha: 0.46),
-            Glow(x: 0.52, y: 0.95, radius: 0.46, color: RGB(0x5B7CFA), alpha: 0.26),
-        ]
-        let diag = fw * fw + fh * fh
-        var pixels = [UInt8](repeating: 255, count: w * h * 4)
-        for y in 0..<h {
-            let py = Float(y) + 0.5
-            for x in 0..<w {
-                let px = Float(x) + 0.5
-                // topLeading → bottomTrailing, like LinearGradient on the rect
-                let t = min(max((px * fw + py * fh) / diag, 0), 1)
-                var c = t < 0.5 ? stops[0].mixed(with: stops[1], t * 2) : stops[1].mixed(with: stops[2], t * 2 - 1)
-                for g in glows {
-                    let dx = px - g.x * fw, dy = py - g.y * fh
-                    let s = min((dx * dx + dy * dy).squareRoot() / (g.radius * longest), 1)
-                    let falloff = 1 - s * s * (3 - 2 * s)  // smoothstep
-                    c = c.mixed(with: g.color, g.alpha * falloff)
-                }
-                let i = (y * w + x) * 4
-                pixels[i] = UInt8(min(max(c.r * 255, 0), 255).rounded())
-                pixels[i + 1] = UInt8(min(max(c.g * 255, 0), 255).rounded())
-                pixels[i + 2] = UInt8(min(max(c.b * 255, 0), 255).rounded())
-            }
-        }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-              let space = CGColorSpace(name: CGColorSpace.sRGB)
-        else { return nil }
-        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
-                       space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    }
-}
-
-/// The display's top bezel: near-black with a faint lid-edge highlight.
-private struct Bezel: View {
-    var body: some View {
-        ZStack(alignment: .top) {
-            Rectangle().fill(rgb(0x060607))
-            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5)
-        }
-    }
-}
-
-/// Translucent menu bar with a few stand-in items at the crop edges.
-private struct MenuBarStrip: View {
-    let lang: ShotLang
-    let showItems: Bool
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.black.opacity(0.30))
-            if showItems {
-                HStack(spacing: 0) {
-                    HStack(spacing: 18) {
-                        Image(systemName: "apple.logo")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Ghostty")
-                            .font(.system(size: 13, weight: .bold))
-                    }
-                    Spacer(minLength: 0)
-                    HStack(spacing: 15) {
-                        Image(systemName: "wifi")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(lang == .zh ? "周二 9:41" : "Tue 9:41")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                }
-                .padding(.horizontal, 20)
-                .foregroundStyle(Color.white.opacity(0.92))
-            }
-        }
-        .frame(height: StageGeometry.notchHeight)
-    }
-}
-
-/// Notch cut-out: rounded bottom corners plus the small concave flares where
-/// it meets the bezel. Sits under the panel, which grows out of it.
-private struct PhysicalNotch: Shape {
-    func path(in rect: CGRect) -> Path {
-        let flare: CGFloat = 4
-        let radius: CGFloat = 10
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX - flare, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX + flare, y: rect.minY))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + flare), control: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
-        p.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - radius), control: CGPoint(x: rect.minX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + flare))
-        p.addQuadCurve(to: CGPoint(x: rect.minX - flare, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
-        p.closeSubpath()
-        return p
     }
 }
