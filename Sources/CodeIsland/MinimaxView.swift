@@ -160,13 +160,17 @@ struct MinimaxView: View {
             MascotTimeline(interval: 0.05) { t in
                 let cycle = t.truncatingRemainder(dividingBy: 3.4)
                 let pct = CGFloat(cycle / 3.4)
+                // The antenna tip sits 0.4 units below the frame's top edge;
+                // the held pose stays inside it so the flashing tip — the
+                // alert's beacon — is never clipped off. Only the startle
+                // jump pokes past the edge, briefly.
                 let rise: CGFloat
                 if pct < 0.14 {
-                    rise = -MascotMotion.easeOutBack(pct / 0.14) * 2.2
+                    rise = -MascotMotion.easeOutBack(pct / 0.14) * 1.2
                 } else if pct < 0.3 {
-                    rise = -1.6 - sin((pct - 0.14) / 0.16 * .pi) * 0.5
+                    rise = -0.8 - sin((pct - 0.14) / 0.16 * .pi) * 0.3
                 } else {
-                    rise = -1.2
+                    rise = -0.4
                 }
                 let flash = Int(t / 0.22) % 2 == 0
                 return Canvas { c, sz in
