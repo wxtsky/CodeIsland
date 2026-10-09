@@ -450,6 +450,86 @@ final class AppStateCodexSubsessionTests: XCTestCase {
         XCTAssertNil(metadata.agentNickname)
     }
 
+    func testCodexUnitSubagentSourceReadsTopLevelParentThread() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-review-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // `/review` threads serialize SubAgentSource::Review as a bare string.
+        let review = dir.appendingPathComponent("review.jsonl")
+        try """
+        {"type":"session_meta","payload":{"id":"review-thread","parent_thread_id":"parent-thread","cwd":"/repo","source":{"subagent":"review"},"thread_source":"subagent"}}
+
+        """.write(to: review, atomically: true, encoding: .utf8)
+        let orphan = dir.appendingPathComponent("orphan.jsonl")
+        try """
+        {"type":"session_meta","payload":{"id":"review-thread","cwd":"/repo","source":{"subagent":"review"}}}
+
+        """.write(to: orphan, atomically: true, encoding: .utf8)
+
+        let metadata = try XCTUnwrap(AppState.codexSubagentMetadata(inTranscriptPath: review.path))
+        XCTAssertEqual(metadata.parentThreadId, "parent-thread")
+        XCTAssertEqual(metadata.agentType, "review")
+        XCTAssertNil(metadata.agentNickname)
+        // No parent and no spawn edge: stays a root card, as before.
+        XCTAssertNil(AppState.codexSubagentMetadata(
+            threadId: "review-thread",
+            transcriptPath: orphan.path,
+            statePath: dir.appendingPathComponent("missing.sqlite").path
+        ))
+    }
+
+    func testKnownCodexGuardianSessionFollowsPluginSessionMode() throws {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-guardian-mode-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let statePath = dir.appendingPathComponent("state_5.sqlite").path
+        let transcript = dir.appendingPathComponent("guardian.jsonl")
+        try """
+        {"type":"session_meta","payload":{"id":"guardian-thread","parent_thread_id":"parent-thread","cwd":"/repo","originator":"Codex Desktop","source":{"subagent":{"other":"guardian"}},"thread_source":"guardian_review"}}
+
+        """.write(to: transcript, atomically: true, encoding: .utf8)
+
+        func makeState() -> AppState {
+            let appState = AppState()
+            var parent = SessionSnapshot()
+            parent.source = "codex"
+            parent.providerSessionId = "parent-thread"
+            parent.status = .running
+            var guardian = SessionSnapshot()
+            guardian.source = "codex"
+            guardian.providerSessionId = "guardian-thread"
+            guardian.status = .processing
+            guardian.transcriptPath = transcript.path
+            guardian.lastActivity = Date()
+            appState.sessions["parent"] = parent
+            appState.sessions["guardian"] = guardian
+            return appState
+        }
+
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let merged = makeState()
+        XCTAssertTrue(merged.applyCodexSubsessionModeToKnownSessions(statePath: statePath))
+        XCTAssertNil(merged.sessions["guardian"])
+        XCTAssertEqual(merged.sessions["parent"]?.subagents["guardian-thread"]?.agentType, "guardian")
+
+        UserDefaults.standard.set("hide", forKey: SettingsKey.pluginSessionMode)
+        let hidden = makeState()
+        XCTAssertTrue(hidden.applyCodexSubsessionModeToKnownSessions(statePath: statePath))
+        XCTAssertNil(hidden.sessions["guardian"])
+        XCTAssertTrue(hidden.sessions["parent"]?.subagents.isEmpty == true)
+    }
+
     func testCodexSubagentMetadataFallsBackToThreadSpawnEdgesDatabase() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("codeisland-codex-subagent-db-\(UUID().uuidString)")

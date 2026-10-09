@@ -7428,15 +7428,29 @@ final class AppState {
             return .unavailable
         }
 
-        guard let source = payload["source"] as? [String: Any],
-              let subagent = source["subagent"] as? [String: Any],
+        guard let source = payload["source"] as? [String: Any] else {
+            return .root
+        }
+        let payloadParent = (payload["parent_thread_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // Unit variants (`review`, `compact`, `memory_consolidation`) serialize as
+        // a bare string and only record their parent on the payload. Without
+        // one there is no spawn edge to fall back to either.
+        if let label = source["subagent"] as? String, !label.isEmpty {
+            guard let payloadParent else { return .root }
+            return .subagent(CodexSubagentMetadata(
+                parentThreadId: payloadParent,
+                agentType: label,
+                agentNickname: nil
+            ))
+        }
+        guard let subagent = source["subagent"] as? [String: Any],
               !subagent.isEmpty else {
             return .root
         }
         // Spawned workers nest the parent under `source.subagent.thread_spawn`;
         // auto-review (guardian) threads record it on the payload itself.
         let parent = firstStringRecursively(in: subagent, key: "parent_thread_id")
-            ?? payload["parent_thread_id"] as? String
+            ?? payloadParent
         guard let parent, !parent.isEmpty else { return .unavailable }
 
         let agentType = firstStringRecursively(in: subagent, key: "agent_role")
