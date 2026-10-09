@@ -266,6 +266,42 @@ final class MinimaxSupportTests: XCTestCase {
         // been scrubbed from hooks.json.
         XCTAssertTrue(fm.fileExists(atPath: pluginDir))
         XCTAssertTrue(fm.fileExists(atPath: hooksPath))
+        XCTAssertEqual(try String(contentsOfFile: hooksPath, encoding: .utf8), "{\"hooks\":{}}")
+
+        // A foreign pack with hooks of its own is not rewritten either.
+        let foreignHooks = "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"/usr/local/bin/notify\"}]}]}}"
+        try foreignHooks.write(toFile: hooksPath, atomically: true, encoding: .utf8)
+        ConfigInstaller.uninstallHooks(cli: cli, fm: fm)
+        XCTAssertEqual(try String(contentsOfFile: hooksPath, encoding: .utf8), foreignHooks)
+    }
+
+    /// Our manifest gone but our entries left in a hooks.json shared with
+    /// someone else's: uninstall takes ours out and keeps theirs.
+    func testMinimaxUninstallScrubsOurEntriesWithoutTheManifest() throws {
+        let fm = FileManager.default
+        let home = try makeMinimaxHome("minimax-orphan-hooks")
+        let cli = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "minimax" })
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+        let pluginDir = home + "/plugins/codeisland"
+        try fm.removeItem(atPath: pluginDir + "/.claude-plugin/plugin.json")
+        let hooksPath = pluginDir + "/hooks/hooks.json"
+        var doc = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: hooksPath))) as? [String: Any])
+        var hooks = try XCTUnwrap(doc["hooks"] as? [String: Any])
+        var stop = try XCTUnwrap(hooks["Stop"] as? [[String: Any]])
+        stop.append(["hooks": [["type": "command", "command": "/usr/local/bin/notify"]]])
+        hooks["Stop"] = stop
+        doc["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: doc).write(to: URL(fileURLWithPath: hooksPath))
+
+        ConfigInstaller.uninstallHooks(cli: cli, fm: fm)
+
+        let after = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: hooksPath))) as? [String: Any])
+        let remaining = try XCTUnwrap(after["hooks"] as? [String: Any])
+        XCTAssertEqual(Array(remaining.keys), ["Stop"])
+        let entries = try XCTUnwrap(remaining["Stop"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertFalse(String(decoding: try Data(contentsOf: URL(fileURLWithPath: hooksPath)), as: UTF8.self)
+            .contains("codeisland-bridge"))
     }
 
     func testMinimaxInstallRefusesToOverwriteForeignPluginPack() throws {

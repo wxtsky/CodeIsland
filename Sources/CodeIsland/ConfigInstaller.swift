@@ -2873,11 +2873,13 @@ struct ConfigInstaller {
         // hooks.json we may have contributed to, leaving foreign content alone.
         guard fm.fileExists(atPath: hooksPath),
               let root = parseJSONFile(at: hooksPath, fm: fm),
-              var hooks = root[cli.configKey] as? [String: Any],
+              let original = root[cli.configKey] as? [String: Any],
               let originalText = fm.contents(atPath: hooksPath).flatMap({ String(data: $0, encoding: .utf8) })
         else { return }
 
-        hooks = removeManagedHookEntries(from: hooks)
+        let hooks = removeManagedHookEntries(from: original)
+        // Nothing of ours in it: someone else's file, left byte for byte.
+        guard !NSDictionary(dictionary: hooks).isEqual(to: original) else { return }
         let merged: String?
         if hooks.isEmpty {
             merged = JSONMinimalEditor.deleteTopLevelKey(in: originalText, key: cli.configKey)
