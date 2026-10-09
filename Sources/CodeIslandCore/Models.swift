@@ -70,7 +70,10 @@ public enum CLIProcessResolver {
         case "codex":
             return lowercasedPath.hasSuffix("/codex") || lowercasedPath.contains("/codex ")
         case "claude":
+            // The native installer (Claude Code's default) runs the binary
+            // named by its version: ~/.local/share/claude/versions/2.1.294.
             return lowercasedPath.hasSuffix("/claude") || lowercasedPath.contains("/claude ")
+                || lowercasedPath.contains("/.local/share/claude/versions/")
         case "dsh":
             // DeepSeek Harness CLI ships a `dsh` binary. It has no shell hooks —
             // the dsh-island plugin forwards events over the socket directly.

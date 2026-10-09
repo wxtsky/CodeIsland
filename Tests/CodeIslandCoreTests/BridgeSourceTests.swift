@@ -65,6 +65,49 @@ final class BridgeSourceTests: XCTestCase {
         XCTAssertTrue(omoUnderClaude.viaPlugin)
     }
 
+    /// Claude Code's native installer (its default) runs the binary as
+    /// `~/.local/share/claude/versions/<version>`. That is Claude firing its
+    /// own hook too: the walk must stop there instead of going on to whatever
+    /// hosts it — an editor or desktop app with a terminal (Kiro, ZCode, the
+    /// Codex app), Codex or OpenCode running `claude` as a tool, or a home
+    /// folder whose name the loose `/<source>` rule claims (`/Users/pi…`).
+    /// Attributed to the host and marked proxied, the session was relabelled,
+    /// folded into the host's card by "merge", and hidden with its approvals
+    /// auto-allowed by "hide".
+    func testNativeClaudeInstallIsClaudesOwnHook() {
+        let hosts = [
+            "/Applications/Kiro.app/Contents/Frameworks/Kiro Helper (Plugin).app/Contents/MacOS/Kiro Helper (Plugin)",
+            "/Applications/ZCode.app/Contents/MacOS/ZCode",
+            "/Applications/Codex.app/Contents/MacOS/Codex",
+            "/Users/u/.opencode/bin/opencode",
+        ]
+        for host in hosts {
+            let resolved = CLIProcessResolver.bridgeSource(
+                sourceTag: nil, payloadSource: nil,
+                ancestry: [(900, "/Users/u/.local/share/claude/versions/2.1.294"), (800, "/bin/zsh"), (700, host)]
+            )
+            XCTAssertEqual(resolved.source, "claude", host)
+            XCTAssertFalse(resolved.viaPlugin, host)
+        }
+
+        let homeNamedLikeASource = CLIProcessResolver.bridgeSource(
+            sourceTag: nil, payloadSource: nil,
+            ancestry: [(900, "/Users/pierre/.local/share/claude/versions/2.1.294"), (800, "/bin/zsh")]
+        )
+        XCTAssertEqual(homeNamedLikeASource.source, "claude")
+        XCTAssertFalse(homeNamedLikeASource.viaPlugin)
+
+        // Its `_ppid` is the Claude process, not a shell between it and the bridge.
+        XCTAssertEqual(
+            CLIProcessResolver.resolvedTrackedPID(
+                immediateParentPID: 950,
+                source: "claude",
+                ancestry: [(950, "/bin/sh"), (900, "/Users/u/.local/share/claude/versions/2.1.294")]
+            ),
+            900
+        )
+    }
+
     /// An unknown payload source is no declaration: fall back to ancestry.
     func testUnknownPayloadSourceFallsBackToAncestry() {
         let resolved = CLIProcessResolver.bridgeSource(sourceTag: nil, payloadSource: "nonsense", ancestry: underMimo)
