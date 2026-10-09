@@ -53,7 +53,7 @@ final class QoderIDEBundleTests: XCTestCase {
         let session = try XCTUnwrap(sessions["qoder-app-session"])
         XCTAssertTrue(session.isNativeAppMode)
         XCTAssertFalse(session.isIDETerminal)
-        XCTAssertEqual(session.terminalBadgeLabel, "Qoder App")
+        XCTAssertEqual(session.terminalBadgeLabel, "Qoder")
         XCTAssertEqual(session.mascotSource, "qoder")
         XCTAssertTrue(AppState.isQoderIDEBundlePath(
             "/Applications/Qoder.app/Contents/MacOS/Qoder"))
@@ -65,7 +65,7 @@ final class QoderIDEBundleTests: XCTestCase {
         session.termBundleId = "com.qoder.ide"
 
         XCTAssertTrue(session.isNativeAppMode)
-        XCTAssertEqual(session.terminalBadgeLabel, "Qoder")
+        XCTAssertEqual(session.terminalBadgeLabel, "Qoder IDE")
         XCTAssertEqual(TerminalActivator.sourceToNativeAppBundleId["qoder"], "com.qoder.ide")
     }
 

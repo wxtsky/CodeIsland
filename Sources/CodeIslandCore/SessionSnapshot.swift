@@ -707,7 +707,7 @@ public struct SessionSnapshot: Sendable {
         case "trae": return "Trae"
         case "traecn": return "Trae CN"
         case "traecli": return "Traecli"
-        case "qoder": return "Qoder"
+        case "qoder": return termBundleId == "com.qoder.ide" ? "Qoder IDE" : "Qoder"
         case "qoder-cli": return "Qoder CLI"
         case "qoderwork": return "QoderWork"
         case "droid": return "Factory"
@@ -781,8 +781,8 @@ public struct SessionSnapshot: Sendable {
         "com.todesktop.230313mzl4w4u92": "Cursor",
         "com.trae.app": "Trae",
         "cn.trae.app": "Trae CN",
-        "com.qoder.ide": "Qoder",
-        "com.qoder.app": "Qoder App",
+        "com.qoder.ide": "Qoder IDE",
+        "com.qoder.app": "Qoder",
         "com.factory.app": "Factory",
         "com.tencent.codebuddy": "CodeBuddy",
         "com.tencent.codebuddy.cn": "CodyBuddyCN",
