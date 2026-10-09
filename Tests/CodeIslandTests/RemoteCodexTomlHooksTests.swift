@@ -73,7 +73,11 @@ final class RemoteCodexTomlHooksTests: XCTestCase {
         ok = module.ensure_toml_codex_hooks(path)
         if sys.argv[4] == "true":
             import tomllib
-            before = tomllib.loads(original)
+            try:
+                before = tomllib.loads(original)
+            except tomllib.TOMLDecodeError:
+                # A healed pre-fix duplicate [features] block: only the result must parse.
+                before = None
             after = tomllib.loads(path.read_text())
             assert after.get("features", {}).get("hooks") is True, after
             def without_managed_flags(data):
@@ -84,7 +88,8 @@ final class RemoteCodexTomlHooksTests: XCTestCase {
                     if not features:
                         del data["features"]
                 return data
-            assert without_managed_flags(before) == without_managed_flags(after), "unrelated values changed"
+            if before is not None:
+                assert without_managed_flags(before) == without_managed_flags(after), "unrelated values changed"
         print(json.dumps({"ok": ok}))
         """
         let process = Process()

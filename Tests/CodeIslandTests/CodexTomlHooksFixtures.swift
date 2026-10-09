@@ -41,6 +41,25 @@ struct CodexTomlHooksFixture {
         .init(name: "legacy dotted key", original: "\"features\".\"codex_hooks\" = true # keep\n", expected: "features.hooks = true # keep\n"),
         .init(name: "remove scoped legacy only", original: "[tui]\ncodex_hooks = false\n[features]\nhooks = true\ncodex_hooks = true\n", expected: "[tui]\ncodex_hooks = false\n[features]\nhooks = true\n"),
         .init(name: "remove dotted legacy", original: "features.hooks = false\nfeatures.codex_hooks = true\n", expected: "features.hooks = true\n"),
+        // CodeIsland 1.0.35 and earlier appended this block even when the
+        // table already existed; Codex then refused to start (#354).
+        .init(
+            name: "heal pre-fix block after dotted flag",
+            original: "\"features\".\"hooks\" = true\nmodel = \"gpt-6-sol\"\n\n[features.context_management]\nexperimental_mode = true\n\n[features]\nhooks = true",
+            expected: "\"features\".\"hooks\" = true\nmodel = \"gpt-6-sol\"\n\n[features.context_management]\nexperimental_mode = true\n"
+        ),
+        .init(
+            name: "heal pre-fix block after dotted feature",
+            original: "features.other = true\n\n[tui]\nx = 1\n\n[features]\nhooks = true\n",
+            expected: "features.other = true\n\nfeatures.hooks = true\n[tui]\nx = 1\n"
+        ),
+        .init(
+            name: "heal pre-fix block after commented header",
+            original: "[features] # flags\r\nother = true\r\n\n[features]\nhooks = true\n",
+            expected: "[features] # flags\r\nhooks = true\r\nother = true\r\n"
+        ),
+        .init(name: "dotted feature plus table is unsafe", original: "features.other = true\n[features]\nhooks = true\nmodel = \"x\"\n", expected: nil),
+        .init(name: "edited pre-fix block is not healed", original: "features.other = true\n\n[features]\n# mine\nhooks = true\n", expected: nil),
         .init(name: "inline features is unsafe", original: "features = { hooks = false }\n", expected: nil),
         .init(name: "nonboolean hooks is unsafe", original: "[features]\nhooks = \"false\"\n", expected: nil),
         .init(name: "hooks subtable is unsafe", original: "[features.hooks]\nvalue = true\n", expected: nil),

@@ -32,13 +32,18 @@ public enum CodexHooksConfig {
             source = Array(contents.unicodeScalars)
         }
 
-        func enablingHooks() throws -> String {
+        func enablingHooks(healing: Bool = true) throws -> String {
+            let statements = try statements()
+            if healing, let healed = try withoutAppendedFeaturesTable(statements) {
+                return try Scanner(healed).enablingHooks(healing: false)
+            }
             var scope: [String] = []
             var current: Flag?
             var legacy: Flag?
             var featuresHeader: Int?
             var firstTable: Int?
-            for statement in try statements() {
+            var rootDottedFeatures = false
+            for statement in statements {
                 var i = skipSpaces(statement.lowerBound, limit: statement.upperBound)
                 guard i < statement.upperBound, ![35, 13, 10].contains(source[i].value) else { continue }
                 if source[i] == "[" {
@@ -64,6 +69,7 @@ public enum CodexHooksConfig {
                 guard i < statement.upperBound, source[i] == "=" else { throw Invalid.layout }
                 i = skipSpaces(i + 1, limit: statement.upperBound)
                 guard i < statement.upperBound, ![35, 13, 10].contains(source[i].value) else { throw Invalid.layout }
+                if scope.isEmpty && parsed.path.count > 1 && parsed.path[0] == "features" { rootDottedFeatures = true }
                 let absolute = scope + parsed.path
                 guard absolute != ["features"],
                       !(Array(absolute.prefix(2)) == ["features", "hooks"] && absolute.count > 2) else { throw Invalid.layout }
@@ -80,6 +86,10 @@ public enum CodexHooksConfig {
                     legacy = flag
                 }
             }
+            // Root dotted `features.*` keys already define the table, so an
+            // explicit [features] header too is a duplicate key Codex refuses
+            // to load. Don't report such a file as enabled.
+            guard featuresHeader == nil || !rootDottedFeatures else { throw Invalid.layout }
 
             var edits: [Edit] = []
             if let current {
@@ -109,6 +119,65 @@ public enum CodexHooksConfig {
                 result.replaceSubrange(edit.range, with: edit.replacement.unicodeScalars)
             }
             return String(String.UnicodeScalarView(result))
+        }
+
+        /// CodeIsland 1.0.35 and earlier appended `[features]` + `hooks = true`
+        /// at EOF whenever its line regex missed the flag or the header, even
+        /// when root dotted `features.*` keys or a spelling such as
+        /// `[features] # note` already defined that table: a duplicate key that
+        /// stops Codex from starting (#354). Returns the document without that
+        /// block (and the blank line before it), or nil unless the file ends
+        /// with exactly that shape on top of an existing features table.
+        func withoutAppendedFeaturesTable(_ statements: [Range<Int>]) throws -> String? {
+            var featuresDefined = false
+            var lastHeader: Int?
+            for (index, statement) in statements.enumerated() {
+                let i = skipSpaces(statement.lowerBound, limit: statement.upperBound)
+                guard i < statement.upperBound, ![35, 13, 10].contains(source[i].value) else { continue }
+                if source[i] == "[" {
+                    // Every header but the final one may be the earlier definition.
+                    if let previous = lastHeader, try isFeaturesHeader(statements[previous]) { featuresDefined = true }
+                    lastHeader = index
+                } else if lastHeader == nil {
+                    let path = try key(at: i, limit: statement.upperBound).path
+                    if path.count > 1 && path[0] == "features" { featuresDefined = true }
+                }
+            }
+            guard featuresDefined, let lastHeader else { return nil }
+            let header = statements[lastHeader]
+            let open = skipSpaces(header.lowerBound, limit: header.upperBound)
+            guard matches("[features]", at: open, limit: header.upperBound),
+                  isBlank(open + 10..<header.upperBound) else { return nil }
+            var flags = 0
+            for statement in statements[(lastHeader + 1)...] where !isBlank(statement) {
+                let first = skipSpaces(statement.lowerBound, limit: statement.upperBound)
+                guard source[first] != "#" else { return nil }
+                let assignment = try key(at: first, limit: statement.upperBound)
+                guard assignment.path == ["hooks"], assignment.next < statement.upperBound,
+                      source[assignment.next] == "=" else { return nil }
+                let value = skipSpaces(assignment.next + 1, limit: statement.upperBound)
+                guard ["true", "false"].contains(where: {
+                    matches($0, at: value, limit: statement.upperBound)
+                        && isBlank(value + $0.unicodeScalars.count..<statement.upperBound)
+                }) else { return nil }
+                flags += 1
+            }
+            guard flags == 1 else { return nil }
+            var start = header.lowerBound
+            if lastHeader > 0, isBlank(statements[lastHeader - 1]) { start = statements[lastHeader - 1].lowerBound }
+            return String(String.UnicodeScalarView(source[..<start]))
+        }
+
+        /// `[features]` in any spelling (quoted, spaced, commented); not `[[features]]`.
+        func isFeaturesHeader(_ statement: Range<Int>) throws -> Bool {
+            let open = skipSpaces(statement.lowerBound, limit: statement.upperBound)
+            guard open + 1 < statement.upperBound, source[open + 1] != "[" else { return false }
+            let parsed = try key(at: open + 1, limit: statement.upperBound)
+            return parsed.path == ["features"] && parsed.next < statement.upperBound && source[parsed.next] == "]"
+        }
+
+        func isBlank(_ range: Range<Int>) -> Bool {
+            source[range].allSatisfy { [32, 9, 13, 10].contains($0.value) }
         }
 
         /// Newlines inside strings or nested array/inline-table values do not

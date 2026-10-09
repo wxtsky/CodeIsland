@@ -932,7 +932,66 @@ def _codex_toml_tail(text, i):
     tail = text[i:].lstrip(' \\t\\r\\n')
     return not tail or tail.startswith('#')
 
-def _codex_hooks_toml(content):
+def _codex_is_features_header(text):
+    i = len(text) - len(text.lstrip(' \\t'))
+    if text.startswith('[[', i):
+        return False
+    key, _, pos = _codex_toml_key(text, i + 1)
+    return key == ('features',) and text.startswith(']', pos)
+
+def _codex_without_appended_features(content, ranges):
+    # CodeIsland 1.0.35 and earlier appended [features] + hooks = true at EOF
+    # whenever its line regex missed the flag or the header, even when root dotted
+    # features.* keys or a spelling such as "[features] # note" already defined
+    # that table: a duplicate key that stops Codex from starting (#354). Drop
+    # exactly that trailing block and the blank line before it; else None.
+    features_defined, last_header = False, None
+    for index, (start, end) in enumerate(ranges):
+        text = content[start:end]
+        i = len(text) - len(text.lstrip(' \\t'))
+        if i == len(text) or text[i] in '#\\r\\n':
+            continue
+        if text[i] == '[':
+            # Every header but the final one may be the earlier definition.
+            if last_header is not None and _codex_is_features_header(content[ranges[last_header][0]:ranges[last_header][1]]):
+                features_defined = True
+            last_header = index
+        elif last_header is None:
+            key = _codex_toml_key(text, i)[0]
+            if len(key) > 1 and key[0] == 'features':
+                features_defined = True
+    if not features_defined or last_header is None:
+        return None
+    start, end = ranges[last_header]
+    text = content[start:end]
+    i = len(text) - len(text.lstrip(' \\t'))
+    if not text.startswith('[features]', i) or text[i + 10:].strip(' \\t\\r\\n'):
+        return None
+    flags = 0
+    for body_start, body_end in ranges[last_header + 1:]:
+        text = content[body_start:body_end]
+        if not text.strip(' \\t\\r\\n'):
+            continue
+        i = len(text) - len(text.lstrip(' \\t'))
+        if text[i] == '#':
+            return None
+        key, _, pos = _codex_toml_key(text, i)
+        if key != ('hooks',) or not text.startswith('=', pos):
+            return None
+        pos += 1
+        pos += len(text[pos:]) - len(text[pos:].lstrip(' \\t'))
+        if not any(text.startswith(v, pos) and not text[pos + len(v):].strip(' \\t\\r\\n') for v in ('true', 'false')):
+            return None
+        flags += 1
+    if flags != 1:
+        return None
+    if last_header > 0:
+        blank_start, blank_end = ranges[last_header - 1]
+        if not content[blank_start:blank_end].strip(' \\t\\r\\n'):
+            start = blank_start
+    return content[:start]
+
+def _codex_hooks_toml(content, heal=True):
     # Narrow source editor: root features.hooks only; opaque values stay verbatim.
     # tomllib, when available, validates both documents. Older Python still gets
     # lexical, key/scope and conflicting-layout guards, not a full TOML parser.
@@ -941,10 +1000,15 @@ def _codex_hooks_toml(content):
     except ImportError:
         tomllib = None
     try:
+        if heal:
+            healed = _codex_without_appended_features(content, _codex_toml_statements(content))
+            if healed is not None:
+                return _codex_hooks_toml(healed, False)
         if tomllib is not None:
             tomllib.loads(content)
         scope = ()
         current = legacy = features_header = first_table = None
+        root_dotted = False
         for start, end in _codex_toml_statements(content):
             text = content[start:end]
             i = len(text) - len(text.lstrip(' \\t'))
@@ -973,6 +1037,8 @@ def _codex_hooks_toml(content):
             pos += len(text[pos:]) - len(text[pos:].lstrip(' \\t'))
             if pos == len(text) or text[pos] in '#\\r\\n':
                 return None
+            if not scope and len(key) > 1 and key[0] == 'features':
+                root_dotted = True
             absolute = scope + key
             if absolute == ('features',) or (absolute[:2] == ('features', 'hooks') and len(absolute) > 2):
                 return None
@@ -990,6 +1056,10 @@ def _codex_hooks_toml(content):
                 if legacy is not None:
                     return None
                 legacy = flag
+        # Root dotted features.* keys already define the table; an explicit
+        # [features] header too is a duplicate key Codex refuses to load.
+        if features_header is not None and root_dotted:
+            return None
         edits = []
         if current is not None:
             edits.append((current[4], current[5], 'true'))
