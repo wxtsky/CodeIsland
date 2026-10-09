@@ -238,9 +238,9 @@ final class MinimaxSupportTests: XCTestCase {
         try fm.createDirectory(atPath: pluginDir + "/hooks", withIntermediateDirectories: true)
         // A foreign plugin that happens to squat the directory name.
         let foreignManifest = "{\"name\":\"codeisland\",\"description\":\"not ours\"}"
-        try foreignManifest.write(toFile: pluginDir + "/.claude-plugin/plugin.json", encoding: .utf8)
+        try foreignManifest.write(toFile: pluginDir + "/.claude-plugin/plugin.json", atomically: true, encoding: .utf8)
         let hooksPath = pluginDir + "/hooks/hooks.json"
-        try "{\"hooks\":{}}".write(toFile: hooksPath, encoding: .utf8)
+        try "{\"hooks\":{}}".write(toFile: hooksPath, atomically: true, encoding: .utf8)
 
         let cli = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "minimax" })
         ConfigInstaller.uninstallHooks(cli: cli, fm: fm)
