@@ -105,6 +105,57 @@ final class CodexAutoReviewRoutingTests: XCTestCase {
         XCTAssertNil(CodexPermissionRules.transcriptReviewerValue(event.rawJSON, maxBytes: 8))
     }
 
+    func testOnlyTheNewestContextCanDescribeTheActiveTurn() throws {
+        // Codex runs one turn at a time, so a newer context of another turn means
+        // this turn's context is stale or missing — never fall through to it.
+        let event = try makeEvent(contexts: [context("current", "auto_review"), context("later", "user")])
+        XCTAssertNil(CodexPermissionRules.transcriptReviewerValue(event.rawJSON))
+    }
+
+    func testMarkerSplitAcrossChunkBoundariesIsStillFound() throws {
+        let event = try makeEvent(contexts: [context("current", "auto_review")])
+        let url = URL(fileURLWithPath: event.rawJSON["transcript_path"] as! String)
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        let filler = #"{"type":"response_item","payload":{"text":"filler"}}"# + "\n"
+        try (filler + contents + filler + filler).write(to: url, atomically: true, encoding: .utf8)
+        for chunkBytes in 1...64 {
+            XCTAssertEqual(
+                CodexPermissionRules.transcriptReviewerValue(event.rawJSON, chunkBytes: chunkBytes),
+                "auto_review",
+                "chunkBytes \(chunkBytes)"
+            )
+        }
+    }
+
+    func testLongTurnStillFindsItsContextPastFourMiB() throws {
+        let event = try makeEvent(contexts: [context("current", "auto_review")])
+        let url = URL(fileURLWithPath: event.rawJSON["transcript_path"] as! String)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        // Tool output quoting the marker is JSON-escaped and must not match.
+        let output = try JSONSerialization.data(withJSONObject: [
+            "type": "response_item",
+            "payload": ["output": String(repeating: "x", count: 512 * 1024) + #" "turn_context" "#],
+        ])
+        for _ in 0..<10 {
+            try handle.write(contentsOf: output + Data([0x0A]))
+        }
+        try handle.close()
+        XCTAssertGreaterThan(try FileManager.default.attributesOfItem(atPath: url.path)[.size] as! Int, 5 * 1024 * 1024)
+        XCTAssertTrue(HookServer.shouldDeferPermissionRequestToProvider(event))
+    }
+
+    func testOversizedLineHoldingTheMarkerIsSkipped() throws {
+        let event = try makeEvent(contexts: [context("current", "auto_review")])
+        let url = URL(fileURLWithPath: event.rawJSON["transcript_path"] as! String)
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        // An unescaped marker in a line too long to be a context is passed over.
+        let oversized = #"{"type":"event_msg","payload":{"kind":"turn_context","pad":""#
+            + String(repeating: "y", count: 200 * 1024) + "\"}}\n"
+        try (contents + oversized).write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(CodexPermissionRules.transcriptReviewerValue(event.rawJSON), "auto_review")
+    }
+
     func testRemoteTranscriptPathIsNeverReadFromTheLocalMachine() throws {
         let event = try makeEvent(contexts: [context("current", "auto_review")], fields: ["_remote_host_id": "remote"])
         XCTAssertNil(CodexPermissionRules.transcriptReviewerValue(event.rawJSON))
