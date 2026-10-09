@@ -99,6 +99,8 @@ final class UIGalleryHarness: XCTestCase {
             Job(name: "8-quota", count: 8, settings: [], quota: true),
             Job(name: "8-status", count: 8, settings: [(SettingsKey.sessionGroupingMode, "status")], quota: false),
             Job(name: "8-cli", count: 8, settings: [(SettingsKey.sessionGroupingMode, "cli")], quota: false),
+            Job(name: "4-compact", count: 4, settings: [(SettingsKey.sessionListDensity, "compact")], quota: false),
+            Job(name: "8-compact", count: 8, settings: [(SettingsKey.sessionListDensity, "compact")], quota: false),
         ]
         if lang == .en {
             jobs += [
@@ -106,6 +108,12 @@ final class UIGalleryHarness: XCTestCase {
                     (SettingsKey.showModelLabel, true), (SettingsKey.showAgentDetails, true), (SettingsKey.aiMessageLines, 2),
                 ], quota: false),
                 Job(name: "8-max8", count: 8, settings: [(SettingsKey.maxVisibleSessions, 8)], quota: false),
+                Job(name: "8-compact-f16", count: 8, settings: [
+                    (SettingsKey.sessionListDensity, "compact"), (SettingsKey.contentFontSize, 16),
+                ], quota: false),
+                Job(name: "8-compact-status", count: 8, settings: [
+                    (SettingsKey.sessionListDensity, "compact"), (SettingsKey.sessionGroupingMode, "status"),
+                ], quota: true),
                 Job(name: "4-light", count: 4, settings: [], quota: false, wallpaper: .light),
                 Job(name: "4-lightmode", count: 4, settings: [], quota: false, appearance: .aqua),
             ]

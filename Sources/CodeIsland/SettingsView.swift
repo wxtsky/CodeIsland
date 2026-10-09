@@ -1282,6 +1282,7 @@ enum ContentFontSize {
 private struct AppearancePage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
+    @AppStorage(SettingsKey.sessionListDensity) private var sessionListDensityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
@@ -1306,6 +1307,13 @@ private struct AppearancePage: View {
         )
     }
 
+    private var sessionListDensityBinding: Binding<SessionListDensity> {
+        Binding(
+            get: { SessionListDensity(storedValue: sessionListDensityRaw) },
+            set: { sessionListDensityRaw = $0.rawValue }
+        )
+    }
+
     private var notchAnimationSpeedBinding: Binding<Double> {
         Binding(
             get: { NotchAnimationSpeed.clamped(notchAnimationSpeed) },
@@ -1319,7 +1327,8 @@ private struct AppearancePage: View {
                 AppearancePreview(
                     fontSize: contentFontSize,
                     lineLimit: aiMessageLines,
-                    showDetails: showAgentDetails
+                    showDetails: showAgentDetails,
+                    density: sessionListDensityBinding.wrappedValue
                 )
             }
 
@@ -1352,6 +1361,14 @@ private struct AppearancePage: View {
                 } label: {
                     Text(l10n["max_visible_sessions"])
                     Text(l10n["max_visible_sessions_desc"])
+                }
+                Picker(selection: sessionListDensityBinding) {
+                    ForEach(SessionListDensity.allCases, id: \.self) { density in
+                        Text(l10n[density.titleKey]).tag(density)
+                    }
+                } label: {
+                    Text(l10n["session_list_density"])
+                    Text(l10n["session_list_density_desc"])
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -1472,10 +1489,10 @@ private struct AppearancePreview: View {
     let fontSize: Int
     let lineLimit: Int
     let showDetails: Bool
+    var density: SessionListDensity = .comfortable
 
     private var fs: CGFloat { CGFloat(fontSize) }
-    private let green = Color(red: 0.3, green: 0.85, blue: 0.4)
-    private let aiColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    private let status = SessionCardStatus.working
     private static let sampleReply = """
         Found the issue in `auth.ts`:
         - token refresh was **skipping the expiry check**
@@ -1483,10 +1500,34 @@ private struct AppearancePreview: View {
         """
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        Group {
+            switch density {
+            case .comfortable: card
+            case .compact: compactRow
+            }
+        }
+        .background(
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(white: 0.05))
+                Rectangle()
+                    .fill(status.railColor)
+                    .frame(width: 3)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        )
+        .animation(.easeInOut(duration: 0.25), value: fontSize)
+        .animation(.easeInOut(duration: 0.25), value: lineLimit)
+        .animation(.easeInOut(duration: 0.25), value: showDetails)
+        .animation(.easeInOut(duration: 0.25), value: density)
+    }
+
+    /// The session card as the list draws it (Comfortable).
+    private var card: some View {
+        HStack(alignment: .top, spacing: 10) {
             // Column 1: Mascot
             VStack(spacing: 3) {
-                MascotView(source: "claude", status: .processing, size: 32)
+                MascotView(source: "claude", status: .running, size: 32)
                 if showDetails {
                     HStack(spacing: 1) {
                         MiniAgentIcon(active: true, size: 8)
@@ -1497,12 +1538,13 @@ private struct AppearancePreview: View {
             .frame(width: 36)
 
             // Column 2: Content
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 // Header
                 HStack(spacing: 6) {
+                    SessionStatusChip(status: status, fontSize: SessionStatusChip.fontSize(content: fs))
                     Text("my-project")
                         .font(.system(size: fs + 2, weight: .bold, design: .monospaced))
-                        .foregroundStyle(green)
+                        .foregroundStyle(.white.opacity(0.95))
                     Spacer()
                     Text("3m")
                         .font(.system(size: max(9, fs - 1.5), weight: .medium, design: .monospaced))
@@ -1515,50 +1557,70 @@ private struct AppearancePreview: View {
                 // Chat
                 VStack(alignment: .leading, spacing: 3) {
                     // User prompt
-                    HStack(alignment: .top, spacing: 4) {
-                        Text(">")
-                            .font(.system(size: fs, weight: .bold, design: .monospaced))
-                            .foregroundStyle(green)
+                    HStack(alignment: .top, spacing: 5) {
+                        glyph(SessionGlyph.prompt, color: SessionGlyph.promptColor)
                         Text("Fix the login bug")
-                            .font(.system(size: fs, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.9))
+                            .font(.system(size: fs, design: .monospaced))
+                            .foregroundStyle(SessionGlyph.promptTextColor)
                             .lineLimit(1)
                     }
                     // AI reply — Markdown, so the preview shows what the
                     // line cap does to it: a flattened line, or full blocks.
-                    HStack(alignment: .top, spacing: 4) {
-                        Text("$")
-                            .font(.system(size: fs, weight: .bold, design: .monospaced))
-                            .foregroundStyle(aiColor)
+                    HStack(alignment: .top, spacing: 5) {
+                        glyph(SessionGlyph.reply, color: SessionGlyph.replyColor, scale: SessionGlyph.replyScale)
                         AssistantReplyText(
                             text: Self.sampleReply,
                             fontSize: fs,
                             lineLimit: lineLimit > 0 ? lineLimit : nil
                         )
                     }
-                    // Working indicator
-                    HStack(spacing: 4) {
-                        Text("$")
-                            .font(.system(size: fs, weight: .bold, design: .monospaced))
-                            .foregroundStyle(aiColor)
-                        Text("Edit src/auth.ts")
-                            .font(.system(size: fs, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.75))
-                            .lineLimit(1)
-                    }
+                    // The running tool
+                    runningTool
                 }
-                .padding(.leading, 4)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 14)
+        .padding(.trailing, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(white: 0.05))
-        )
-        .animation(.easeInOut(duration: 0.25), value: fontSize)
-        .animation(.easeInOut(duration: 0.25), value: lineLimit)
-        .animation(.easeInOut(duration: 0.25), value: showDetails)
+    }
+
+    /// One row per session (Compact).
+    private var compactRow: some View {
+        HStack(spacing: 8) {
+            MascotView(source: "claude", status: .running, size: 18)
+                .frame(width: 22)
+            Text("my-project")
+                .font(.system(size: fs, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+            Text(status.label)
+                .font(.system(size: CompactSessionRowMetrics.statusFontSize(fs), weight: .bold, design: .monospaced))
+                .foregroundStyle(status.color)
+                .lineLimit(1)
+            runningTool
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: CompactSessionRowMetrics.rowHeight)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var runningTool: some View {
+        HStack(spacing: 6) {
+            SessionToolChip(tool: "Edit", color: status.color, fontSize: fs)
+            Text("src/auth.ts")
+                .font(.system(size: fs, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+        }
+    }
+
+    private func glyph(_ text: String, color: Color, scale: CGFloat = 1) -> some View {
+        Text(text)
+            .font(.system(size: fs, weight: .bold, design: .monospaced))
+            .foregroundStyle(color)
+            .scaleEffect(scale)
+            .frame(width: SessionGlyph.columnWidth(fs))
     }
 }
 

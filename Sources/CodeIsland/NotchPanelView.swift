@@ -2797,15 +2797,23 @@ enum SessionListMetrics {
     /// approval row or a recap run well past 90pt each, and four of them used
     /// to push the list and its footer off the bottom of the window with no
     /// way to reach them.
+    ///
+    /// Compact rows go by height alone: the window is still sized for
+    /// `maxVisibleSessions` cards, and one-line rows fill that room — eight
+    /// fit where five cards did — before the list scrolls.
     static func needsScroll(
         isCompletionCard: Bool,
         sessionCount: Int,
         contentHeight: CGFloat,
-        maxVisibleSessions: Int
+        maxVisibleSessions: Int,
+        density: SessionListDensity = .comfortable
     ) -> Bool {
         guard !isCompletionCard else { return false }
-        return sessionCount > maxVisibleSessions
-            || contentHeight > scrollHeight(maxVisibleSessions: maxVisibleSessions) + 0.5
+        let tooTall = contentHeight > scrollHeight(maxVisibleSessions: maxVisibleSessions) + 0.5
+        switch density {
+        case .comfortable: return sessionCount > maxVisibleSessions || tooTall
+        case .compact: return tooTall
+        }
     }
 }
 
@@ -2817,8 +2825,25 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
+    @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Natural height of the session cards, scrolling or not.
     @State private var contentHeight: CGFloat = 0
+    /// The order on screen is held while the pointer is over the list.
+    @State private var orderFreeze = SessionOrderFreeze()
+
+    private var density: SessionListDensity {
+        // The completion card is one full card whatever the setting.
+        onlySessionId == nil ? SessionListDensity(storedValue: densityRaw) : .comfortable
+    }
+
+    /// Needs-you first, then working, then the rest by recent activity —
+    /// held in place while the pointer is over the list.
+    private var orderedSessionIds: [String] {
+        orderFreeze.apply(appState.sessionListOrder())
+    }
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
         if let only = onlySessionId {
@@ -2829,28 +2854,14 @@ private struct SessionListView: View {
             return appState.sessions[only] != nil ? [("", nil, [only])] : []
         }
 
-        let sorted = appState.sessions.keys.sorted()
+        let sorted = orderedSessionIds
 
         switch groupingMode {
         case "status":
-            let l10n = L10n.shared
-            let groups: [(Set<AgentStatus>, String)] = [
-                ([.running], l10n["status_running"]),
-                ([.waitingApproval, .waitingQuestion], l10n["status_waiting"]),
-                ([.processing], l10n["status_processing"]),
-                ([.idle], l10n["status_idle"]),
-            ]
-            var result: [(String, String?, [String])] = []
-            for (statuses, label) in groups {
-                let ids = sorted.filter { id in
-                    guard let s = appState.sessions[id] else { return false }
-                    return statuses.contains(s.status)
-                }
-                if !ids.isEmpty {
-                    result.append(("\(label) (\(ids.count))", nil, ids))
-                }
+            // What waits on you heads the list here too (SessionListGrouping).
+            return SessionListGrouping.byStatus(sorted, sessions: appState.sessions).map { group in
+                ("\(L10n.shared[group.labelKey]) (\(group.ids.count))", nil, group.ids)
             }
-            return result
 
         case "cli":
             let cliOrder: [(source: String, name: String)] = [
@@ -2916,13 +2927,29 @@ private struct SessionListView: View {
         // Compute once per render — groupedSessions, totalCount, needsScroll
         let groups = groupedSessions
         let totalSessionCount = groups.reduce(0) { $0 + $1.ids.count }
+        let density = self.density
         let needsScroll = SessionListMetrics.needsScroll(
             isCompletionCard: onlySessionId != nil,
             sessionCount: totalSessionCount,
             contentHeight: contentHeight,
-            maxVisibleSessions: maxVisibleSessions
+            maxVisibleSessions: maxVisibleSessions,
+            density: density
         )
-        let content = VStack(spacing: 6) {
+        // Compact rows share their column widths so the status words line up.
+        let fontSize = CGFloat(contentFontSize)
+        let compactColumns: (project: CGFloat, status: CGFloat) = density == .compact
+            ? (
+                CompactSessionRowMetrics.projectColumnWidth(
+                    names: groups.flatMap(\.ids).compactMap {
+                        appState.sessions[$0]?.headline(showProjectName: showProjectName).text
+                    },
+                    fontSize: fontSize,
+                    cap: CompactSessionRowMetrics.projectColumnCap(fontSize: fontSize)
+                ),
+                CompactSessionRowMetrics.statusColumnWidth(fontSize: CompactSessionRowMetrics.statusFontSize(fontSize))
+            )
+            : (0, 0)
+        let content = VStack(spacing: density == .compact ? CompactSessionRowMetrics.spacing : 6) {
             ForEach(groups, id: \.header) { group in
                 if !group.header.isEmpty {
                     HStack(spacing: 6) {
@@ -2947,7 +2974,10 @@ private struct SessionListView: View {
                             appState: appState,
                             sessionId: sessionId,
                             session: session,
-                            isCompletion: onlySessionId != nil
+                            isCompletion: onlySessionId != nil,
+                            density: density,
+                            compactProjectWidth: compactColumns.project,
+                            compactStatusWidth: compactColumns.status
                         )
                     }
                 }
@@ -2967,6 +2997,17 @@ private struct SessionListView: View {
         // The same in both branches: inside the scroll view the content still
         // lays out at its natural height, so switching never flips it back.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        // Cards needing you sort to the top — but not while the pointer is on
+        // the list, where a card moving would put another under the cursor
+        // just as it clicks. The list re-sorts once the pointer leaves.
+        .onHover { inside in
+            guard onlySessionId == nil else { return }
+            if inside {
+                orderFreeze.freeze(appState.sessionListOrder())
+            } else {
+                withAnimation(reduceMotion ? nil : NotchAnimation.micro) { orderFreeze.thaw() }
+            }
+        }
 
         VStack(spacing: 0) {
             if needsScroll {
@@ -3676,8 +3717,19 @@ private struct SessionIdentityLine: View {
     private var displaySessionId: String { session.displaySessionId(sessionId: sessionId) }
 
     var body: some View {
+        // With the status chip beside it the row can run out of room at large
+        // text sizes. The short id goes first then: a name read whole beats an
+        // id. A name too long either way keeps the id and truncates, as before.
+        ViewThatFits(in: .horizontal) {
+            line(showsShortId: true)
+            line(showsShortId: false)
+            line(showsShortId: true)
+        }
+    }
+
+    private func line(showsShortId: Bool) -> some View {
         let headline = session.headline(showProjectName: showProjectName)
-        HStack(spacing: 4) {
+        return HStack(spacing: 4) {
             if headline.kind == .project {
                 ProjectNameLink(
                     name: headline.text,
@@ -3722,15 +3774,17 @@ private struct SessionIdentityLine: View {
                     .truncationMode(.tail)
                     .layoutPriority(1)
 
-                Text("·")
-                    .font(.system(size: sessionFontSize, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(dividerColor)
+                if showsShortId {
+                    Text("·")
+                        .font(.system(size: sessionFontSize, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(dividerColor)
 
-                Text("#\(shortSessionId(displaySessionId))")
-                    .font(.system(size: sessionFontSize, weight: .medium, design: .monospaced))
-                    .foregroundStyle(sessionColor.opacity(0.6))
-                    .fixedSize()
-            } else {
+                    Text("#\(shortSessionId(displaySessionId))")
+                        .font(.system(size: sessionFontSize, weight: .medium, design: .monospaced))
+                        .foregroundStyle(sessionColor.opacity(0.6))
+                        .fixedSize()
+                }
+            } else if showsShortId {
                 Text("#\(shortSessionId(displaySessionId))")
                     .font(.system(size: sessionFontSize, weight: .medium, design: .monospaced))
                     .foregroundStyle(sessionColor.opacity(0.6))
@@ -3963,6 +4017,10 @@ private struct SessionCard: View {
     let sessionId: String
     let session: SessionSnapshot
     var isCompletion: Bool = false
+    var density: SessionListDensity = .comfortable
+    /// Compact rows: column widths every row shares, so the words line up.
+    var compactProjectWidth: CGFloat = 150
+    var compactStatusWidth: CGFloat = 64
     @State private var hovering = false
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
@@ -3974,6 +4032,7 @@ private struct SessionCard: View {
     @AppStorage(SettingsKey.showTaskProgress) private var showTaskProgress = SettingsDefaults.showTaskProgress
     @AppStorage(SettingsKey.showSessionRecap) private var showSessionRecap = SettingsDefaults.showSessionRecap
     @AppStorage(SettingsKey.showModelLabel) private var showModelLabel = SettingsDefaults.showModelLabel
+    @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     private var fontSize: CGFloat { CGFloat(contentFontSize) }
     private var aiLineLimit: Int? { aiMessageLines > 0 ? aiMessageLines : nil }
     private var approvalQueueIndex: Int? {
@@ -3985,334 +4044,52 @@ private struct SessionCard: View {
     private var showsExternalCursorQuestion: Bool {
         session.status == .waitingQuestion && session.cursorPendingQuestion != nil
     }
-    private var statusNameColor: Color {
-        if session.status == .idle && session.interrupted {
-            return Color(red: 1.0, green: 0.45, blue: 0.35)
-        }
-        switch session.status {
-        case .processing, .running:              return Color(red: 0.3, green: 0.85, blue: 0.4)
-        case .waitingApproval, .waitingQuestion:  return Color(red: 1.0, green: 0.6, blue: 0.2)
-        case .idle:                               return .white
-        }
+    /// A question waiting on this session that is not on screen (auto-expand
+    /// off, Smart Suppress, or queued behind another card): the card itself
+    /// cannot answer it, so it offers the way to its card rather than only a
+    /// jump to the terminal.
+    private var showsQuestionWaitingRow: Bool {
+        session.status == .waitingQuestion
+            && !showsExternalCursorQuestion
+            && appState.pendingQuestion(forSession: sessionId) != nil
+            && appState.surface.questionSessionId != sessionId
+    }
+    private var cardStatus: SessionCardStatus { SessionCardStatus(session) }
+    /// The completion card is a full card whatever the density.
+    private var isCompactRow: Bool { density == .compact && !isCompletion }
+    private var chipFontSize: CGFloat { SessionStatusChip.fontSize(content: fontSize) }
+    private var buttonFontSize: CGFloat { max(10, fontSize) }
+
+    /// What the card's live row shows: the running tool, or that the model is
+    /// thinking. A card waiting on you shows its request instead, so only a
+    /// tool that is not already on an approval row appears there.
+    private enum LiveRow: Equatable {
+        case tool(String)
+        case thinking
     }
 
-    private func inlineActionButton(
-        _ label: String,
-        fg: Color,
-        bg: Color,
-        enabled: Bool,
-        help: String? = nil,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: max(10, fontSize - 1), weight: .semibold, design: .monospaced))
-                .foregroundStyle(fg)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(bg.opacity(enabled ? 1 : 0.35))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(.white.opacity(enabled ? 0.25 : 0.12), lineWidth: 1)
-                )
+    private var liveRow: LiveRow? {
+        switch cardStatus {
+        case .working, .thinking:
+            return session.currentTool.map(LiveRow.tool) ?? .thinking
+        case .needsYou:
+            guard !showsExternalCursorQuestion,
+                  !(session.status == .waitingApproval && approvalQueueIndex != nil),
+                  let tool = session.currentTool else { return nil }
+            return .tool(tool)
+        case .done, .idle, .stopped, .error:
+            return nil
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.55)
-        .help(help ?? "")
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            // Column 1: Character + subagent icons
-            VStack(spacing: 3) {
-                MascotView(source: session.mascotSource, status: session.status, size: 32)
-                if showAgentDetails && !session.subagents.isEmpty {
-                    let sorted = session.subagents.values.sorted { $0.startTime < $1.startTime }
-                    // Grid: 4 per row, 8px icons
-                    let rows = stride(from: 0, to: sorted.count, by: 4).map {
-                        Array(sorted[$0..<min($0 + 4, sorted.count)])
-                    }
-                    VStack(spacing: 1) {
-                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                            HStack(spacing: 1) {
-                                ForEach(row, id: \.agentId) { sub in
-                                    MiniAgentIcon(active: sub.status != .idle, size: 8)
-                                        .help(subagentTooltipText(sub, showModel: showModelLabel))
-                                }
-                            }
-                        }
-                    }
-                }
+        Group {
+            if isCompactRow {
+                compactBody
+            } else {
+                comfortableBody
             }
-            .frame(width: 36)
-
-            // Column 2: Content
-            VStack(alignment: .leading, spacing: 6) {
-                // Header: project name + optional session label + short ID
-                HStack(alignment: .center, spacing: 8) {
-                    SessionIdentityLine(
-                        session: session,
-                        sessionId: sessionId,
-                        projectFontSize: fontSize + 2,
-                        projectColor: statusNameColor,
-                        sessionFontSize: fontSize,
-                        sessionColor: .white.opacity(0.76),
-                        dividerColor: .white.opacity(0.28)
-                    )
-                    Spacer(minLength: 8)
-
-                    HStack(spacing: 4) {
-                        if let remote = session.remoteDisplayName {
-                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
-                        }
-                        if !session.subagents.isEmpty {
-                            SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
-                        }
-                        if session.interrupted {
-                            SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
-                        }
-                        if session.isYoloMode == true {
-                            SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
-                        }
-                        if showModelLabel, let modelLabel = session.modelLabel {
-                            SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor)
-                                .lineLimit(1)
-                                .help(session.model ?? modelLabel)
-                        }
-                        SessionTag(timeAgo(session.startTime))
-                        TerminalBadge(session: session)
-                    }
-                }
-
-                // Inline approval controls (when user keeps panel in session list)
-                if session.status == .waitingApproval, let idx = approvalQueueIndex {
-                    // Approval details require the provider's raw tool name; the
-                    // session itself may hold a friendly Codex activity label.
-                    let tool = appState.permissionQueue[idx].event.toolName ?? session.currentTool ?? "Unknown"
-                    let input = appState.permissionQueue[idx].event.toolInput
-                    HStack(spacing: 8) {
-                        Text(String(format: L10n.shared["approval_queue_label"], idx + 1, appState.permissionQueue.count, tool))
-                            .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.65))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 8)
-                        inlineActionButton(
-                            showApprovalDetails ? L10n.shared["approval_details_collapse"] : L10n.shared["approval_details_expand"],
-                            fg: .white,
-                            bg: Color.white.opacity(0.10),
-                            enabled: true,
-                            action: { withAnimation(NotchAnimation.micro) { showApprovalDetails.toggle() } }
-                        )
-                        // Same order as the approval card (Deny … Allow Once,
-                        // Always), so a hand that learned one never hits Deny
-                        // where it expects Always on the other.
-                        inlineActionButton(
-                            L10n.shared["deny"],
-                            fg: .white,
-                            bg: Color(red: 0.85, green: 0.3, blue: 0.3),
-                            enabled: isActiveApproval,
-                            action: { appState.denyPermission(expectedSessionId: sessionId) }
-                        )
-                        inlineActionButton(
-                            L10n.shared["allow_once"],
-                            fg: .white,
-                            bg: Color(red: 0.25, green: 0.65, blue: 0.35),
-                            enabled: isActiveApproval,
-                            action: { appState.approvePermission(always: false, expectedSessionId: sessionId) }
-                        )
-                        inlineActionButton(
-                            L10n.shared["always"],
-                            fg: .white,
-                            bg: Color(red: 0.25, green: 0.55, blue: 0.85),
-                            enabled: isActiveApproval,
-                            help: ApprovalHints.always(savesRule: CodexPermissionRules.isCodexEvent(appState.permissionQueue[idx].event)),
-                            action: { appState.approvePermission(always: true, expectedSessionId: sessionId) }
-                        )
-                    }
-
-                    // Always show a compact, 1-line summary so the session list has approval context
-                    if let summary = approvalInlineSummary(tool: tool, toolDescription: session.toolDescription, toolInput: input) {
-                        switch summary {
-                        case .text(let s):
-                            Text(s)
-                                .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.55))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        case .bashCommand(let cmd):
-                            HStack(alignment: .top, spacing: 4) {
-                                Text("$")
-                                    .font(.system(size: max(10, fontSize - 1), weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.9))
-                                Text(cmd)
-                                    .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
-                        }
-                    }
-
-                    // Expanded detail view
-                    if showApprovalDetails {
-                        ApprovalToolDetailView(tool: tool, toolInput: input, maxLines: 6)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.white.opacity(0.05))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                                    )
-                            )
-                    }
-                }
-
-                // Cursor asked a question in its own UI (#265). There is no hook
-                // channel to answer from here, so show the question plus a hint
-                // instead of an endless "thinking" indicator.
-                if showsExternalCursorQuestion {
-                    VStack(alignment: .leading, spacing: 3) {
-                        if let question = session.cursorPendingQuestion, !question.isEmpty {
-                            HStack(alignment: .top, spacing: 5) {
-                                Text("?")
-                                    .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 1.0, green: 0.6, blue: 0.2))
-                                Text(question)
-                                    .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.85))
-                                    .lineLimit(2)
-                                    .truncationMode(.tail)
-                            }
-                        }
-                        Text(L10n.shared["cursor_question_answer_hint"])
-                            .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                            .foregroundStyle(Color(red: 1.0, green: 0.6, blue: 0.2).opacity(0.85))
-                    }
-                }
-
-                // Agent checklist progress (TaskCreate / TodoWrite / update_plan).
-                if showTaskProgress && !session.agentTasks.isEmpty {
-                    AgentTaskProgressView(tasks: session.agentTasks, fontSize: fontSize, agentIsIdle: session.status == .idle)
-                }
-
-                // A question waiting on this session that is not on screen
-                // (auto-expand off, Smart Suppress, or queued behind another
-                // card): the session card itself cannot answer it, so offer the
-                // way to its card rather than only a jump to the terminal.
-                if session.status == .waitingQuestion,
-                   !showsExternalCursorQuestion,
-                   appState.pendingQuestion(forSession: sessionId) != nil,
-                   appState.surface.questionSessionId != sessionId {
-                    HStack(spacing: 8) {
-                        Text(L10n.shared["question_waiting_inline"])
-                            .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color(red: 1.0, green: 0.6, blue: 0.2).opacity(0.85))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        inlineActionButton(
-                            L10n.shared["question_answer"],
-                            fg: .white,
-                            bg: Color(red: 0.25, green: 0.55, blue: 0.85),
-                            enabled: true,
-                            action: { appState.openPendingQuestionCard(sessionId: sessionId) }
-                        )
-                    }
-                }
-
-                // Session title: first user prompt (hide when detailed mode shows chat history)
-                if let prompt = session.lastUserPrompt,
-                   session.recentMessages.isEmpty {
-                    Text(prompt)
-                        .font(.system(size: fontSize, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-            // Chat history + live status
-            if !session.recentMessages.isEmpty || session.status != .idle {
-                VStack(alignment: .leading, spacing: 3) {
-                    // Chat messages (detailed mode only)
-                    let visibleMessages = session.status != .idle
-                        ? Array(session.recentMessages.suffix(2))
-                        : session.recentMessages
-                    let fullReplyId = CompletionReplyMetrics.fullReplyId(in: visibleMessages, isCompletionCard: isCompletion)
-                    let olderReplyLimit = isCompletion
-                        ? CompletionReplyMetrics.olderReplyLineLimit(aiLineLimit)
-                        : aiLineLimit
-                    ForEach(visibleMessages) { msg in
-                        // Extracted to separate view so SwiftUI skips re-rendering
-                        // when only the parent's hover state changes (#52 perf).
-                        ChatMessageRow(
-                            text: msg.text,
-                            isUser: msg.isUser,
-                            fontSize: fontSize,
-                            aiLineLimit: olderReplyLimit,
-                            isCompletionReply: msg.id == fullReplyId,
-                            pinsHeight: isCompletion
-                        )
-                    }
-
-                    // Working indicator: show what AI is doing right now.
-                    // Suppressed while a Cursor-side question is pending — the
-                    // question block above already explains the wait (#265).
-                    if session.status != .idle && !showsExternalCursorQuestion {
-                        HStack(spacing: 4) {
-                            Text("$")
-                                .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
-                            if let tool = session.currentTool {
-                                MorphText(
-                                    text: session.toolDescription ?? tool,
-                                    font: .system(size: fontSize, design: .monospaced),
-                                    color: .white.opacity(0.75),
-                                    streamsRapidly: SessionSnapshot.rapidStreamingSources
-                                        .contains(session.source)
-                                )
-                                .truncationMode(.tail)
-                            } else {
-                                TypingIndicator(fontSize: fontSize, label: "thinking")
-                            }
-                        }
-                    }
-                }
-                .padding(.leading, 4)
-            }
-
-            // Claude Code's idle recap — the newest thing in an idle session,
-            // so it sits under the chat rows. visibleRecap is nil while working.
-            if showSessionRecap, let recap = session.visibleRecap {
-                SessionRecapRow(
-                    text: recap.text,
-                    fontSize: fontSize,
-                    lineLimit: isCompletion
-                        ? CompletionReplyMetrics.recapLineLimit
-                        : aiLineLimit.map { max($0, 2) }
-                )
-                .equatable()
-                // On the completion card the reply's scroll area is sized
-                // around this row; squeezed to one line it would be measured
-                // short and never get its second line back.
-                .fixedSize(horizontal: false, vertical: isCompletion)
-                .padding(.leading, 4)
-            }
-            } // end Column 2 VStack
-        } // end HStack
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
-        )
-        .padding(.horizontal, 6)
+        }
         .offset(x: failureShakeOffset)
         .contentShape(Rectangle())
         .onTapGesture { handleSessionClick() }
@@ -4321,6 +4098,473 @@ private struct SessionCard: View {
             jumpValidationTask?.cancel()
             jumpValidationTask = nil
         }
+    }
+
+    // MARK: Comfortable card
+
+    private var comfortableBody: some View {
+        HStack(alignment: .top, spacing: 10) {
+            mascotColumn
+
+            VStack(alignment: .leading, spacing: 5) {
+                comfortableHeader
+
+                // Inline approval controls (when user keeps panel in session list)
+                if session.status == .waitingApproval, let idx = approvalQueueIndex {
+                    approvalBlock(queueIndex: idx)
+                }
+
+                if showsExternalCursorQuestion {
+                    cursorQuestionBlock
+                }
+
+                // Agent checklist progress (TaskCreate / TodoWrite / update_plan).
+                if showTaskProgress && !session.agentTasks.isEmpty {
+                    AgentTaskProgressView(tasks: session.agentTasks, fontSize: fontSize, agentIsIdle: session.status == .idle)
+                }
+
+                if showsQuestionWaitingRow {
+                    questionWaitingRow
+                }
+
+                // Session title: first user prompt (hide when detailed mode shows chat history)
+                if let prompt = session.lastUserPrompt, session.recentMessages.isEmpty {
+                    SessionGlyphLine(kind: .prompt, text: prompt, fontSize: fontSize)
+                }
+
+                chatAndLiveRows
+
+                // Claude Code's idle recap — the newest thing in an idle session,
+                // so it sits under the chat rows. visibleRecap is nil while working.
+                if showSessionRecap, let recap = session.visibleRecap {
+                    SessionRecapRow(
+                        text: recap.text,
+                        fontSize: fontSize,
+                        lineLimit: isCompletion
+                            ? CompletionReplyMetrics.recapLineLimit
+                            : aiLineLimit.map { max($0, 2) }
+                    )
+                    .equatable()
+                    // On the completion card the reply's scroll area is sized
+                    // around this row; squeezed to one line it would be measured
+                    // short and never get its second line back.
+                    .fixedSize(horizontal: false, vertical: isCompletion)
+                }
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 14)
+        .padding(.vertical, 10)
+        .background(cardBackground(cornerRadius: 10))
+        .padding(.horizontal, 6)
+    }
+
+    /// Character + subagent icons.
+    private var mascotColumn: some View {
+        VStack(spacing: 3) {
+            MascotView(source: session.mascotSource, status: session.status, size: 32)
+            if showAgentDetails && !session.subagents.isEmpty {
+                let sorted = session.subagents.values.sorted { $0.startTime < $1.startTime }
+                // Grid: 4 per row, 8px icons
+                let rows = stride(from: 0, to: sorted.count, by: 4).map {
+                    Array(sorted[$0..<min($0 + 4, sorted.count)])
+                }
+                VStack(spacing: 1) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        HStack(spacing: 1) {
+                            ForEach(row, id: \.agentId) { sub in
+                                MiniAgentIcon(active: sub.status != .idle, size: 8)
+                                    .help(subagentTooltipText(sub, showModel: showModelLabel))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 36)
+    }
+
+    /// Status word, project name + optional session label + short ID, tags.
+    private var comfortableHeader: some View {
+        HStack(alignment: .center, spacing: 6) {
+            SessionStatusChip(status: cardStatus, fontSize: chipFontSize)
+                .layoutPriority(3)
+            SessionIdentityLine(
+                session: session,
+                sessionId: sessionId,
+                projectFontSize: fontSize + 2,
+                projectColor: .white.opacity(0.95),
+                sessionFontSize: fontSize,
+                sessionColor: .white.opacity(0.76),
+                dividerColor: .white.opacity(0.28)
+            )
+            // Offered the row before the spacer, so a short name never
+            // truncates while blank space sits beside it.
+            .layoutPriority(1)
+            Spacer(minLength: 8)
+
+            HStack(spacing: 4) {
+                if let remote = session.remoteDisplayName {
+                    SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                }
+                if !session.subagents.isEmpty {
+                    SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
+                }
+                if session.isYoloMode == true {
+                    SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
+                }
+                if showModelLabel, let modelLabel = session.modelLabel {
+                    SessionTag(modelLabel, color: SessionMetadataStyle.modelTagColor)
+                        .lineLimit(1)
+                        .frame(maxWidth: 120)
+                        .help(session.model ?? modelLabel)
+                }
+                SessionTag(timeAgo(session.startTime))
+                TerminalBadge(session: session)
+            }
+            // Short tags keep their words; the identity line gives way.
+            .fixedSize()
+        }
+    }
+
+    /// Chat history + live status.
+    @ViewBuilder
+    private var chatAndLiveRows: some View {
+        let live = liveRow
+        if !session.recentMessages.isEmpty || live != nil {
+            VStack(alignment: .leading, spacing: 3) {
+                // Chat messages (detailed mode only)
+                let visibleMessages = session.status != .idle
+                    ? Array(session.recentMessages.suffix(2))
+                    : session.recentMessages
+                let fullReplyId = CompletionReplyMetrics.fullReplyId(in: visibleMessages, isCompletionCard: isCompletion)
+                let olderReplyLimit = isCompletion
+                    ? CompletionReplyMetrics.olderReplyLineLimit(aiLineLimit)
+                    : aiLineLimit
+                ForEach(visibleMessages) { msg in
+                    // Extracted to separate view so SwiftUI skips re-rendering
+                    // when only the parent's hover state changes (#52 perf).
+                    ChatMessageRow(
+                        text: msg.text,
+                        isUser: msg.isUser,
+                        fontSize: fontSize,
+                        aiLineLimit: olderReplyLimit,
+                        isCompletionReply: msg.id == fullReplyId,
+                        pinsHeight: isCompletion
+                    )
+                }
+
+                // What the agent is doing right now.
+                if let live {
+                    liveRowView(live)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func liveRowView(_ row: LiveRow) -> some View {
+        switch row {
+        case .tool(let tool):
+            HStack(alignment: .center, spacing: 6) {
+                SessionToolChip(tool: tool, color: cardStatus.color, fontSize: fontSize)
+                if let detail = session.toolDescription, !detail.isEmpty {
+                    MorphText(
+                        text: detail,
+                        font: .system(size: fontSize, design: .monospaced),
+                        color: .white.opacity(0.75),
+                        streamsRapidly: SessionSnapshot.rapidStreamingSources
+                            .contains(session.source)
+                    )
+                    .truncationMode(.tail)
+                }
+            }
+        case .thinking:
+            TypingIndicator(fontSize: fontSize, label: "thinking")
+        }
+    }
+
+    // MARK: Requests (approval, questions)
+
+    /// The waiting approval: what it wants to run, and the actions — in the
+    /// approval card's order, so a hand that learned one finds the same
+    /// button in the same place on the other.
+    @ViewBuilder
+    private func approvalBlock(queueIndex idx: Int) -> some View {
+        // Approval details require the provider's raw tool name; the
+        // session itself may hold a friendly Codex activity label.
+        let event = appState.permissionQueue[idx].event
+        let tool = event.toolName ?? session.currentTool ?? "Unknown"
+        let input = event.toolInput
+        approvalRequestLine(tool: tool, input: input, position: idx + 1, total: appState.permissionQueue.count)
+        inlineApprovalActions(tool: tool, event: event)
+
+        // Expanded detail view
+        if showApprovalDetails {
+            ApprovalToolDetailView(tool: tool, toolInput: input, maxLines: 6)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                        )
+                )
+        }
+    }
+
+    /// `▸ Bash  python scripts/backfill.py …   2/3` — always one line, so
+    /// the list keeps the approval's context without opening Details.
+    private func approvalRequestLine(tool: String, input: [String: Any]?, position: Int, total: Int) -> some View {
+        let summary = Self.summaryText(approvalInlineSummary(tool: tool, toolDescription: session.toolDescription, toolInput: input))
+        return HStack(alignment: .center, spacing: 6) {
+            SessionToolChip(tool: tool, color: SessionCardStatus.needsYou.color, fontSize: fontSize)
+            if let summary {
+                Text(summary)
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.82))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 4)
+            if total > 1 {
+                Text("\(position)/\(total)")
+                    .font(.system(size: max(9, fontSize - 2), weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.1)))
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            String(format: L10n.shared["approval_queue_label"], position, total, tool)
+                + (summary.map { ", \($0)" } ?? "")
+        )
+    }
+
+    private static func summaryText(_ summary: ApprovalInlineSummary?) -> String? {
+        switch summary {
+        case .text(let text): return text
+        case .bashCommand(let command): return command
+        case nil: return nil
+        }
+    }
+
+    /// Always (a link that names its scope) … Details · Deny · Allow once.
+    /// Allow once is the only filled button. Only the head of the queue can
+    /// be answered from here; the others say why their buttons are dim.
+    private func inlineApprovalActions(tool: String, event: HookEvent) -> some View {
+        let enabled = isActiveApproval
+        let queuedHint = enabled ? nil : L10n.shared["session_inline_queued_hint"]
+        return HStack(spacing: 8) {
+            SessionInlineButton(
+                title: String(format: L10n.shared["session_inline_always"], ToolNameDisplay.compact(tool)),
+                style: .link,
+                fontSize: buttonFontSize,
+                enabled: enabled,
+                help: queuedHint ?? ApprovalHints.always(savesRule: CodexPermissionRules.isCodexEvent(event)),
+                action: { appState.approvePermission(always: true, expectedSessionId: sessionId) }
+            )
+            Spacer(minLength: 8)
+            SessionInlineButton(
+                title: showApprovalDetails ? L10n.shared["approval_details_collapse"] : L10n.shared["approval_details_expand"],
+                style: .quiet,
+                fontSize: buttonFontSize,
+                action: { withAnimation(NotchAnimation.micro) { showApprovalDetails.toggle() } }
+            )
+            SessionInlineButton(
+                title: L10n.shared["session_inline_deny"],
+                style: .destructive,
+                fontSize: buttonFontSize,
+                enabled: enabled,
+                help: queuedHint,
+                action: { appState.denyPermission(expectedSessionId: sessionId) }
+            )
+            SessionInlineButton(
+                title: L10n.shared["session_inline_allow_once"],
+                style: .primary,
+                fontSize: buttonFontSize,
+                enabled: enabled,
+                help: queuedHint,
+                action: { appState.approvePermission(always: false, expectedSessionId: sessionId) }
+            )
+        }
+    }
+
+    /// Cursor asked a question in its own UI (#265). There is no hook
+    /// channel to answer from here, so show the question plus a hint
+    /// instead of an endless "thinking" indicator.
+    private var cursorQuestionBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let question = session.cursorPendingQuestion, !question.isEmpty {
+                HStack(alignment: .top, spacing: 5) {
+                    Text("?")
+                        .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+                        .foregroundStyle(SessionCardStatus.needsYou.color)
+                    Text(question)
+                        .font(.system(size: fontSize, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+            }
+            Text(L10n.shared["cursor_question_answer_hint"])
+                .font(.system(size: max(10, fontSize - 1), design: .monospaced))
+                .foregroundStyle(SessionCardStatus.needsYou.color.opacity(0.85))
+        }
+    }
+
+    private var questionWaitingRow: some View {
+        HStack(spacing: 8) {
+            Text(L10n.shared["question_waiting_inline"])
+                .font(.system(size: fontSize, weight: .medium, design: .monospaced))
+                .foregroundStyle(SessionCardStatus.needsYou.color.opacity(0.85))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            SessionInlineButton(
+                title: L10n.shared["question_answer"],
+                style: .primary,
+                fontSize: buttonFontSize,
+                action: { appState.openPendingQuestionCard(sessionId: sessionId) }
+            )
+        }
+    }
+
+    // MARK: Compact row
+
+    /// Opens up under the row only for a session that needs you, and only
+    /// when there is something to show there.
+    private var compactExpands: Bool {
+        guard cardStatus == .needsYou else { return false }
+        return (session.status == .waitingApproval && approvalQueueIndex != nil)
+            || showsExternalCursorQuestion
+            || showsQuestionWaitingRow
+            || session.currentTool != nil
+    }
+
+    private var compactBody: some View {
+        let status = cardStatus
+        let expands = compactExpands
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                MascotView(source: session.mascotSource, status: session.status, size: 18)
+                    .frame(width: 22)
+                Text(session.headline(showProjectName: showProjectName).text)
+                    .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: compactProjectWidth, alignment: .leading)
+                Text(status.label)
+                    .font(.system(size: CompactSessionRowMetrics.statusFontSize(fontSize), weight: .bold, design: .monospaced))
+                    .foregroundStyle(status.color)
+                    .lineLimit(1)
+                    .frame(width: compactStatusWidth, alignment: .leading)
+                compactActivity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: CompactSessionRowMetrics.rowHeight)
+
+            if expands {
+                VStack(alignment: .leading, spacing: 5) {
+                    compactRequest
+                }
+                // Under the project name, clear of the mascot column.
+                .padding(.leading, 30)
+                .padding(.bottom, 8)
+            }
+        }
+        .padding(.horizontal, 10)
+        .background(cardBackground(
+            cornerRadius: 8,
+            tint: expands ? SessionCardStatus.needsYou.color.opacity(0.08) : nil
+        ))
+        .help(compactTooltip)
+        .padding(.horizontal, 6)
+    }
+
+    /// One line: the running tool, else the newest of reply / recap / prompt.
+    /// A session that needs you shows its prompt here and its request below.
+    @ViewBuilder
+    private var compactActivity: some View {
+        if case .tool(let tool)? = liveRow {
+            HStack(spacing: 6) {
+                SessionToolChip(tool: tool, color: cardStatus.color, fontSize: fontSize)
+                if let detail = session.toolDescription, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: max(10, fontSize - 1), design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        } else if cardStatus == .needsYou || cardStatus == .working || cardStatus == .thinking {
+            if let prompt = session.lastUserPrompt {
+                SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
+            } else if liveRow == .thinking {
+                TypingIndicator(fontSize: max(10, fontSize - 1), label: "thinking")
+            }
+        } else if let reply = session.lastAssistantMessage {
+            SessionGlyphLine(kind: .reply, text: reply, fontSize: max(10, fontSize - 1))
+        } else if showSessionRecap, let recap = session.visibleRecap {
+            SessionGlyphLine(kind: .recap, text: recap.text, fontSize: max(10, fontSize - 1))
+        } else if let prompt = session.lastUserPrompt {
+            SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
+        }
+    }
+
+    @ViewBuilder
+    private var compactRequest: some View {
+        if session.status == .waitingApproval, let idx = approvalQueueIndex {
+            approvalBlock(queueIndex: idx)
+        } else if showsExternalCursorQuestion {
+            cursorQuestionBlock
+        } else if showsQuestionWaitingRow {
+            questionWaitingRow
+        } else if let tool = session.currentTool {
+            HStack(spacing: 6) {
+                SessionToolChip(tool: tool, color: SessionCardStatus.needsYou.color, fontSize: fontSize)
+                if let detail = session.toolDescription, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: fontSize, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+    }
+
+    /// The row keeps one line; the hover shows who it is and the latest reply.
+    private var compactTooltip: String {
+        let name = session.headline(showProjectName: showProjectName).text
+        let latest = session.lastAssistantMessage.map(stripDirectives)
+            ?? session.visibleRecap?.text
+            ?? session.lastUserPrompt
+        return [name, latest].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    // MARK: Shared
+
+    /// Card fill with the status rail down its leading edge.
+    private func cardBackground(cornerRadius: CGFloat, tint: Color? = nil) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        return ZStack(alignment: .leading) {
+            shape.fill(hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
+            if let tint {
+                shape.fill(tint)
+            }
+            Rectangle()
+                .fill(cardStatus.railColor)
+                .frame(width: 3)
+        }
+        .clipShape(shape)
+        .accessibilityHidden(true)
     }
 
     private func handleSessionClick() {
@@ -4383,6 +4627,208 @@ private struct SessionCard: View {
         if seconds < 3600 { return "\(seconds / 60)m" }
         if seconds < 86400 { return "\(seconds / 3600)h" }
         return "\(seconds / 86400)d"
+    }
+}
+
+// MARK: - Session card parts
+
+/// The card's status word: NEEDS YOU, WORKING, DONE … in its status colour.
+/// Also drawn by the Appearance settings preview.
+struct SessionStatusChip: View {
+    let status: SessionCardStatus
+    let fontSize: CGFloat
+
+    /// The word stays small at large text sizes — the header row has the
+    /// project, branch and tags to fit too.
+    static func fontSize(content: CGFloat) -> CGFloat {
+        min(10, max(9, content - 2))
+    }
+
+    var body: some View {
+        Text(status.label)
+            .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+            .foregroundStyle(status.color)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(status.color.opacity(0.15))
+            )
+    }
+}
+
+/// `▸ Bash` — the running (or requested) tool, set apart from the chat lines.
+struct SessionToolChip: View {
+    let tool: String
+    let color: Color
+    let fontSize: CGFloat
+
+    var body: some View {
+        Text("▸ \(ToolNameDisplay.compact(tool))")
+            .font(.system(size: max(9, fontSize - 1), weight: .bold, design: .monospaced))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(color.opacity(0.12))
+            )
+    }
+}
+
+/// The glyphs that tell chat lines apart: `›` your prompt, `●` the agent's
+/// reply, `↻` a recap. Each sits in a box one monospaced character wide, so
+/// the text after it starts at the same x whatever the glyph.
+enum SessionGlyph {
+    static let prompt = "›"
+    static let reply = "●"
+    static let recap = "↻"
+    static let promptColor = Color.white.opacity(0.5)
+    static let replyColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    /// Your own words, a step quieter than the agent's.
+    static let promptTextColor = Color.white.opacity(0.62)
+    /// The dot is drawn smaller than a letter, but laid out at full size so
+    /// it centres on the first line.
+    static let replyScale: CGFloat = 0.72
+
+    /// One monospaced character: the glyph column's width. `↻` has no glyph
+    /// in SF Mono and falls back to a narrower font.
+    static func columnWidth(_ fontSize: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+        return ("M" as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
+    }
+}
+
+/// One line led by a glyph — the prompt line on a full card, and the latest
+/// activity on a compact row.
+private struct SessionGlyphLine: View {
+    enum Kind { case prompt, reply, recap }
+    let kind: Kind
+    let text: String
+    let fontSize: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 5) {
+            glyph
+            switch kind {
+            case .prompt:
+                Text(ChatMessageTextFormatter.literalText(text))
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(SessionGlyph.promptTextColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            case .reply:
+                AssistantReplyText(text: stripDirectives(text), fontSize: fontSize, lineLimit: 1)
+            case .recap:
+                Text(text)
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+    }
+
+    private var glyph: some View {
+        let font = Font.system(size: fontSize, weight: .bold, design: .monospaced)
+        return Group {
+            switch kind {
+            case .prompt:
+                Text(SessionGlyph.prompt).font(font).foregroundStyle(SessionGlyph.promptColor)
+            case .reply:
+                Text(SessionGlyph.reply).font(font).foregroundStyle(SessionGlyph.replyColor)
+                    .scaleEffect(SessionGlyph.replyScale)
+            case .recap:
+                Text(SessionGlyph.recap).font(font).foregroundStyle(SessionMetadataStyle.recapAccent)
+            }
+        }
+        .frame(width: SessionGlyph.columnWidth(fontSize))
+    }
+}
+
+/// The session card's inline buttons, in the approval card's hierarchy:
+/// one filled primary, an outlined destructive, quiet secondaries and a
+/// link. At least 24pt tall.
+private struct SessionInlineButton: View {
+    enum Style {
+        /// Filled green — the one action the row leads with.
+        case primary
+        /// Outlined red.
+        case destructive
+        /// Low-key fill (Details).
+        case quiet
+        /// Underlined text (Always allow …): gives way first when the row is tight.
+        case link
+    }
+
+    // The approval card's colours (white on either green ≥ 4.5:1).
+    static let primaryFill = Color(red: 0.16, green: 0.50, blue: 0.24)
+    static let primaryHover = Color(red: 0.17, green: 0.53, blue: 0.26)
+    static let destructive = Color(red: 0.92, green: 0.38, blue: 0.38)
+    static let link = Color(red: 0.45, green: 0.72, blue: 1.0)
+    /// A little under the card's 26pt — the row sits inside a list.
+    static let minHeight: CGFloat = 24
+
+    let title: String
+    let style: Style
+    let fontSize: CGFloat
+    var enabled = true
+    var help: String? = nil
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) { label }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            .help(help ?? "")
+            .onHover { hovering = $0 }
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        let text = Text(title)
+            .font(.system(size: fontSize, weight: .semibold))
+            .lineLimit(1)
+        let shape = RoundedRectangle(cornerRadius: 6)
+        let lit = hovering && enabled
+        switch style {
+        case .primary:
+            text
+                .foregroundStyle(.white.opacity(enabled ? 1 : 0.6))
+                .fixedSize()
+                .padding(.horizontal, 12)
+                .frame(minHeight: Self.minHeight)
+                .background(shape.fill((lit ? Self.primaryHover : Self.primaryFill).opacity(enabled ? 1 : 0.4)))
+        case .destructive:
+            text
+                .foregroundStyle(Self.destructive.opacity(enabled ? 1 : 0.5))
+                .fixedSize()
+                .padding(.horizontal, 10)
+                .frame(minHeight: Self.minHeight)
+                .background(shape.fill(Self.destructive.opacity(lit ? 0.14 : 0)))
+                .overlay(shape.strokeBorder(Self.destructive.opacity(enabled ? (lit ? 0.9 : 0.7) : 0.3), lineWidth: 1))
+        case .quiet:
+            text
+                .foregroundStyle(.white.opacity(enabled ? 0.85 : 0.5))
+                .fixedSize()
+                .padding(.horizontal, 10)
+                .frame(minHeight: Self.minHeight)
+                .background(shape.fill(Color.white.opacity(lit ? 0.14 : 0.08)))
+        case .link:
+            Text(title)
+                .font(.system(size: fontSize - 0.5, weight: .medium))
+                .underline()
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(Self.link.opacity(enabled ? (lit ? 1 : 0.9) : 0.5))
+                .frame(minHeight: Self.minHeight)
+                .contentShape(Rectangle())
+        }
     }
 }
 
@@ -5058,17 +5504,18 @@ enum SessionMetadataStyle {
 }
 
 /// Claude Code's "while you were away" recap on an idle card: a ↻ marker and
-/// secondary-colored text, set apart from the "$" last-reply rows.
+/// secondary-colored text, set apart from the "●" reply rows.
 private struct SessionRecapRow: View, Equatable {
     let text: String
     let fontSize: CGFloat
     let lineLimit: Int?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            Text("↻")
+        HStack(alignment: .top, spacing: 5) {
+            Text(SessionGlyph.recap)
                 .font(.system(size: fontSize, weight: .bold, design: .monospaced))
                 .foregroundStyle(SessionMetadataStyle.recapAccent)
+                .frame(width: SessionGlyph.columnWidth(fontSize))
             Text(text)
                 .font(.system(size: fontSize, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.55))
@@ -5107,22 +5554,27 @@ private struct ChatMessageRow: View, Equatable {
     }
 
     var body: some View {
+        // `›` your prompt, `●` the agent's reply — the running tool has its
+        // own `▸` chip, so no glyph means two things any more.
         if isUser {
-            HStack(alignment: .top, spacing: 4) {
-                Text(">")
+            HStack(alignment: .top, spacing: 5) {
+                Text(SessionGlyph.prompt)
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                    .foregroundStyle(SessionGlyph.promptColor)
+                    .frame(width: SessionGlyph.columnWidth(fontSize))
                 Text(ChatMessageTextFormatter.literalText(text))
-                    .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(SessionGlyph.promptTextColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         } else {
-            HStack(alignment: .top, spacing: 4) {
-                Text("$")
+            HStack(alignment: .top, spacing: 5) {
+                Text(SessionGlyph.reply)
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                    .foregroundStyle(SessionGlyph.replyColor)
+                    .scaleEffect(SessionGlyph.replyScale)
+                    .frame(width: SessionGlyph.columnWidth(fontSize))
                 // Block Markdown when uncapped or on the completion card, a
                 // marker-free preview under the reply-line cap
                 // (MarkdownReplyView.swift).
