@@ -32,15 +32,22 @@ let package = Package(
             dependencies: ["CodeIslandCore"],
             path: "Sources/CodeIslandBridge"
         ),
+        // Resets the xctest runner's shared defaults domain when a test
+        // bundle loads (see Tests/TestDefaultsReset/TestDefaultsReset.c).
+        .target(
+            name: "TestDefaultsReset",
+            path: "Tests/TestDefaultsReset"
+        ),
         .testTarget(
             name: "CodeIslandCoreTests",
-            dependencies: ["CodeIslandCore"],
+            dependencies: ["CodeIslandCore", "TestDefaultsReset"],
             path: "Tests/CodeIslandCoreTests"
         ),
         .testTarget(
             name: "CodeIslandTests",
             dependencies: [
                 "CodeIsland",
+                "TestDefaultsReset",
                 .product(name: "Yams", package: "Yams"),
             ],
             path: "Tests/CodeIslandTests"
