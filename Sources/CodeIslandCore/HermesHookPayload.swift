@@ -41,16 +41,49 @@ public enum HermesHookPayload {
     }
 
     /// Platforms whose session is a single turn under its own id: a
-    /// `delegate_task` child (tools/delegate_tool.py) and a scheduled job's run
-    /// (`cron_<job>_<time>`, cron/scheduler.py).
-    static let oneShotPlatforms: Set<String> = ["subagent", "cron"]
+    /// `delegate_task` child (tools/delegate_tool.py), a scheduled job's run
+    /// (`cron_<job>_<time>`, cron/scheduler.py) and a skill-curation pass
+    /// (agent/curator.py).
+    static let oneShotPlatforms: Set<String> = ["subagent", "cron", "curator"]
 
     /// `on_session_end` of a one-shot run: the end of its only turn is the end
     /// of its card, with no completion for a conversation nobody is in.
     static func endsOneShotRun(_ event: HookEvent) -> Bool {
-        guard event.eventName == "on_session_end",
-              let platform = extra(event.rawJSON)?["platform"] as? String else { return false }
+        guard event.eventName == "on_session_end", let platform = platform(of: event) else { return false }
         return oneShotPlatforms.contains(platform)
+    }
+
+    /// Platforms where someone is driving Hermes at this Mac: the CLI (also
+    /// what the gateway's local adapter reports), the TUI and the desktop
+    /// app's terminal pane (`tui`), the desktop app's chat (`desktop`;
+    /// tui_gateway/server.py `_resolve_session_platform`) and an editor over
+    /// ACP. Every other value is a conversation held somewhere else — a
+    /// messaging gateway (Telegram, Discord, Slack, WhatsApp, Signal, email,
+    /// …: gateway/config.py `Platform`, plus plugin platforms), the API
+    /// server, a webhook — or a background run (`oneShotPlatforms`).
+    static let localPlatforms: Set<String> = ["cli", "tui", "desktop", "acp"]
+
+    /// Hooks that carry `extra.platform`. Tool hooks don't.
+    private static let platformHooks: Set<String> = [
+        "on_session_start", "pre_llm_call", "post_llm_call", "on_session_end",
+    ]
+
+    /// The platform a Hermes turn hook names, or nil when it names none (a
+    /// tool hook, or an empty value).
+    static func platform(of event: HookEvent) -> String? {
+        guard platformHooks.contains(event.eventName),
+              let platform = extra(event.rawJSON)?["platform"] as? String else { return nil }
+        let normalized = platform.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    /// A hook from a conversation nobody is having at this Mac: a gateway
+    /// chat, the API server, a background run. Its card follows along, but it
+    /// plays no sound and pops no completion — a bot answering on Telegram
+    /// isn't news at the desk (#364). A hook that names no platform is local.
+    public static func isQuiet(_ event: HookEvent) -> Bool {
+        guard let platform = platform(of: event) else { return false }
+        return !localPlatforms.contains(platform)
     }
 
     private static func extra(_ rawJSON: [String: Any]) -> [String: Any]? {

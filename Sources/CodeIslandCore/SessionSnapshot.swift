@@ -213,6 +213,12 @@ public struct SessionSnapshot: Sendable {
     /// ``applyHermesStore(_:)``. Transient, never persisted.
     public var hermesHooksReportPrompts = false
     public var hermesHooksReportReplies = false
+    /// The latest Hermes turn hook came from a conversation held away from
+    /// this Mac (a gateway chat, the API server; see
+    /// ``HermesHookPayload/isQuiet(_:)``). The process behind such a card is
+    /// the gateway daemon, which outlives every chat it serves, so the idle
+    /// card is swept like a hook-only one. Transient, never persisted.
+    public var hermesChatElsewhere = false
 
     public init(startTime: Date = Date()) {
         self.startTime = startTime
@@ -1416,7 +1422,10 @@ public func reduceEvent(
             sessions[sessionId]?.status = .idle
             sessions[sessionId]?.currentTool = nil
             sessions[sessionId]?.toolDescription = nil
-            effects.append(.enqueueCompletion(sessionId: sessionId))
+            // A Hermes gateway chat's turn settles its card without a completion.
+            if !HermesHookPayload.isQuiet(event) {
+                effects.append(.enqueueCompletion(sessionId: sessionId))
+            }
         }
     case "SessionStart":
         effects.append(.stopMonitor(sessionId: sessionId))
@@ -1570,6 +1579,10 @@ public func reduceEvent(
     if let store = HermesSessionStore.Snapshot(payload: event.rawJSON["_hermes_store"]) {
         sessions[sessionId]?.applyHermesStore(store)
     }
+    // After the switch: SessionStart rebuilt the snapshot.
+    if HermesHookPayload.platform(of: event) != nil {
+        sessions[sessionId]?.hermesChatElsewhere = HermesHookPayload.isQuiet(event)
+    }
 
     // SessionStart rebuilt the snapshot, but a resumed or compacted
     // conversation is still working through the same checklist. /clear
@@ -1589,7 +1602,9 @@ public func reduceEvent(
 
     // Trigger sound for this event. A single failed tool stays silent; only a
     // turn that died (StopFailure) rings the error sound. See EventSoundRouting.
-    if let sound = EventSoundRouting.soundEvent(rawEventName: event.eventName, normalizedEventName: eventName) {
+    // A Hermes gateway chat's start, prompt and turn end stay silent.
+    if let sound = EventSoundRouting.soundEvent(rawEventName: event.eventName, normalizedEventName: eventName),
+       !HermesHookPayload.isQuiet(event) {
         effects.append(.playSound(sound))
     }
 

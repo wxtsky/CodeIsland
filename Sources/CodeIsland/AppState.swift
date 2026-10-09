@@ -524,6 +524,25 @@ final class AppState {
     /// between two tool calls doesn't flicker the card to idle.
     nonisolated static let daemonTurnSettleTimeout: TimeInterval = 20
 
+    /// Minutes an idle card with no process to outlive waits before it goes.
+    nonisolated static let defaultStaleIdleMinutes = 10
+
+    /// Whether the idle sweep removes an idle card. The user's timeout applies
+    /// to every card. Otherwise a card whose process is monitored lives as
+    /// long as that process; one without (hook-only) goes after
+    /// `defaultStaleIdleMinutes`. So does a Hermes gateway chat's card: its
+    /// monitored process is the gateway daemon, which never exits (#364).
+    nonisolated static func isStaleIdleSession(
+        idleMinutes: Int,
+        userTimeoutMinutes: Int,
+        hasMonitor: Bool,
+        hermesChatElsewhere: Bool
+    ) -> Bool {
+        if userTimeoutMinutes > 0 && idleMinutes >= userTimeoutMinutes { return true }
+        let livesWithItsProcess = hasMonitor && !hermesChatElsewhere
+        return !livesWithItsProcess && idleMinutes >= defaultStaleIdleMinutes
+    }
+
     nonisolated static func isDaemonBackedSource(_ source: String?) -> Bool {
         guard let normalized = SessionSnapshot.normalizedSupportedSource(source) else { return false }
         return daemonBackedSources.contains(normalized)
@@ -694,15 +713,14 @@ final class AppState {
 
         // 4. Remove idle sessions past timeout (user setting, or 10 min default for no-monitor sessions)
         let userTimeout = SettingsManager.shared.sessionTimeout
-        let defaultStaleMinutes = 10  // for sessions without process monitor
         for (key, session) in sessions where session.status == .idle {
             let idleMinutes = Int(-session.lastActivity.timeIntervalSinceNow / 60)
-            let hasMonitor = processMonitors[key] != nil
-            if userTimeout > 0 && idleMinutes >= userTimeout {
-                // User-configured timeout applies to all sessions
-                removeSession(key)
-            } else if !hasMonitor && idleMinutes >= defaultStaleMinutes {
-                // No process monitor (hook-only sessions): clean up after 10 min idle
+            if Self.isStaleIdleSession(
+                idleMinutes: idleMinutes,
+                userTimeoutMinutes: userTimeout,
+                hasMonitor: processMonitors[key] != nil,
+                hermesChatElsewhere: session.hermesChatElsewhere
+            ) {
                 removeSession(key)
             }
         }

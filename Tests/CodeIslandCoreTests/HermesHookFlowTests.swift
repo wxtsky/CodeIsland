@@ -126,13 +126,72 @@ final class HermesHookFlowTests: XCTestCase {
     /// their own session id; when it ends, the card goes, as it did before —
     /// no completion for a conversation nobody is in.
     func testOneShotRunEndRemovesItsCard() throws {
-        for platform in ["subagent", "cron"] {
+        for platform in ["subagent", "cron", "curator"] {
             var sessions: [String: SessionSnapshot] = [:]
             try send("pre_tool_call", [:], top: ["tool_name": "terminal"], to: &sessions)
             let effects = try send("on_session_end", turnEnd(platform: platform), to: &sessions)
 
             XCTAssertEqual(effects, [.removeSession(sessionId: sessionId)], platform)
         }
+    }
+
+    /// A chat held through Hermes's gateway (or its API server) is not a
+    /// conversation at this Mac: the card follows the turn — prompt, reply,
+    /// back to idle — but nothing rings and no completion card pops.
+    func testGatewayTurnUpdatesTheCardQuietly() throws {
+        for platform in ["telegram", "discord", "slack", "whatsapp", "signal", "email", "api_server", "irc"] {
+            var sessions: [String: SessionSnapshot] = [:]
+            let start = try send("on_session_start", ["model": "hermes-4", "platform": platform], to: &sessions)
+            let prompt = try send("pre_llm_call", ["user_message": "status?", "platform": platform], to: &sessions)
+            try send("post_llm_call", [
+                "user_message": "status?", "assistant_response": "All green.", "platform": platform,
+            ], to: &sessions)
+            let end = try send("on_session_end", turnEnd(platform: platform), to: &sessions)
+
+            for effects in [start, prompt, end] {
+                XCTAssertFalse(effects.contains(where: Self.isSound), "\(platform): \(effects)")
+            }
+            XCTAssertFalse(end.contains(.enqueueCompletion(sessionId: sessionId)), platform)
+            let session = try XCTUnwrap(sessions[sessionId], platform)
+            XCTAssertEqual(session.status, .idle, platform)
+            XCTAssertEqual(session.recentMessages.map(\.text), ["status?", "All green."], platform)
+            XCTAssertTrue(session.hermesChatElsewhere, platform)
+        }
+    }
+
+    /// The CLI, the TUI, the desktop app and an ACP editor are used at this
+    /// Mac and behave like every other agent; so does a hook that names no
+    /// platform (older Hermes).
+    func testLocalTurnRingsAndPopsACompletion() throws {
+        for platform in ["cli", "tui", "desktop", "acp", ""] {
+            var sessions: [String: SessionSnapshot] = [:]
+            let prompt = try send("pre_llm_call", ["user_message": "status?", "platform": platform], to: &sessions)
+            let end = try send("on_session_end", turnEnd(platform: platform), to: &sessions)
+
+            XCTAssertTrue(prompt.contains(.playSound("UserPromptSubmit")), platform)
+            XCTAssertTrue(end.contains(.playSound("Stop")), platform)
+            XCTAssertTrue(end.contains(.enqueueCompletion(sessionId: sessionId)), platform)
+            XCTAssertEqual(sessions[sessionId]?.hermesChatElsewhere, false, platform)
+        }
+    }
+
+    /// A gateway session picked up in the desktop app is local from then on.
+    func testCardFollowsTheLatestTurnsPlatform() throws {
+        var sessions: [String: SessionSnapshot] = [:]
+        try send("on_session_end", turnEnd(platform: "telegram"), to: &sessions)
+        XCTAssertEqual(sessions[sessionId]?.hermesChatElsewhere, true)
+        // Tool hooks name no platform and change nothing.
+        try send("pre_tool_call", [:], top: ["tool_name": "terminal"], to: &sessions)
+        XCTAssertEqual(sessions[sessionId]?.hermesChatElsewhere, true)
+
+        let end = try send("on_session_end", turnEnd(platform: "desktop"), to: &sessions)
+        XCTAssertEqual(sessions[sessionId]?.hermesChatElsewhere, false)
+        XCTAssertTrue(end.contains(.enqueueCompletion(sessionId: sessionId)))
+    }
+
+    private static func isSound(_ effect: SideEffect) -> Bool {
+        if case .playSound = effect { return true }
+        return false
     }
 
     /// A remote hook attaches what it read from the store on its host. The

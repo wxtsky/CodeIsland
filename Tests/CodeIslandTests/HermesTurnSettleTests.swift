@@ -65,6 +65,25 @@ final class HermesTurnSettleTests: XCTestCase {
         XCTAssertEqual(session.lastAssistantMessage, "Fixed.")
     }
 
+    /// A gateway chat's card is monitored through the gateway daemon, which
+    /// never exits: without this, every chat a bot ever answered would keep
+    /// an idle card on the island.
+    func testIdleGatewayChatCardIsSweptLikeAHookOnlyCard() {
+        let stale = AppState.defaultStaleIdleMinutes
+        func sweeps(idle: Int, userTimeout: Int = 0, monitor: Bool, elsewhere: Bool) -> Bool {
+            AppState.isStaleIdleSession(
+                idleMinutes: idle, userTimeoutMinutes: userTimeout, hasMonitor: monitor, hermesChatElsewhere: elsewhere
+            )
+        }
+        XCTAssertTrue(sweeps(idle: stale, monitor: true, elsewhere: true))
+        XCTAssertFalse(sweeps(idle: stale - 1, monitor: true, elsewhere: true))
+        // A CLI card still lives as long as its process; hook-only cards and
+        // the user's timeout are unchanged.
+        XCTAssertFalse(sweeps(idle: stale * 6, monitor: true, elsewhere: false))
+        XCTAssertTrue(sweeps(idle: stale, monitor: false, elsewhere: false))
+        XCTAssertTrue(sweeps(idle: 3, userTimeout: 3, monitor: true, elsewhere: false))
+    }
+
     func testHermesIsTreatedAsDaemonBackedAndOtherAgentsAreNot() {
         XCTAssertTrue(AppState.isDaemonBackedSource("hermes"))
         XCTAssertTrue(AppState.isDaemonBackedSource("hermes-agent"), "alias must resolve too")
