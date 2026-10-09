@@ -1129,6 +1129,11 @@ private struct ApprovalToolDetailView: View {
     let tool: String
     let toolInput: [String: Any]?
     var maxLines: Int? = nil
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
+
+    /// Follows Content Font Size, like the rest of the card (and the session
+    /// list, which shows this view under "Details").
+    private var type: NotchCardTypography { NotchCardTypography(contentFontSize: contentFontSize) }
 
     private var filePath: String? {
         toolInput?["file_path"] as? String
@@ -1142,17 +1147,17 @@ private struct ApprovalToolDetailView: View {
                     if let cmd = toolInput?["command"] as? String {
                         HStack(alignment: .top, spacing: 4) {
                             Text("$")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.system(size: type.body, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
                             Text(cmd)
-                                .font(.system(size: 10, design: .monospaced))
+                                .font(.system(size: type.body, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.85))
                                 .lineLimit(maxLines)
                         }
                     }
                     if let desc = toolInput?["description"] as? String, !desc.isEmpty {
                         Text(desc)
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(.system(size: type.secondary, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(maxLines)
                     }
@@ -1162,7 +1167,7 @@ private struct ApprovalToolDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if let fp = filePath {
                         Text(fp)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: type.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -1170,10 +1175,10 @@ private struct ApprovalToolDetailView: View {
                     if let old = toolInput?["old_string"] as? String {
                         HStack(alignment: .top, spacing: 4) {
                             Text("−")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.system(size: type.body, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4))
                             Text(old.prefix(120))
-                                .font(.system(size: 9.5, design: .monospaced))
+                                .font(.system(size: type.secondary, design: .monospaced))
                                 .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.85))
                                 .lineLimit(maxLines ?? 2)
                         }
@@ -1181,10 +1186,10 @@ private struct ApprovalToolDetailView: View {
                     if let new = toolInput?["new_string"] as? String {
                         HStack(alignment: .top, spacing: 4) {
                             Text("+")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.system(size: type.body, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
                             Text(new.prefix(120))
-                                .font(.system(size: 9.5, design: .monospaced))
+                                .font(.system(size: type.secondary, design: .monospaced))
                                 .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.7))
                                 .lineLimit(maxLines ?? 2)
                         }
@@ -1195,14 +1200,14 @@ private struct ApprovalToolDetailView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     if let fp = filePath {
                         Text(fp)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: type.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
                     if let content = toolInput?["content"] as? String {
                         Text(content.prefix(200))
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(.system(size: type.secondary, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.6))
                             .lineLimit(maxLines ?? 4)
                     }
@@ -1212,7 +1217,7 @@ private struct ApprovalToolDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if let fp = filePath {
                         Text(fp)
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(.system(size: type.secondary, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.7))
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -1220,7 +1225,7 @@ private struct ApprovalToolDetailView: View {
                     if let offset = toolInput?["offset"] as? Int,
                        let limit = toolInput?["limit"] as? Int {
                         Text("\(L10n.shared["lines"]) \(offset + 1)–\(offset + limit)")
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: type.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                     }
@@ -1231,17 +1236,17 @@ private struct ApprovalToolDetailView: View {
                     if let pattern = toolInput?["pattern"] as? String {
                         HStack(alignment: .top, spacing: 4) {
                             Text("/")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .font(.system(size: type.body, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color(red: 0.9, green: 0.6, blue: 0.9))
                             Text(pattern)
-                                .font(.system(size: 10, design: .monospaced))
+                                .font(.system(size: type.body, design: .monospaced))
                                 .foregroundStyle(Color(red: 0.9, green: 0.6, blue: 0.9).opacity(0.8))
                                 .lineLimit(maxLines ?? 2)
                         }
                     }
                     if let path = toolInput?["path"] as? String {
                         Text(path)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: type.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -1252,13 +1257,13 @@ private struct ApprovalToolDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if let pattern = toolInput?["pattern"] as? String {
                         Text(pattern)
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: type.body, design: .monospaced))
                             .foregroundStyle(Color(red: 0.6, green: 0.8, blue: 1.0))
                             .lineLimit(maxLines ?? 2)
                     }
                     if let path = toolInput?["path"] as? String {
                         Text(path)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: type.caption, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -1272,10 +1277,10 @@ private struct ApprovalToolDetailView: View {
                             let val = input[key].map { "\($0)" } ?? ""
                             HStack(alignment: .top, spacing: 4) {
                                 Text(key)
-                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .font(.system(size: type.caption, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Color(red: 0.6, green: 0.7, blue: 0.9))
                                 Text(String(val.prefix(160)))
-                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .font(.system(size: type.secondary, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.6))
                                     .lineLimit(maxLines ?? 2)
                             }
@@ -1292,70 +1297,482 @@ private struct ApprovalToolDetailView: View {
 enum ApprovalHints {
     /// What "Always" commits to differs by agent: Claude-style hooks add a
     /// rule for the rest of the session, Codex gets a rule saved to disk
-    /// (CodexPermissionRules) that outlives it. The label is the same.
+    /// (CodexPermissionRules) that outlives it.
     static func always(savesRule: Bool) -> String {
         L10n.shared[savesRule ? "always_hint_saved" : "always_hint_session"]
     }
+
+    /// The same, told apart for a Codex MCP tool, whose approval goes to
+    /// config.toml rather than the rules file.
+    static func always(scope: ApprovalAlwaysScope) -> String {
+        switch scope {
+        case .session: return L10n.shared["always_hint_session"]
+        case .codexRules: return L10n.shared["always_hint_saved"]
+        case .codexMCPConfig: return L10n.shared["always_hint_saved_mcp"]
+        }
+    }
 }
 
-/// CLI icon + project folder (or session title) heading an approval or
-/// question card, so a card always says which session is asking — with
+/// Where "Always allow" puts its rule — what the approval card's link says.
+enum ApprovalAlwaysScope: Equatable {
+    /// Claude-style hooks: a rule for this tool, for the rest of the session.
+    case session
+    /// Codex: a prefix rule in ~/.codex/rules, kept for every session.
+    case codexRules
+    /// Codex MCP tool: an approval in ~/.codex/config.toml
+    /// (CodexPermissionRules.persistAlwaysAllowRule).
+    case codexMCPConfig
+
+    init(savesRule: Bool, tool: String) {
+        if !savesRule {
+            self = .session
+        } else {
+            self = ApprovalCopy.mcpParts(tool) == nil ? .codexRules : .codexMCPConfig
+        }
+    }
+
+    /// The file the rule is saved to, as the link shows it; nil for a
+    /// session rule.
+    var savedPath: String? {
+        switch self {
+        case .session: return nil
+        case .codexRules: return "~/.codex/rules"
+        case .codexMCPConfig: return "~/.codex/config.toml"
+        }
+    }
+}
+
+/// The approval card's words: its title ("Bash wants to run a command") and
+/// the scope its "Always" link spells out.
+enum ApprovalCopy {
+    /// What a tool does, for the title's verb.
+    enum Action: Equatable {
+        case command, change, read, search, web, mcp, agent, other
+    }
+
+    /// `mcp__server__tool`, split; nil for anything else.
+    static func mcpParts(_ tool: String) -> (server: String, tool: String)? {
+        guard tool.hasPrefix("mcp__") else { return nil }
+        let rest = tool.dropFirst("mcp__".count)
+        guard let separator = rest.range(of: "__") else { return nil }
+        let server = String(rest[..<separator.lowerBound])
+        let name = String(rest[separator.upperBound...])
+        guard !server.isEmpty, !name.isEmpty else { return nil }
+        return (server, name)
+    }
+
+    static func action(for tool: String) -> Action {
+        if mcpParts(tool) != nil { return .mcp }
+        let name = tool.lowercased().replacingOccurrences(of: "-", with: "_")
+        if name == "task" || name == "agent" || name.contains("subagent") || name.contains("spawn_agent") {
+            return .agent
+        }
+        if name.contains("webfetch") || name.contains("websearch") || name.contains("web_fetch")
+            || name.contains("web_search") || name.contains("fetch_url") {
+            return .web
+        }
+        // Before "change": Codex's write_stdin feeds a running command.
+        if name == "bash" || name == "command" || name.contains("shell") || name.contains("exec_command")
+            || name.contains("write_stdin") || name.contains("run_command") || name.contains("execute_command")
+            || name.contains("terminal") {
+            return .command
+        }
+        if name.contains("edit") || name.contains("write") || name.contains("apply_patch")
+            || name.contains("replace") || name.contains("create_file") || name.contains("delete_file")
+            || name.contains("move_file") {
+            return .change
+        }
+        if name == "read" || name.contains("read_file") || name.contains("view_file") || name.contains("list_dir") {
+            return .read
+        }
+        if name == "grep" || name == "glob" || name == "find" || name.contains("search") {
+            return .search
+        }
+        return .other
+    }
+
+    /// The tool as the card names it: an MCP tool by its own name, without
+    /// the `mcp__server__` prefix.
+    static func displayName(_ tool: String) -> String {
+        if let mcp = mcpParts(tool) { return mcp.tool }
+        return ToolNameDisplay.compact(tool, maxCharacters: 32)
+    }
+
+    /// The file a change or read is about, by name.
+    static func fileName(_ toolInput: [String: Any]?) -> String? {
+        for key in ["file_path", "notebook_path", "path"] {
+            if let path = toolInput?[key] as? String {
+                let name = (path as NSString).lastPathComponent
+                if !name.isEmpty { return name }
+            }
+        }
+        return nil
+    }
+
+    static func title(tool: String, toolInput: [String: Any]?) -> String {
+        let l10n = L10n.shared
+        let name = displayName(tool)
+        switch action(for: tool) {
+        case .command:
+            return String(format: l10n["approval_title_command"], name)
+        case .change:
+            if let file = fileName(toolInput) {
+                return String(format: l10n["approval_title_change_file"], name, file)
+            }
+            return String(format: l10n["approval_title_change"], name)
+        case .read:
+            if let file = fileName(toolInput) {
+                return String(format: l10n["approval_title_read_file"], name, file)
+            }
+            return String(format: l10n["approval_title_read"], name)
+        case .search:
+            return String(format: l10n["approval_title_search"], name)
+        case .web:
+            return String(format: l10n["approval_title_web"], name)
+        case .mcp:
+            let parts = mcpParts(tool) ?? (server: tool, tool: tool)
+            return String(format: l10n["approval_title_mcp"], parts.server, parts.tool)
+        case .agent:
+            return String(format: l10n["approval_title_agent"], name)
+        case .other:
+            return String(format: l10n["approval_title_generic"], name)
+        }
+    }
+
+    /// "Always allow Bash this session", or where Codex saves the rule.
+    static func alwaysLink(tool: String, scope: ApprovalAlwaysScope) -> String {
+        if let path = scope.savedPath {
+            return String(format: L10n.shared["card_always_saved"], path)
+        }
+        return String(format: L10n.shared["card_always_session"], displayName(tool))
+    }
+}
+
+/// Badge text for a global shortcut on a card's button, shown only when the
+/// user has turned that shortcut on in Settings (they are all off but the
+/// panel toggle by default) — the shortcut existed but nothing surfaced it
+/// (#12 UX).
+enum CardShortcutHint {
+    static func text(for action: ShortcutAction) -> String? {
+        guard action.isEnabled else { return nil }
+        return action.binding.displayString
+    }
+}
+
+/// Text sizes on the approval and question cards. They follow Settings ›
+/// Content Font Size like the session list, from the setting clamped to the
+/// sizes Settings offers: a hand-edited 40 would otherwise push the buttons
+/// out of the window, and a 4 would be unreadable.
+struct NotchCardTypography: Equatable {
+    /// The clamped Content Font Size.
+    let base: CGFloat
+
+    init(contentFontSize: Int) {
+        let smallest = ContentFontSize.choices.min() ?? 10
+        let largest = ContentFontSize.choices.max() ?? 16
+        base = CGFloat(min(max(contentFontSize, smallest), largest))
+    }
+
+    /// Card title and the question itself.
+    var title: CGFloat { base + 1 }
+    /// Command, option labels, the project in the context row.
+    var body: CGFloat { base }
+    /// Command description, diff lines, the branch, the queue position.
+    var secondary: CGFloat { base - 1 }
+    /// File paths, option descriptions, MCP argument names.
+    var caption: CGFloat { max(9, base - 2) }
+    /// The PERMISSION tag and shortcut badges.
+    var badge: CGFloat { max(8.5, base - 2) }
+    /// Button labels. Held back at the largest sizes so the decision row
+    /// keeps to one line in the 580pt panel.
+    var button: CGFloat { min(base + 1, 15) }
+    /// The "Always allow …" link and the answer field.
+    var link: CGFloat { base - 0.5 }
+    /// Agent icon in the context row.
+    var icon: CGFloat { base + 2 }
+}
+
+/// How much a card's action is worth, which sets how loud its button is:
+/// one filled primary per card, outlined alternatives, a quiet way out.
+enum NotchCardButtonRole {
+    /// The answer most often given — "Allow once", "Confirm". Filled green.
+    case primary
+    /// Refuses the request — "Deny". Outlined red.
+    case destructive
+    /// Another answer — "Skip". Outlined grey.
+    case secondary
+    /// Leaves the decision for later — "Hide", "Back". Text only.
+    case quiet
+}
+
+/// Colours of the card buttons. Shared with nothing else on purpose: the
+/// session list's inline approval row mirrors these values.
+enum NotchCardPalette {
+    /// White on it is 5:1 (WCAG AA); the prototype's brighter green was 3.4:1.
+    static let allowFill = Color(red: 0.16, green: 0.50, blue: 0.24)
+    /// Still 4.5:1 under white text.
+    static let allowFillHover = Color(red: 0.17, green: 0.53, blue: 0.26)
+    static let deny = Color(red: 0.92, green: 0.38, blue: 0.38)
+    static let link = Color(red: 0.45, green: 0.72, blue: 1.0)
+    static let permission = Color(red: 1.0, green: 0.6, blue: 0.2)
+}
+
+private struct NotchCardButton: View {
+    let label: String
+    let role: NotchCardButtonRole
+    let fontSize: CGFloat
+    /// Keyboard-shortcut badge (e.g. "⌘⇧A"), only when the shortcut is on.
+    var hint: String? = nil
+    /// Tooltip spelling out what the short label does.
+    var help: String? = nil
+    var isEnabled = true
+    /// Share a narrow row equally instead of hugging the label.
+    var expands = false
+    var systemImage: String? = nil
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var foreground: Color {
+        switch role {
+        case .primary: return .white.opacity(isEnabled ? 1 : 0.6)
+        case .destructive: return NotchCardPalette.deny
+        case .secondary: return .white.opacity(0.85)
+        case .quiet: return .white.opacity(hovering ? 0.85 : 0.6)
+        }
+    }
+
+    private var fill: Color {
+        switch role {
+        case .primary:
+            guard isEnabled else { return NotchCardPalette.allowFill.opacity(0.35) }
+            return hovering ? NotchCardPalette.allowFillHover : NotchCardPalette.allowFill
+        case .destructive: return NotchCardPalette.deny.opacity(hovering ? 0.14 : 0)
+        case .secondary: return .white.opacity(hovering ? 0.10 : 0.03)
+        case .quiet: return .white.opacity(hovering ? 0.07 : 0)
+        }
+    }
+
+    private var stroke: Color {
+        switch role {
+        case .primary: return .clear
+        case .destructive: return NotchCardPalette.deny.opacity(hovering ? 0.9 : 0.7)
+        case .secondary: return .white.opacity(hovering ? 0.4 : 0.28)
+        case .quiet: return .clear
+        }
+    }
+
+    /// The badge stays at AA contrast on the button's own fill.
+    private var hintOpacity: Double {
+        switch role {
+        case .primary: return 0.9
+        case .destructive: return 0.85
+        case .secondary, .quiet: return 0.75
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: fontSize - 2, weight: .semibold))
+                }
+                Text(label)
+                    .font(.system(size: fontSize, weight: role == .quiet ? .medium : .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(expands ? 0.8 : 1)
+                if let hint {
+                    Text(hint)
+                        .font(.system(size: max(8.5, fontSize - 3), weight: .medium, design: .monospaced))
+                        .opacity(hintOpacity)
+                        .fixedSize()
+                }
+            }
+            .foregroundStyle(foreground)
+            .padding(.horizontal, role == .quiet ? 8 : (role == .primary ? 14 : 11))
+            .padding(.vertical, 6)
+            .frame(minHeight: 26)
+            .frame(maxWidth: expands ? .infinity : nil)
+            .background(RoundedRectangle(cornerRadius: 6).fill(fill))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(stroke, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h && isEnabled } }
+        .help(help ?? "")
+        .accessibilityLabel(label)
+        .accessibilityHint(help ?? "")
+    }
+}
+
+/// "Always allow Bash this session" — the approval card's leading link. A
+/// link rather than a fourth button: it is the one answer that outlives the
+/// request, so it says what it commits to and doesn't sit where a hand
+/// reaching for Allow lands.
+private struct NotchCardTextLink: View {
+    let label: String
+    let fontSize: CGFloat
+    var hint: String? = nil
+    var help: String? = nil
+    var lineLimit = 1
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(label)
+                    .font(.system(size: fontSize, weight: .medium))
+                    .underline()
+                    .lineLimit(lineLimit)
+                    .truncationMode(.middle)
+                    .multilineTextAlignment(.leading)
+                if let hint {
+                    Text(hint)
+                        .font(.system(size: max(8.5, fontSize - 2), weight: .medium, design: .monospaced))
+                        .opacity(0.8)
+                        .fixedSize()
+                }
+            }
+            .foregroundStyle(NotchCardPalette.link.opacity(hovering ? 1 : 0.9))
+            .padding(.vertical, 4)
+            .frame(minHeight: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .help(help ?? "")
+        .accessibilityLabel(label)
+        .accessibilityHint(help ?? "")
+    }
+}
+
+/// Small coloured caps tag ahead of a card title — "PERMISSION".
+private struct NotchCardTag: View {
+    let text: String
+    let color: Color
+    let fontSize: CGFloat
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+/// A card's place among the requests waiting ("1 of 3"); nil when it is the
+/// only one.
+enum NotchCardQueueLabel {
+    static func text(position: Int, total: Int) -> String? {
+        guard total > 1 else { return nil }
+        return String(format: L10n.shared["card_queue_position"], position, total)
+    }
+}
+
+/// CLI icon + project folder (or session title) + branch heading an approval
+/// or question card, so a card always says which session is asking — with
 /// several agents queued, "! Bash" alone gave no clue whose command it was.
 /// Clicking it focuses that session's terminal, where the full transcript is.
+/// With more than one request waiting it ends in the card's place in the
+/// queue ("1 of 3").
 private struct NotchCardContextRow: View {
     let source: String?
     let cwd: String?
     let session: SessionSnapshot?
     let canJump: Bool
+    var queuePosition = 1
+    var queueTotal = 1
+    let type: NotchCardTypography
     let onJump: () -> Void
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
     @State private var hovering = false
 
-    static func isShown(source: String?, cwd: String?, canJump: Bool) -> Bool {
-        source != nil || cwd != nil || canJump
+    static func isShown(source: String?, cwd: String?, canJump: Bool, queueTotal: Int = 1) -> Bool {
+        source != nil || cwd != nil || canJump || queueTotal > 1
+    }
+
+    private var branchLabel: String? {
+        guard showGitBranch, let branch = session?.gitBranch, !branch.isEmpty else { return nil }
+        return session?.gitIsWorktree == true ? "\(branch) ⧉" : branch
     }
 
     var body: some View {
-        HStack(spacing: 5) {
-            if let src = source, let icon = cliIcon(source: src, size: 12) {
+        HStack(spacing: 6) {
+            if let src = source, let icon = cliIcon(source: src, size: type.icon) {
                 Image(nsImage: icon)
                     .resizable()
-                    .frame(width: 12, height: 12)
+                    .frame(width: type.icon, height: type.icon)
                     .help(session?.sourceLabel ?? src)
+                    .accessibilityLabel(session?.sourceLabel ?? src)
             }
             if let label = SessionHeadline.contextLabel(
                 projectName: cwd.map { ($0 as NSString).lastPathComponent },
                 sessionLabel: session?.sessionLabel,
                 showProjectName: showProjectName
             ) {
-                Image(systemName: showProjectName ? "folder.fill" : "text.bubble.fill")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.white.opacity(0.5))
                 Text(label)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .font(.system(size: type.body, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(2)
+            }
+            if let branch = branchLabel {
+                HStack(spacing: 2) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: type.secondary - 1, weight: .semibold))
+                        .accessibilityHidden(true)
+                    Text(branch)
+                        .font(.system(size: type.secondary, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(minWidth: BranchLabelMetrics.minimumWidth(for: branch, fontSize: type.secondary))
+                }
+                .foregroundStyle(.white.opacity(0.6))
+                .help(branch)
+                .layoutPriority(1)
             }
             if canJump {
                 Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.5))
+                    .font(.system(size: type.secondary))
+                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.55))
+                    .accessibilityHidden(true)
             }
-            Spacer()
+            Spacer(minLength: 8)
+            if let queue = NotchCardQueueLabel.text(position: queuePosition, total: queueTotal) {
+                Text(queue)
+                    .font(.system(size: type.secondary, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(hovering ? Color.white.opacity(0.09) : Color.clear)
         )
-        .padding(.horizontal, 4)
+        // The hover wash reaches past the column; the text lines up with it.
+        .padding(.horizontal, -6)
         .contentShape(Rectangle())
         .onTapGesture { onJump() }
         .onHover { h in
             guard canJump else { return }
             withAnimation(NotchAnimation.micro) { hovering = h }
         }
+        .help(canJump ? L10n.shared["card_jump_hint"] : "")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(canJump ? .isButton : [])
+        .accessibilityHint(canJump ? L10n.shared["card_jump_hint"] : "")
+        .accessibilityAction { if canJump { onJump() } }
     }
 }
 
@@ -1378,18 +1795,14 @@ private struct ApprovalBar: View {
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
-
-    private var fileName: String? {
-        guard let fp = toolInput?["file_path"] as? String else { return nil }
-        return (fp as NSString).lastPathComponent
-    }
-
-    private var filePath: String? {
-        toolInput?["file_path"] as? String
-    }
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
 
     private var serverName: String? {
         toolInput?["server_name"] as? String
+    }
+
+    private var alwaysScope: ApprovalAlwaysScope {
+        ApprovalAlwaysScope(savesRule: alwaysSavesRule, tool: tool)
     }
 
     /// Same rule as QuestionBar: no local terminal (remote, unknown harness)
@@ -1397,71 +1810,62 @@ private struct ApprovalBar: View {
     private var canJumpToTerminal: Bool { session?.canJumpFromNotch ?? false }
 
     var body: some View {
-        VStack(spacing: 8) {
+        let type = NotchCardTypography(contentFontSize: contentFontSize)
+        VStack(alignment: .leading, spacing: 8) {
             // Which session is asking — doubles as the click-to-jump target
-            if NotchCardContextRow.isShown(source: session?.source, cwd: session?.cwd, canJump: canJumpToTerminal) {
+            if NotchCardContextRow.isShown(source: session?.source, cwd: session?.cwd,
+                                           canJump: canJumpToTerminal, queueTotal: queueTotal) {
                 NotchCardContextRow(
                     source: session?.source,
                     cwd: session?.cwd,
                     session: session,
                     canJump: canJumpToTerminal,
+                    queuePosition: queuePosition,
+                    queueTotal: queueTotal,
+                    type: type,
                     onJump: handleCardClick
                 )
             }
 
-            // Tool name + file context
-            HStack(spacing: 6) {
-                Text("!")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                Text(tool)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+            // What is being asked
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                NotchCardTag(text: L10n.shared["card_permission_tag"], color: NotchCardPalette.permission, fontSize: type.badge)
+                let title = ApprovalCopy.title(tool: tool, toolInput: toolInput)
+                Text(title)
+                    .font(.system(size: type.title, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(tool == title ? title : "\(title)\n\(tool)")
                 if let server = serverName {
                     Text("(\(server))")
-                        .font(.system(size: 9))
+                        .font(.system(size: type.secondary))
                         .foregroundStyle(Color(red: 0.6, green: 0.7, blue: 0.9))
+                        .lineLimit(1)
                 }
-                if let name = fileName {
-                    Text(name)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
-                if queueTotal > 1 {
-                    Text("\(queuePosition)/\(queueTotal)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                Spacer()
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
             .contentShape(Rectangle())
             .onTapGesture { handleCardClick() }
 
-            // Tool-specific detail view
+            // Tool-specific detail view. A long command scrolls inside the
+            // window rather than pushing the buttons off its bottom edge.
             if toolInput != nil {
-                ApprovalToolDetailView(tool: tool, toolInput: toolInput)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.04))
-                    .contentShape(Rectangle())
-                    .onTapGesture { handleCardClick() }
+                PanelFittedScrollArea(minimumHeight: Self.detailMinimumHeight(type)) {
+                    ApprovalToolDetailView(tool: tool, toolInput: toolInput)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
+                .contentShape(Rectangle())
+                .onTapGesture { handleCardClick() }
             }
 
-            // Pixel-style buttons — badge the global shortcut when one is enabled
-            HStack(spacing: 6) {
-                PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), hint: Self.shortcutHint(.deny), action: onDeny)
-                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), help: L10n.shared["dismiss_card_hint"], action: onDismiss)
-                PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), hint: Self.shortcutHint(.approve), action: onAllow)
-                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), hint: Self.shortcutHint(.approveAlways), help: ApprovalHints.always(savesRule: alwaysSavesRule), action: onAlwaysAllow)
-            }
-            .padding(.horizontal, 14)
+            actionRow(type)
         }
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .offset(x: failureShakeOffset)
         .onDisappear {
@@ -1470,11 +1874,63 @@ private struct ApprovalBar: View {
         }
     }
 
-    /// Badge text for a global shortcut, shown only when the user has enabled
-    /// it in Settings — the shortcut existed but nothing surfaced it (#12 UX).
-    static func shortcutHint(_ action: ShortcutAction) -> String? {
-        guard action.isEnabled else { return nil }
-        return action.binding.displayString
+    /// Three lines of command, so a scrolled detail never shrinks to a sliver.
+    static func detailMinimumHeight(_ type: NotchCardTypography) -> CGFloat {
+        (type.body * 1.25 * 3 + 16).rounded(.up)
+    }
+
+    // MARK: - Actions
+
+    /// Always (a link stating its scope) on the leading edge; Hide, Deny and
+    /// the one filled button, Allow once, on the trailing edge — the slot a
+    /// macOS dialog keeps for its default. Where the row can't hold them all
+    /// (a long tool name, German labels, a large font) the link takes its own
+    /// line above, and in a very narrow panel the buttons share the width.
+    private func actionRow(_ type: NotchCardTypography) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                alwaysLink(type, lineLimit: 1)
+                Spacer(minLength: 12)
+                decisionButtons(type, expands: false)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                alwaysLink(type, lineLimit: 2)
+                    .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    decisionButtons(type, expands: false)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                alwaysLink(type, lineLimit: 2)
+                    .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 6) {
+                    decisionButtons(type, expands: true)
+                }
+                .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func alwaysLink(_ type: NotchCardTypography, lineLimit: Int) -> some View {
+        NotchCardTextLink(
+            label: ApprovalCopy.alwaysLink(tool: tool, scope: alwaysScope),
+            fontSize: type.link,
+            hint: CardShortcutHint.text(for: .approveAlways),
+            help: ApprovalHints.always(scope: alwaysScope),
+            lineLimit: lineLimit,
+            action: onAlwaysAllow
+        )
+    }
+
+    @ViewBuilder
+    private func decisionButtons(_ type: NotchCardTypography, expands: Bool) -> some View {
+        NotchCardButton(label: L10n.shared["card_hide"], role: .quiet, fontSize: type.button,
+                        help: L10n.shared["dismiss_card_hint"], action: onDismiss)
+        NotchCardButton(label: L10n.shared["card_deny"], role: .destructive, fontSize: type.button,
+                        hint: CardShortcutHint.text(for: .deny), expands: expands, action: onDeny)
+        NotchCardButton(label: L10n.shared["card_allow_once"], role: .primary, fontSize: type.button,
+                        hint: CardShortcutHint.text(for: .approve), expands: expands, action: onAllow)
     }
 
     // MARK: - Click-to-jump handling
@@ -1691,8 +2147,10 @@ private struct QuestionBar: View {
             cwd: sessionContext,
             session: session,
             canJump: canJumpToTerminal,
+            type: NotchCardTypography(contentFontSize: SettingsDefaults.contentFontSize),
             onJump: handleCardClick
         )
+        .padding(.horizontal, 14)
     }
 
     // MARK: - Click-to-jump handling

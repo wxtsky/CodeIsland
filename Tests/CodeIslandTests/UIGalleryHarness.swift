@@ -123,12 +123,27 @@ final class UIGalleryHarness: XCTestCase {
     }
 
     private func renderApprovals(_ lang: GalleryLang) async throws {
+        // Every card at the default text size and at the largest Content
+        // Font Size (16pt), which the card text follows.
         for kind in ApprovalKind.allCases {
+            for big in [false, true] {
+                GallerySettings.reset()
+                if big { GallerySettings.set(16, SettingsKey.contentFontSize) }
+                let demo = try await GalleryDemo.approval(kind, lang: lang)
+                defer { demo.release() }
+                try renderOnStage(demo, group: "approval", name: kind.rawValue + (big ? "-f16" : ""), lang: lang,
+                                  screen: .macBook14, layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
+            }
+        }
+        // The buttons badge a global shortcut only once it is turned on.
+        for big in [false, true] {
             GallerySettings.reset()
-            let demo = try await GalleryDemo.approval(kind, lang: lang)
+            GallerySettings.setCardShortcutsEnabled()
+            if big { GallerySettings.set(16, SettingsKey.contentFontSize) }
+            let demo = try await GalleryDemo.approval(.bashShort, lang: lang)
             defer { demo.release() }
-            try renderOnStage(demo, group: "approval", name: kind.rawValue, lang: lang, screen: .macBook14,
-                              layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
+            try renderOnStage(demo, group: "approval", name: "bash-short-keys" + (big ? "-f16" : ""), lang: lang,
+                              screen: .macBook14, layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
         }
         if lang == .en {
             GallerySettings.reset()
@@ -136,12 +151,6 @@ final class UIGalleryHarness: XCTestCase {
             defer { demo.release() }
             try renderOnStage(demo, group: "approval", name: "bash-short-light", lang: lang, screen: .macBook14,
                               layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false), wallpaper: .light)
-            GallerySettings.reset()
-            GallerySettings.set(16, SettingsKey.contentFontSize)
-            let big = try await GalleryDemo.approval(.edit, lang: lang)
-            defer { big.release() }
-            try renderOnStage(big, group: "approval", name: "edit-f16", lang: lang, screen: .macBook14,
-                              layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false))
         }
     }
 
@@ -278,6 +287,17 @@ enum GallerySettings {
         suite.set(value, forKey: key)
         if !suiteOnly { UserDefaults.standard.set(value, forKey: key) }
     }
+
+    /// Turns on the approve / always / deny / skip shortcuts (off by
+    /// default): ⌘⇧A, ⌘⇧L, ⌘⇧D and ⌘⇧S.
+    static func setCardShortcutsEnabled() {
+        let commandShift = Int(NSEvent.ModifierFlags([.command, .shift]).rawValue)
+        for (action, keyCode) in [(ShortcutAction.approve, 0), (.approveAlways, 37), (.deny, 2), (.skipQuestion, 1)] {
+            set(true, SettingsKey.shortcutEnabled(action.rawValue))
+            set(keyCode, SettingsKey.shortcutKeyCode(action.rawValue))
+            set(commandShift, SettingsKey.shortcutModifiers(action.rawValue))
+        }
+    }
 }
 
 // MARK: - Variants
@@ -317,6 +337,8 @@ enum CollapsedState: String, CaseIterable {
 enum ApprovalKind: String, CaseIterable {
     case bashShort = "bash-short"
     case bashLong = "bash-long"
+    /// Longer than the window holds: the command scrolls.
+    case bashHeredoc = "bash-heredoc"
     case edit
     case write
     case mcp
@@ -657,6 +679,12 @@ enum GalleryDemo {
                      "description": lang.t("Run the request specs against a disposable CI database",
                                            "在一次性 CI 数据库上运行请求测试",
                                            "Request-Specs gegen eine Wegwerf-CI-Datenbank ausführen")]
+        case .bashHeredoc:
+            input = ["command": "psql \"$DATABASE_URL\" <<'SQL'\n" + (1...60).map {
+                "INSERT INTO orders (id, status, total) VALUES (\($0), 'pending', \($0 * 7 % 90 + 10).00);"
+            }.joined(separator: "\n") + "\nSQL",
+                     "description": lang.t("Seed the orders table for the dashboard demo", "为仪表盘演示写入订单种子数据",
+                                           "Bestelltabelle für die Dashboard-Demo befüllen")]
         case .edit:
             tool = "Edit"
             input = ["file_path": "/Users/dev/code/web-app/src/components/Dashboard.tsx",
