@@ -628,6 +628,13 @@ class HookServer {
 
         switch mode {
         case "hide":
+            // Hiding the card must not approve what Codex's auto reviewer
+            // would otherwise judge (#165): hand it back undecided instead.
+            if Self.rawEventName(from: raw).map(EventNormalizer.normalize) == "PermissionRequest",
+               let event = HookEvent(from: data),
+               Self.shouldDeferPermissionRequestToProvider(event) {
+                return (data, Data("{}".utf8))
+            }
             return (data, Self.hiddenPluginResponse(for: raw))
         case "merge":
             guard let parentSessionId else { return (data, nil) }

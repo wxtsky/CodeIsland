@@ -156,6 +156,41 @@ final class CodexAutoReviewRoutingTests: XCTestCase {
         XCTAssertEqual(CodexPermissionRules.transcriptReviewerValue(event.rawJSON), "auto_review")
     }
 
+    func testHiddenSubagentPermissionIsLeftToAutoReviewInsteadOfAllowed() throws {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("hide", forKey: SettingsKey.pluginSessionMode)
+        defer {
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let url = root.appendingPathComponent("child.jsonl")
+        let meta = #"{"type":"session_meta","payload":{"id":"child","source":{"subagent":{"thread_spawn":{"parent_thread_id":"parent","depth":1}}}}}"#
+        for (reviewer, expected) in [("auto_review", "{}"), ("user", #""behavior":"allow""#)] {
+            var data = Data((meta + "\n").utf8)
+            data.append(try JSONSerialization.data(withJSONObject: context("current", reviewer)))
+            data.append(0x0A)
+            try data.write(to: url)
+            let payload: [String: Any] = [
+                "_source": "codex", "hook_event_name": "PermissionRequest",
+                "session_id": "child", "turn_id": "current",
+                "transcript_path": url.path, "tool_name": "Bash",
+                "tool_input": ["command": "echo test"],
+            ]
+            let routed = HookServer(appState: AppState())
+                .routeSubsessionPayloadIfNeededForTesting(data: try JSONSerialization.data(withJSONObject: payload))
+            let response = String(decoding: try XCTUnwrap(routed.responseData, reviewer), as: UTF8.self)
+            if expected == "{}" {
+                XCTAssertEqual(response, expected, reviewer)
+            } else {
+                XCTAssertTrue(response.contains(expected), reviewer)
+            }
+        }
+    }
+
     func testRemoteTranscriptPathIsNeverReadFromTheLocalMachine() throws {
         let event = try makeEvent(contexts: [context("current", "auto_review")], fields: ["_remote_host_id": "remote"])
         XCTAssertNil(CodexPermissionRules.transcriptReviewerValue(event.rawJSON))
