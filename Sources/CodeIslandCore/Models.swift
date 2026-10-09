@@ -167,6 +167,12 @@ public enum CLIProcessResolver {
     /// plugin's own request as proxied let ancestry relabel it, and handed its
     /// approval to Agent Sub-Sessions, whose "hide" mode answers `_via_plugin`
     /// permission requests with an automatic allow.
+    ///
+    /// The one hook installed without `--source` is Claude Code's
+    /// (`codeisland-hook.sh`, so that another agent firing it — omo — is still
+    /// inferred). When the ancestry says Claude, it is Claude's own hook, not
+    /// a proxy: otherwise "hide" would auto-allow and hide every Claude Code
+    /// session whose binary ends in `/claude` (Homebrew cask, Claude Desktop).
     public static func bridgeSource(
         sourceTag: String?,
         payloadSource: String?,
@@ -175,7 +181,8 @@ public enum CLIProcessResolver {
         let declared = sourceTag ?? SessionSnapshot.normalizedSupportedSource(payloadSource)
         let inferred = declared ?? inferSource(ancestry: ancestry)
         let effective = cliVariantOverride(declaredSource: inferred, ancestry: ancestry) ?? inferred
-        return (effective, declared == nil && effective != nil)
+        let viaPlugin = declared == nil && effective != nil && effective != "claude"
+        return (effective, viaPlugin)
     }
 
     public static func resolvedTrackedPID(

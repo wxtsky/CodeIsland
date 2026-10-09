@@ -43,6 +43,28 @@ final class BridgeSourceTests: XCTestCase {
         XCTAssertTrue(resolved.viaPlugin)
     }
 
+    /// Claude Code's own hook (the source-less `codeisland-hook.sh`) under a
+    /// Claude binary is not a proxy, or "hide" would auto-allow its approvals
+    /// and drop the session. Another agent firing that hook still is (#95).
+    func testClaudesOwnHookIsNotProxied() {
+        for claude in [
+            "/opt/homebrew/Caskroom/claude-code/2.1.0/claude",
+            "/Applications/Claude.app/Contents/MacOS/Claude",
+        ] {
+            let resolved = CLIProcessResolver.bridgeSource(
+                sourceTag: nil, payloadSource: nil, ancestry: [(900, "/bin/sh"), (800, claude)]
+            )
+            XCTAssertEqual(resolved.source, "claude", claude)
+            XCTAssertFalse(resolved.viaPlugin, claude)
+        }
+        let omoUnderClaude = CLIProcessResolver.bridgeSource(
+            sourceTag: nil, payloadSource: nil,
+            ancestry: underOpenCode + [(700, "/bin/zsh"), (600, "/opt/homebrew/Caskroom/claude-code/2.1.0/claude")]
+        )
+        XCTAssertEqual(omoUnderClaude.source, "opencode")
+        XCTAssertTrue(omoUnderClaude.viaPlugin)
+    }
+
     /// An unknown payload source is no declaration: fall back to ancestry.
     func testUnknownPayloadSourceFallsBackToAncestry() {
         let resolved = CLIProcessResolver.bridgeSource(sourceTag: nil, payloadSource: "nonsense", ancestry: underMimo)

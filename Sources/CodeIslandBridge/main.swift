@@ -415,7 +415,8 @@ let coreAncestry = ancestry.map { (pid: Int32($0.pid), executablePath: $0.execut
 // Events that arrived via a plugin proxy (no declared source but ancestry
 // inferred a real source — e.g. the omo OpenCode plugin firing Claude hooks)
 // are marked `_via_plugin` so the host app can route them per
-// pluginSessionMode (#123). A direct plugin's own `_source` counts as declared.
+// pluginSessionMode (#123). A direct plugin's own `_source` counts as declared,
+// and Claude Code firing its own (source-less) hook is not a proxy.
 let bridgeSource = CLIProcessResolver.bridgeSource(
     sourceTag: sourceTag,
     payloadSource: json["_source"] as? String,
