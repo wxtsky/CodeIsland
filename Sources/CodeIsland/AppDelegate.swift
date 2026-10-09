@@ -145,6 +145,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let scenario = DebugHarness.requestedScenario() {
             Self.log.debug("Loading scenario: \(scenario.rawValue)")
             DebugHarness.apply(scenario, to: appState)
+            // --collapsed keeps the bar collapsed, for checking the compact layout.
+            if DebugHarness.keepsCollapsed { return }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 if appState.surface == .collapsed {

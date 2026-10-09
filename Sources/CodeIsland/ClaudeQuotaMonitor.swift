@@ -44,6 +44,11 @@ final class ClaudeQuotaMonitor {
                 Task { @MainActor in self?.reschedule() }
             })
         }
+        // Launch: with the collapsed chip on, the numbers are on screen from
+        // the start, so the first fetch is due now rather than at the first
+        // Stop, expand or settings write. With the chip off (or the setting
+        // off) `wantsLive` is false and nothing is scheduled, as before.
+        reschedule()
     }
 
     deinit {
@@ -58,9 +63,15 @@ final class ClaudeQuotaMonitor {
         defaults.bool(forKey: SettingsKey.showClaudeQuota)
     }
 
-    /// The expanded footer is on screen — the only place the numbers show,
-    /// so nothing is scheduled while the island is collapsed.
-    var wantsLive: Bool { isEnabled && isExpanded }
+    var chipMode: ClaudeQuotaChipMode {
+        ClaudeQuotaChipMode(rawValue: defaults.string(forKey: SettingsKey.claudeQuotaChip) ?? "") ?? .auto
+    }
+
+    /// The collapsed chip is on screen (setting-wise) — keeps the idle tick alive.
+    var chipVisible: Bool { isEnabled && chipMode != .off }
+
+    /// Something on screen shows the numbers right now.
+    var wantsLive: Bool { isEnabled && (chipVisible || isExpanded) }
 
     // MARK: Events
 
