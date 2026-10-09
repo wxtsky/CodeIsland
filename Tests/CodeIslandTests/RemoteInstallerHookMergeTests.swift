@@ -504,4 +504,90 @@ final class RemoteInstallerHookMergeTests: XCTestCase {
         XCTAssertTrue(status.contains("CursorLike skipped (template not supported remotely)"), status)
         XCTAssertFalse(fileExists(".cl/hooks.json"))
     }
+
+    /// Hermes runs a hook command without a shell — `shlex.split`, then exec
+    /// (agent/shell_hooks.py). The `VAR=value python3 ~/…` form other CLIs get
+    /// was taken for a program named `CODEISLAND_SOCKET_PATH=…`, so remote
+    /// Hermes hooks never ran. A reconnect replaces those entries, keeps the
+    /// user's own, and registers every turn hook (#364).
+    func testHermesHooksRunWithoutAShellAndReplaceTheShellForm() throws {
+        let staleCommand = "CODEISLAND_SOCKET_PATH=/tmp/ci-test.sock CODEISLAND_REMOTE_HOST_ID=\"old\" "
+            + "CODEISLAND_REMOTE_HOST_NAME=\"old\" CODEISLAND_SOURCE=hermes python3 ~/.codeisland/codeisland-remote-hook.py"
+        let config = """
+            model: hermes-4
+            hooks:
+              pre_tool_call:
+                - command: '\(staleCommand)'
+                  timeout: 5
+                - command: ~/.hermes/agent-hooks/audit.sh
+                  timeout: 10
+              on_session_end:
+                - command: '\(staleCommand)'
+                  timeout: 5
+            """
+        let configURL = sandboxHome.appendingPathComponent(".hermes/config.yaml")
+        try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(config.utf8).write(to: configURL)
+
+        let status = try runConfigureScript()
+        XCTAssertTrue(status.contains("Hermes ok"), status)
+        try assertHermesHooksRunnable(configURL: configURL)
+
+        // A reconnect (here also under a new host id) replaces ours again
+        // rather than stacking a second copy.
+        try runConfigureScript()
+        try assertHermesHooksRunnable(configURL: configURL)
+    }
+
+    private func assertHermesHooksRunnable(configURL: URL, file: StaticString = #filePath, line: UInt = #line) throws {
+        // Read back the way Hermes does: yaml, then shlex.split on each command.
+        let commandsByEvent = try runPython("""
+            import json, shlex, sys
+            hooks, event = {}, None
+            for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+                s = line.strip()
+                if line.startswith("  ") and not line.startswith("    ") and s.endswith(":"):
+                    event = s[:-1]
+                    hooks[event] = []
+                elif s.startswith("- command:") and event:
+                    raw = s[len("- command:"):].strip()
+                    if raw.startswith("'") and raw.endswith("'"):
+                        raw = raw[1:-1].replace("''", "'")
+                    hooks[event].append(shlex.split(raw))
+            print(json.dumps(hooks))
+            """, arguments: [configURL.path]) as? [String: [[String]]]
+        let hooks = try XCTUnwrap(commandsByEvent, file: file, line: line)
+
+        let hookScript = sandboxHome.appendingPathComponent(".codeisland/codeisland-remote-hook.py").path
+        for event in ["pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call",
+                      "on_session_start", "on_session_end", "subagent_stop"] {
+            let ours = (hooks[event] ?? []).filter { $0.joined().contains("codeisland-remote-hook") }
+            XCTAssertEqual(ours.count, 1, "\(event): \(hooks[event] ?? [])", file: file, line: line)
+            let argv = try XCTUnwrap(ours.first, file: file, line: line)
+            XCTAssertEqual(argv.first, "env", "\(event) must start with a program, not a VAR=value: \(argv)",
+                           file: file, line: line)
+            XCTAssertEqual(Array(argv.suffix(2)), ["python3", hookScript], "absolute path: Hermes never expands ~",
+                           file: file, line: line)
+            XCTAssertTrue(argv.contains("CODEISLAND_SOURCE=hermes"), file: file, line: line)
+            XCTAssertTrue(argv.contains("CODEISLAND_SOCKET_PATH=/tmp/ci-test.sock"), file: file, line: line)
+        }
+        XCTAssertTrue(
+            (hooks["pre_tool_call"] ?? []).contains(["~/.hermes/agent-hooks/audit.sh"]),
+            "the user's own hook survives", file: file, line: line
+        )
+        XCTAssertTrue(try String(contentsOf: configURL, encoding: .utf8).contains("model: hermes-4"), file: file, line: line)
+    }
+
+    private func runPython(_ code: String, arguments: [String]) throws -> Any {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = ["-c", code] + arguments
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let out = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return try JSONSerialization.jsonObject(with: out)
+    }
 }

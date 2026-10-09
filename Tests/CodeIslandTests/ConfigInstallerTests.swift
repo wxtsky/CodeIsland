@@ -933,8 +933,11 @@ hooks:
         XCTAssertTrue(merged.contains("model: hermes-4"))
 
         let hooks = try hermesHooksMap(merged)
-        // All five status events registered under snake_case keys.
-        for event in ["pre_tool_call", "post_tool_call", "on_session_start", "on_session_end", "subagent_stop"] {
+        // Every status event registered under snake_case keys.
+        for event in [
+            "pre_tool_call", "post_tool_call", "pre_llm_call", "post_llm_call",
+            "on_session_start", "on_session_end", "subagent_stop",
+        ] {
             let entries = try XCTUnwrap(hooks[event], "missing event \(event)")
             let cmd = entries.first?["command"] as? String
             XCTAssertTrue(cmd?.contains("codeisland-bridge --source hermes") ?? false,
@@ -1024,6 +1027,9 @@ hooks:
         XCTAssertTrue(script.contains("HERMES_EVENTS"))
         XCTAssertTrue(script.contains(#""pre_tool_call""#))
         XCTAssertTrue(script.contains(#""on_session_start""#))
+        // Turn start / end carry the prompt and the reply (#364).
+        XCTAssertTrue(script.contains(#""pre_llm_call""#))
+        XCTAssertTrue(script.contains(#""post_llm_call""#))
         XCTAssertTrue(script.contains("_merge_hermes_hooks"))
         XCTAssertTrue(script.contains(#""Hermes ok""#))
         XCTAssertTrue(script.contains("install_hermes()"))
@@ -1069,7 +1075,9 @@ hooks:
 
         XCTAssertTrue(script.contains("def install_hermes():"))
         XCTAssertTrue(script.contains(#"home / ".hermes""#))
-        XCTAssertTrue(script.contains(#"command_for("hermes")"#))
+        // Hermes runs hooks without a shell, so not command_for()'s shell form.
+        XCTAssertTrue(script.contains("cmd = hermes_command()"))
+        XCTAssertFalse(script.contains(#"command_for("hermes")"#))
         XCTAssertTrue(script.contains(#""Hermes ok""#))
         XCTAssertTrue(script.contains("install_hermes()"))
     }

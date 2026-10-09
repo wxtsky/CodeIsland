@@ -146,6 +146,7 @@ print(target)
         return """
 import json
 import pathlib
+import shlex
 import shutil
 import os
 import re
@@ -631,9 +632,34 @@ def install_qoder():
 # Hermes (Nous Research) is NOT a Claude Code fork. It reads shell hooks from
 # ~/.hermes/config.yaml under a `hooks:` MAP keyed by snake_case event names whose
 # values are lists of { command, timeout }. settings.json is never parsed (#226).
+def hermes_command():
+    # Hermes runs a hook command without a shell: shlex.split, then exec
+    # (agent/shell_hooks.py). command_for()'s `VAR=value python3 ~/...` form was
+    # taken for a program named `CODEISLAND_SOCKET_PATH=...` and never ran, and
+    # `~` is never expanded. `env` sets the variables; the hook path is absolute.
+    args = [
+        "env",
+        "CODEISLAND_SOCKET_PATH=" + socket_path,
+        "CODEISLAND_REMOTE_HOST_ID=" + host_id,
+        "CODEISLAND_REMOTE_HOST_NAME=" + host_name,
+        "CODEISLAND_SOURCE=hermes",
+        "python3",
+        str(hook_path),
+    ]
+    return " ".join(shlex.quote(a) for a in args)
+
+def _is_managed_hermes_cmd(c, target_cmd):
+    # Ours in either form: the current one, or the shell form earlier installs wrote.
+    if _normalize_hook_cmd(c) == target_cmd:
+        return True
+    s = c or ""
+    return "codeisland-remote-hook.py" in s and "CODEISLAND_SOURCE=hermes" in s
+
 HERMES_EVENTS = [
     ("pre_tool_call", 5),
     ("post_tool_call", 5),
+    ("pre_llm_call", 5),
+    ("post_llm_call", 5),
     ("on_session_start", 5),
     ("on_session_end", 5),
     ("subagent_stop", 5),
@@ -757,7 +783,7 @@ def _merge_hermes_hooks(contents, cmd):
                     cur = len(bl) - len(bl.lstrip(" "))
                     block.append(" " * (4 + (cur - base)) + bl.lstrip(" "))
                 # Drop our prior managed entries; keep user entries.
-                if not (cmd_value is not None and _normalize_hook_cmd(cmd_value) == target_cmd):
+                if not (cmd_value is not None and _is_managed_hermes_cmd(cmd_value, target_cmd)):
                     events[current_event].append(block)
                 j = k
                 continue
@@ -803,7 +829,7 @@ def install_hermes():
         original = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     except Exception:
         return "Hermes read failed"
-    cmd = command_for("hermes")
+    cmd = hermes_command()
     merged = _merge_hermes_hooks(original, cmd)
     write_text_atomic(config_path, merged)
     return "Hermes ok"

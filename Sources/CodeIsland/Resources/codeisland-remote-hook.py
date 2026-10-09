@@ -102,10 +102,13 @@ def _normalize_event(name):
         return "PostToolUse"
     if name == "pre_llm_call":
         return "UserPromptSubmit"
+    if name == "post_llm_call":
+        return "AgentTurnSettled"
     if name == "on_session_start":
         return "SessionStart"
+    # Despite its name, Hermes fires on_session_end at the end of every turn.
     if name == "on_session_end":
-        return "SessionEnd"
+        return "Stop"
     if name == "on_session_reset":
         return "SessionEnd"
     return name
@@ -345,6 +348,108 @@ def _scan_codex_jsonl(path):
     return {"last_assistant_message": output[:4000]}
 
 
+HERMES_STORE_MESSAGE_BYTES = 65536
+HERMES_NON_TEXT_PARTS = ("image", "image_url", "input_image", "audio", "input_audio")
+HERMES_CONTENT_JSON_PREFIX = "\x00json:"
+
+
+def _hermes_home():
+    # Hermes runs every hook with the firing profile's HERMES_HOME.
+    raw = (os.environ.get("HERMES_HOME") or "").strip()
+    if raw:
+        return os.path.expanduser(os.path.expandvars(raw))
+    return os.path.join(os.path.expanduser("~"), ".hermes")
+
+
+def _hermes_visible_text(value):
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _hermes_text_part(part):
+    if isinstance(part, str):
+        return part
+    if not isinstance(part, dict):
+        return None
+    if str(part.get("type") or "").strip().lower() in HERMES_NON_TEXT_PARTS:
+        return None
+    for key in ("text", "content", "input_text", "output_text", "summary_text"):
+        if isinstance(part.get(key), str):
+            return part[key]
+    return None
+
+
+def _hermes_stored_text(content):
+    """Mirror of HermesSessionStore.text(fromStoredContent:): structured content
+    is stored as a "\\x00json:" prefix + JSON, of which only text parts show."""
+    if not content.startswith(HERMES_CONTENT_JSON_PREFIX):
+        return _hermes_visible_text(content)
+    try:
+        value = json.loads(content[len(HERMES_CONTENT_JSON_PREFIX):])
+    except Exception:
+        return None
+    if isinstance(value, list):
+        texts = [text for text in (_hermes_text_part(part) for part in value) if text]
+        value = "\n".join(texts) if texts else None
+    elif not isinstance(value, str):
+        value = _hermes_text_part(value)
+    return _hermes_visible_text(value)
+
+
+def _scan_hermes_store(session_id):
+    """Mirror of HermesSessionStore.read on the Mac: the session title and the
+    newest visible prompt / reply from $HERMES_HOME/state.db, which no hook
+    carries in full. Hermes writes that database (WAL) while it runs, so it is
+    opened read-only, waits on a lock only briefly, and an unexpected schema
+    just yields nothing."""
+    path = os.path.join(_hermes_home(), "state.db")
+    if not session_id or not os.path.isfile(path):
+        return None
+    try:
+        import sqlite3
+        from urllib.parse import quote
+        conn = sqlite3.connect("file:" + quote(path) + "?mode=ro", uri=True, timeout=0.15)
+    except Exception:
+        return None
+    try:
+        def columns(table):
+            return {row[1] for row in conn.execute("PRAGMA table_info(%s)" % table)}
+
+        store = {}
+        if {"id", "title"} <= columns("sessions"):
+            row = conn.execute("SELECT title FROM sessions WHERE id = ? LIMIT 1", (session_id,)).fetchone()
+            title = _hermes_visible_text(row[0]) if row else None
+            if title:
+                store["title"] = title
+        message_columns = columns("messages")
+        if {"id", "session_id", "role", "content"} <= message_columns:
+            filters = ""
+            if "active" in message_columns:
+                filters += " AND active = 1"
+            if "display_kind" in message_columns:
+                filters += " AND COALESCE(display_kind, '') NOT IN ('hidden', 'internal_notification')"
+            if "_compressed_summary" in message_columns:
+                filters += " AND _compressed_summary = 0"
+            for role in ("user", "assistant"):
+                row = conn.execute(
+                    "SELECT id, substr(CAST(content AS BLOB), 1, ?) FROM messages"
+                    " WHERE session_id = ? AND role = ? AND content IS NOT NULL AND content <> ''"
+                    + filters + " ORDER BY id DESC LIMIT 1",
+                    (HERMES_STORE_MESSAGE_BYTES, session_id, role),
+                ).fetchone()
+                if not row:
+                    continue
+                raw = row[1]
+                content = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
+                text = _hermes_stored_text(content) if isinstance(content, str) else None
+                if text:
+                    store[role] = {"id": row[0], "text": text}
+        return store or None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
 def _read_stdin_json():
     try:
         return json.load(sys.stdin)
@@ -460,6 +565,16 @@ def main():
         extras = _scan_codex_jsonl(payload.get("transcript_path"))
         if extras.get("last_assistant_message") and not payload.get("last_assistant_message"):
             payload["last_assistant_message"] = extras["last_assistant_message"]
+
+    if SOURCE == "hermes":
+        # The whole conversation rides along on every pre/post_llm_call; the
+        # Mac never reads it, so it doesn't cross the SSH link.
+        extra = payload.get("extra")
+        if isinstance(extra, dict) and "conversation_history" in extra:
+            payload["extra"] = {k: v for k, v in extra.items() if k != "conversation_history"}
+        store = _scan_hermes_store(session_id)
+        if store:
+            payload["_hermes_store"] = store
 
     # Blocking events: permission prompts + question prompts
     expects_response = normalized_event == "PermissionRequest" or (
