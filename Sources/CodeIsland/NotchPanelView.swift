@@ -3276,6 +3276,16 @@ private struct SessionCard: View {
                             enabled: true,
                             action: { withAnimation(NotchAnimation.micro) { showApprovalDetails.toggle() } }
                         )
+                        // Same order as the approval card (Deny … Allow Once,
+                        // Always), so a hand that learned one never hits Deny
+                        // where it expects Always on the other.
+                        inlineActionButton(
+                            L10n.shared["deny"],
+                            fg: .white,
+                            bg: Color(red: 0.85, green: 0.3, blue: 0.3),
+                            enabled: isActiveApproval,
+                            action: { appState.denyPermission(expectedSessionId: sessionId) }
+                        )
                         inlineActionButton(
                             L10n.shared["allow_once"],
                             fg: .white,
@@ -3289,13 +3299,6 @@ private struct SessionCard: View {
                             bg: Color(red: 0.25, green: 0.55, blue: 0.85),
                             enabled: isActiveApproval,
                             action: { appState.approvePermission(always: true, expectedSessionId: sessionId) }
-                        )
-                        inlineActionButton(
-                            L10n.shared["deny"],
-                            fg: .white,
-                            bg: Color(red: 0.85, green: 0.3, blue: 0.3),
-                            enabled: isActiveApproval,
-                            action: { appState.denyPermission(expectedSessionId: sessionId) }
                         )
                     }
 
