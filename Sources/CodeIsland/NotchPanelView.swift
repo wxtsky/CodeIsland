@@ -325,6 +325,7 @@ struct NotchPanelView: View {
                                 session: session,
                                 sessionId: sid,
                                 appState: appState,
+                                alwaysSavesRule: CodexPermissionRules.isCodexEvent(pending.event),
                                 onAllow: { appState.approvePermission(always: false, expectedSessionId: sid) },
                                 onAlwaysAllow: { appState.approvePermission(always: true, expectedSessionId: sid) },
                                 onDeny: { appState.denyPermission(expectedSessionId: sid) },
@@ -614,13 +615,13 @@ private struct CompactLeftWing: View {
                 AppLogoView(size: 36, showBackground: false)
                 if appState.sessions.count > 1 {
                     HStack(spacing: 1) {
-                        ForEach([("all", "ALL"), ("status", "STA"), ("cli", "CLI")], id: \.0) { tag, label in
-                            let selected = groupingMode == tag
+                        ForEach(SessionGroupingTab.all, id: \.tag) { tab in
+                            let selected = groupingMode == tab.tag
                             Button {
-                                withAnimation(.easeInOut(duration: 0.15)) { groupingMode = tag }
+                                withAnimation(.easeInOut(duration: 0.15)) { groupingMode = tab.tag }
                             } label: {
                                 PixelText(
-                                    text: label,
+                                    text: tab.pixelLabel,
                                     color: selected ? Color(red: 0.3, green: 0.85, blue: 0.4) : .white.opacity(0.3),
                                     pixelSize: 1.3
                                 )
@@ -631,6 +632,12 @@ private struct CompactLeftWing: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            // The pixel glyphs are drawn, not text: without a
+                            // label VoiceOver reads nothing, and "STA" alone
+                            // never said what it does.
+                            .help(L10n.shared[tab.nameKey])
+                            .accessibilityLabel(L10n.shared[tab.nameKey])
+                            .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
                     .background(Rectangle().fill(.white.opacity(0.05)))
@@ -692,6 +699,22 @@ private struct CompactLeftWing: View {
             withAnimation(.easeInOut(duration: 0.2)) { shownTool = newTool }
         }
     }
+}
+
+/// The expanded header's session grouping tabs.
+struct SessionGroupingTab {
+    /// SettingsKey.sessionGroupingMode value.
+    let tag: String
+    /// Drawn in the 5×7 pixel font, which has Latin capitals only.
+    let pixelLabel: String
+    /// L10n key of the spelled-out name (tooltip, VoiceOver).
+    let nameKey: String
+
+    static let all = [
+        SessionGroupingTab(tag: "all", pixelLabel: "ALL", nameKey: "group_all"),
+        SessionGroupingTab(tag: "status", pixelLabel: "STA", nameKey: "group_status"),
+        SessionGroupingTab(tag: "cli", pixelLabel: "CLI", nameKey: "group_cli"),
+    ]
 }
 
 /// Right side: project name + session count (detailed) or just count (simple)
@@ -1039,6 +1062,9 @@ private struct NotchIconButton: View {
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
         .help(tooltip ?? "")
+        // Icon-only: VoiceOver would otherwise read the symbol name
+        // ("gearshape"), in English, instead of what the button does.
+        .accessibilityLabel(tooltip ?? icon)
     }
 }
 
@@ -1258,6 +1284,17 @@ private struct ApprovalToolDetailView: View {
     }
 }
 
+/// Tooltips for the approval buttons, shared by the card and the session
+/// list's inline row.
+enum ApprovalHints {
+    /// What "Always" commits to differs by agent: Claude-style hooks add a
+    /// rule for the rest of the session, Codex gets a rule saved to disk
+    /// (CodexPermissionRules) that outlives it. The label is the same.
+    static func always(savesRule: Bool) -> String {
+        L10n.shared[savesRule ? "always_hint_saved" : "always_hint_session"]
+    }
+}
+
 /// CLI icon + project folder (or session title) heading an approval or
 /// question card, so a card always says which session is asking — with
 /// several agents queued, "! Bash" alone gave no clue whose command it was.
@@ -1327,6 +1364,8 @@ private struct ApprovalBar: View {
     let session: SessionSnapshot?
     let sessionId: String
     let appState: AppState
+    /// "Always" persists a Codex rule rather than a session one.
+    var alwaysSavesRule = false
     let onAllow: () -> Void
     let onAlwaysAllow: () -> Void
     let onDeny: () -> Void
@@ -1414,9 +1453,9 @@ private struct ApprovalBar: View {
             // Pixel-style buttons — badge the global shortcut when one is enabled
             HStack(spacing: 6) {
                 PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), hint: Self.shortcutHint(.deny), action: onDeny)
-                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), action: onDismiss)
+                PixelButton(label: L10n.shared["dismiss"], fg: .white.opacity(0.95), bg: Color(red: 0.25, green: 0.25, blue: 0.25), border: Color.white.opacity(0.28), help: L10n.shared["dismiss_card_hint"], action: onDismiss)
                 PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), hint: Self.shortcutHint(.approve), action: onAllow)
-                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), hint: Self.shortcutHint(.approveAlways), action: onAlwaysAllow)
+                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), hint: Self.shortcutHint(.approveAlways), help: ApprovalHints.always(savesRule: alwaysSavesRule), action: onAlwaysAllow)
             }
             .padding(.horizontal, 14)
         }
@@ -1812,6 +1851,7 @@ private struct QuestionBar: View {
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
                 border: Color.white.opacity(0.12),
+                help: L10n.shared["dismiss_card_hint"],
                 action: onDismiss
             )
             PixelButton(
@@ -1819,6 +1859,7 @@ private struct QuestionBar: View {
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
                 border: Color.white.opacity(0.12),
+                help: L10n.shared["skip_question_hint"],
                 action: onSkip
             )
             if item.payload.options?.isEmpty != false {
@@ -1998,6 +2039,7 @@ private struct QuestionBar: View {
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
                 border: Color.white.opacity(0.12),
+                help: L10n.shared["dismiss_card_hint"],
                 action: onDismiss
             )
             PixelButton(
@@ -2005,6 +2047,7 @@ private struct QuestionBar: View {
                 fg: .white.opacity(0.6),
                 bg: Color.white.opacity(0.06),
                 border: Color.white.opacity(0.12),
+                help: L10n.shared["skip_question_hint"],
                 action: onSkip
             )
             if options == nil || options?.isEmpty == true {
@@ -2135,6 +2178,8 @@ private struct PixelButton: View {
     /// Optional keyboard-shortcut badge (e.g. "⌘⇧A") — discoverability for the
     /// global approve/deny shortcuts that already exist in Settings (#12 UX).
     var hint: String? = nil
+    /// Tooltip spelling out what the one-word label does.
+    var help: String? = nil
     let action: () -> Void
     @State private var hovering = false
 
@@ -2163,6 +2208,7 @@ private struct PixelButton: View {
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .help(help ?? "")
     }
 }
 
@@ -3171,6 +3217,7 @@ private struct SessionCard: View {
         fg: Color,
         bg: Color,
         enabled: Bool,
+        help: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -3191,6 +3238,7 @@ private struct SessionCard: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.55)
+        .help(help ?? "")
     }
 
     var body: some View {
@@ -3298,6 +3346,7 @@ private struct SessionCard: View {
                             fg: .white,
                             bg: Color(red: 0.25, green: 0.55, blue: 0.85),
                             enabled: isActiveApproval,
+                            help: ApprovalHints.always(savesRule: CodexPermissionRules.isCodexEvent(appState.permissionQueue[idx].event)),
                             action: { appState.approvePermission(always: true, expectedSessionId: sessionId) }
                         )
                     }
