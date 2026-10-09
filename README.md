@@ -141,7 +141,7 @@ It works with **30+ AI coding tools**, installs its hooks for you, and keeps eve
 </tr>
 </table>
 
-**Also covered:** Trae CN, Trae CLI / Trae CLI Next, Qoder CN, QoderWork and Qoder CLI, Cursor CLI, CodeBuddy CN, Claude Desktop (Code tab, and [Cowork](#cowork)), ZCode — plus any tool with Claude-style hooks, added as a **custom CLI** in Settings → Hooks.
+**Also covered:** Trae CN, Trae CLI / Trae CLI Next, Qoder CN, Qoder App, QoderWork and Qoder CLI, Cursor CLI, CodeBuddy CN, Claude Desktop (Code tab, and [Cowork](#cowork)), ZCode — plus any tool with Claude-style hooks, added as a **custom CLI** in Settings → Hooks.
 
 **Several accounts?** Register extra Claude Code, Codex and Grok config directories (e.g. a second `CLAUDE_CONFIG_DIR`) in **Settings → Hooks**; each gets its own hooks and status, and sessions, transcripts and usage cover all of them.
 
@@ -164,7 +164,7 @@ CodeIsland writes these for you on launch (and repairs them if they drift); each
 | Google Antigravity | `~/.gemini/config/hooks.json` |
 | Cursor / Cursor CLI | `~/.cursor/hooks.json` |
 | Grok CLI | `~/.grok/hooks/codeisland.json` |
-| Qoder / Qoder CN / QoderWork | `~/.qoder/`, `~/.qoder-cn/`, `~/.qoderwork/` `settings.json` |
+| Qoder (IDE and Qoder App) / Qoder CN / QoderWork | `~/.qoder/`, `~/.qoder-cn/`, `~/.qoderwork/` `settings.json` |
 | Trae / Trae CN | `~/.trae/hooks.json`, `~/.trae-cn/hooks.json` (turn on global hooks in Trae) |
 | Trae CLI / Trae CLI Next | `~/.trae/traecli.yaml`, `~/.trae/cli/hooks.json` |
 | Factory, CodeBuddy, StepFun, WorkBuddy, Qwen Code | `~/.<tool>/settings.json` |
@@ -256,7 +256,7 @@ MiMo Code is an OpenCode 1.x fork, and the Xiaomi MiMo desktop app runs it as it
 
 <br>
 
-Hermes asks before it runs a hook it hasn't seen, once per hook. The next time you start `hermes` in a terminal, answer `y` to each CodeIsland entry (`codeisland-bridge --source hermes`). Hermes running without a terminal — the gateway service, the desktop app — can't ask, so it skips a hook nobody approved, which looks like CodeIsland not seeing those sessions. Approve them in a terminal once (the approval is kept per Hermes home, so it covers the gateway and the desktop app too), or set `hooks_auto_accept: true` in `~/.hermes/config.yaml`. A CodeIsland update that adds a hook asks again for the new one.
+Hermes asks before it runs a hook it hasn't seen, once per hook. The next time you start `hermes` in a terminal, answer `y` to each CodeIsland entry (`codeisland-bridge --source hermes`; on an SSH host, the `codeisland-remote-hook.py` ones). Hermes running without a terminal — the gateway service, the desktop app — can't ask, so it skips a hook nobody approved, which looks like CodeIsland not seeing those sessions. Approve them in a terminal once (the approval is kept per Hermes home, so it covers the gateway and the desktop app too), or set `hooks_auto_accept: true` in `~/.hermes/config.yaml`. A CodeIsland update that adds a hook asks again for the new one.
 
 Gateway chats (Telegram, Discord, Slack, WhatsApp, email and the rest, and the API server) get cards too, but they don't pop a completion card or play a sound, and an idle one goes after 10 minutes. A card goes when its session ends: `/new`, quitting `hermes`, closing a desktop conversation, or the gateway shutting down. Session titles are read from Hermes's own `state.db`, read-only.
 

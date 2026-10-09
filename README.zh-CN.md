@@ -141,7 +141,7 @@
 </tr>
 </table>
 
-**同样支持：** Trae CN、Trae CLI / Trae CLI Next、Qoder CN、QoderWork 与 Qoder CLI、Cursor CLI、CodeBuddy CN、Claude Desktop（Code 标签页与 [Cowork](#cowork)）、ZCode。其他使用 Claude 风格 hook 的工具，可以在 设置 → Hooks 里添加为**自定义 CLI**。
+**同样支持：** Trae CN、Trae CLI / Trae CLI Next、Qoder CN、Qoder App、QoderWork 与 Qoder CLI、Cursor CLI、CodeBuddy CN、Claude Desktop（Code 标签页与 [Cowork](#cowork)）、ZCode。其他使用 Claude 风格 hook 的工具，可以在 设置 → Hooks 里添加为**自定义 CLI**。
 
 **多个账号？** 在 **设置 → Hooks** 里登记额外的 Claude Code、Codex、Grok 配置目录（比如第二个 `CLAUDE_CONFIG_DIR`），每个目录单独安装 hook、单独显示状态，会话、transcript 和用量统计都会覆盖到。
 
@@ -164,7 +164,7 @@ CodeIsland 启动时会自动写入以下配置，配置被改动时会自动修
 | Google Antigravity | `~/.gemini/config/hooks.json` |
 | Cursor / Cursor CLI | `~/.cursor/hooks.json` |
 | Grok CLI | `~/.grok/hooks/codeisland.json` |
-| Qoder / Qoder CN / QoderWork | `~/.qoder/`、`~/.qoder-cn/`、`~/.qoderwork/` 下的 `settings.json` |
+| Qoder（IDE 与 Qoder App）/ Qoder CN / QoderWork | `~/.qoder/`、`~/.qoder-cn/`、`~/.qoderwork/` 下的 `settings.json` |
 | Trae / Trae CN | `~/.trae/hooks.json`、`~/.trae-cn/hooks.json`（需在 Trae 里打开全局 Hook） |
 | Trae CLI / Trae CLI Next | `~/.trae/traecli.yaml`、`~/.trae/cli/hooks.json` |
 | Factory、CodeBuddy、StepFun、WorkBuddy、Qwen Code | `~/.<工具>/settings.json` |
@@ -256,7 +256,7 @@ MiMo Code 是 OpenCode 1.x 的分支，Xiaomi MiMo 桌面端又以 MiMo Code 作
 
 <br>
 
-Hermes 遇到没见过的 hook 会先询问，每个 hook 问一次。下次在终端启动 `hermes` 时，对 CodeIsland 的条目（`codeisland-bridge --source hermes`）逐个回答 `y` 即可。没有终端的 Hermes（gateway 服务、桌面 App）无法询问，会直接跳过没批准的 hook，看起来就像 CodeIsland 看不到这些会话。在终端里批准一次即可（批准记录按 Hermes 主目录保存，gateway 和桌面 App 同样生效），或者在 `~/.hermes/config.yaml` 里设置 `hooks_auto_accept: true`。CodeIsland 更新后如果新增了 hook，Hermes 会就新的 hook 再问一次。
+Hermes 遇到没见过的 hook 会先询问，每个 hook 问一次。下次在终端启动 `hermes` 时，对 CodeIsland 的条目（`codeisland-bridge --source hermes`；SSH 远程主机上是 `codeisland-remote-hook.py` 那些）逐个回答 `y` 即可。没有终端的 Hermes（gateway 服务、桌面 App）无法询问，会直接跳过没批准的 hook，看起来就像 CodeIsland 看不到这些会话。在终端里批准一次即可（批准记录按 Hermes 主目录保存，gateway 和桌面 App 同样生效），或者在 `~/.hermes/config.yaml` 里设置 `hooks_auto_accept: true`。CodeIsland 更新后如果新增了 hook，Hermes 会就新的 hook 再问一次。
 
 Gateway 聊天（Telegram、Discord、Slack、WhatsApp、邮件等，以及 API Server）也会显示卡片，但不弹完成卡片、不响提示音，空闲 10 分钟后移除。会话结束时卡片随之移除：`/new`、退出 `hermes`、关闭桌面端对话，或 gateway 停止。会话标题只读地取自 Hermes 自己的 `state.db`。
 
