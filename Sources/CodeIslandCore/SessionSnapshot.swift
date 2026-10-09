@@ -782,6 +782,7 @@ public struct SessionSnapshot: Sendable {
         "com.trae.app": "Trae",
         "cn.trae.app": "Trae CN",
         "com.qoder.ide": "Qoder",
+        "com.qoder.app": "Qoder App",
         "com.factory.app": "Factory",
         "com.tencent.codebuddy": "CodeBuddy",
         "com.tencent.codebuddy.cn": "CodyBuddyCN",
@@ -807,6 +808,8 @@ public struct SessionSnapshot: Sendable {
         // Trae CN ships as its own app (`Trae CN.app`), not inside Trae.app.
         "cn.trae.app": "traecn",
         "com.qoder.ide": "qoder",
+        // Qoder App is separate from the IDE, but shares its ~/.qoder hooks.
+        "com.qoder.app": "qoder",
         "com.factory.app": "droid",
         "com.tencent.codebuddy": "codebuddy",
         "com.tencent.codebuddy.cn": "codybuddycn",
