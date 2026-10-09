@@ -73,9 +73,10 @@ enum HookFormat {
     /// through a Plugin. The installer writes a local plugin pack
     /// (~/.minimax/plugins/codeisland/ with .claude-plugin/plugin.json +
     /// hooks/hooks.json), which `mcode` auto-discovers by scanning the plugins
-    /// directory. Verified against mcode 1.x: hook stdin carries
+    /// directory. Verified against mcode 0.6.x: hook stdin carries
     /// hook_event_name/session_id/transcript_path/cwd like Claude, and the
-    /// PermissionRequest stdout decision resolves mcode's approval prompt.
+    /// PermissionRequest stdout decision resolves mcode's approval prompt —
+    /// but hook timeouts are capped at 10 s (see `defaultEvents`).
     case minimaxPlugin
 
     var storageValue: String {
@@ -887,17 +888,20 @@ struct ConfigInstaller {
             // The full event registry compiled into mcode: SessionStart,
             // SessionEnd, UserPromptSubmit, PreToolUse, PermissionRequest,
             // PostToolUse, SubagentStart, SubagentStop, Stop, PreCompact,
-            // PostCompact (no Notification). Timeouts are in SECONDS — the
-            // clawd-state plugin shipped with a `timeout: 2` hooks.json fires
-            // fine, and our own probe with `timeout: 5` was read back the same
-            // way. PermissionRequest keeps Claude's day-long ceiling so a
-            // pending approval can wait on the island; there is no
-            // PostToolUseFailure event to own the error sound.
+            // PostCompact (no Notification). Timeouts are in SECONDS and mcode
+            // only accepts an integer from 1 to 10: anything else voids that
+            // handler (HOOK_SCHEMA_INVALID), so Claude's day-long
+            // PermissionRequest ceiling would silently drop approvals. A hook
+            // that runs out fails open, so PermissionRequest takes the 10 s
+            // maximum: the island can answer within that window, then mcode's
+            // own prompt takes over (the bridge is killed and the card goes
+            // with it). There is no PostToolUseFailure event to own the error
+            // sound.
             return [
                 ("SessionStart", 5, false),
                 ("UserPromptSubmit", 5, true),
                 ("PreToolUse", 5, false),
-                ("PermissionRequest", 86400, false),
+                ("PermissionRequest", 10, false),
                 ("PostToolUse", 5, true),
                 ("SubagentStart", 5, true),
                 ("SubagentStop", 5, true),

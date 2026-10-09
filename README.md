@@ -144,7 +144,7 @@ It works with **30+ AI coding tools**, installs its hooks for you, and keeps eve
 
 **Knows where it runs:** sessions inside **tmux**, **zellij**, **Herdr** or **T3 Code** get a chip next to the terminal badge, and click-to-jump goes to the right pane or thread.
 
-**Approvals & questions** can be answered from the island for tools whose hooks wait for a decision — Claude Code, Codex, Gemini CLI, Qoder, Qwen Code, Trae CLI Next, ZCode, MiniMax Code CLI, OpenCode, Pi / Oh My Pi, DeepSeek Harness and others. Tools whose hooks can't carry a decision (Google Antigravity, AiWork) are shown read-only, and approvals stay in their own UI.
+**Approvals & questions** can be answered from the island for tools whose hooks wait for a decision — Claude Code, Codex, Gemini CLI, Qoder, Qwen Code, Trae CLI Next, ZCode, OpenCode, Pi / Oh My Pi, DeepSeek Harness and others; MiniMax Code CLI for the 10 seconds mcode lets a hook wait. Tools whose hooks can't carry a decision (Google Antigravity, AiWork) are shown read-only, and approvals stay in their own UI.
 
 <details>
 <summary><b>Where each integration is installed</b></summary>

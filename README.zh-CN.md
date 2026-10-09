@@ -144,7 +144,7 @@
 
 **知道它跑在哪：** 运行在 **tmux**、**zellij**、**Herdr** 或 **T3 Code** 里的会话，终端徽标旁会多一个标签，点击跳转会直达对应的面板或线程。
 
-**审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、MiniMax Code CLI、OpenCode、Pi / Oh My Pi、DeepSeek Harness 等。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
+**审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、OpenCode、Pi / Oh My Pi、DeepSeek Harness 等；MiniMax Code CLI 限 mcode 允许 hook 等待的 10 秒内。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
 
 <details>
 <summary><b>各集成安装在哪里</b></summary>

@@ -99,13 +99,16 @@ final class MinimaxSupportTests: XCTestCase {
         ])
     }
 
-    func testMinimaxPermissionRequestWaitsOnTheIsland() {
-        // A pending approval must be able to wait as long as Claude's does;
-        // a short timeout would make mcode abandon the hook and pop its own
-        // prompt while the island card is still showing.
-        let permissionRequest = ConfigInstaller.defaultEvents(for: .minimaxPlugin)
-            .first { $0.0 == "PermissionRequest" }
-        XCTAssertEqual(permissionRequest?.1, 86400)
+    func testMinimaxHookTimeoutsStayInsideMcodesAcceptedRange() {
+        // mcode (0.6.x) rejects a handler whose timeout is not an integer
+        // from 1 to 10 seconds — Claude's 86400 s PermissionRequest ceiling
+        // would drop the approval hook entirely. PermissionRequest takes the
+        // maximum so the island gets the longest window mcode allows.
+        let events = ConfigInstaller.defaultEvents(for: .minimaxPlugin)
+        for (event, timeout, _) in events {
+            XCTAssertTrue((1...10).contains(timeout), "\(event) timeout \(timeout) is outside 1…10")
+        }
+        XCTAssertEqual(events.first { $0.0 == "PermissionRequest" }?.1, 10)
     }
 
     func testHookFormatMinimaxPluginRoundTripsThroughStorageValue() {
