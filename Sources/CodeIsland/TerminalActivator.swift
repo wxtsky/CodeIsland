@@ -77,6 +77,7 @@ struct TerminalActivator {
         "com.trae.app": "Trae",
         "cn.trae.app": "Trae CN",
         "com.qoder.ide": "Qoder",
+        "com.qoder.app": "Qoder App",
         "com.factory.app": "Factory",
         "com.tencent.codebuddy": "CodeBuddy",
         "com.tencent.codebuddy.cn": "CodyBuddyCN",

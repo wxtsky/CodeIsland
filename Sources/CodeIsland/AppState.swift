@@ -868,7 +868,9 @@ final class AppState {
     /// activation and badge labels were never affected — only the
     /// process-ancestry matching that runs off executable paths.
     ///
-    /// Neither prefix collides with QoderWork's `/qoderwork.app/`.
+    /// Qoder App (`com.qoder.app`) also uses `Qoder.app` and the `qoder` hook
+    /// source, so it shares this process-path protection. Session bundle IDs
+    /// distinguish it from the IDE. Neither prefix matches QoderWork.
     nonisolated static let qoderIDEBundlePrefixes = [
         "/qoder.app/contents/",
         "/qoder ide.app/contents/",
