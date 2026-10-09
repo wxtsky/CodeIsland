@@ -1062,6 +1062,7 @@ struct ConfigInstaller {
         // Clean up legacy paths at ~/.claude/hooks/ (#32)
         try? fm.removeItem(atPath: legacyBridgePath)
         try? fm.removeItem(atPath: legacyHookScriptPath)
+        removeStrayDshFile(fm: fm)
 
         // A previous run may have created the Claude config dir after the resolution was
         // memoized, so re-resolve before installing into it.
@@ -1246,6 +1247,21 @@ struct ConfigInstaller {
             return FileManager.default.fileExists(atPath: home)
         }
         return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.dsh")
+    }
+
+    /// Earlier versions' repair pass wrote `{"": {}}` to a *file* at `~/.dsh`
+    /// on Macs without DeepSeek Harness, which then looked installed and had
+    /// its home taken. Remove exactly that file; DSH's real home is a
+    /// directory, and any other content is left alone.
+    static func removeStrayDshFile(home: String = NSHomeDirectory(), fm: FileManager = .default) {
+        let path = home + "/.dsh"
+        guard let attributes = try? fm.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let root = parseJSONFile(at: path, fm: fm),
+              root.count == 1,
+              let value = root[""] as? [String: Any], value.isEmpty
+        else { return }
+        try? fm.removeItem(atPath: path)
     }
 
     /// AiWork GUI (formerly DTCoder). Bundle id is still `com.alipay.dtcoder.ide`.

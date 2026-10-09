@@ -41,6 +41,33 @@ final class InstallerFootprintTests: XCTestCase {
         }
     }
 
+    /// The `~/.dsh` file earlier versions wrote is taken back at launch — only
+    /// that exact file, never DSH's real home directory or a file of anyone
+    /// else's.
+    func testStrayDshFileFromEarlierVersionsIsRemoved() throws {
+        let path = root + "/.dsh"
+        // Byte for byte what the generic writer left there.
+        let stray = "{\n  \"\": {\n\n  }\n}\n"
+
+        try stray.write(toFile: path, atomically: true, encoding: .utf8)
+        ConfigInstaller.removeStrayDshFile(home: root, fm: fm)
+        XCTAssertFalse(fm.fileExists(atPath: path))
+
+        try "{\"\":{}}".write(toFile: path, atomically: true, encoding: .utf8)
+        ConfigInstaller.removeStrayDshFile(home: root, fm: fm)
+        XCTAssertFalse(fm.fileExists(atPath: path))
+
+        try "{\"plugins\":[]}".write(toFile: path, atomically: true, encoding: .utf8)
+        ConfigInstaller.removeStrayDshFile(home: root, fm: fm)
+        XCTAssertTrue(fm.fileExists(atPath: path), "someone else's file stays")
+        try fm.removeItem(atPath: path)
+
+        try fm.createDirectory(atPath: path, withIntermediateDirectories: true)
+        ConfigInstaller.removeStrayDshFile(home: root, fm: fm)
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(fm.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue, "DSH's home stays")
+    }
+
     // MARK: - Cline
 
     /// The launch install created `~/Documents/Cline/Hooks` on every Mac, so
