@@ -146,6 +146,8 @@ struct NotchPanelView: View {
     /// Measured width of the plan-limit chip (0 until first laid out) — the
     /// bar reserves exactly this instead of guessing from the label length.
     @State private var quotaChipWidth: CGFloat = 0
+    /// Measured width of the collapsed right wing (0 until first laid out).
+    @State private var rightWingWidth: CGFloat = 0
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -196,7 +198,18 @@ struct NotchPanelView: View {
         if showIdleIndicator { return idleHovered ? nw + compactWingWidth * 2 + 80 : nw + compactWingWidth * 2 }
         if !isActive { return hasNotch ? nw - 20 : nw }
         if shouldShowExpanded { return min(max(nw + 200, 580), maxPanelWidth) }
-        return collapsedBarWidth + quotaReserve.extraWidth
+        return collapsedBarWidth + quotaReserve.extraWidth + rightWingReserve
+    }
+
+    /// Room the collapsed right wing lacks to clear the notch; 0 whenever it fits.
+    private var rightWingReserve: CGFloat {
+        guard showBar, !shouldShowExpanded else { return 0 }
+        return CompactRightWingLayout.missing(
+            contentWidth: rightWingWidth,
+            wing: compactWingWidth,
+            statusExtra: collapsedStatusExtra,
+            hasNotch: hasNotch
+        )
     }
 
     /// The panel window's width (PanelWindowController.panelSize).
@@ -273,6 +286,9 @@ struct NotchPanelView: View {
                     // 0 means the chip isn't drawn right now (a tool name holds
                     // the slot) — keep the last width so the bar doesn't twitch.
                     .onPreferenceChange(QuotaChipWidthKey.self) { if $0 > 0 { quotaChipWidth = $0 } }
+                    // 0 while expanded (only the collapsed wing reports) — keep
+                    // the last width for the next collapse.
+                    .onPreferenceChange(CompactRightWingWidthKey.self) { if $0 > 0 { rightWingWidth = $0 } }
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
@@ -532,7 +548,7 @@ struct NotchPanelView: View {
                 }
             }
             // Outside onHover on purpose: the hover region moves with the bar.
-            .offset(x: quotaReserve.shift)
+            .offset(x: quotaReserve.shift + rightWingReserve / 2)
 
             Spacer()
                 .allowsHitTesting(false)
@@ -801,6 +817,12 @@ private struct CompactRightWing: View {
             }
         }
         .padding(.trailing, 6)
+        // Its natural width, reported so the collapsed bar can make room for
+        // it clear of the notch (CompactRightWingLayout).
+        .fixedSize(horizontal: true, vertical: false)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: CompactRightWingWidthKey.self, value: expanded ? 0 : geo.size.width)
+        })
     }
 }
 
@@ -2402,6 +2424,33 @@ enum QuotaChipLayout {
 
 /// Reports the collapsed chip's laid-out width up to the bar for its reserve.
 struct QuotaChipWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = Swift.max(value, nextValue())
+    }
+}
+
+/// How the collapsed bar makes room for its right wing on a notched screen.
+///
+/// The right wing (quiet-hours moon, completion dot, question badge, session
+/// count) sits at the bar's right end, and whatever it is wider than its room
+/// reaches back under the notch. Its room is a wing plus half the status
+/// reserve — enough for the count and one badge. With tool status in simple
+/// mode nothing else pads it, so a waiting question's badge slid under the
+/// notch and the completion dot beside it vanished behind it. The bar grows by
+/// what the wing lacks and shifts right by half of it, so the left end and the
+/// gap over the notch stay put — the mirror of `QuotaChipLayout`.
+enum CompactRightWingLayout {
+    /// - Parameter contentWidth: the right wing's laid-out width, trailing
+    ///   padding included; 0 until it has been measured.
+    static func missing(contentWidth: CGFloat, wing: CGFloat, statusExtra: CGFloat, hasNotch: Bool) -> CGFloat {
+        guard hasNotch, contentWidth > 0 else { return 0 }
+        return Swift.max(0, contentWidth + QuotaChipLayout.notchGap - (wing + statusExtra / 2))
+    }
+}
+
+/// Reports the collapsed right wing's laid-out width up to the bar.
+struct CompactRightWingWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = Swift.max(value, nextValue())
