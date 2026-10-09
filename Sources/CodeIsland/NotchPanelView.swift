@@ -1035,7 +1035,7 @@ private struct CompactToolStatus: View {
                 .truncationMode(.tail)
                 .help(liveOutput)
             } else if displayStatus == .processing {
-                TypingIndicator(fontSize: 11, label: "thinking", bright: true)
+                TypingIndicator(fontSize: 11, label: L10n.shared["typing_thinking"], bright: true)
                     .id("thinking-\(appState.rotatingSessionId ?? "")")
             }
         }
@@ -4304,7 +4304,7 @@ private struct SessionCard: View {
                 }
             }
         case .thinking:
-            TypingIndicator(fontSize: fontSize, label: "thinking")
+            TypingIndicator(fontSize: fontSize, label: L10n.shared["typing_thinking"])
         }
     }
 
@@ -4536,7 +4536,7 @@ private struct SessionCard: View {
             if let prompt = session.lastUserPrompt {
                 SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
             } else if liveRow == .thinking {
-                TypingIndicator(fontSize: max(10, fontSize - 1), label: "thinking")
+                TypingIndicator(fontSize: max(10, fontSize - 1), label: L10n.shared["typing_thinking"])
             }
         } else if showSessionRecap, let recap = session.visibleRecap {
             // Written after the reply, as a summary of where things stand.
