@@ -563,6 +563,11 @@ struct NotchPanelView: View {
         // clamped to the screen.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardSpace.recordWindowHeight($0) }
         .environment(cardSpace)
+        // The expanded header's grouping tabs: the physical notch, not the
+        // widened island, is what they must stay clear of.
+        .environment(\.sessionGroupingTabsRoom, SessionGroupingTabsLayout.room(
+            panelWidth: panelWidth, notchWidth: notchW, hasNotch: hasNotch
+        ))
         .animation(NotchAnimation.open, value: appState.surface)
     }
 }
@@ -614,34 +619,7 @@ private struct CompactLeftWing: View {
             if expanded {
                 AppLogoView(size: 36, showBackground: false)
                 if appState.sessions.count > 1 {
-                    HStack(spacing: 1) {
-                        ForEach(SessionGroupingTab.all, id: \.tag) { tab in
-                            let selected = groupingMode == tab.tag
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.15)) { groupingMode = tab.tag }
-                            } label: {
-                                PixelText(
-                                    text: tab.pixelLabel,
-                                    color: selected ? Color(red: 0.3, green: 0.85, blue: 0.4) : .white.opacity(0.5),
-                                    pixelSize: 1.3
-                                )
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Rectangle().fill(selected ? .white.opacity(0.1) : .clear)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            // The pixel glyphs are drawn, not text: without a
-                            // label VoiceOver reads nothing, and "STA" alone
-                            // never said what it does.
-                            .help(L10n.shared[tab.nameKey])
-                            .accessibilityLabel(L10n.shared[tab.nameKey])
-                            .accessibilityAddTraits(selected ? .isSelected : [])
-                        }
-                    }
-                    .background(Rectangle().fill(.white.opacity(0.05)))
-                    .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1))
+                    SessionGroupingTabs(mode: $groupingMode)
                 }
             } else {
                 MascotView(source: displaySource, status: displayStatus, size: mascotSize)
@@ -705,16 +683,79 @@ private struct CompactLeftWing: View {
 struct SessionGroupingTab {
     /// SettingsKey.sessionGroupingMode value.
     let tag: String
-    /// Drawn in the 5×7 pixel font, which has Latin capitals only.
+    /// Drawn in the 5×7 pixel font, which has Latin capitals only — so the
+    /// tabs read the same in every language; the tooltip names them.
     let pixelLabel: String
+    /// For a header too narrow for the words (SessionGroupingTabsLayout).
+    let shortPixelLabel: String
     /// L10n key of the spelled-out name (tooltip, VoiceOver).
     let nameKey: String
 
     static let all = [
-        SessionGroupingTab(tag: "all", pixelLabel: "ALL", nameKey: "group_all"),
-        SessionGroupingTab(tag: "status", pixelLabel: "STA", nameKey: "group_status"),
-        SessionGroupingTab(tag: "cli", pixelLabel: "CLI", nameKey: "group_cli"),
+        SessionGroupingTab(tag: "all", pixelLabel: "ALL", shortPixelLabel: "ALL", nameKey: "group_all"),
+        SessionGroupingTab(tag: "status", pixelLabel: "STATUS", shortPixelLabel: "STA", nameKey: "group_status"),
+        SessionGroupingTab(tag: "cli", pixelLabel: "AGENT", shortPixelLabel: "AGT", nameKey: "group_cli"),
     ]
+}
+
+/// Size of the grouping tabs, and when the header is too narrow for them.
+///
+/// The expanded header sits in the menu bar: on a notched screen its left
+/// wing ends where the notch begins, and the spelled-out tabs (≈40pt wider
+/// than the old ALL / STA / CLI) fit beside a notch of up to 200pt on the
+/// narrowest (580pt) panel — MacBook notches are ≈185pt. Past that they fall
+/// back to three-letter labels rather than run under the notch.
+enum SessionGroupingTabsLayout {
+    static let pixelSize: CGFloat = 1.3
+    static let horizontalPadding: CGFloat = 5
+    static let spacing: CGFloat = 1
+    /// The drawn strip, and the taller hit target each tab gets around it.
+    static let stripHeight: CGFloat = 17
+    static let hitHeight: CGFloat = 24
+
+    /// What the expanded header's left wing puts before the tabs: its leading
+    /// padding, the 36pt logo and the spacing after it (CompactLeftWing).
+    static let leadingChrome: CGFloat = 6 + 36 + 6
+    /// Clearance kept between the tabs and the notch.
+    static let notchGap: CGFloat = 4
+
+    /// PixelText's width for `text`: 5 dots and a gap per glyph, no trailing gap.
+    static func labelWidth(_ text: String, pixelSize: CGFloat = pixelSize) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        return CGFloat(text.count) * 6 * pixelSize - pixelSize
+    }
+
+    /// Width of the whole tab strip.
+    static func width(short: Bool) -> CGFloat {
+        let tabs = SessionGroupingTab.all
+        let labels = tabs.reduce(CGFloat(0)) { $0 + labelWidth(short ? $1.shortPixelLabel : $1.pixelLabel) }
+        return labels + CGFloat(tabs.count) * horizontalPadding * 2 + CGFloat(tabs.count - 1) * spacing
+    }
+
+    /// Room the expanded header leaves the tabs. On a notched screen that is
+    /// the wing beside the notch; elsewhere the left half of the panel (the
+    /// right half holds the buttons).
+    static func room(panelWidth: CGFloat, notchWidth: CGFloat, hasNotch: Bool) -> CGFloat {
+        let wing = hasNotch ? (panelWidth - notchWidth) / 2 : panelWidth / 2
+        return wing - leadingChrome - notchGap
+    }
+
+    static func usesShortLabels(room: CGFloat) -> Bool {
+        width(short: false) > room
+    }
+}
+
+private struct SessionGroupingTabsRoomKey: EnvironmentKey {
+    static let defaultValue: CGFloat = .infinity
+}
+
+extension EnvironmentValues {
+    /// Width the expanded header leaves the grouping tabs
+    /// (SessionGroupingTabsLayout.room), set by NotchPanelView.
+    var sessionGroupingTabsRoom: CGFloat {
+        get { self[SessionGroupingTabsRoomKey.self] }
+        set { self[SessionGroupingTabsRoomKey.self] = newValue }
+    }
 }
 
 /// Right side: project name + session count (detailed) or just count (simple)
@@ -755,15 +796,7 @@ private struct CompactRightWing: View {
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
-                    soundEnabled.toggle()
-                }
-                NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                    SettingsWindowController.shared.show()
-                }
-                NotchIconButton(icon: "power", tint: Color(red: 1.0, green: 0.4, blue: 0.4), tooltip: l10n["quit"]) {
-                    NSApplication.shared.terminate(nil)
-                }
+                ExpandedHeaderControls(soundEnabled: $soundEnabled)
             } else {
                 // Quiet hours active — explains why event sounds are silent.
                 if inQuietHours {
@@ -1042,25 +1075,31 @@ private struct CompactToolStatus: View {
     }
 }
 
-private struct NotchIconButton: View {
+struct NotchIconButton: View {
     let icon: String
     var tint: Color = .white
     var tooltip: String? = nil
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The drawn circle, and the hit target around it.
+    static let circleSize: CGFloat = 22
+    static let hitSize: CGFloat = 24
 
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(tint.opacity(hovering ? 1.0 : 0.85))
-                .frame(width: 22, height: 22)
+                .frame(width: Self.circleSize, height: Self.circleSize)
                 .background(
                     Circle()
                         .fill(tint.opacity(hovering ? 0.2 : 0.08))
                 )
-                .scaleEffect(hovering ? 1.1 : 1.0)
-                .contentShape(Circle())
+                .scaleEffect(hovering && !reduceMotion ? 1.1 : 1.0)
+                .frame(width: Self.hitSize, height: Self.hitSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
@@ -1068,6 +1107,155 @@ private struct NotchIconButton: View {
         // Icon-only: VoiceOver would otherwise read the symbol name
         // ("gearshape"), in English, instead of what the button does.
         .accessibilityLabel(tooltip ?? icon)
+    }
+}
+
+/// The expanded header's buttons: sound, Settings, and Quit, which asks once.
+private struct ExpandedHeaderControls: View {
+    @Binding var soundEnabled: Bool
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        // 4pt between 24pt hit targets keeps the 6pt gap between the circles.
+        HStack(spacing: 4) {
+            NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
+                soundEnabled.toggle()
+            }
+            NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
+                SettingsWindowController.shared.show()
+            }
+            QuitConfirmButton()
+        }
+    }
+}
+
+/// The power button, which asks once (QuitConfirmation): the first click
+/// turns it into a red "QUIT?" pill, a second click within three seconds
+/// quits. The pill grows to the left, so the pointer that armed it stays on
+/// it; leaving it reverts the button.
+struct QuitConfirmButton: View {
+    @StateObject private var confirmation: QuitConfirmation
+    /// Told when the pill appears and goes, for a parent short of room.
+    var onArmedChange: ((Bool) -> Void)? = nil
+    @ObservedObject private var l10n = L10n.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    static let tint = Color(red: 1.0, green: 0.4, blue: 0.4)
+    /// The pill's text: lighter than `tint`, for contrast on its red fill.
+    static let pillText = Color(red: 1.0, green: 0.55, blue: 0.55)
+    static let pillFontSize: CGFloat = 10
+    static let pillPadding: CGFloat = 7
+
+    /// The armed pill's width for its (localized) text — kept short enough
+    /// to fit beside the notch (see PanelChromeTests).
+    static func pillWidth(for text: String) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: pillFontSize, weight: .bold)
+        return (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + pillPadding * 2
+    }
+
+    init(
+        confirmation: @autoclosure @escaping () -> QuitConfirmation = QuitConfirmation(),
+        onArmedChange: ((Bool) -> Void)? = nil
+    ) {
+        _confirmation = StateObject(wrappedValue: confirmation())
+        self.onArmedChange = onArmedChange
+    }
+
+    var body: some View {
+        let armed = confirmation.isArmed
+        Button {
+            confirmation.press()
+        } label: {
+            ZStack(alignment: .trailing) {
+                if armed {
+                    Text(l10n["quit_confirm"])
+                        .font(.system(size: Self.pillFontSize, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Self.pillText)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, Self.pillPadding)
+                        .frame(height: NotchIconButton.circleSize)
+                        .background(Capsule().fill(Self.tint.opacity(hovering ? 0.26 : 0.18)))
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "power")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Self.tint.opacity(hovering ? 1.0 : 0.85))
+                        .frame(width: NotchIconButton.circleSize, height: NotchIconButton.circleSize)
+                        .background(Circle().fill(Self.tint.opacity(hovering ? 0.2 : 0.08)))
+                        .scaleEffect(hovering && !reduceMotion ? 1.1 : 1.0)
+                        .transition(.opacity)
+                }
+            }
+            .frame(minWidth: NotchIconButton.hitSize, minHeight: NotchIconButton.hitSize, alignment: .trailing)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // The icon-to-pill swap widens the header's button row; with Reduce
+        // Motion it switches without sliding the other buttons over.
+        .animation(reduceMotion ? nil : NotchAnimation.micro, value: armed)
+        .onHover { h in
+            withAnimation(NotchAnimation.micro) { hovering = h }
+            if !h { confirmation.cancel() }
+        }
+        .onDisappear { confirmation.cancel() }
+        .onChange(of: armed) { _, isArmed in
+            onArmedChange?(isArmed)
+            // The label changes under VoiceOver's cursor without being read.
+            if isArmed { AccessibilityNotification.Announcement(l10n["quit_confirm_hint"]).post() }
+        }
+        .help(armed ? l10n["quit_confirm_hint"] : l10n["quit"])
+        .accessibilityLabel(armed ? l10n["quit_confirm_hint"] : l10n["quit"])
+    }
+}
+
+/// The grouping tabs in the 5×7 pixel font, spelled out (ALL · STATUS ·
+/// AGENT) where the header has room for them.
+private struct SessionGroupingTabs: View {
+    @Binding var mode: String
+    @Environment(\.sessionGroupingTabsRoom) private var room
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var l10n = L10n.shared
+    @State private var hoveredTag: String?
+
+    static let selectedColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+    /// ≈7:1 on black — the thin pixel strokes need more than the AA minimum.
+    static let inactiveColor = Color.white.opacity(0.62)
+
+    var body: some View {
+        let layout = SessionGroupingTabsLayout.self
+        let short = layout.usesShortLabels(room: room)
+        HStack(spacing: layout.spacing) {
+            ForEach(SessionGroupingTab.all, id: \.tag) { tab in
+                let selected = mode == tab.tag
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { mode = tab.tag }
+                } label: {
+                    PixelText(
+                        text: short ? tab.shortPixelLabel : tab.pixelLabel,
+                        color: selected ? Self.selectedColor
+                            : (hoveredTag == tab.tag ? .white.opacity(0.9) : Self.inactiveColor),
+                        pixelSize: layout.pixelSize
+                    )
+                    .padding(.horizontal, layout.horizontalPadding)
+                    .frame(height: layout.stripHeight)
+                    .background(Rectangle().fill(selected ? .white.opacity(0.1) : .clear))
+                    // Taller than the strip it draws: a 24pt target.
+                    .frame(height: layout.hitHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hoveredTag = $0 ? tab.tag : (hoveredTag == tab.tag ? nil : hoveredTag) }
+                // The pixel glyphs are drawn, not text: without a label
+                // VoiceOver reads nothing.
+                .help(l10n[tab.nameKey])
+                .accessibilityLabel(l10n[tab.nameKey])
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
+        .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1).frame(height: layout.stripHeight))
     }
 }
 
@@ -1083,6 +1271,7 @@ private struct IdleIndicatorBar: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
+    @State private var quitArmed = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1098,9 +1287,13 @@ private struct IdleIndicatorBar: View {
             // Right: expanded shows text + buttons, collapsed shows nothing
             if hovered {
                 HStack(spacing: 8) {
-                    Text("0")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
+                    // Gives way to the quit pill: the hovered bar is only a
+                    // little wider than its buttons.
+                    if !quitArmed {
+                        Text("0")
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
 
                     HStack(spacing: 4) {
                         NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
@@ -1109,9 +1302,7 @@ private struct IdleIndicatorBar: View {
                         NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
                             SettingsWindowController.shared.show()
                         }
-                        NotchIconButton(icon: "power", tint: Color(red: 1.0, green: 0.4, blue: 0.4), tooltip: l10n["quit"]) {
-                            NSApplication.shared.terminate(nil)
-                        }
+                        QuitConfirmButton(onArmedChange: { quitArmed = $0 })
                     }
                 }
                 .padding(.trailing, 6)
@@ -1120,6 +1311,8 @@ private struct IdleIndicatorBar: View {
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
+        // The buttons go with the hover; an armed pill goes with them.
+        .onChange(of: hovered) { _, isHovered in if !isHovered { quitArmed = false } }
     }
 }
 
@@ -4298,16 +4491,19 @@ private struct TerminalBadge: View {
 /// Collapsed single-line row for idle sessions >15 min
 // MARK: - Pixel Text (5×7 dot matrix style)
 
-private struct PixelText: View {
+struct PixelText: View {
     let text: String
     let color: Color
     var pixelSize: CGFloat = 2
 
     private static let W = 5  // glyph width
     private static let H = 7  // glyph height
+    /// Rows any glyph draws in: the bottom two are always blank, and framing
+    /// them too set the letters high in a centred strip.
+    private static let inkRows = 5
 
     // 5×7 bitmaps — each row is 5 bits, 7 rows per glyph
-    private static let glyphs: [Character: [UInt8]] = [
+    static let glyphs: [Character: [UInt8]] = [
         "0": [0,1,1,1,0, 1,0,0,1,1, 1,0,1,0,1, 1,1,0,0,1, 0,1,1,1,0, 0,0,0,0,0, 0,0,0,0,0],
         "1": [0,0,1,0,0, 0,1,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,1,1,1,0, 0,0,0,0,0, 0,0,0,0,0],
         "2": [0,1,1,1,0, 1,0,0,0,1, 0,0,1,1,0, 0,1,0,0,0, 1,1,1,1,1, 0,0,0,0,0, 0,0,0,0,0],
@@ -4366,7 +4562,7 @@ private struct PixelText: View {
                 xOff += CGFloat(Self.W) * px + gap
             }
         }
-        .frame(width: charWidth(chars.count), height: CGFloat(Self.H) * pixelSize)
+        .frame(width: charWidth(chars.count), height: CGFloat(Self.inkRows) * pixelSize)
     }
 
     private func charWidth(_ count: Int) -> CGFloat {
