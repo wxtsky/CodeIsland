@@ -217,7 +217,8 @@ public struct SessionSnapshot: Sendable {
     /// this Mac (a gateway chat, the API server; see
     /// ``HermesHookPayload/isQuiet(_:)``). The process behind such a card is
     /// the gateway daemon, which outlives every chat it serves, so the idle
-    /// card is swept like a hook-only one. Transient, never persisted.
+    /// card is swept like a hook-only one. Persisted: a restored card is
+    /// bound to the daemon again.
     public var hermesChatElsewhere = false
 
     public init(startTime: Date = Date()) {

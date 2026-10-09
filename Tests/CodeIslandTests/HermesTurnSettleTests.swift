@@ -90,6 +90,29 @@ final class HermesTurnSettleTests: XCTestCase {
         XCTAssertTrue(sweeps(idle: 3, userTimeout: 3, monitor: true, elsewhere: false))
     }
 
+    /// Relaunching CodeIsland restores a gateway chat's card bound to the
+    /// gateway daemon again. It must still be known as a chat held elsewhere,
+    /// or the sweep above lets it live as long as the daemon — for good with
+    /// the session timeout set to never.
+    @MainActor
+    func testRestoredGatewayChatIsStillSweptLikeAHookOnlyCard() {
+        defer { SessionPersistence.clear() }
+        var gateway = SessionSnapshot()
+        gateway.source = "hermes"
+        gateway.cliPid = getpid()  // stands in for the gateway daemon: alive
+        gateway.lastUserPrompt = "what's on my calendar?"
+        gateway.hermesChatElsewhere = true
+        var local = gateway
+        local.hermesChatElsewhere = false
+        SessionPersistence.save(["hermes-telegram": gateway, "hermes-cli": local])
+
+        let appState = AppState()
+        appState.restoreSessions()
+
+        XCTAssertEqual(appState.sessions["hermes-telegram"]?.hermesChatElsewhere, true)
+        XCTAssertEqual(appState.sessions["hermes-cli"]?.hermesChatElsewhere, false)
+    }
+
     /// The card sits on "thinking" from pre_llm_call on. The settle timeout is
     /// a net for a turn whose end hook never came, not the turn's end: 20 s
     /// flipped the card to idle while a reasoning model was still thinking.

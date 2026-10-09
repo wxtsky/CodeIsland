@@ -3441,7 +3441,7 @@ final class AppState {
         SessionPersistence.save(sessions)
     }
 
-    private func restoreSessions() {
+    func restoreSessions() {
         let persisted = SessionPersistence.load()
         let cutoff = Date().addingTimeInterval(-30 * 60) // 30 minutes
         for p in persisted where p.lastActivity > cutoff {
@@ -3485,6 +3485,7 @@ final class AppState {
             snapshot.herdrSocketPath = p.herdrSocketPath
             snapshot.herdrBinaryPath = p.herdrBinaryPath
             snapshot.claudeDesktopSessionId = p.claudeDesktopSessionId
+            snapshot.hermesChatElsewhere = p.hermesChatElsewhere ?? false
             snapshot.lastActivity = p.lastActivity
             snapshot.transcriptPath = p.transcriptPath
             snapshot.recap = p.recap
