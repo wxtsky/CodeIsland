@@ -2133,16 +2133,13 @@ private struct OptionRow: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(accent)
                     .frame(width: 10)
-                // Number (or ellipsis for "Other")
-                if index > 0 {
-                    Text("\(index).")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
-                } else {
-                    Text("…")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
-                }
+                // Number (or ellipsis for "Other"), in a fixed column so the
+                // labels line up whatever the digit ("1." is narrower than
+                // "2.", "10." wider still).
+                Text(index > 0 ? "\(index)." : "…")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(accent.opacity(hovering ? 1 : 0.8))
+                    .frame(minWidth: 18, alignment: .trailing)
                 // Label + Description
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
