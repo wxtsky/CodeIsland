@@ -1113,7 +1113,9 @@ struct NotchIconButton: View {
 /// The expanded header's buttons: sound, Settings, and Quit, which asks once.
 private struct ExpandedHeaderControls: View {
     @Binding var soundEnabled: Bool
+    @StateObject private var quit = QuitConfirmation()
     @ObservedObject private var l10n = L10n.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // 4pt between 24pt hit targets keeps the 6pt gap between the circles.
@@ -1124,19 +1126,21 @@ private struct ExpandedHeaderControls: View {
             NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
                 SettingsWindowController.shared.show()
             }
-            QuitConfirmButton()
+            QuitConfirmButton(confirmation: quit)
         }
+        // The pill is wider than the icon: the other buttons slide over to
+        // make room, or with Reduce Motion simply move.
+        .animation(reduceMotion ? nil : NotchAnimation.micro, value: quit.isArmed)
     }
 }
 
 /// The power button, which asks once (QuitConfirmation): the first click
 /// turns it into a red "QUIT?" pill, a second click within three seconds
 /// quits. The pill grows to the left, so the pointer that armed it stays on
-/// it; leaving it reverts the button.
+/// it; leaving it reverts the button. The row it sits in owns the
+/// confirmation, so it can animate (and make room for) the wider pill.
 struct QuitConfirmButton: View {
-    @StateObject private var confirmation: QuitConfirmation
-    /// Told when the pill appears and goes, for a parent short of room.
-    var onArmedChange: ((Bool) -> Void)? = nil
+    @ObservedObject var confirmation: QuitConfirmation
     @ObservedObject private var l10n = L10n.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
@@ -1154,12 +1158,8 @@ struct QuitConfirmButton: View {
         return (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + pillPadding * 2
     }
 
-    init(
-        confirmation: @autoclosure @escaping () -> QuitConfirmation = QuitConfirmation(),
-        onArmedChange: ((Bool) -> Void)? = nil
-    ) {
-        _confirmation = StateObject(wrappedValue: confirmation())
-        self.onArmedChange = onArmedChange
+    init(confirmation: QuitConfirmation) {
+        self.confirmation = confirmation
     }
 
     var body: some View {
@@ -1192,16 +1192,12 @@ struct QuitConfirmButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // The icon-to-pill swap widens the header's button row; with Reduce
-        // Motion it switches without sliding the other buttons over.
-        .animation(reduceMotion ? nil : NotchAnimation.micro, value: armed)
         .onHover { h in
             withAnimation(NotchAnimation.micro) { hovering = h }
             if !h { confirmation.cancel() }
         }
         .onDisappear { confirmation.cancel() }
         .onChange(of: armed) { _, isArmed in
-            onArmedChange?(isArmed)
             // The label changes under VoiceOver's cursor without being read.
             if isArmed { AccessibilityNotification.Announcement(l10n["quit_confirm_hint"]).post() }
         }
@@ -1271,7 +1267,8 @@ private struct IdleIndicatorBar: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
-    @State private var quitArmed = false
+    @StateObject private var quit = QuitConfirmation()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1289,7 +1286,7 @@ private struct IdleIndicatorBar: View {
                 HStack(spacing: 8) {
                     // Gives way to the quit pill: the hovered bar is only a
                     // little wider than its buttons.
-                    if !quitArmed {
+                    if !quit.isArmed {
                         Text("0")
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
@@ -1302,7 +1299,7 @@ private struct IdleIndicatorBar: View {
                         NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
                             SettingsWindowController.shared.show()
                         }
-                        QuitConfirmButton(onArmedChange: { quitArmed = $0 })
+                        QuitConfirmButton(confirmation: quit)
                     }
                 }
                 .padding(.trailing, 6)
@@ -1311,8 +1308,9 @@ private struct IdleIndicatorBar: View {
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
-        // The buttons go with the hover; an armed pill goes with them.
-        .onChange(of: hovered) { _, isHovered in if !isHovered { quitArmed = false } }
+        // The buttons go with the hover, and an armed pill with them
+        // (QuitConfirmButton cancels when it disappears).
+        .animation(reduceMotion ? nil : NotchAnimation.micro, value: quit.isArmed)
     }
 }
 
