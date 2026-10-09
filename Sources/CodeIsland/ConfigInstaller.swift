@@ -3829,7 +3829,8 @@ struct ConfigInstaller {
     /// Writes the plugin to `<configDir>/plugins/codeisland.js`. MiMo Code
     /// loads every `{plugin,plugins}/*.{js,ts}` under its config dir on its
     /// own, so — unlike OpenCode — no config file is touched. Skips (and
-    /// reports success) when MiMo is not on this machine.
+    /// reports success) when MiMo is not on this machine; fails rather than
+    /// overwrite someone else's plugin of the same name.
     @discardableResult
     static func installMimoPlugin(
         fm: FileManager,
@@ -3839,16 +3840,24 @@ struct ConfigInstaller {
         guard present ?? mimoPresenceDetected(fileManager: fm) else { return true }
         guard let base = opencodePluginSource(), let source = mimoPluginSource(from: base) else { return false }
         let path = mimoPluginPath(configDir: configDir)
+        if let existing = fm.contents(atPath: path), !isOwnMimoPluginFile(existing) { return false }
         try? fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
         return fm.createFile(atPath: path, contents: Data(source.utf8))
     }
 
     static func uninstallMimoPlugin(fm: FileManager, configDir: String = mimoConfigDir) {
         let path = mimoPluginPath(configDir: configDir)
-        // Only our own file: the name is generic enough for a user's plugin.
-        guard let data = fm.contents(atPath: path),
-              String(decoding: data, as: UTF8.self).contains("codeisland-opencode-plugin") else { return }
+        guard let data = fm.contents(atPath: path), isOwnMimoPluginFile(data) else { return }
         try? fm.removeItem(atPath: path)
+    }
+
+    /// `codeisland.js` is a generic enough name for a user's own plugin, so
+    /// install and uninstall only touch a copy of ours (any version, either
+    /// label) or an empty file.
+    private static func isOwnMimoPluginFile(_ data: Data) -> Bool {
+        let text = String(decoding: data, as: UTF8.self)
+        return text.contains("codeisland-opencode-plugin")
+            || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Installed = the current version of our plugin, labelled for MiMo.

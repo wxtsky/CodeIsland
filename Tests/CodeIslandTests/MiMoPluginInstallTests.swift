@@ -101,6 +101,22 @@ final class MiMoPluginInstallTests: XCTestCase {
         XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), foreign)
     }
 
+    func testInstallNeverOverwritesSomeoneElsesPlugin() throws {
+        let path = ConfigInstaller.mimoPluginPath(configDir: configDir)
+        try fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        let foreign = "export default { id: \"mine\", server: async () => ({}) }\n"
+        try foreign.write(toFile: path, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(ConfigInstaller.installMimoPlugin(fm: fm, configDir: configDir, present: true))
+        XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), foreign)
+        XCTAssertFalse(ConfigInstaller.isMimoPluginInstalled(fm: fm, configDir: configDir))
+
+        // An empty file is nobody's plugin.
+        try "".write(toFile: path, atomically: true, encoding: .utf8)
+        XCTAssertTrue(ConfigInstaller.installMimoPlugin(fm: fm, configDir: configDir, present: true))
+        XCTAssertTrue(ConfigInstaller.isMimoPluginInstalled(fm: fm, configDir: configDir))
+    }
+
     func testDefaultLocationIsMimoCodesGlobalConfigDir() {
         XCTAssertEqual(ConfigInstaller.mimoConfigDir, NSHomeDirectory() + "/.config/mimocode")
         XCTAssertEqual(
