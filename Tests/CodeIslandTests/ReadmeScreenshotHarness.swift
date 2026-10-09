@@ -8,8 +8,8 @@ import CodeIslandCore
 ///
 /// Renders the real `NotchPanelView`, fed curated demo sessions, onto a
 /// stylised MacBook top edge (wallpaper, menu bar, notch) and writes 2× PNGs
-/// for the README. Nothing is launched: the panel goes through
-/// `ImageRenderer`, so no hooks get installed and a running island is left
+/// for the README. Nothing is launched: the panel is hosted in a window that
+/// is never shown, so no hooks get installed and a running island is left
 /// alone. Opt-in like MascotRenderHarness — skipped unless `README_SHOT_DIR`
 /// is set:
 ///
@@ -82,11 +82,11 @@ final class ReadmeScreenshotHarness: XCTestCase {
         .environment(\.colorScheme, .dark)
         .frame(width: screen.windowWidth, height: 900)
 
-        let full = try XCTUnwrap(OffscreenRender.rasterize(view), "panel render failed")
-        let bottom = try XCTUnwrap(OffscreenRender.lastOpaqueRow(full), "panel rendered blank")
-        let rows = (bottom + 2) / 2 * 2  // whole points at 2×
-        let cropped = try XCTUnwrap(full.cropping(to: CGRect(x: 0, y: 0, width: full.width, height: rows)))
-        return (cropped, CGFloat(rows) / 2)
+        // Hosted like the app, not through ImageRenderer: the question card's
+        // options sit in a scroll view, which ImageRenderer leaves blank.
+        let full = try OffscreenRender.hosted(view, size: CGSize(width: screen.windowWidth, height: 900),
+                                              appearance: .darkAqua)
+        return try OffscreenRender.trimmedToContent(full)
     }
 }
 
