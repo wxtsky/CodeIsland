@@ -424,6 +424,9 @@ final class AppState {
     var subagentModelObservations: [String: [String: ModelObservation]] = [:]
     @ObservationIgnored
     var subagentModelReads: [String: [String: SubagentModelRead]] = [:]
+    /// Per local Hermes session: the read of Hermes's own store in progress.
+    @ObservationIgnored
+    var hermesStoreReads: [String: HermesStoreRead] = [:]
 
     private var dismissedPermissionSessionIds: Set<String> = [] {
         didSet { followUps.waitingChanged() }
@@ -510,15 +513,15 @@ final class AppState {
     }
 
     /// Agents whose tracked process is a long-lived daemon rather than a
-    /// per-turn CLI. For these, neither process exit nor SessionEnd marks the
-    /// end of a reply, so a card that has gone quiet with no tool in flight is
-    /// the only evidence the turn is over. (#303)
+    /// per-turn CLI. Process exit never marks the end of a reply, so when the
+    /// turn-end hook is missing (not approved on the agent's side, or the turn
+    /// died before it fired) a card that has gone quiet with no tool in flight
+    /// is the only evidence the turn is over. (#303)
     nonisolated static let daemonBackedSources: Set<String> = ["hermes"]
 
     /// How long a daemon-backed session may sit on bare "thinking" with no tool
-    /// and no new events before it settles. Long enough that a mid-turn
-    /// `post_llm_call` (followed within a second or two by the next
-    /// `pre_tool_call`) never flickers the card to idle.
+    /// and no new events before it settles. Long enough that the usual pause
+    /// between two tool calls doesn't flicker the card to idle.
     nonisolated static let daemonTurnSettleTimeout: TimeInterval = 20
 
     nonisolated static func isDaemonBackedSource(_ source: String?) -> Bool {
@@ -1042,6 +1045,7 @@ final class AppState {
         modelReadRetryAt.removeValue(forKey: sessionId)
         subagentModelObservations.removeValue(forKey: sessionId)
         subagentModelReads.removeValue(forKey: sessionId)
+        hermesStoreReads.removeValue(forKey: sessionId)
         hostHarnessProbes.removeValue(forKey: sessionId)
         hostHarnessProbeRetryAt.removeValue(forKey: sessionId)
         if activeSessionId == sessionId {
@@ -1758,6 +1762,7 @@ final class AppState {
             if let agentId = event.agentId {
                 maybeBackfillSubagentModel(sessionId: sessionId, agentId: agentId, event: event)
             }
+            requestHermesStoreRead(for: sessionId, event: event)
         }
 
         // Session was waiting and got an activity event. Historically we'd

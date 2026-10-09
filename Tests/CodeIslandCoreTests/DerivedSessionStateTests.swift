@@ -52,7 +52,8 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(EventNormalizer.normalize("post_tool_call"), "PostToolUse")
         XCTAssertEqual(EventNormalizer.normalize("pre_llm_call"), "UserPromptSubmit")
         XCTAssertEqual(EventNormalizer.normalize("on_session_start"), "SessionStart")
-        XCTAssertEqual(EventNormalizer.normalize("on_session_end"), "SessionEnd")
+        // on_session_end fires after every turn, not at session end (#364).
+        XCTAssertEqual(EventNormalizer.normalize("on_session_end"), "Stop")
         XCTAssertEqual(EventNormalizer.normalize("on_session_reset"), "SessionEnd")
         XCTAssertEqual(EventNormalizer.normalize("subagent_stop"), "SubagentStop")
     }

@@ -207,6 +207,12 @@ public struct SessionSnapshot: Sendable {
     /// until one is seen. Transcript lines carry only the bare API id, so this
     /// is the one place a switch *to or from* the `[1m]` variant shows up.
     public var configuredLongContext: Bool?
+    /// Hermes hooks reported this card's prompts (`pre_llm_call`) / replies
+    /// (`post_llm_call`) themselves. Hooks are on time where Hermes's own store
+    /// lags behind, so once they do, the store only supplies the title; see
+    /// ``applyHermesStore(_:)``. Transient, never persisted.
+    public var hermesHooksReportPrompts = false
+    public var hermesHooksReportReplies = false
 
     public init(startTime: Date = Date()) {
         self.startTime = startTime
@@ -1173,18 +1179,21 @@ public func reduceEvent(
            source == "cursor" || source == "cursor-cli" {
             sessions[sessionId]?.clearClosedSubagentId(sessionId)
         }
-        // Probe a wider set of field names + nested containers. Qwen Code (#103),
-        // Hermes (#117), and most Claude forks put the prompt at "prompt" top-level,
-        // but some forks nest it inside `input` / `data` / `payload` / `params`,
-        // and Cursor's `beforeSubmitPrompt` uses a different shape. Empty strings
-        // are skipped so we don't insert blank chat rows when a hook fires with
-        // a placeholder.
+        // Probe a wider set of field names + nested containers. Qwen Code (#103)
+        // and most Claude forks put the prompt at "prompt" top-level, but some
+        // forks nest it inside `input` / `data` / `payload` / `params`, Hermes's
+        // pre_llm_call sends `extra.user_message`, and Cursor's
+        // `beforeSubmitPrompt` uses a different shape. Empty strings are skipped
+        // so we don't insert blank chat rows when a hook fires with a placeholder.
         let prompt = firstStringFromEvent(
             event,
-            keys: ["prompt", "user_prompt", "userPrompt", "message", "input", "content", "text"],
+            keys: ["prompt", "user_prompt", "userPrompt", "user_message", "message", "input", "content", "text"],
             includeNested: true
         )
         if let prompt {
+            if sessions[sessionId]?.source == "hermes" {
+                sessions[sessionId]?.hermesHooksReportPrompts = true
+            }
             sessions[sessionId]?.lastUserPrompt = prompt
             if sessions[sessionId]?.recentMessages.last?.isUser == true {
                 sessions[sessionId]?.recentMessages.removeLast()
@@ -1270,20 +1279,33 @@ public func reduceEvent(
             sessions[sessionId]?.status = .processing
         }
     case "AgentTurnSettled":
-        // A model response just completed. Drop the tool chrome and record the
-        // reply, but do NOT enqueue a completion — a mid-turn response is
-        // followed within a second or two by the next pre_tool_call, which puts
-        // the card straight back to running. What settles the card is the idle
-        // sweep's daemon-source timeout, which only fires when nothing follows.
+        // Hermes's post_llm_call: the turn's final reply, sent just before
+        // on_session_end (Stop) ends the turn. Drop the tool chrome and record
+        // the reply; the completion belongs to the Stop that follows.
         sessions[sessionId]?.currentTool = nil
         sessions[sessionId]?.toolDescription = nil
+        // It repeats the turn's prompt. Without an approved pre_llm_call hook
+        // this is the first the card hears of it, so it goes in ahead of the reply.
+        if let prompt = firstStringFromEvent(event, keys: ["user_message"], includeNested: true),
+           prompt != sessions[sessionId]?.lastUserPrompt {
+            sessions[sessionId]?.lastUserPrompt = prompt
+            if sessions[sessionId]?.recentMessages.last?.isUser == true {
+                sessions[sessionId]?.recentMessages.removeLast()
+            }
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: true, text: prompt))
+        }
         if let msg = firstStringFromEvent(
             event,
             keys: ["assistant_response", "last_assistant_message", "text", "message"],
             includeNested: true
         ), !msg.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty {
+            sessions[sessionId]?.hermesHooksReportReplies = true
             sessions[sessionId]?.lastAssistantMessage = msg
-            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
+            // A store read can land the same reply a moment before this hook.
+            let alreadyShown = sessions[sessionId]?.recentMessages.last.map { !$0.isUser && $0.text == msg } ?? false
+            if !alreadyShown {
+                sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: msg))
+            }
         }
         if !isWaiting {
             sessions[sessionId]?.status = .processing
@@ -1313,9 +1335,17 @@ public func reduceEvent(
         }
         effects.append(.enqueueCompletion(sessionId: sessionId))
     case "Stop":
+        // Hermes fires on_session_end at the end of every turn. A delegate_task
+        // child or a scheduled job runs just one, so its turn ending is its
+        // card ending.
+        if HermesHookPayload.endsOneShotRun(event) {
+            effects.append(.removeSession(sessionId: sessionId))
+            return effects
+        }
         // Detect ESC/Ctrl+C interruption
         let stopReason = event.rawJSON["stop_reason"] as? String ?? ""
         let wasInterrupted = (stopReason == "user" || stopReason == "interrupted")
+            || HermesHookPayload.endsInterruptedTurn(event)
         let hasActiveSubagents = sessions[sessionId]?.subagents.values.contains {
             $0.status != .idle
         } == true
@@ -1393,7 +1423,7 @@ public func reduceEvent(
         sessions[sessionId] = SessionSnapshot(startTime: Date())
         // Re-apply metadata from this event (common extraction above wrote to the old session)
         if let cwd = event.rawJSON["cwd"] as? String, !cwd.isEmpty { sessions[sessionId]?.cwd = cwd }
-        if let model = event.rawJSON["model"] as? String, !model.isEmpty {
+        if let model = hookReportedModel(event) {
             sessions[sessionId]?.model = model
             sessions[sessionId]?.modelReportedAt = Date()
         }
@@ -1532,6 +1562,13 @@ public func reduceEvent(
         effects.append(.enqueueCompletion(sessionId: sessionId))
     default:
         break
+    }
+
+    // A remote Hermes hook reads the session's store on its own host (there
+    // is no file to read here) and attaches what it found. Applied after the
+    // event itself, so a prompt this very hook reported wins over the store.
+    if let store = HermesSessionStore.Snapshot(payload: event.rawJSON["_hermes_store"]) {
+        sessions[sessionId]?.applyHermesStore(store)
     }
 
     // SessionStart rebuilt the snapshot, but a resumed or compacted
@@ -1789,7 +1826,7 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     // Git branch resolution is NOT done here: this reducer runs on the main
     // actor and .git probing can block on network mounts. AppState refreshes
     // it asynchronously after reduce (maybeRefreshGitBranch).
-    if let model = event.rawJSON["model"] as? String, !model.isEmpty {
+    if let model = hookReportedModel(event) {
         sessions[sessionId]?.model = model
         sessions[sessionId]?.modelReportedAt = Date()
     }
@@ -1959,6 +1996,12 @@ private func stringFromHookJSONValue(_ value: Any?) -> String? {
     }
     let joined = texts.joined()
     return joined.isEmpty ? nil : joined
+}
+
+/// The model a hook names: top-level `model`, or Hermes's `extra.model`.
+private func hookReportedModel(_ event: HookEvent) -> String? {
+    if let model = event.rawJSON["model"] as? String, !model.isEmpty { return model }
+    return HermesHookPayload.model(in: event.rawJSON)
 }
 
 private func firstStringFromDict(_ dict: [String: Any], keys: [String]) -> String? {

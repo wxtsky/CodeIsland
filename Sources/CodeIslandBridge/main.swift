@@ -257,13 +257,26 @@ guard stat(socketPath, &statBuf) == 0, (statBuf.st_mode & S_IFMT) == S_IFSOCK el
 alarm(5)
 let input = FileHandle.standardInput.readDataToEndOfFile()
 alarm(0)  // stdin done, cancel preliminary alarm
-if let inputStr = String(data: input, encoding: .utf8) {
+let parsedInput = try? JSONSerialization.jsonObject(with: input) as? [String: Any]
+// Hermes sends the whole conversation (`extra.conversation_history`) with every
+// pre/post_llm_call. Nothing reads it, so it stays out of the log and the event.
+let hermesInput = sourceTag == "hermes" ? parsedInput.map(HermesHookPayload.trimmedForForwarding) : nil
+if let hermesInput,
+   let data = try? JSONSerialization.data(withJSONObject: hermesInput),
+   let inputStr = String(data: data, encoding: .utf8) {
+    debugLog("raw input: \(inputStr)")
+} else if let inputStr = String(data: input, encoding: .utf8) {
     debugLog("raw input: \(inputStr)")
 }
 
-guard !input.isEmpty,
-      var json = try? JSONSerialization.jsonObject(with: input) as? [String: Any] else {
+guard !input.isEmpty, var json = hermesInput ?? parsedInput else {
     exit(0)
+}
+
+// Hermes runs each hook with the firing profile's HERMES_HOME; the island reads
+// that session's title and messages from the store there (`state.db`).
+if sourceTag == "hermes", let hermesHome = nonEmptyString(env["HERMES_HOME"]) {
+    json["_hermes_home"] = (hermesHome as NSString).expandingTildeInPath
 }
 
 // Grok normally includes these camelCase fields on stdin. The environment

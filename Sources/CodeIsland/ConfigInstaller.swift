@@ -837,10 +837,11 @@ struct ConfigInstaller {
             return [
                 ("pre_tool_call", 5, false),
                 ("post_tool_call", 5, false),
-                // The only per-turn signal Hermes has: on_session_end fires on
-                // /reset, not at the end of a reply, and the backend daemon never
-                // exits. Without it a card could only ever be settled by a
-                // timeout (#303).
+                // Turn start, with the prompt (`extra.user_message`): the card
+                // shows what Hermes is working on before its first tool call.
+                ("pre_llm_call", 5, false),
+                // Turn end: the final reply, then on_session_end — which,
+                // despite its name, fires after every turn (#303, #364).
                 ("post_llm_call", 5, false),
                 ("on_session_start", 5, false),
                 ("on_session_end", 5, false),

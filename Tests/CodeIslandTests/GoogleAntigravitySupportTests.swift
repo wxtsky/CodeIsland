@@ -367,7 +367,7 @@ final class GoogleAntigravitySupportTests: XCTestCase {
 
 /// Minimal Unix-socket stand-in for HookServer: accepts one bridge connection,
 /// reads the event to EOF, answers with `reply`, closes.
-private final class OneShotUnixServer {
+final class OneShotUnixServer {
     let path: String
     private let listener: Int32
     private let served = DispatchSemaphore(value: 0)
