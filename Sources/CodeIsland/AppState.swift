@@ -1293,6 +1293,8 @@ final class AppState {
     /// `turnFailed`: the turn ended on an error (StopFailure, a failed AiWork
     /// stream or Cowork turn) — its follow-up says so.
     func enqueueCompletion(_ sessionId: String, turnFailed: Bool = false) {
+        // The session card reads ERROR until the next prompt.
+        sessions[sessionId]?.lastTurnFailed = turnFailed
         let style = Self.completionStyle()
         // Follow-ups only chase completions the user asked to hear about.
         if style != .off {

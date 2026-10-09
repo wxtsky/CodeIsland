@@ -172,6 +172,10 @@ public struct SessionSnapshot: Sendable {
     public var hostHarness: HostHarness?
     public var source: String = "claude" // "claude" or "codex"
     public var interrupted: Bool = false
+    /// The last turn ended on an error (Claude Code / Grok `StopFailure`, a
+    /// failed AiWork stream or Cowork turn); the card's status reads ERROR
+    /// until the next prompt. Set by AppState.enqueueCompletion. Transient.
+    public var lastTurnFailed: Bool = false
     /// Cline-specific: true after TaskComplete/TaskCancel until the next TaskStart/TaskResume.
     /// Cline runs hooks asynchronously (background bridge), so events from prior tools can
     /// arrive after a TaskCancel and revive the session. This flag drops those stale events.
@@ -1176,6 +1180,7 @@ public func reduceEvent(
     switch eventName {
     case "UserPromptSubmit":
         sessions[sessionId]?.interrupted = false
+        sessions[sessionId]?.lastTurnFailed = false
         sessions[sessionId]?.taskRoundEnded = false
         sessions[sessionId]?.clearRecapIfSuperseded(byPromptAt: Date())
         if sessions[sessionId]?.source == "codex" {
