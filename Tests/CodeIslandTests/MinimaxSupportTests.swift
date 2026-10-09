@@ -78,6 +78,20 @@ final class MinimaxSupportTests: XCTestCase {
         ))
     }
 
+    func testMinimaxCwdProcessScanMatchesMcodeButNotItsHelpers() {
+        // The CWD fallback binds the card to whatever it finds; a helper that
+        // mcode spawns in the same folder exits in moments and would take the
+        // card with it.
+        XCTAssertTrue(AppState.isMinimaxProcessArgs(["minimax-code"]))  // renamed title
+        XCTAssertTrue(AppState.isMinimaxProcessArgs(["node", "/opt/homebrew/bin/mcode"]))
+        XCTAssertTrue(AppState.isMinimaxProcessArgs(["node", "/opt/homebrew/lib/node_modules/@minimax-ai/code/cli.js"]))
+        XCTAssertFalse(AppState.isMinimaxProcessArgs([
+            "/opt/homebrew/lib/node_modules/@minimax-ai/code/node_modules/@vscode/ripgrep/bin/rg", "--json", "TODO",
+        ]))
+        XCTAssertFalse(AppState.isMinimaxProcessArgs(["node", "/opt/homebrew/bin/mcode-tools", "read"]))
+        XCTAssertFalse(AppState.isMinimaxProcessArgs(["vim", "/Users/me/src/minimax-code-notes.md"]))
+    }
+
     // MARK: - ConfigInstaller — CLIConfig + hook events
 
     func testMinimaxDefaultEventsMatchMcodeRegistry() {

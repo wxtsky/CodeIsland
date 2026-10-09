@@ -5387,22 +5387,25 @@ final class AppState {
     }
 
     private nonisolated static func findMinimaxPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
-        // The Node runtime renames mcode's process title to `minimax-code`, so
-        // proc_pidpath/argv rarely carry the launch path — match the renamed
-        // title and the npm package layout instead (see CLIProcessResolver).
-        findPids(
-            matchingPathSubstrings: [
-                "/mcode",
-                "/minimax-code",
-                "/@minimax-ai/code/",
-            ],
-            argSubstrings: [
-                "minimax-code",
-                "/@minimax-ai/code/",
-                "/bin/mcode",
-            ],
-            candidatePids: candidatePids
-        )
+        // mcode is a Node script, so proc_pidpath is the node binary; the
+        // Node runtime renames its process title to `minimax-code`, which is
+        // what argv carries. Match whole arguments, not substrings: helpers
+        // mcode spawns in the session's cwd live under the same package
+        // (bundled ripgrep in .../@minimax-ai/code/node_modules/, the
+        // `mcode-tools` bin), and binding the card to one of those would end
+        // it when the helper exits.
+        (candidatePids ?? allProcessIds()).filter { pid in
+            getProcessArgs(pid).map(isMinimaxProcessArgs) ?? false
+        }
+    }
+
+    nonisolated static func isMinimaxProcessArgs(_ args: [String]) -> Bool {
+        args.contains { arg in
+            let lowered = arg.lowercased()
+            return lowered == "minimax-code"
+                || lowered.hasSuffix("/bin/mcode")
+                || lowered.hasSuffix("/@minimax-ai/code/cli.js")
+        }
     }
 
     private nonisolated static func findPiPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
