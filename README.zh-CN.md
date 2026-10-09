@@ -171,7 +171,7 @@ CodeIsland 启动时会自动写入以下配置，配置被改动时会自动修
 | Copilot CLI | `~/.copilot/hooks/codeisland.json` |
 | Kimi Code CLI | `~/.kimi-code/config.toml`（旧版为 `~/.kimi/`） |
 | Kiro CLI | `~/.kiro/agents/codeisland.json`，需用 `kiro --agent codeisland` 启动 |
-| Hermes | `~/.hermes/config.yaml` |
+| Hermes | `~/.hermes/config.yaml`，[需要批准一次](#hermes) |
 | ZCode | `~/.zcode/cli/config.json` |
 | MiniMax Code CLI | 插件 `~/.minimax/plugins/codeisland/`（支持 `$MINIMAX_DATA_DIR`） |
 | Cline | `~/Documents/Cline/Hooks` |
@@ -247,6 +247,18 @@ OpenCode 通过一个 JS 插件直连 socket，不需要 bridge 程序。同一�
 <br>
 
 MiMo Code 是 OpenCode 1.x 的分支，Xiaomi MiMo 桌面端又以 MiMo Code 作为内核，所以两者都会从 `~/.config/mimocode/plugins/` 加载 OpenCode 插件。CodeIsland 把插件以 MiMo 的身份写到这里，不改动 `mimocode.json`。MiMo 只在内核启动时读取插件，插件装好后需要重启一次 App（或 `mimo`）。审批和提问可以在刘海上处理，也可以在 MiMo 里处理，以先操作的一方为准。点击桌面端会话会把 Xiaomi MiMo 切到前台；它的 `xiaomi-mimo://` 链接只用于加入分享的会话，没办法直接打开某个对话。
+
+</details>
+
+<a name="hermes"></a>
+<details>
+<summary><b>Hermes：首次需要批准 hook</b></summary>
+
+<br>
+
+Hermes 遇到没见过的 hook 会先询问，每个 hook 问一次。下次在终端启动 `hermes` 时，对 CodeIsland 的条目（`codeisland-bridge --source hermes`）逐个回答 `y` 即可。没有终端的 Hermes（gateway 服务、桌面 App）无法询问，会直接跳过没批准的 hook，看起来就像 CodeIsland 看不到这些会话。在终端里批准一次即可（批准记录按 Hermes 主目录保存，gateway 和桌面 App 同样生效），或者在 `~/.hermes/config.yaml` 里设置 `hooks_auto_accept: true`。CodeIsland 更新后如果新增了 hook，Hermes 会就新的 hook 再问一次。
+
+Gateway 聊天（Telegram、Discord、Slack、WhatsApp、邮件等，以及 API Server）也会显示卡片，但不弹完成卡片、不响提示音，空闲 10 分钟后移除。会话结束时卡片随之移除：`/new`、退出 `hermes`、关闭桌面端对话，或 gateway 停止。会话标题只读地取自 Hermes 自己的 `state.db`。
 
 </details>
 

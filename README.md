@@ -171,7 +171,7 @@ CodeIsland writes these for you on launch (and repairs them if they drift); each
 | Copilot CLI | `~/.copilot/hooks/codeisland.json` |
 | Kimi Code CLI | `~/.kimi-code/config.toml` (or legacy `~/.kimi/`) |
 | Kiro CLI | `~/.kiro/agents/codeisland.json` — launch with `kiro --agent codeisland` |
-| Hermes | `~/.hermes/config.yaml` |
+| Hermes | `~/.hermes/config.yaml` — [approve the hooks once](#hermes) |
 | ZCode | `~/.zcode/cli/config.json` |
 | MiniMax Code CLI | plugin at `~/.minimax/plugins/codeisland/` (honours `$MINIMAX_DATA_DIR`) |
 | Cline | `~/Documents/Cline/Hooks` |
@@ -247,6 +247,18 @@ A single JS plugin talks to the socket directly — no bridge binary. The same f
 <br>
 
 MiMo Code is an OpenCode 1.x fork, and the Xiaomi MiMo desktop app runs it as its engine, so both load the OpenCode plugin from `~/.config/mimocode/plugins/` — CodeIsland writes it there labelled as MiMo and leaves `mimocode.json` alone. MiMo reads plugins when its engine starts, so restart the app (or `mimo`) once after the plugin is installed. Approvals and questions can be answered on the island or in MiMo, whichever comes first. Clicking a desktop session brings Xiaomi MiMo to the front; the app's `xiaomi-mimo://` links only join shared sessions, so there is no way to open one specific conversation.
+
+</details>
+
+<a name="hermes"></a>
+<details>
+<summary><b>Hermes — approve the hooks once</b></summary>
+
+<br>
+
+Hermes asks before it runs a hook it hasn't seen, once per hook. The next time you start `hermes` in a terminal, answer `y` to each CodeIsland entry (`codeisland-bridge --source hermes`). Hermes running without a terminal — the gateway service, the desktop app — can't ask, so it skips a hook nobody approved, which looks like CodeIsland not seeing those sessions. Approve them in a terminal once (the approval is kept per Hermes home, so it covers the gateway and the desktop app too), or set `hooks_auto_accept: true` in `~/.hermes/config.yaml`. A CodeIsland update that adds a hook asks again for the new one.
+
+Gateway chats (Telegram, Discord, Slack, WhatsApp, email and the rest, and the API server) get cards too, but they don't pop a completion card or play a sound, and an idle one goes after 10 minutes. A card goes when its session ends: `/new`, quitting `hermes`, closing a desktop conversation, or the gateway shutting down. Session titles are read from Hermes's own `state.db`, read-only.
 
 </details>
 
