@@ -253,4 +253,73 @@ final class MinimaxSupportTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: pluginDir))
         XCTAssertTrue(fm.fileExists(atPath: hooksPath))
     }
+
+    func testMinimaxInstallRefusesToOverwriteForeignPluginPack() throws {
+        let fm = FileManager.default
+        let home = try makeMinimaxHome("minimax-foreign-install")
+        let pluginDir = home + "/plugins/codeisland"
+        try fm.createDirectory(atPath: pluginDir + "/.claude-plugin", withIntermediateDirectories: true)
+        let manifestPath = pluginDir + "/.claude-plugin/plugin.json"
+        let foreignManifest = "{\"name\":\"codeisland\",\"description\":\"not ours\"}"
+        try foreignManifest.write(toFile: manifestPath, atomically: true, encoding: .utf8)
+
+        let cli = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "minimax" })
+        XCTAssertFalse(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+        XCTAssertEqual(try String(contentsOfFile: manifestPath, encoding: .utf8), foreignManifest)
+        XCTAssertFalse(fm.fileExists(atPath: pluginDir + "/hooks/hooks.json"))
+        XCTAssertFalse(ConfigInstaller.isInstalled(source: "minimax"))
+    }
+
+    func testMinimaxDriftedPackReadsAsNotInstalledAndReinstallRestoresIt() throws {
+        let fm = FileManager.default
+        let home = try makeMinimaxHome("minimax-drift")
+        let cli = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "minimax" })
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+        XCTAssertTrue(ConfigInstaller.isInstalled(source: "minimax"))
+
+        // A pack written by an earlier build: every event is still ours, but
+        // PermissionRequest carries a timeout mcode rejects. All-events-present
+        // detection would call that installed and never repair it.
+        let hooksPath = home + "/plugins/codeisland/hooks/hooks.json"
+        let current = try String(contentsOfFile: hooksPath, encoding: .utf8)
+        let stale = current.replacingOccurrences(of: "\"timeout\" : 10", with: "\"timeout\" : 86400")
+        XCTAssertNotEqual(stale, current)
+        try stale.write(toFile: hooksPath, atomically: true, encoding: .utf8)
+        XCTAssertFalse(ConfigInstaller.isInstalled(source: "minimax"))
+
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+        XCTAssertTrue(ConfigInstaller.isInstalled(source: "minimax"))
+
+        // A missing manifest is drift too: mcode can't load the pack without it.
+        try fm.removeItem(atPath: home + "/plugins/codeisland/.claude-plugin/plugin.json")
+        XCTAssertFalse(ConfigInstaller.isInstalled(source: "minimax"))
+    }
+
+    func testMinimaxReinstallLeavesCurrentPackUntouched() throws {
+        let fm = FileManager.default
+        let home = try makeMinimaxHome("minimax-idempotent")
+        let cli = try XCTUnwrap(ConfigInstaller.allCLIs.first { $0.source == "minimax" })
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+
+        // Launch-time install runs every time; a current pack is not rewritten.
+        let hooksPath = home + "/plugins/codeisland/hooks/hooks.json"
+        let past = Date(timeIntervalSince1970: 1_000_000_000)
+        try fm.setAttributes([.modificationDate: past], ofItemAtPath: hooksPath)
+        XCTAssertTrue(ConfigInstaller.installExternalHooks(cli: cli, fm: fm))
+        let modified = try fm.attributesOfItem(atPath: hooksPath)[.modificationDate] as? Date
+        XCTAssertEqual(modified, past)
+    }
+
+    /// A MiniMax data root under the temp dir, wired through
+    /// `$MINIMAX_DATA_DIR` and removed when the test ends.
+    private func makeMinimaxHome(_ prefix: String) throws -> String {
+        let home = NSTemporaryDirectory() + "\(prefix)-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
+        setenv("MINIMAX_DATA_DIR", home, 1)
+        addTeardownBlock {
+            unsetenv("MINIMAX_DATA_DIR")
+            try? FileManager.default.removeItem(atPath: home)
+        }
+        return home
+    }
 }

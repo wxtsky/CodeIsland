@@ -2769,8 +2769,13 @@ struct ConfigInstaller {
         guard minimaxPresenceDetected(fm: fm) else { return true }
 
         let hooksDir = (cli.fullPath as NSString).deletingLastPathComponent
-        let pluginDir = (hooksDir as NSString).deletingLastPathComponent   // …/plugins/codeisland
-        let manifestDir = pluginDir + "/.claude-plugin"
+        let manifestPath = minimaxManifestPath(cli: cli)
+        // A plugin someone else put at plugins/codeisland is not ours to
+        // overwrite (uninstall refuses to delete it for the same reason).
+        if let existing = fm.contents(atPath: manifestPath), !minimaxManifestIsOurs(existing) {
+            return false
+        }
+        let manifestDir = (manifestPath as NSString).deletingLastPathComponent
         for dir in [manifestDir, hooksDir] where !fm.fileExists(atPath: dir) {
             do {
                 try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -2781,30 +2786,52 @@ struct ConfigInstaller {
 
         guard let manifest = try? JSONSerialization.data(
                   withJSONObject: minimaxManifestDocument(),
-                  options: [.prettyPrinted, .sortedKeys]
+                  options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
               ),
               let hooksDoc = try? JSONSerialization.data(
                   withJSONObject: minimaxHooksDocument(),
-                  options: [.prettyPrinted, .sortedKeys]
+                  options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
               )
         else { return false }
 
-        return fm.createFile(atPath: manifestDir + "/plugin.json", contents: manifest)
-            && fm.createFile(atPath: hooksDir + "/hooks.json", contents: hooksDoc)
+        // Runs on every launch: leave files that are already current alone.
+        func writeIfChanged(_ data: Data, to path: String) -> Bool {
+            fm.contents(atPath: path) == data || fm.createFile(atPath: path, contents: data)
+        }
+        return writeIfChanged(manifest, to: manifestPath)
+            && writeIfChanged(hooksDoc, to: cli.fullPath)
+    }
+
+    private static func minimaxManifestPath(cli: CLIConfig) -> String {
+        let hooksDir = (cli.fullPath as NSString).deletingLastPathComponent
+        let pluginDir = (hooksDir as NSString).deletingLastPathComponent   // …/plugins/codeisland
+        return pluginDir + "/.claude-plugin/plugin.json"
+    }
+
+    private static func minimaxManifestIsOurs(_ data: Data) -> Bool {
+        String(data: data, encoding: .utf8)?.contains(minimaxManifestMarker) == true
+    }
+
+    /// The pack is installed when our manifest is in place and hooks.json is
+    /// exactly the document we generate — so a stale bridge path, timeout or
+    /// event list (or a deleted manifest) reads as drift and gets rewritten.
+    static func isMinimaxPluginInstalled(cli: CLIConfig, fm: FileManager) -> Bool {
+        guard let manifest = fm.contents(atPath: minimaxManifestPath(cli: cli)),
+              minimaxManifestIsOurs(manifest),
+              let hooks = parseJSONFile(at: cli.fullPath, fm: fm)
+        else { return false }
+        return NSDictionary(dictionary: hooks).isEqual(to: minimaxHooksDocument())
     }
 
     private static func uninstallMinimaxHooks(cli: CLIConfig, fm: FileManager) {
         let hooksPath = cli.fullPath
         let hooksDir = (hooksPath as NSString).deletingLastPathComponent
         let pluginDir = (hooksDir as NSString).deletingLastPathComponent
-        let manifestPath = pluginDir + "/.claude-plugin/plugin.json"
 
         // The pack directory is entirely ours — remove it wholesale when the
         // manifest proves it (never delete a foreign plugin that happens to
         // share the directory name).
-        if let data = fm.contents(atPath: manifestPath),
-           let text = String(data: data, encoding: .utf8),
-           text.contains(minimaxManifestMarker) {
+        if let data = fm.contents(atPath: minimaxManifestPath(cli: cli)), minimaxManifestIsOurs(data) {
             try? fm.removeItem(atPath: pluginDir)
             return
         }
@@ -3166,6 +3193,9 @@ struct ConfigInstaller {
         if cli.format == .kimi {
             return isKimiHooksInstalled(cli: cli, fm: fm)
         }
+        if cli.format == .minimaxPlugin {
+            return isMinimaxPluginInstalled(cli: cli, fm: fm)
+        }
 
         guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
               let hooks = root[cli.configKey] as? [String: Any] else { return false }
@@ -3215,6 +3245,9 @@ struct ConfigInstaller {
     private static func shouldPreservePartialHooks(for cli: CLIConfig, fm: FileManager) -> Bool {
         // Kimi stores hooks in TOML with its own all-or-nothing detection.
         if cli.format == .kimi { return false }
+        // The MiniMax plugin pack is generated whole and holds nothing but
+        // ours, so any drift is repaired rather than taken as a user's edit.
+        if cli.format == .minimaxPlugin { return false }
         guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
               let hooks = root[cli.configKey] as? [String: Any] else { return false }
         // A legacy-shaped Antigravity model event is broken, not "intentionally
