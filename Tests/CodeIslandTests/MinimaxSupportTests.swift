@@ -310,6 +310,32 @@ final class MinimaxSupportTests: XCTestCase {
         XCTAssertEqual(modified, past)
     }
 
+    // MARK: - Attach backfill
+
+    func testAttachBackfillCleansMcodeTranscriptLikeTheLiveTail() throws {
+        // The card rebuilt from the transcript on attach (relaunch, restored
+        // session) must not show mcode's reminder wrapper as the prompt or its
+        // reasoning blob as the reply — the live tail already hides both.
+        let reminder = "<system-reminder>\n<agent-context>\n  agent: Mavis\n</agent-context>\n</system-reminder>\n\n你好"
+        let blob = #"{"type":"thinking","thinking":"The user greeted me","thinkingSignature":"b1f9"}"#
+        let rows: [[String: Any]] = [
+            ["type": "user", "message": ["role": "user", "content": [["type": "text", "text": reminder]]]],
+            ["type": "assistant", "message": ["role": "assistant", "content": [["type": "text", "text": blob]]]],
+            ["type": "assistant", "message": ["role": "assistant", "content": [
+                ["type": "text", "text": blob],
+                ["type": "text", "text": "你好！有什么我可以帮你的吗？"],
+            ]]],
+        ]
+        let lines = try rows.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+        let path = NSTemporaryDirectory() + "minimax-transcript-\(UUID().uuidString).jsonl"
+        try (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(atPath: path) }
+
+        let messages = AppState.readRecentFromTranscript(path: path).1
+        XCTAssertEqual(messages.map(\.isUser), [true, false])
+        XCTAssertEqual(messages.map(\.text), ["你好", "你好！有什么我可以帮你的吗？"])
+    }
+
     /// A MiniMax data root under the temp dir, wired through
     /// `$MINIMAX_DATA_DIR` and removed when the test ends.
     private func makeMinimaxHome(_ prefix: String) throws -> String {

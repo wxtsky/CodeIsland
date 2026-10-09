@@ -1079,17 +1079,20 @@ public final class JSONLTailer: @unchecked Sendable {
 
     /// Remove transcript wrappers the user never typed that some CLIs embed
     /// inside message text: Codex's `<USER_REQUEST>` (everything outside is
-    /// dropped) and `<system-reminder>` spans (mcode prepends its agent-context
-    /// block to every prompt — the spans go, the typed prompt after them stays).
-    static func stripDisplayWrappers(_ raw: String) -> String {
+    /// dropped) and leading `<system-reminder>` spans (mcode prepends its
+    /// agent-context block to every prompt — the spans go, the typed prompt
+    /// after them stays). Only spans that open the text are injected; a tag
+    /// someone quotes mid-message is content and stays.
+    public static func stripDisplayWrappers(_ raw: String) -> String {
         var text = raw
         if let start = text.range(of: "<USER_REQUEST>"),
            let end = text.range(of: "</USER_REQUEST>", range: start.upperBound..<text.endIndex) {
             text = String(text[start.upperBound..<end.lowerBound])
         }
-        while let start = text.range(of: "<system-reminder>"),
-              let end = text.range(of: "</system-reminder>", range: start.upperBound..<text.endIndex) {
-            text.removeSubrange(start.lowerBound..<end.upperBound)
+        while let start = text.firstIndex(where: { !$0.isWhitespace }),
+              text[start...].hasPrefix("<system-reminder>"),
+              let end = text.range(of: "</system-reminder>", range: start..<text.endIndex) {
+            text.removeSubrange(text.startIndex..<end.upperBound)
         }
         return text
     }
@@ -1099,7 +1102,7 @@ public final class JSONLTailer: @unchecked Sendable {
     /// `{"type":"thinking","thinking":"…","thinkingSignature":"…"}`. A real
     /// user/assistant message is never this shape, so any row matching it is
     /// skipped for display.
-    static func isThinkingBlob(_ text: String) -> Bool {
+    public static func isThinkingBlob(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}") else { return false }
         guard let obj = (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))) as? [String: Any] else {

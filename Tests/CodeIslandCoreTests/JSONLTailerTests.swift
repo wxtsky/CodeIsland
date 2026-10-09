@@ -684,6 +684,21 @@ final class JSONLTailerTests: XCTestCase {
         XCTAssertEqual(JSONLTailer.extractText(from: "plain reply"), "plain reply")
     }
 
+    func testExtractTextKeepsASystemReminderTagQuotedInsideTheMessage() {
+        // extractText feeds every Claude-format source. Only an injected span
+        // that opens the text is a wrapper; a reply (or prompt) that talks
+        // about the tag keeps every word.
+        let reply = "Claude Code wraps hook output in <system-reminder>like this</system-reminder> before the model sees it."
+        XCTAssertEqual(JSONLTailer.extractText(from: reply), reply)
+        XCTAssertEqual(JSONLTailer.extractText(from: [["type": "text", "text": reply]]), reply)
+
+        // Several leading spans all go; the typed text after them stays.
+        let wrapped = "<system-reminder>a</system-reminder>\n<system-reminder>b</system-reminder>\nwhat is <system-reminder>?"
+        XCTAssertEqual(JSONLTailer.extractText(from: wrapped), "what is <system-reminder>?")
+        // An unclosed leading tag is not a wrapper we can bound — leave it.
+        XCTAssertEqual(JSONLTailer.extractText(from: "<system-reminder> what is this tag"), "<system-reminder> what is this tag")
+    }
+
     // MARK: - Fixtures
 
     private func assistantLine(text: String) -> String {

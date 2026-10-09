@@ -8084,6 +8084,21 @@ final class AppState {
     }
 
     /// Read model and last 3 user/assistant messages from a transcript file's tail
+    /// First text block of a transcript row worth showing, cleaned the way the
+    /// live tail cleans it (`JSONLTailer.extractText`): mcode's reasoning blobs
+    /// are skipped and leading injected wrappers removed, so a card rebuilt on
+    /// attach reads the same as one fed by the tailer.
+    nonisolated static func firstDisplayText(in blocks: [[String: Any]]) -> String? {
+        for block in blocks {
+            guard block["type"] as? String == "text",
+                  let raw = block["text"] as? String,
+                  !JSONLTailer.isThinkingBlob(raw) else { continue }
+            let text = JSONLTailer.stripDisplayWrappers(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return text }
+        }
+        return nil
+    }
+
     nonisolated static func readRecentFromTranscript(path: String) -> (String?, [ChatMessage]) {
         guard let handle = FileHandle(forReadingAtPath: path) else { return (nil, []) }
         defer { handle.closeFile() }
@@ -8121,32 +8136,18 @@ final class AppState {
             var textContent: String?
             if normalizedRole == "user" || normalizedRole == "user_input" {
                 if let content = message["content"] as? String {
-                    var text = content
-                    if let startRange = text.range(of: "<USER_REQUEST>"),
-                       let endRange = text.range(of: "</USER_REQUEST>", range: startRange.upperBound..<text.endIndex) {
-                        text = String(text[startRange.upperBound..<endRange.lowerBound])
-                    }
-                    textContent = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    textContent = JSONLTailer.stripDisplayWrappers(content)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
                 } else if let contentArray = message["content"] as? [[String: Any]] {
-                    for item in contentArray {
-                        if item["type"] as? String == "text",
-                           let t = item["text"] as? String, !t.isEmpty {
-                            textContent = t
-                            break
-                        }
-                    }
+                    textContent = firstDisplayText(in: contentArray)
                 }
             } else if normalizedRole == "assistant" || normalizedRole == "planner_response" {
                 if let content = message["content"] as? String {
-                    textContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    textContent = JSONLTailer.isThinkingBlob(content)
+                        ? nil
+                        : content.trimmingCharacters(in: .whitespacesAndNewlines)
                 } else if let contentArray = message["content"] as? [[String: Any]] {
-                    for item in contentArray {
-                        if item["type"] as? String == "text",
-                           let t = item["text"] as? String, !t.isEmpty {
-                            textContent = t
-                            break
-                        }
-                    }
+                    textContent = firstDisplayText(in: contentArray)
                 } else if let thinking = message["thinking"] as? String {
                     textContent = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
