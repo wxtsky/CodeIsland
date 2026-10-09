@@ -520,9 +520,12 @@ final class AppState {
     nonisolated static let daemonBackedSources: Set<String> = ["hermes"]
 
     /// How long a daemon-backed session may sit on bare "thinking" with no tool
-    /// and no new events before it settles. Long enough that the usual pause
-    /// between two tool calls doesn't flicker the card to idle.
-    nonisolated static let daemonTurnSettleTimeout: TimeInterval = 20
+    /// and no new events before it settles. Only a safety net: Hermes's
+    /// on_session_end ends every turn, interrupted ones included (#364). The
+    /// card is on "thinking" from the prompt on (pre_llm_call), and a
+    /// reasoning model easily thinks for longer than 20 s before its first or
+    /// next tool call — the card must not read idle while it does.
+    nonisolated static let daemonTurnSettleTimeout: TimeInterval = 120
 
     /// Minutes an idle card with no process to outlive waits before it goes.
     nonisolated static let defaultStaleIdleMinutes = 10
@@ -627,7 +630,7 @@ final class AppState {
             && session.currentTool == nil
             && session.toolDescription == nil {
             let elapsed = -session.lastActivity.timeIntervalSinceNow
-            // Daemon-backed agents settle on a short timeout whether or not we
+            // Daemon-backed agents settle on their own timeout whether or not we
             // hold a process monitor: their backend never exits, so a live PID
             // says nothing about whether the turn is over (#303).
             if Self.isDaemonBackedSource(session.source) {

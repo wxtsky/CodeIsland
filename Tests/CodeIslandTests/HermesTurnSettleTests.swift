@@ -90,6 +90,13 @@ final class HermesTurnSettleTests: XCTestCase {
         XCTAssertTrue(sweeps(idle: 3, userTimeout: 3, monitor: true, elsewhere: false))
     }
 
+    /// The card sits on "thinking" from pre_llm_call on. The settle timeout is
+    /// a net for a turn whose end hook never came, not the turn's end: 20 s
+    /// flipped the card to idle while a reasoning model was still thinking.
+    func testSettleTimeoutOutlastsAModelThinking() {
+        XCTAssertGreaterThanOrEqual(AppState.daemonTurnSettleTimeout, 120)
+    }
+
     func testHermesIsTreatedAsDaemonBackedAndOtherAgentsAreNot() {
         XCTAssertTrue(AppState.isDaemonBackedSource("hermes"))
         XCTAssertTrue(AppState.isDaemonBackedSource("hermes-agent"), "alias must resolve too")
