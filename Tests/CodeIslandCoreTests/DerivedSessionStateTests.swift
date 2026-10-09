@@ -309,6 +309,32 @@ final class DerivedSessionStateTests: XCTestCase {
         XCTAssertEqual(assistantRows?.first?.text, "你好！有什么我可以帮你的吗？")
     }
 
+    func testStopAppendsARepeatedReplyToANewPrompt() throws {
+        // Same answer twice ("Done.") to two prompts: the earlier reply is an
+        // older row, not this turn's. The tail channel skips the repeat (its
+        // lastAssistantMessage didn't change), so Stop is the only path that
+        // can put the answer under the new prompt.
+        var session = SessionSnapshot()
+        session.source = "claude"
+        session.recentMessages = [
+            ChatMessage(isUser: true, text: "run the tests"),
+            ChatMessage(isUser: false, text: "Done."),
+            ChatMessage(isUser: true, text: "run them again"),
+        ]
+        session.lastAssistantMessage = "Done."
+        var sessions = ["s-repeat": session]
+
+        let event = try decode([
+            "hook_event_name": "Stop",
+            "session_id": "s-repeat",
+            "last_assistant_message": "Done.",
+        ])
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 3)
+
+        XCTAssertEqual(sessions["s-repeat"]?.recentMessages.last?.isUser, false)
+        XCTAssertEqual(sessions["s-repeat"]?.recentMessages.last?.text, "Done.")
+    }
+
     private func decode(_ payload: [String: Any]) throws -> HookEvent {
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
