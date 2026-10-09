@@ -1718,6 +1718,12 @@ struct ConfigInstaller {
 
     @discardableResult
     static func installExternalHooks(cli: CLIConfig, fm: FileManager) -> Bool {
+        // pi, Oh My Pi, OpenClaw and DeepSeek Harness have no hooks file: their
+        // entry points at an extension, a plugin or (DSH) the tool's home
+        // directory, which their own installers (or none) take care of. The
+        // generic writer below would put `{"": {}}` there — `verifyAndRepair`
+        // reaches this for every built-in entry, so every Mac got a `~/.dsh`.
+        if cli.format == .none { return true }
         if cli.format == .cline { return installClineHooks(cli: cli, fm: fm) }
         if cli.format == .kimi {
             // Kimi: do not create ~/.kimi-code (or legacy ~/.kimi) unless there is
