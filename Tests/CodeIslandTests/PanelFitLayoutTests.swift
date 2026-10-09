@@ -58,6 +58,15 @@ final class PanelFitLayoutTests: XCTestCase {
         XCTAssertGreaterThan(try panel.gapUnderPanel(), 0, "the session list runs off the bottom of the window")
     }
 
+    func testSqueezedBranchKeepsAFewCharacters() {
+        // A long project name used to leave the branch an icon and "…".
+        let short = BranchLabelMetrics.minimumWidth(for: "main", fontSize: 11)
+        let long = BranchLabelMetrics.minimumWidth(for: "feature/very-long-branch-name-for-onboarding-flow", fontSize: 11)
+        let twelve = BranchLabelMetrics.minimumWidth(for: String(repeating: "x", count: 12), fontSize: 11)
+        XCTAssertLessThan(short, twelve, "a short branch must not be padded")
+        XCTAssertEqual(long, twelve, accuracy: 1, "a long branch keeps room for twelve characters")
+    }
+
     // MARK: - Question card
 
     func testQuestionWithManyOptionsKeepsItsButtonsInsideTheWindow() async throws {

@@ -2884,6 +2884,22 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
     }
 }
 
+/// The card header's git branch next to a long project name.
+enum BranchLabelMetrics {
+    /// Characters a squeezed branch keeps. The project name outranks it,
+    /// and with no floor a long name left the branch an icon and "…".
+    static let minimumCharacters = 12
+
+    /// The branch's full width when it is short, else room for
+    /// `minimumCharacters` (middle-truncated).
+    static func minimumWidth(for label: String, fontSize: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
+        let glyph = ("M" as NSString).size(withAttributes: [.font: font]).width
+        let full = (label as NSString).size(withAttributes: [.font: font]).width
+        return (min(full, glyph * CGFloat(minimumCharacters)) + 1).rounded(.up)
+    }
+}
+
 private struct SessionIdentityLine: View {
     let session: SessionSnapshot
     let sessionId: String
@@ -2921,14 +2937,17 @@ private struct SessionIdentityLine: View {
             }
 
             if showGitBranch, let branch = session.gitBranch {
+                let label = session.gitIsWorktree ? "\(branch) ⧉" : branch
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: max(sessionFontSize - 1, 8), weight: .semibold))
-                    Text(session.gitIsWorktree ? "\(branch) ⧉" : branch)
+                    Text(label)
                         .font(.system(size: sessionFontSize, weight: .medium, design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .frame(minWidth: BranchLabelMetrics.minimumWidth(for: label, fontSize: sessionFontSize))
                 }
+                .help(label)
                 .foregroundStyle(sessionColor.opacity(0.85))
                 .layoutPriority(1)
             }
