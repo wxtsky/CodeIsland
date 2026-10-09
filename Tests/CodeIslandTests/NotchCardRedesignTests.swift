@@ -12,6 +12,12 @@ import CodeIslandCore
 final class NotchCardRedesignTests: XCTestCase {
     private var sandbox: DefaultsSandbox?
     private var savedLanguage = ""
+    /// The panel's @AppStorage reads come from a suite of this test's own,
+    /// so a concurrent test run clearing the shared defaults domain can't
+    /// change the text size under a render. (ShortcutAction reads its
+    /// switches from the standard defaults itself.)
+    private var cardDefaults = UserDefaults.standard
+    private var cardSuiteName = ""
 
     override func setUp() {
         super.setUp()
@@ -19,12 +25,15 @@ final class NotchCardRedesignTests: XCTestCase {
         sandbox = DefaultsSandbox(keys: DefaultsSandbox.allSettingsKeys)
         savedLanguage = L10n.shared.language
         L10n.shared.language = "en"
+        cardSuiteName = "CodeIsland.NotchCardRedesignTests.\(UUID().uuidString)"
+        cardDefaults = UserDefaults(suiteName: cardSuiteName) ?? .standard
         MascotAnimationGate.shared.setPanelVisible(false)
     }
 
     override func tearDown() {
         MascotAnimationGate.shared.setPanelVisible(true)
         L10n.shared.language = savedLanguage
+        cardDefaults.removePersistentDomain(forName: cardSuiteName)
         sandbox?.restore()
         super.tearDown()
     }
@@ -167,10 +176,10 @@ final class NotchCardRedesignTests: XCTestCase {
 
     func testCardGrowsWithContentFontSize() async throws {
         func height(fontSize: Int) async throws -> CGFloat {
-            UserDefaults.standard.set(fontSize, forKey: SettingsKey.contentFontSize)
+            cardDefaults.set(fontSize, forKey: SettingsKey.contentFontSize)
             let demo = try await GalleryDemo.approval(.bashShort, lang: .en)
             defer { demo.release() }
-            let host = CardHost(demo.state)
+            let host = CardHost(demo.state, defaults: cardDefaults)
             defer { host.close() }
             return try host.snapshot().panelHeight
         }
@@ -182,7 +191,7 @@ final class NotchCardRedesignTests: XCTestCase {
     // MARK: - Fit at the largest size
 
     func testApprovalCardsFitTheWindowAtTheLargestTextSize() async throws {
-        UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
+        cardDefaults.set(16, forKey: SettingsKey.contentFontSize)
         ShortcutAction.approve.setEnabled(true)
         ShortcutAction.deny.setEnabled(true)
         for language in ["en", "de", "tr", "zh"] {
@@ -196,7 +205,7 @@ final class NotchCardRedesignTests: XCTestCase {
     }
 
     func testQuestionCardsFitTheWindowAtTheLargestTextSize() async throws {
-        UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
+        cardDefaults.set(16, forKey: SettingsKey.contentFontSize)
         for language in ["en", "de", "tr"] {
             L10n.shared.language = language
             for kind in QuestionKind.allCases {
@@ -210,7 +219,7 @@ final class NotchCardRedesignTests: XCTestCase {
     func testCardsFitANarrowPanelAtTheLargestTextSize() async throws {
         // The panel is min(620, screen − 40) wide; on a small display it has
         // less than the usual 580pt for German and Turkish labels.
-        UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
+        cardDefaults.set(16, forKey: SettingsKey.contentFontSize)
         for action in [ShortcutAction.approve, .approveAlways, .deny, .skipQuestion] { action.setEnabled(true) }
         for language in ["de", "tr"] {
             L10n.shared.language = language
@@ -232,7 +241,7 @@ final class NotchCardRedesignTests: XCTestCase {
     func testAVeryLongCommandScrollsInsteadOfBeingCutOff() async throws {
         // A heredoc of eighty lines was squeezed into what the window left
         // and cut off mid-command; it now scrolls, and the buttons stay put.
-        UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
+        cardDefaults.set(16, forKey: SettingsKey.contentFontSize)
         let state = AppState()
         var s = SessionSnapshot()
         s.source = "claude"
@@ -251,7 +260,7 @@ final class NotchCardRedesignTests: XCTestCase {
         state.surface = .approvalCard(sessionId: "c")
         try assertFits(state, "an eighty-line command", primaryVisible: true)
 
-        let host = CardHost(state)
+        let host = CardHost(state, defaults: cardDefaults)
         defer { host.close() }
         let scrolls = host.scrollViews.contains { scroll in
             (scroll.documentView?.frame.height ?? 0) > scroll.contentView.bounds.height + 200
@@ -269,7 +278,7 @@ final class NotchCardRedesignTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) throws {
-        let host = CardHost(state, screenWidth: screenWidth)
+        let host = CardHost(state, defaults: cardDefaults, screenWidth: screenWidth)
         defer { host.close() }
         let shot = try host.snapshot()
         XCTAssertGreaterThan(shot.gapUnderPanel, 0, "\(what) runs off the bottom of the window", file: file, line: line)
@@ -288,12 +297,13 @@ private struct CardHost {
     let window: NSWindow
     let size: CGSize
 
-    init(_ state: AppState, screenWidth: CGFloat = 1512, notchHeight: CGFloat = 32) {
-        let maxVisible = UserDefaults.standard.object(forKey: SettingsKey.maxVisibleSessions) as? Int
+    init(_ state: AppState, defaults: UserDefaults, screenWidth: CGFloat = 1512, notchHeight: CGFloat = 32) {
+        let maxVisible = defaults.object(forKey: SettingsKey.maxVisibleSessions) as? Int
             ?? SettingsDefaults.maxVisibleSessions
         size = CGSize(width: min(620, screenWidth - 40), height: PanelHeightMetrics.desiredHeight(maxVisibleSessions: maxVisible))
         let view = NotchPanelView(appState: state, hasNotch: true, notchHeight: notchHeight, notchW: 185, screenWidth: screenWidth)
             .environment(\.mascotStaticTime, 5.2)
+            .defaultAppStorage(defaults)
             .background(Color(red: 1, green: 0, blue: 0))
         host = NSHostingView(rootView: AnyView(view))
         host.sizingOptions = []
