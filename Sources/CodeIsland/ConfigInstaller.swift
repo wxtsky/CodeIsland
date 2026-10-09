@@ -1217,11 +1217,7 @@ struct ConfigInstaller {
         }
         if source == "grok" { return FileManager.default.fileExists(atPath: grokHome()) }
         if source == "copilot" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.copilot") }
-        if source == "cline" {
-            let fm = FileManager.default
-            return fm.fileExists(atPath: NSHomeDirectory() + "/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev")
-                || fm.fileExists(atPath: NSHomeDirectory() + "/Documents/Cline")
-        }
+        if source == "cline" { return clinePresenceDetected() }
         if source == "google-antigravity" {
             // Detect via Antigravity-specific markers, NOT bare ~/.gemini (which the
             // plain Gemini CLI also creates). See installExternalHooks gating (#215).
@@ -3172,8 +3168,18 @@ struct ConfigInstaller {
         printf '{"cancel":false}'
         """
 
+    /// Cline is on this machine: the VS Code extension's storage, or Cline's
+    /// own `~/Documents/Cline` folder (it keeps Rules / Workflows there).
+    static func clinePresenceDetected(home: String = NSHomeDirectory(), fm: FileManager = .default) -> Bool {
+        fm.fileExists(atPath: home + "/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev")
+            || fm.fileExists(atPath: home + "/Documents/Cline")
+    }
+
     @discardableResult
     private static func installClineHooks(cli: CLIConfig, fm: FileManager) -> Bool {
+        // Never create ~/Documents/Cline/Hooks for someone without Cline (same
+        // presence rule as cliExists): the folder made Cline look detected.
+        guard clinePresenceDetected(home: cli.rootOverride?() ?? NSHomeDirectory(), fm: fm) else { return true }
         let hooksDir = cli.fullPath
         if !fm.fileExists(atPath: hooksDir) {
             try? fm.createDirectory(atPath: hooksDir, withIntermediateDirectories: true)
@@ -3230,9 +3236,14 @@ struct ConfigInstaller {
         return cleaned
     }
 
-    private static func isHooksInstalled(for cli: CLIConfig, fm: FileManager) -> Bool {
+    static func isHooksInstalled(for cli: CLIConfig, fm: FileManager) -> Bool {
         if cli.format == .kimi {
             return isKimiHooksInstalled(cli: cli, fm: fm)
+        }
+        // One script per event in a directory, not a JSON hooks key — read
+        // as JSON it was never installed, and every repair pass rewrote it.
+        if cli.format == .cline {
+            return isClineHooksInstalled(cli: cli, fm: fm)
         }
         if cli.format == .minimaxPlugin {
             return isMinimaxPluginInstalled(cli: cli, fm: fm)
