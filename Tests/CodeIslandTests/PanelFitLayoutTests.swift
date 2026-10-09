@@ -83,6 +83,38 @@ final class PanelFitLayoutTests: XCTestCase {
         XCTAssertGreaterThan(try panel.gapUnderPanel(), 0, "the question card runs off the bottom of the window")
     }
 
+    // MARK: - Approval card
+
+    func testApprovalCardHeadsItselfWithTheSessionAsking() async throws {
+        // With several sessions queued, the card said only "! Bash" — not
+        // which project's command it was about to allow. It now opens with
+        // the same context row as a question card (agent icon + project),
+        // which only a card whose session is gone goes without.
+        func cardHeight(sessionKnown: Bool) async throws -> CGFloat {
+            let state = AppState()
+            var s = SessionSnapshot()
+            s.source = "codex"
+            s.cwd = "/Users/dev/code/api-server"
+            s.status = .waitingApproval
+            if sessionKnown { state.sessions = ["c": s] }
+            state.activeSessionId = "c"
+            let release = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
+                "hook_event_name": "PermissionRequest", "session_id": "c", "cwd": "/Users/dev/code/api-server",
+                "_source": "codex", "tool_name": "Bash", "tool_input": ["command": "cargo test"],
+            ]))
+            defer { release() }
+            state.refreshDerivedState()
+            state.surface = .approvalCard(sessionId: "c")
+            let panel = try PanelHost(state, notchHeight: 32)
+            defer { panel.close() }
+            panel.settle()
+            return panel.height - (try panel.gapUnderPanel())
+        }
+        let withRow = try await cardHeight(sessionKnown: true)
+        let withoutRow = try await cardHeight(sessionKnown: false)
+        XCTAssertGreaterThan(withRow - withoutRow, 14, "the approval card has no session context row")
+    }
+
     // MARK: - Fixtures
 
     private struct Demo {

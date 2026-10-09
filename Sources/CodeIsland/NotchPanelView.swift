@@ -1258,6 +1258,67 @@ private struct ApprovalToolDetailView: View {
     }
 }
 
+/// CLI icon + project folder (or session title) heading an approval or
+/// question card, so a card always says which session is asking — with
+/// several agents queued, "! Bash" alone gave no clue whose command it was.
+/// Clicking it focuses that session's terminal, where the full transcript is.
+private struct NotchCardContextRow: View {
+    let source: String?
+    let cwd: String?
+    let session: SessionSnapshot?
+    let canJump: Bool
+    let onJump: () -> Void
+    @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @State private var hovering = false
+
+    static func isShown(source: String?, cwd: String?, canJump: Bool) -> Bool {
+        source != nil || cwd != nil || canJump
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let src = source, let icon = cliIcon(source: src, size: 12) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 12, height: 12)
+                    .help(session?.sourceLabel ?? src)
+            }
+            if let label = SessionHeadline.contextLabel(
+                projectName: cwd.map { ($0 as NSString).lastPathComponent },
+                sessionLabel: session?.sessionLabel,
+                showProjectName: showProjectName
+            ) {
+                Image(systemName: showProjectName ? "folder.fill" : "text.bubble.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.5))
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            if canJump {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.35))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(hovering ? Color.white.opacity(0.09) : Color.clear)
+        )
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { onJump() }
+        .onHover { h in
+            guard canJump else { return }
+            withAnimation(NotchAnimation.micro) { hovering = h }
+        }
+    }
+}
+
 private struct ApprovalBar: View {
     let tool: String
     let toolInput: [String: Any]?
@@ -1289,8 +1350,23 @@ private struct ApprovalBar: View {
         toolInput?["server_name"] as? String
     }
 
+    /// Same rule as QuestionBar: no local terminal (remote, unknown harness)
+    /// means no jump affordance.
+    private var canJumpToTerminal: Bool { session?.canJumpFromNotch ?? false }
+
     var body: some View {
         VStack(spacing: 8) {
+            // Which session is asking — doubles as the click-to-jump target
+            if NotchCardContextRow.isShown(source: session?.source, cwd: session?.cwd, canJump: canJumpToTerminal) {
+                NotchCardContextRow(
+                    source: session?.source,
+                    cwd: session?.cwd,
+                    session: session,
+                    canJump: canJumpToTerminal,
+                    onJump: handleCardClick
+                )
+            }
+
             // Tool name + file context
             HStack(spacing: 6) {
                 Text("!")
@@ -1493,7 +1569,6 @@ private struct QuestionBar: View {
     let requestId: UUID?
     let sessionSource: String?
     let sessionContext: String?
-    @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     /// Owning session, so the card can focus its terminal on click the same way
     /// ApprovalBar does. Optional: the session may be gone while the card is
     /// still on screen.
@@ -1513,7 +1588,6 @@ private struct QuestionBar: View {
     // Click-to-jump state, mirroring ApprovalBar
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
-    @State private var jumpRowHovering = false
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
 
     // Multi-question wizard state, bound to `requestId` (#333)
@@ -1540,7 +1614,7 @@ private struct QuestionBar: View {
     var body: some View {
         VStack(spacing: 8) {
             // Session context — doubles as the click-to-jump target
-            if sessionSource != nil || sessionContext != nil || canJumpToTerminal {
+            if NotchCardContextRow.isShown(source: sessionSource, cwd: sessionContext, canJump: canJumpToTerminal) {
                 sessionContextRow
             }
 
@@ -1569,49 +1643,14 @@ private struct QuestionBar: View {
         }
     }
 
-    /// CLI icon + project folder. Clicking it focuses the terminal that asked
-    /// the question, so the answer can be given where the full transcript is —
-    /// the notch card previously offered no way back to the conversation.
     private var sessionContextRow: some View {
-        HStack(spacing: 5) {
-            if let src = sessionSource, let icon = cliIcon(source: src, size: 12) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 12, height: 12)
-            }
-            if let label = SessionHeadline.contextLabel(
-                projectName: sessionContext.map { ($0 as NSString).lastPathComponent },
-                sessionLabel: session?.sessionLabel,
-                showProjectName: showProjectName
-            ) {
-                Image(systemName: showProjectName ? "folder.fill" : "text.bubble.fill")
-                    .font(.system(size: 8))
-                    .foregroundStyle(.white.opacity(0.5))
-                Text(label)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-            if canJumpToTerminal {
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(jumpRowHovering ? 0.85 : 0.35))
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(jumpRowHovering ? Color.white.opacity(0.09) : Color.clear)
+        NotchCardContextRow(
+            source: sessionSource,
+            cwd: sessionContext,
+            session: session,
+            canJump: canJumpToTerminal,
+            onJump: handleCardClick
         )
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
-        .onTapGesture { handleCardClick() }
-        .onHover { hovering in
-            guard canJumpToTerminal else { return }
-            withAnimation(NotchAnimation.micro) { jumpRowHovering = hovering }
-        }
     }
 
     // MARK: - Click-to-jump handling
