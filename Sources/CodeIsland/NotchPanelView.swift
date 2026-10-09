@@ -2833,6 +2833,7 @@ private struct SessionListView: View {
     @State private var contentHeight: CGFloat = 0
     /// The order on screen is held while the pointer is over the list.
     @State private var orderFreeze = SessionOrderFreeze()
+    @State private var thawTask: Task<Void, Never>?
 
     private var density: SessionListDensity {
         // The completion card is one full card whatever the setting.
@@ -2858,8 +2859,13 @@ private struct SessionListView: View {
 
         switch groupingMode {
         case "status":
-            // What waits on you heads the list here too (SessionListGrouping).
-            return SessionListGrouping.byStatus(sorted, sessions: appState.sessions).map { group in
+            // What waits on you heads the list here too (SessionListGrouping);
+            // while the order is held, so is each card's section.
+            let freeze = orderFreeze
+            let sessions = appState.sessions
+            return SessionListGrouping.byStatus(sorted) { id in
+                freeze.status(of: id, live: sessions[id]?.status)
+            }.map { group in
                 ("\(L10n.shared[group.labelKey]) (\(group.ids.count))", nil, group.ids)
             }
 
@@ -2999,13 +3005,25 @@ private struct SessionListView: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         // Cards needing you sort to the top — but not while the pointer is on
         // the list, where a card moving would put another under the cursor
-        // just as it clicks. The list re-sorts once the pointer leaves.
+        // just as it clicks. The list re-sorts once the pointer leaves. The
+        // whole area counts (gaps between cards included), and a brief exit
+        // past the edge doesn't release the hold.
+        .contentShape(Rectangle())
         .onHover { inside in
             guard onlySessionId == nil else { return }
+            thawTask?.cancel()
+            thawTask = nil
             if inside {
-                orderFreeze.freeze(appState.sessionListOrder())
+                orderFreeze.freeze(
+                    appState.sessionListOrder(),
+                    statuses: appState.sessions.mapValues(\.status)
+                )
             } else {
-                withAnimation(reduceMotion ? nil : NotchAnimation.micro) { orderFreeze.thaw() }
+                thawTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: SessionOrderFreeze.releaseDelay)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(reduceMotion ? nil : NotchAnimation.micro) { orderFreeze.thaw() }
+                }
             }
         }
 
@@ -4198,14 +4216,15 @@ private struct SessionCard: View {
                 sessionColor: .white.opacity(0.76),
                 dividerColor: .white.opacity(0.28)
             )
-            // Offered the row before the spacer, so a short name never
-            // truncates while blank space sits beside it.
-            .layoutPriority(1)
-            Spacer(minLength: 8)
+            // The line itself fills the gap up to the tags: a Spacer here took
+            // a share of the row and truncated a short name beside blank space.
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 4) {
                 if let remote = session.remoteDisplayName {
                     SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                        .frame(maxWidth: 110)
+                        .help("@\(remote)")
                 }
                 if !session.subagents.isEmpty {
                     SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
@@ -4222,8 +4241,6 @@ private struct SessionCard: View {
                 SessionTag(timeAgo(session.startTime))
                 TerminalBadge(session: session)
             }
-            // Short tags keep their words; the identity line gives way.
-            .fixedSize()
         }
     }
 
@@ -4488,11 +4505,16 @@ private struct SessionCard: View {
         .padding(.horizontal, 6)
     }
 
-    /// One line: the running tool, else the newest of reply / recap / prompt.
-    /// A session that needs you shows its prompt here and its request below.
+    /// One line. A session that needs you shows its prompt here and its
+    /// request below; a working one its tool; a resting one the newest of
+    /// recap / reply / prompt.
     @ViewBuilder
     private var compactActivity: some View {
-        if case .tool(let tool)? = liveRow {
+        if cardStatus == .needsYou {
+            if let prompt = session.lastUserPrompt {
+                SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
+            }
+        } else if case .tool(let tool)? = liveRow {
             HStack(spacing: 6) {
                 SessionToolChip(tool: tool, color: cardStatus.color, fontSize: fontSize)
                 if let detail = session.toolDescription, !detail.isEmpty {
@@ -4503,16 +4525,17 @@ private struct SessionCard: View {
                         .truncationMode(.tail)
                 }
             }
-        } else if cardStatus == .needsYou || cardStatus == .working || cardStatus == .thinking {
+        } else if cardStatus == .working || cardStatus == .thinking {
             if let prompt = session.lastUserPrompt {
                 SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
             } else if liveRow == .thinking {
                 TypingIndicator(fontSize: max(10, fontSize - 1), label: "thinking")
             }
+        } else if showSessionRecap, let recap = session.visibleRecap {
+            // Written after the reply, as a summary of where things stand.
+            SessionGlyphLine(kind: .recap, text: recap.text, fontSize: max(10, fontSize - 1))
         } else if let reply = session.lastAssistantMessage {
             SessionGlyphLine(kind: .reply, text: reply, fontSize: max(10, fontSize - 1))
-        } else if showSessionRecap, let recap = session.visibleRecap {
-            SessionGlyphLine(kind: .recap, text: recap.text, fontSize: max(10, fontSize - 1))
         } else if let prompt = session.lastUserPrompt {
             SessionGlyphLine(kind: .prompt, text: prompt, fontSize: max(10, fontSize - 1))
         }
@@ -4542,11 +4565,12 @@ private struct SessionCard: View {
 
     /// The row keeps one line; the hover shows who it is and the latest reply.
     private var compactTooltip: String {
-        let name = session.headline(showProjectName: showProjectName).text
-        let latest = session.lastAssistantMessage.map(stripDirectives)
-            ?? session.visibleRecap?.text
-            ?? session.lastUserPrompt
-        return [name, latest].compactMap { $0 }.joined(separator: "\n")
+        CompactSessionRowMetrics.tooltip(
+            name: session.headline(showProjectName: showProjectName).text,
+            latest: session.lastAssistantMessage.map(stripDirectives)
+                ?? session.visibleRecap?.text
+                ?? session.lastUserPrompt
+        )
     }
 
     // MARK: Shared
@@ -4677,6 +4701,8 @@ struct SessionToolChip: View {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(color.opacity(0.12))
             )
+            // VoiceOver would read the triangle's Unicode name.
+            .accessibilityLabel(String(format: L10n.shared["session_a11y_running_tool"], ToolNameDisplay.compact(tool)))
     }
 }
 
@@ -4701,6 +4727,11 @@ enum SessionGlyph {
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
         return ("M" as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
     }
+
+    /// What VoiceOver says for each glyph instead of its Unicode name.
+    static var promptSpoken: String { L10n.shared["session_a11y_prompt"] }
+    static var replySpoken: String { L10n.shared["session_a11y_reply"] }
+    static var recapSpoken: String { L10n.shared["session_recap"] }
 }
 
 /// One line led by a glyph — the prompt line on a full card, and the latest
@@ -4739,11 +4770,14 @@ private struct SessionGlyphLine: View {
             switch kind {
             case .prompt:
                 Text(SessionGlyph.prompt).font(font).foregroundStyle(SessionGlyph.promptColor)
+                    .accessibilityLabel(SessionGlyph.promptSpoken)
             case .reply:
                 Text(SessionGlyph.reply).font(font).foregroundStyle(SessionGlyph.replyColor)
                     .scaleEffect(SessionGlyph.replyScale)
+                    .accessibilityLabel(SessionGlyph.replySpoken)
             case .recap:
                 Text(SessionGlyph.recap).font(font).foregroundStyle(SessionMetadataStyle.recapAccent)
+                    .accessibilityLabel(SessionGlyph.recapSpoken)
             }
         }
         .frame(width: SessionGlyph.columnWidth(fontSize))
@@ -5018,6 +5052,10 @@ private struct NotchPanelShape: Shape {
 private struct TerminalBadge: View {
     let session: SessionSnapshot
 
+    /// The card header keeps its tags at full size, so a long terminal or
+    /// host name is cut here rather than squeezing the project name.
+    static let labelMaxWidth: CGFloat = 96
+
     private static let sourceBundleIds: [String: String] = [
         "cursor": "com.todesktop.230313mzl4w4u92",
         "trae": "com.trae.app",
@@ -5100,6 +5138,8 @@ private struct TerminalBadge: View {
                         Text(term)
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(remoteColor)
+                            .lineLimit(1)
+                            .frame(maxWidth: TerminalBadge.labelMaxWidth, alignment: .leading)
                     }
                     multiplexerChip(fg: remoteColor, bg: remoteColor.opacity(0.16))
                 }
@@ -5120,6 +5160,8 @@ private struct TerminalBadge: View {
                         Text(term)
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(1)
+                            .frame(maxWidth: TerminalBadge.labelMaxWidth, alignment: .leading)
                     }
                     multiplexerChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
                     hostHarnessChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
@@ -5341,6 +5383,7 @@ private struct SessionTag: View {
         Text(text)
             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
             .foregroundStyle(color)
+            .lineLimit(1)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
@@ -5562,6 +5605,7 @@ private struct ChatMessageRow: View, Equatable {
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(SessionGlyph.promptColor)
                     .frame(width: SessionGlyph.columnWidth(fontSize))
+                    .accessibilityLabel(SessionGlyph.promptSpoken)
                 Text(ChatMessageTextFormatter.literalText(text))
                     .font(.system(size: fontSize, design: .monospaced))
                     .foregroundStyle(SessionGlyph.promptTextColor)
@@ -5575,6 +5619,7 @@ private struct ChatMessageRow: View, Equatable {
                     .foregroundStyle(SessionGlyph.replyColor)
                     .scaleEffect(SessionGlyph.replyScale)
                     .frame(width: SessionGlyph.columnWidth(fontSize))
+                    .accessibilityLabel(SessionGlyph.replySpoken)
                 // Block Markdown when uncapped or on the completion card, a
                 // marker-free preview under the reply-line cap
                 // (MarkdownReplyView.swift).

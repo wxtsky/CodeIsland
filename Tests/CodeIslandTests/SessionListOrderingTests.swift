@@ -59,21 +59,25 @@ final class SessionListOrderingTests: XCTestCase {
 
     func testNeedsYouFirstThenWorkingThenTheRestByRecentActivity() {
         let now = Date()
+        // The request queued first is the older one and sorts last by name,
+        // so only the queue rank can put it on top.
         let sessions: [String: SessionSnapshot] = [
             "a-idle-old": session(.idle, prompt: "p", activity: now.addingTimeInterval(-600)),
             "b-running": session(.running, started: now.addingTimeInterval(-300)),
-            "c-question": session(.waitingQuestion),
+            "c-question": session(.waitingQuestion, activity: now.addingTimeInterval(-5)),
             "d-idle-new": session(.idle, prompt: "p", activity: now.addingTimeInterval(-10)),
             "e-thinking": session(.processing, started: now.addingTimeInterval(-60)),
-            "f-approval": session(.waitingApproval),
+            "z-approval": session(.waitingApproval, activity: now.addingTimeInterval(-500)),
             "g-stopped": stoppedSession(activity: now.addingTimeInterval(-100)),
         ]
-        let order = SessionListOrdering.order(sessions, requestRank: ["f-approval": 0, "c-question": 1])
+        let order = SessionListOrdering.order(sessions, requestRank: ["z-approval": 0, "c-question": 1])
         XCTAssertEqual(order, [
-            "f-approval", "c-question",      // needs you, in queue order
+            "z-approval", "c-question",      // needs you, in queue order
             "e-thinking", "b-running",       // working, newest session first
             "d-idle-new", "g-stopped", "a-idle-old", // the rest, most recent activity first
         ])
+        // Without a queue position, needs-you sessions go by recent activity.
+        XCTAssertEqual(Array(SessionListOrdering.order(sessions).prefix(2)), ["c-question", "z-approval"])
     }
 
     func testApprovalsRankBeforeQuestionsInTheQueue() {
@@ -105,22 +109,25 @@ final class SessionListOrderingTests: XCTestCase {
     }
 
     func testAppStateOrdersByItsRequestQueues() async throws {
+        // "zeta" asked first but is older and sorts last by name: only the
+        // queue can put it on top.
         let state = AppState()
+        let now = Date()
         state.sessions = [
-            "idle": session(.idle, prompt: "p"),
-            "late": session(.waitingApproval),
-            "early": session(.waitingApproval),
+            "idle": session(.idle, prompt: "p", activity: now),
+            "alpha": session(.waitingApproval, activity: now.addingTimeInterval(-5)),
+            "zeta": session(.waitingApproval, activity: now.addingTimeInterval(-300)),
         ]
-        let releaseEarly = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
-            "hook_event_name": "PermissionRequest", "session_id": "early", "tool_name": "Bash",
+        let releaseFirst = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
+            "hook_event_name": "PermissionRequest", "session_id": "zeta", "tool_name": "Bash",
             "tool_input": ["command": "ls"],
         ]))
-        let releaseLate = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
-            "hook_event_name": "PermissionRequest", "session_id": "late", "tool_name": "Bash",
+        let releaseSecond = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
+            "hook_event_name": "PermissionRequest", "session_id": "alpha", "tool_name": "Bash",
             "tool_input": ["command": "pwd"],
         ]))
-        defer { releaseLate(); releaseEarly() }
-        XCTAssertEqual(state.sessionListOrder(), ["early", "late", "idle"],
+        defer { releaseSecond(); releaseFirst() }
+        XCTAssertEqual(state.sessionListOrder(), ["zeta", "alpha", "idle"],
                        "the request the inline buttons can answer comes first")
     }
 
@@ -169,6 +176,46 @@ final class SessionListOrderingTests: XCTestCase {
         XCTAssertEqual(groups.map(\.labelKey), ["status_idle"])
     }
 
+    func testAHeldListKeepsEachCardInItsSection() {
+        var freeze = SessionOrderFreeze()
+        freeze.freeze(["ask", "run"], statuses: ["ask": .waitingApproval, "run": .running])
+        // The approval was just allowed: "ask" is running now.
+        let live: [String: AgentStatus] = ["ask": .running, "run": .running, "new": .idle]
+        let held = SessionListGrouping.byStatus(freeze.apply(["ask", "run", "new"])) {
+            freeze.status(of: $0, live: live[$0])
+        }
+        XCTAssertEqual(held.map(\.labelKey), ["status_waiting", "status_running", "status_idle"])
+        XCTAssertEqual(held.first?.ids, ["ask"], "the card changed section under the pointer")
+
+        freeze.thaw()
+        let released = SessionListGrouping.byStatus(["ask", "run", "new"]) { freeze.status(of: $0, live: live[$0]) }
+        XCTAssertEqual(released.map(\.labelKey), ["status_running", "status_idle"])
+    }
+
+    func testCompactTooltipCutsALongReply() {
+        XCTAssertEqual(CompactSessionRowMetrics.tooltip(name: "web-app", latest: nil), "web-app")
+        XCTAssertEqual(CompactSessionRowMetrics.tooltip(name: "web-app", latest: "  Done.  "), "web-app\nDone.")
+        let long = CompactSessionRowMetrics.tooltip(name: "web-app", latest: String(repeating: "word ", count: 400))
+        XCTAssertLessThanOrEqual(long.count, "web-app\n".count + CompactSessionRowMetrics.tooltipCharacters + 1)
+        XCTAssertTrue(long.hasSuffix("…"))
+    }
+
+    func testCoworkTurnsSetAndClearError() {
+        var audit = CoworkAuditState()
+        audit.apply(.userPrompt(text: "go", isSynthetic: false))
+        audit.apply(.turnEnded(isError: true, resultText: "Overloaded", interrupted: false))
+        var snapshot = session(.processing, prompt: "go")
+        AppState.applyCoworkAuditState(&snapshot, state: audit)
+        XCTAssertEqual(SessionCardStatus(snapshot), .error)
+
+        // A later turn stopped with the Stop button reads STOPPED, not ERROR:
+        // Cowork has no prompt hook and a stopped turn skips the completion.
+        audit.apply(.userPrompt(text: "again", isSynthetic: false))
+        audit.apply(.turnEnded(isError: false, resultText: nil, interrupted: true))
+        AppState.applyCoworkAuditState(&snapshot, state: audit)
+        XCTAssertEqual(SessionCardStatus(snapshot), .stopped)
+    }
+
     // MARK: - ERROR after a failed turn
 
     func testAFailedTurnReadsErrorUntilTheNextPrompt() throws {
@@ -207,15 +254,17 @@ final class SessionListOrderingTests: XCTestCase {
     func testDensityIsLocalizedInEveryLanguage() {
         let saved = L10n.shared.language
         defer { L10n.shared.language = saved }
-        let keys = ["session_list_density", "session_list_density_desc",
+        let keys = ["session_list_density", "session_list_density_desc", "max_visible_sessions_desc_compact",
                     "session_inline_deny", "session_inline_allow_once", "session_inline_always",
-                    "session_inline_queued_hint"] + SessionListDensity.allCases.map(\.titleKey)
+                    "session_inline_queued_hint", "session_a11y_prompt", "session_a11y_reply",
+                    "session_a11y_running_tool"] + SessionListDensity.allCases.map(\.titleKey)
         for language in ["en", "de", "zh", "zh-Hant", "ja", "ko", "tr"] {
             L10n.shared.language = language
             for key in keys {
                 XCTAssertNotEqual(L10n.shared[key], key, "\(language) lacks \(key)")
             }
             XCTAssertTrue(L10n.shared["session_inline_always"].contains("%@"), language)
+            XCTAssertTrue(L10n.shared["session_a11y_running_tool"].contains("%@"), language)
         }
     }
 

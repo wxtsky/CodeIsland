@@ -159,9 +159,7 @@ enum SessionListOrdering {
 
 /// "Group by status" sections.
 enum SessionListGrouping {
-    /// Section order: what waits on you, then what is running. A session that
-    /// changes status moves to its new section even while the order is held —
-    /// the header above a card has to stay true.
+    /// Section order: what waits on you, then what is running.
     static let statusSections: [(statuses: Set<AgentStatus>, labelKey: String)] = [
         ([.waitingApproval, .waitingQuestion], "status_waiting"),
         ([.running], "status_running"),
@@ -169,17 +167,27 @@ enum SessionListGrouping {
         ([.idle], "status_idle"),
     ]
 
-    /// Non-empty sections, each keeping `orderedIds`' order.
+    /// Non-empty sections, each keeping `orderedIds`' order. `status` says
+    /// which section a session sits in — the held one while the pointer is on
+    /// the list (SessionOrderFreeze.status), so a card doesn't change section
+    /// under the cursor either; its chip still shows the live status.
+    static func byStatus(
+        _ orderedIds: [String],
+        status: (String) -> AgentStatus?
+    ) -> [(labelKey: String, ids: [String])] {
+        statusSections.compactMap { section in
+            let ids = orderedIds.filter { id in
+                status(id).map { section.statuses.contains($0) } ?? false
+            }
+            return ids.isEmpty ? nil : (section.labelKey, ids)
+        }
+    }
+
     static func byStatus(
         _ orderedIds: [String],
         sessions: [String: SessionSnapshot]
     ) -> [(labelKey: String, ids: [String])] {
-        statusSections.compactMap { section in
-            let ids = orderedIds.filter { id in
-                sessions[id].map { section.statuses.contains($0.status) } ?? false
-            }
-            return ids.isEmpty ? nil : (section.labelKey, ids)
-        }
+        byStatus(orderedIds) { sessions[$0]?.status }
     }
 }
 
@@ -188,18 +196,35 @@ enum SessionListGrouping {
 /// re-sorts when the pointer leaves.
 struct SessionOrderFreeze: Equatable {
     private(set) var frozen: [String]?
+    /// Statuses when the hold began: "Group by status" keeps each card in the
+    /// section it was in.
+    private(set) var frozenStatuses: [String: AgentStatus] = [:]
+
+    /// How long the pointer may be off the list before it re-sorts — enough
+    /// to cross the panel's edge and come back.
+    static let releaseDelay: UInt64 = 250_000_000
 
     var isFrozen: Bool { frozen != nil }
 
     /// Pointer entered: keep what is on screen now. A second call while
     /// already frozen keeps the first order.
-    mutating func freeze(_ current: [String]) {
-        if frozen == nil { frozen = current }
+    mutating func freeze(_ current: [String], statuses: [String: AgentStatus] = [:]) {
+        guard frozen == nil else { return }
+        frozen = current
+        frozenStatuses = statuses
     }
 
     /// Pointer left: back to the live order.
     mutating func thaw() {
         frozen = nil
+        frozenStatuses = [:]
+    }
+
+    /// The status that places a session in a "Group by status" section: the
+    /// held one while frozen (a session that started since uses its own).
+    func status(of id: String, live: AgentStatus?) -> AgentStatus? {
+        guard isFrozen, let held = frozenStatuses[id] else { return live }
+        return held
     }
 
     /// The order to show. While frozen, sessions keep their places; a session
@@ -232,6 +257,21 @@ enum CompactSessionRowMetrics {
     static let rowHeight: CGFloat = 34
     /// Gap between rows.
     static let spacing: CGFloat = 3
+
+    /// Longest reply excerpt a row's tooltip carries; the completion card is
+    /// where a whole reply is read.
+    static let tooltipCharacters = 280
+
+    /// "<name>\n<latest reply, cut to tooltipCharacters>".
+    static func tooltip(name: String, latest: String?) -> String {
+        guard let latest = latest?.trimmingCharacters(in: .whitespacesAndNewlines), !latest.isEmpty else {
+            return name
+        }
+        let excerpt = latest.count > tooltipCharacters
+            ? latest.prefix(tooltipCharacters).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+            : latest
+        return "\(name)\n\(excerpt)"
+    }
 
     /// The status word, a little smaller than the row's text.
     static func statusFontSize(_ contentFontSize: CGFloat) -> CGFloat {

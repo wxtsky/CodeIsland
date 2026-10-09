@@ -1360,7 +1360,9 @@ private struct AppearancePage: View {
                     Text(l10n["unlimited"]).tag(99)
                 } label: {
                     Text(l10n["max_visible_sessions"])
-                    Text(l10n["max_visible_sessions_desc"])
+                    // Compact scrolls by height, not by count.
+                    Text(l10n[sessionListDensityBinding.wrappedValue == .compact
+                        ? "max_visible_sessions_desc_compact" : "max_visible_sessions_desc"])
                 }
                 Picker(selection: sessionListDensityBinding) {
                     ForEach(SessionListDensity.allCases, id: \.self) { density in
@@ -1621,6 +1623,7 @@ private struct AppearancePreview: View {
             .foregroundStyle(color)
             .scaleEffect(scale)
             .frame(width: SessionGlyph.columnWidth(fs))
+            .accessibilityHidden(true)
     }
 }
 
