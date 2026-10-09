@@ -220,7 +220,7 @@ final class CompletionCardLayoutTests: XCTestCase {
 /// The real panel hosted as PanelWindowController hosts it, on a red
 /// backdrop so the panel's black bottom edge can be read from the pixels.
 @MainActor
-private struct PanelHost {
+struct PanelHost {
     let host: NSHostingView<AnyView>
     let window: NSWindow
     let height: CGFloat

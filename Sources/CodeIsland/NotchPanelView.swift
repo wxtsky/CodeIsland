@@ -2110,6 +2110,33 @@ private struct PixelButton: View {
 
 // MARK: - Session List
 
+/// When the expanded session list scrolls, and how tall it may get.
+enum SessionListMetrics {
+    /// The window budgets this much per visible session
+    /// (PanelHeightMetrics.desiredHeight).
+    static let heightPerSession: CGFloat = 90
+
+    static func scrollHeight(maxVisibleSessions: Int) -> CGFloat {
+        CGFloat(maxVisibleSessions) * heightPerSession
+    }
+
+    /// Scroll once there are more sessions than the setting shows — or fewer,
+    /// but taller than the room budgeted for them: cards with a task list, an
+    /// approval row or a recap run well past 90pt each, and four of them used
+    /// to push the list and its footer off the bottom of the window with no
+    /// way to reach them.
+    static func needsScroll(
+        isCompletionCard: Bool,
+        sessionCount: Int,
+        contentHeight: CGFloat,
+        maxVisibleSessions: Int
+    ) -> Bool {
+        guard !isCompletionCard else { return false }
+        return sessionCount > maxVisibleSessions
+            || contentHeight > scrollHeight(maxVisibleSessions: maxVisibleSessions) + 0.5
+    }
+}
+
 private struct SessionListView: View {
     var appState: AppState
     /// When set, only show this session (auto-expand on completion)
@@ -2118,6 +2145,8 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    /// Natural height of the session cards, scrolling or not.
+    @State private var contentHeight: CGFloat = 0
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
         if let only = onlySessionId {
@@ -2215,7 +2244,12 @@ private struct SessionListView: View {
         // Compute once per render — groupedSessions, totalCount, needsScroll
         let groups = groupedSessions
         let totalSessionCount = groups.reduce(0) { $0 + $1.ids.count }
-        let needsScroll = onlySessionId == nil && totalSessionCount > maxVisibleSessions
+        let needsScroll = SessionListMetrics.needsScroll(
+            isCompletionCard: onlySessionId != nil,
+            sessionCount: totalSessionCount,
+            contentHeight: contentHeight,
+            maxVisibleSessions: maxVisibleSessions
+        )
         let content = VStack(spacing: 6) {
             ForEach(groups, id: \.header) { group in
                 if !group.header.isEmpty {
@@ -2258,10 +2292,13 @@ private struct SessionListView: View {
             }
         }
         .padding(.vertical, 4)
+        // The same in both branches: inside the scroll view the content still
+        // lays out at its natural height, so switching never flips it back.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
 
         VStack(spacing: 0) {
             if needsScroll {
-                ThinScrollView(maxHeight: CGFloat(maxVisibleSessions) * 90) {
+                ThinScrollView(maxHeight: SessionListMetrics.scrollHeight(maxVisibleSessions: maxVisibleSessions)) {
                     content
                 }
                 .clipShape(
