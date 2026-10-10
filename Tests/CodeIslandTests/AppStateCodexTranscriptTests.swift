@@ -421,6 +421,76 @@ final class AppStateCodexTranscriptTests: XCTestCase {
         XCTAssertEqual(records.map(\.sessionId), ["desktop-child"])
     }
 
+    func testCodexDesktopStateScanExcludesOtherAppServerClientRollout() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-db-client-\(UUID().uuidString)")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let desktopRollout = tempDir.appendingPathComponent("desktop.jsonl")
+        let pluginRollout = tempDir.appendingPathComponent("plugin.jsonl")
+        let legacyRollout = tempDir.appendingPathComponent("legacy.jsonl")
+        let started = #"{"type":"event_msg","payload":{"type":"task_started"}}"#
+        try ([
+            #"{"type":"session_meta","payload":{"id":"desktop","cwd":"/repo","originator":"Codex Desktop","source":"vscode"}}"#,
+            started,
+        ].joined(separator: "\n") + "\n").write(
+            to: desktopRollout,
+            atomically: true,
+            encoding: .utf8
+        )
+        // Claude Code's Codex plugin drives its own `codex app-server`.
+        try ([
+            #"{"type":"session_meta","payload":{"id":"plugin","cwd":"/repo","originator":"Claude Code","source":"vscode"}}"#,
+            started,
+        ].joined(separator: "\n") + "\n").write(
+            to: pluginRollout,
+            atomically: true,
+            encoding: .utf8
+        )
+        try ([
+            #"{"type":"session_meta","payload":{"id":"legacy","cwd":"/repo","source":"vscode"}}"#,
+            started,
+        ].joined(separator: "\n") + "\n").write(
+            to: legacyRollout,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let statePath = tempDir.appendingPathComponent("state_5.sqlite").path
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(statePath, &db), SQLITE_OK)
+        defer { sqlite3_close_v2(db) }
+        let now = Int64(Date().timeIntervalSince1970)
+        XCTAssertEqual(sqlite3_exec(db, """
+            CREATE TABLE threads (
+                id TEXT PRIMARY KEY,
+                rollout_path TEXT NOT NULL,
+                cwd TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                model TEXT,
+                archived INTEGER NOT NULL,
+                source TEXT NOT NULL
+            );
+            INSERT INTO threads VALUES (
+                'desktop', '\(desktopRollout.path)', '/repo', \(now), NULL, 0, 'vscode'
+            );
+            INSERT INTO threads VALUES (
+                'plugin', '\(pluginRollout.path)', '/repo', \(now), NULL, 0, 'vscode'
+            );
+            INSERT INTO threads VALUES (
+                'legacy', '\(legacyRollout.path)', '/repo', \(now), NULL, 0, 'vscode'
+            );
+            """, nil, nil, nil), SQLITE_OK)
+
+        let records = AppState.recentCodexDesktopThreadRecords(
+            statePath: statePath,
+            fileManager: fm
+        )
+        XCTAssertEqual(Set(records.map(\.sessionId)), ["desktop", "legacy"])
+    }
+
     func testReverseLifecycleScanSkipsOversizedUnterminatedTailLine() throws {
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("codeisland-codex-oversized-tail-\(UUID().uuidString).jsonl")
@@ -603,6 +673,118 @@ final class AppStateCodexTranscriptTests: XCTestCase {
         XCTAssertEqual(discovered.map(\.sessionId), ["codexapp:\(rawSessionId)"])
     }
 
+    func testOtherAppServerClientRolloutStaysWithItsOwnProcess() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-client-mode-\(UUID().uuidString)")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let now = Date()
+        let rawSessionId = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+        let sessionsBase = tempDir.appendingPathComponent("sessions")
+        let rollout = try makeCodexRollout(
+            sessionsBase: sessionsBase,
+            sessionId: rawSessionId,
+            cwd: "/shared/repo",
+            now: now,
+            originator: "Claude Code",
+            source: "vscode"
+        )
+
+        let statePath = tempDir.appendingPathComponent("state_5.sqlite").path
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(statePath, &db), SQLITE_OK)
+        defer { sqlite3_close_v2(db) }
+        let sql = """
+            CREATE TABLE threads (
+                id TEXT PRIMARY KEY,
+                rollout_path TEXT NOT NULL,
+                cwd TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                model TEXT,
+                archived INTEGER NOT NULL,
+                source TEXT NOT NULL
+            );
+            INSERT INTO threads VALUES (
+                '\(rawSessionId)', '\(rollout.path)', '/shared/repo',
+                \(Int64(now.timeIntervalSince1970)), 'gpt-test', 0, 'vscode'
+            );
+            """
+        XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK)
+
+        let discovered = AppState.discoverCodexSessions(
+            processes: [
+                CodexProcessDiscoveryCandidate(
+                    pid: 100,
+                    cwd: "/",
+                    startTime: now.addingTimeInterval(-60),
+                    isDesktop: true
+                ),
+                CodexProcessDiscoveryCandidate(
+                    pid: 101,
+                    cwd: "/shared/repo",
+                    startTime: now.addingTimeInterval(-60),
+                    isDesktop: false
+                ),
+            ],
+            sessionsBase: sessionsBase.path,
+            statePath: statePath,
+            now: now,
+            fileManager: fm
+        )
+
+        XCTAssertEqual(discovered.map(\.sessionId), [rawSessionId])
+        XCTAssertEqual(discovered.first?.pid, 101)
+        XCTAssertNil(discovered.first?.termBundleId)
+    }
+
+    func testOtherAppServerClientSubagentRolloutStaysInItsParentNamespace() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory
+            .appendingPathComponent("codeisland-codex-client-child-\(UUID().uuidString)")
+        try fm.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+
+        let now = Date()
+        let childSessionId = "cccccccc-dddd-4eee-8fff-000000000000"
+        let sessionsBase = tempDir.appendingPathComponent("sessions")
+        // A spawned thread keeps its parent's originator under an object source.
+        _ = try makeCodexRollout(
+            sessionsBase: sessionsBase,
+            sessionId: childSessionId,
+            cwd: "/shared/repo",
+            now: now,
+            originator: "Claude Code",
+            source: ["subagent": ["thread_spawn": ["parent_thread_id": "parent-thread"]]]
+        )
+
+        let discovered = AppState.discoverCodexSessions(
+            processes: [
+                CodexProcessDiscoveryCandidate(
+                    pid: 100,
+                    cwd: "/",
+                    startTime: now.addingTimeInterval(-60),
+                    isDesktop: true
+                ),
+                CodexProcessDiscoveryCandidate(
+                    pid: 101,
+                    cwd: "/shared/repo",
+                    startTime: now.addingTimeInterval(-60),
+                    isDesktop: false
+                ),
+            ],
+            sessionsBase: sessionsBase.path,
+            statePath: tempDir.appendingPathComponent("missing.sqlite").path,
+            now: now,
+            fileManager: fm
+        )
+
+        XCTAssertEqual(discovered.map(\.sessionId), [childSessionId])
+        XCTAssertEqual(discovered.first?.parentSessionId, "parent-thread")
+        XCTAssertNil(discovered.first?.termBundleId)
+    }
+
     func testRejectedRootRolloutDoesNotExcludeValidDatabaseRecord() throws {
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory
@@ -753,7 +935,7 @@ final class AppStateCodexTranscriptTests: XCTestCase {
         cwd: String?,
         now: Date,
         originator: String = "Codex Desktop",
-        source: String = "vscode",
+        source: Any = "vscode",
         filenameTimestamp: String = "2000-01-01T00-00-00"
     ) throws -> URL {
         let calendar = Calendar.current
