@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v1.0.36] - 2026-10-10
 
 ### English
 - **Question cards can be dismissed.** A question card used to stay up until it was answered: moving away or clicking elsewhere never folds a card, and Skip is an answer (for AskUserQuestion it denies the tool call). A new Hide button closes the card without answering, like the one on approval cards: the agent keeps waiting, so you can answer in the terminal, and the collapsed bar's question badge reopens the card. A closed question doesn't come back on its own, isn't followed up by reminders, and isn't acted on by the skip shortcut; a new question, even from the same session, opens as usual
