@@ -7071,7 +7071,21 @@ final class AppState {
 
         let originator = (payload["originator"] as? String)?.lowercased() ?? ""
         let source = (payload["source"] as? String)?.lowercased() ?? ""
-        if originator.contains("desktop") || source == "vscode" || source == "appserver" {
+        if originator.contains("desktop") {
+            return .desktop
+        }
+        // Codex records every app-server client under `vscode`/`appServer`,
+        // and a spawned thread keeps its parent's originator under an object
+        // source. A client that names itself something other than Desktop
+        // (Claude Code's Codex plugin sends "Claude Code") runs its own
+        // `codex app-server`, so the rollout belongs to that process like a
+        // CLI one.
+        let isAppServerSource = source == "vscode" || source == "appserver"
+        let isSubagentSource = payload["source"] is [String: Any]
+        if !originator.isEmpty, isAppServerSource || isSubagentSource {
+            return .cli
+        }
+        if isAppServerSource {
             return .desktop
         }
         if originator.contains("cli") || source == "cli" || source == "exec" {
