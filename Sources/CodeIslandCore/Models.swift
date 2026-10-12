@@ -249,12 +249,18 @@ public enum CLIProcessResolver {
     /// time. So the nearest Codex process must run the `app-server` subcommand,
     /// and its direct parent must be the app itself; `exec codex` in ChatGPT's
     /// own terminal also leaves ChatGPT as the parent.
+    /// Bundled tool hosts share that outer bundle ID, so the parent must also
+    /// be an executable in the host app's own `Contents/MacOS` directory.
     public static func codexDesktopTermBundle(ancestry: [ProcessAncestor]) -> String? {
         guard let codexIndex = ancestry.firstIndex(where: {
             sourceMatchesExecutablePath($0.executablePath ?? "", source: "codex")
         }), isCodexAppServerInvocation(ancestry[codexIndex].arguments),
               codexIndex + 1 < ancestry.count,
-              ancestry[codexIndex + 1].bundleIdentifier == "com.openai.codex" else {
+              ancestry[codexIndex + 1].bundleIdentifier == "com.openai.codex",
+              let parentPath = ancestry[codexIndex + 1].executablePath,
+              let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath),
+              URL(fileURLWithPath: parentPath).standardizedFileURL.deletingLastPathComponent().path
+                == URL(fileURLWithPath: appPath).standardizedFileURL.appendingPathComponent("Contents/MacOS").path else {
             return nil
         }
         return "com.openai.codex"

@@ -123,6 +123,18 @@ final class CLIProcessResolverTests: XCTestCase {
         }
     }
 
+    func testAppServerLaunchedByBundledToolIsNotDesktopHost() {
+        let broker = ProcessAncestor(
+            pid: 850,
+            executablePath: "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+            arguments: ["node_repl"],
+            bundleIdentifier: "com.openai.codex"
+        )
+        let chain = [bundledCodex(["codex", "app-server", "--listen", "stdio://"]), broker, chatGPT]
+        XCTAssertNil(CLIProcessResolver.codexDesktopTermBundle(ancestry: chain))
+        XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: chain), .session)
+    }
+
     /// The same binary also runs Codex CLI from a terminal (ChatGPT's
     /// `codex-cli/bin/codex` launcher), from ChatGPT's own terminal, where
     /// `exec codex` leaves ChatGPT as the direct parent, and as the app-server
