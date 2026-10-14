@@ -49,7 +49,9 @@ struct TerminalActivator {
     /// Reverse map: source → native app bundle ID. Used as a fallback when
     /// termBundleId is missing but the source's desktop app is running.
     static let sourceToNativeAppBundleId: [String: String] = [
-        "codex": "com.openai.codex",
+        // Codex has both CLI and desktop sessions. Only an explicit desktop
+        // bundle ID should route to Codex.app; a source-only fallback steals
+        // Ghostty/tmux CLI jumps whenever the desktop app is also running.
         "cursor": "com.todesktop.230313mzl4w4u92",
         "trae": "com.trae.app",
         // Trae CN is its own install with its own bundle id (Homebrew trae-cn
