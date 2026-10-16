@@ -5076,6 +5076,15 @@ final class AppState {
         // CLAUDE_CONFIG_DIR); ConfigRootDiscovery places the ones whose
         // environment cannot be read and skips paused dirs.
         let scan = configRootScan(for: .claude)
+        // Processes in the same cwd share a project dir (a dozen terminals in ~
+        // is common): list each dir once per scan, not once per process.
+        var listings: [String: [ClaudeTranscriptFile]] = [:]
+        func transcripts(in projectPath: String) -> [ClaudeTranscriptFile]? {
+            if let cached = listings[projectPath] { return cached }
+            guard let files = claudeTranscriptFiles(in: projectPath, fm: fm) else { return nil }
+            listings[projectPath] = files
+            return files
+        }
         return ConfigRootDiscovery.run(
             processes: processes,
             lookup: { scan.lookup(pid: $0.pid) },
@@ -5083,7 +5092,9 @@ final class AppState {
             discover: { root, group, claimed in
                 var taken = claimed
                 return group.compactMap { process in
-                    guard let session = claudeSession(for: process, root: root, excluding: taken, fm: fm) else {
+                    guard let session = claudeSession(
+                        for: process, root: root, excluding: taken, transcripts: transcripts(in:)
+                    ) else {
                         return nil
                     }
                     taken.insert(session.sessionId)
@@ -5101,31 +5112,47 @@ final class AppState {
         let startTime: Date?
     }
 
+    struct ClaudeTranscriptFile {
+        let name: String
+        let modified: Date
+    }
+
+    /// The `.jsonl` transcripts in one Claude project dir with their mtimes,
+    /// read in one bulk directory listing instead of a stat per file.
+    nonisolated static func claudeTranscriptFiles(in projectPath: String, fm: FileManager) -> [ClaudeTranscriptFile]? {
+        guard let urls = try? fm.contentsOfDirectory(
+            at: URL(fileURLWithPath: projectPath, isDirectory: true),
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return nil }
+        return urls.compactMap { url in
+            let name = url.lastPathComponent
+            guard name.hasSuffix(".jsonl"),
+                  let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            else { return nil }
+            return ClaudeTranscriptFile(name: name, modified: modified)
+        }
+    }
+
     /// One claude process → its CWD → the single most recent .jsonl under `root`.
     private nonisolated static func claudeSession(
         for process: ClaudeDiscoveryProcess,
         root: String,
         excluding claimed: Set<String>,
-        fm: FileManager
+        transcripts: (_ projectPath: String) -> [ClaudeTranscriptFile]?
     ) -> DiscoveredSession? {
         let projectPath = "\(root)/projects/\(process.cwd.claudeProjectDirEncoded())"
-        guard let files = try? fm.contentsOfDirectory(atPath: projectPath) else { return nil }
+        guard let files = transcripts(projectPath) else { return nil }
 
         // Find the most recently modified .jsonl that was written AFTER this process started
         var bestFile: String?
         var bestDate = Date.distantPast
-        for file in files where file.hasSuffix(".jsonl") {
-            let fullPath = "\(projectPath)/\(file)"
-            if let attrs = try? fm.attributesOfItem(atPath: fullPath),
-               let modified = attrs[.modificationDate] as? Date,
-               modified > bestDate {
-                // Skip files from old sessions: must be modified after process started
-                if let start = process.startTime, modified < start.addingTimeInterval(-10) {
-                    continue
-                }
-                bestDate = modified
-                bestFile = file
+        for file in files where file.modified > bestDate {
+            // Skip files from old sessions: must be modified after process started
+            if let start = process.startTime, file.modified < start.addingTimeInterval(-10) {
+                continue
             }
+            bestDate = file.modified
+            bestFile = file.name
         }
 
         guard let file = bestFile else { return nil }
