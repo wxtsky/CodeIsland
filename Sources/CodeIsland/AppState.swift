@@ -406,6 +406,17 @@ final class AppState {
     @ObservationIgnored
     nonisolated(unsafe) private var codexDesktopDiscoveryScanTask: Task<Void, Never>?
     private var lastCodexDesktopDiscoveryPollAt: Date?
+    /// Cursor Agent Task transcripts on disk, for rebranding default-Claude
+    /// Task cards. Built off the main actor; see `rebrandMisattributedCursorTaskCards`.
+    @ObservationIgnored
+    private var cursorSubagentIndex: CursorSubagentTranscriptIndex?
+    @ObservationIgnored
+    nonisolated(unsafe) private var cursorSubagentIndexTask: Task<Void, Never>?
+    @ObservationIgnored
+    nonisolated(unsafe) private var cursorSubagentIndexRecheck: Task<Void, Never>?
+    /// How many index walks have come back without each unresolved card's id.
+    @ObservationIgnored
+    private var cursorSubagentIndexMisses: [String: Int] = [:]
     private var isShowingCompletion: Bool {
         if case .completionCard = surface { return true }
         return false
@@ -3657,6 +3668,14 @@ final class AppState {
         RuntimeEnvironment.isRunningTests ? [] : findDiscoveredSessions()
     }
 
+    /// What builds the Cursor Agent Task index: a walk of `~/.cursor/projects`.
+    /// A test process indexes nothing unless a test installs a scanner.
+    nonisolated(unsafe) static var cursorSubagentIndexScanner: @Sendable () -> CursorSubagentTranscriptIndex = {
+        RuntimeEnvironment.isRunningTests
+            ? CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: Date())
+            : CursorSubagentTranscriptIndex.scan(home: FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
     private func requestDiscoveryScan() {
         if discoveryScanTask != nil {
             pendingDiscoveryRescan = true
@@ -4493,9 +4512,16 @@ final class AppState {
 
     /// Rebrand default-Claude cards that are actually Cursor Agent Tasks
     /// (`~/.cursor/.../agent-transcripts/.../subagents/<id>.jsonl`).
+    ///
+    /// Runs on every hook event and discovery scan, so it never touches the
+    /// disk: cards without a Cursor transcript path are looked up in
+    /// `cursorSubagentIndex`, and a card the index does not resolve asks for a
+    /// fresh walk off the main actor. When that walk finds it, the card is
+    /// rebranded then (`installCursorSubagentIndex`).
     @discardableResult
     func rebrandMisattributedCursorTaskCards() -> Bool {
         var didMutate = false
+        var unresolved: [String] = []
         for (sessionId, snap) in sessions {
             let normalized = SessionSnapshot.normalizedSupportedSource(snap.source)
             guard normalized == nil || normalized == "claude" else { continue }
@@ -4507,10 +4533,11 @@ final class AppState {
                 continue
             }
 
-            guard let found = Self.findCursorSubagentTranscriptPath(
+            guard let found = cursorSubagentIndex?.transcriptPath(
                 sessionId: sessionId,
-                cwd: snap.cwd
+                preferredBase: Self.cursorProjectTranscriptBase(cwd: snap.cwd)
             ) else {
+                unresolved.append(sessionId)
                 continue
             }
             sessions[sessionId]?.source = "cursor"
@@ -4519,61 +4546,108 @@ final class AppState {
             }
             didMutate = true
         }
+        requestCursorSubagentIndexRebuild(unresolved: unresolved)
         return didMutate
+    }
+
+    /// Start a walk for `unresolved` cards when the refresh policy allows one
+    /// now; arm a timer for a card still owed its prompt re-check.
+    private func requestCursorSubagentIndexRebuild(unresolved: [String]) {
+        guard cursorSubagentIndexTask == nil else { return }  // its completion re-evaluates
+        let missCounts = unresolved.map { cursorSubagentIndexMisses[$0] ?? 0 }
+        guard let due = CursorSubagentTranscriptIndex.nextRebuildDate(
+            lastBuiltAt: cursorSubagentIndex?.builtAt,
+            unresolvedMissCounts: missCounts
+        ) else { return }
+
+        let delay = due.timeIntervalSinceNow
+        if delay <= 0 {
+            startCursorSubagentIndexRebuild()
+            return
+        }
+        // Settled cards are re-checked only when an event brings us back here.
+        guard missCounts.contains(where: { $0 < CursorSubagentTranscriptIndex.promptLookups }),
+              cursorSubagentIndexRecheck == nil else { return }
+        cursorSubagentIndexRecheck = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.cursorSubagentIndexRecheck = nil
+            self.requestCursorSubagentIndexRebuild(unresolved: self.cursorRebrandCandidateIds())
+        }
+    }
+
+    private func startCursorSubagentIndexRebuild() {
+        guard cursorSubagentIndexTask == nil else { return }
+        cursorSubagentIndexRecheck?.cancel()
+        cursorSubagentIndexRecheck = nil
+        cursorSubagentIndexTask = Task.detached(priority: .utility) { [weak self] in
+            let index = Self.cursorSubagentIndexScanner()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.cursorSubagentIndexTask = nil
+                self.installCursorSubagentIndex(index)
+            }
+        }
+    }
+
+    /// Adopt a freshly walked index: count a miss against every card it does
+    /// not resolve, and rebrand (and fold) the cards it does.
+    func installCursorSubagentIndex(_ index: CursorSubagentTranscriptIndex) {
+        cursorSubagentIndex = index
+        let candidates = cursorRebrandCandidateIds()
+        var misses: [String: Int] = [:]
+        var resolvedAny = false
+        for sessionId in candidates {
+            if index.contains(sessionId: sessionId) {
+                resolvedAny = true
+            } else {
+                misses[sessionId] = (cursorSubagentIndexMisses[sessionId] ?? 0) + 1
+            }
+        }
+        cursorSubagentIndexMisses = misses
+
+        if resolvedAny, applyCursorSubsessionModeToKnownSessions() {
+            scheduleSave()
+            startRotationIfNeeded()
+            refreshDerivedState()
+        } else {
+            requestCursorSubagentIndexRebuild(unresolved: Array(misses.keys))
+        }
+    }
+
+    /// Default-Claude cards whose transcript path does not already say Cursor.
+    private func cursorRebrandCandidateIds() -> [String] {
+        sessions.compactMap { sessionId, snap in
+            let normalized = SessionSnapshot.normalizedSupportedSource(snap.source)
+            guard normalized == nil || normalized == "claude",
+                  !CursorSessionFolding.isCursorAgentTranscriptPath(snap.transcriptPath) else { return nil }
+            return sessionId
+        }
+    }
+
+    /// `~/.cursor/projects/<cwd-encoded>/agent-transcripts` — where a Task run
+    /// from `cwd` keeps its transcripts.
+    nonisolated static func cursorProjectTranscriptBase(
+        cwd: String?,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) -> String? {
+        guard let cwd, !cwd.isEmpty else { return nil }
+        return "\(home)/.cursor/projects/\(cwd.appProjectDirEncoded())/agent-transcripts"
     }
 
     /// Locate `…/agent-transcripts/<parent>/subagents/<sessionId>.jsonl` under
     /// `~/.cursor/projects`. Prefers the cwd-encoded project when available.
+    /// Walks the whole store — a one-off lookup; hot paths use the index.
     nonisolated static func findCursorSubagentTranscriptPath(
         sessionId: String,
         cwd: String?,
         home: String = FileManager.default.homeDirectoryForCurrentUser.path,
         fm: FileManager = .default
     ) -> String? {
-        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let projectsRoot = "\(home)/.cursor/projects"
-
-        var searchRoots: [String] = []
-        if let cwd, !cwd.isEmpty {
-            searchRoots.append("\(projectsRoot)/\(cwd.appProjectDirEncoded())/agent-transcripts")
-        }
-        // Prefer cwd project; fall back to scanning other Cursor projects.
-        var found: String?
-        for base in searchRoots {
-            if let path = Self.firstSubagentTranscript(in: base, sessionId: trimmed, fm: fm) {
-                found = path
-                break
-            }
-        }
-        if found == nil {
-            if let projects = try? fm.contentsOfDirectory(atPath: projectsRoot) {
-                for project in projects {
-                    let base = "\(projectsRoot)/\(project)/agent-transcripts"
-                    if searchRoots.contains(base) { continue }
-                    if let path = Self.firstSubagentTranscript(in: base, sessionId: trimmed, fm: fm) {
-                        found = path
-                        break
-                    }
-                }
-            }
-        }
-        return found
-    }
-
-    private nonisolated static func firstSubagentTranscript(
-        in transcriptBase: String,
-        sessionId: String,
-        fm: FileManager
-    ) -> String? {
-        let suffix = "/subagents/\(sessionId).jsonl"
-        guard let enumerator = fm.enumerator(atPath: transcriptBase) else { return nil }
-        while let rel = enumerator.nextObject() as? String {
-            if rel.hasSuffix(suffix) || rel == String(suffix.dropFirst()) {
-                return "\(transcriptBase)/\(rel)"
-            }
-        }
-        return nil
+        CursorSubagentTranscriptIndex.scan(home: home, fm: fm).transcriptPath(
+            sessionId: sessionId,
+            preferredBase: cursorProjectTranscriptBase(cwd: cwd, home: home)
+        )
     }
 
     func applyCurrentPluginSessionMode(persist: Bool = true) {

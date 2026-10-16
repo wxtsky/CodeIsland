@@ -105,6 +105,92 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertEqual(found, path)
     }
 
+    func testMisbrandedClaudeCardWithoutTranscriptRebrandsFromIndexBuiltOffMainActor() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let childTranscript =
+            "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [childId: [childTranscript]], builtAt: Date())
+        }
+
+        let appState = AppState()
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.providerSessionId = parentId
+        parent.transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+        appState.sessions[parentId] = parent
+
+        // Ghost card from a Claude-format hook with no transcript_path: only
+        // the transcript on disk says it is a Cursor Task.
+        var child = SessionSnapshot()
+        child.source = "claude"
+        child.status = .running
+        child.lastActivity = Date()
+        appState.sessions[childId] = child
+
+        XCTAssertFalse(appState.applyCursorSubsessionModeToKnownSessions())
+        XCTAssertEqual(appState.sessions[childId]?.source, "claude", "lookup must not block on disk")
+
+        await waitUntil("the index walk never rebranded the card") { appState.sessions[childId] == nil }
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.agentType, "cursor-subagent")
+        XCTAssertEqual(probe.calls, 1)
+        XCTAssertFalse(probe.ranOnMainThread)
+    }
+
+    func testRepeatedRebrandsOfRealClaudeCardsShareOneWalk() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: Date())
+        }
+
+        let appState = AppState()
+        for n in 0..<8 {
+            var claude = SessionSnapshot()
+            claude.source = "claude"
+            claude.status = .running
+            claude.cwd = "/tmp/project-\(n)"
+            appState.sessions["claude-\(n)"] = claude
+        }
+
+        // Every hook event and discovery scan lands here.
+        for _ in 0..<50 { appState.applyCursorSubsessionModeToKnownSessions() }
+        await waitUntil("the first walk never ran") { probe.calls == 1 }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        for _ in 0..<50 { appState.applyCursorSubsessionModeToKnownSessions() }
+
+        XCTAssertEqual(probe.calls, 1, "the prompt re-check waits out its interval instead of walking again")
+        XCTAssertTrue(appState.sessions.values.allSatisfy { $0.source == "claude" })
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
@@ -939,4 +1025,21 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         let decision = try XCTUnwrap(hook["decision"] as? [String: Any])
         XCTAssertEqual(decision["behavior"] as? String, "deny")
     }
+}
+
+/// Counts index walks and notes whether any ran on the main thread.
+private final class CursorIndexScanProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _calls = 0
+    private var _ranOnMainThread = false
+
+    func record() {
+        lock.withLock {
+            _calls += 1
+            if Thread.isMainThread { _ranOnMainThread = true }
+        }
+    }
+
+    var calls: Int { lock.withLock { _calls } }
+    var ranOnMainThread: Bool { lock.withLock { _ranOnMainThread } }
 }
