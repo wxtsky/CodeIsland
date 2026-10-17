@@ -54,6 +54,7 @@ final class MascotRenderHarness: XCTestCase {
         let statuses: [(String, MascotAgentStatus)] = [
             ("idle", .idle),
             ("processing", .processing),
+            ("running", .running),
             ("waitingApproval", .waitingApproval),
             ("waitingQuestion", .waitingQuestion),
         ]
@@ -189,6 +190,7 @@ private struct ReadmeGifSpec {
     /// get no GIF of their own.
     static let all: [ReadmeGifSpec] = [
         // Clawd: 0.35s bounce ×3; typing arms are stroke-randomised anyway.
+        ReadmeGifSpec(name: "catpaw", source: "catpaw", period: 4, frames: 32, viewSize: 120),
         ReadmeGifSpec(name: "claude", source: "claude", period: 1.05, frames: 15,
                       isCalm: { t in
                           let scan = t.truncatingRemainder(dividingBy: 10.0)
@@ -462,6 +464,7 @@ private struct MascotContactSheet: View {
     @ViewBuilder
     static func routedMascot(source: String, status: MascotAgentStatus, size: CGFloat) -> some View {
         switch source {
+        case "catpaw", "catpaw-idekit": CatPawView(status: status, size: size)
         case "codex": DexView(status: status, size: size)
         case "grok": GrokView(status: status, size: size)
         case "gemini": GeminiView(status: status, size: size)

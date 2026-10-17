@@ -56,6 +56,8 @@ struct PersistedSession: Codable {
     /// restored card is bound to the gateway daemon again and must still be
     /// swept like a hook-only one. nil = false, as in older files.
     var hermesChatElsewhere: Bool? = nil
+    var catpawIsSubagent: Bool? = nil
+    var catpawAgentName: String? = nil
 }
 
 enum SessionPersistence {
@@ -106,8 +108,8 @@ enum SessionPersistence {
                 sessionTitle: s.sessionTitle,
                 sessionTitleSource: s.sessionTitleSource,
                 providerSessionId: s.providerSessionId,
-                lastUserPrompt: s.lastUserPrompt,
-                lastAssistantMessage: s.lastAssistantMessage,
+                lastUserPrompt: s.catpawIsSubagent ? nil : (CatPawHookPayload.isSource(s.source) ? CatPawHookPayload.preview(s.lastUserPrompt) : s.lastUserPrompt),
+                lastAssistantMessage: s.catpawIsSubagent ? nil : (CatPawHookPayload.isSource(s.source) ? CatPawHookPayload.preview(s.lastAssistantMessage) : s.lastAssistantMessage),
                 termApp: s.termApp,
                 itermSessionId: s.itermSessionId,
                 ttyPath: s.ttyPath,
@@ -134,7 +136,9 @@ enum SessionPersistence {
                 recap: s.recap,
                 reasoningEffort: s.reasoningEffort,
                 claudeDesktopSessionId: s.claudeDesktopSessionId,
-                hermesChatElsewhere: s.hermesChatElsewhere ? true : nil
+                hermesChatElsewhere: s.hermesChatElsewhere ? true : nil,
+                catpawIsSubagent: s.catpawIsSubagent ? true : nil,
+                catpawAgentName: s.catpawAgentName
             )
         }
         do {

@@ -796,7 +796,7 @@ private struct CompactRightWing: View {
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                ExpandedHeaderControls(soundEnabled: $soundEnabled)
+                ExpandedHeaderControls(appState: appState, soundEnabled: $soundEnabled)
             } else {
                 // Quiet hours active — explains why event sounds are silent.
                 if inQuietHours {
@@ -1082,6 +1082,7 @@ struct NotchIconButton: View {
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     /// The drawn circle, and the hit target around it.
     static let circleSize: CGFloat = 22
@@ -1091,13 +1092,13 @@ struct NotchIconButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(tint.opacity(hovering ? 1.0 : 0.85))
+                .foregroundStyle(tint.opacity(isEnabled ? (hovering ? 1.0 : 0.85) : 0.3))
                 .frame(width: Self.circleSize, height: Self.circleSize)
                 .background(
                     Circle()
-                        .fill(tint.opacity(hovering ? 0.2 : 0.08))
+                        .fill(tint.opacity(isEnabled && hovering ? 0.2 : 0.08))
                 )
-                .scaleEffect(hovering && !reduceMotion ? 1.1 : 1.0)
+                .scaleEffect(isEnabled && hovering && !reduceMotion ? 1.1 : 1.0)
                 .frame(width: Self.hitSize, height: Self.hitSize)
                 .contentShape(Rectangle())
         }
@@ -1110,8 +1111,9 @@ struct NotchIconButton: View {
     }
 }
 
-/// The expanded header's buttons: sound, Settings, and Quit, which asks once.
+/// Fixed header actions; clearing stays visible and dims when nothing is eligible.
 private struct ExpandedHeaderControls: View {
+    var appState: AppState
     @Binding var soundEnabled: Bool
     @StateObject private var quit = QuitConfirmation()
     @ObservedObject private var l10n = L10n.shared
@@ -1120,6 +1122,14 @@ private struct ExpandedHeaderControls: View {
     var body: some View {
         // 4pt between 24pt hit targets keeps the 6pt gap between the circles.
         HStack(spacing: 4) {
+            NotchIconButton(icon: "checkmark.circle", tint: Color(red: 0.4, green: 1.0, blue: 0.5),
+                            tooltip: l10n["clear_completed_sessions"] + "\n" + l10n["clear_completed_sessions_help"]) {
+                appState.clearCompletedSessions()
+            }
+            .disabled(appState.clearableCompletedSessionIDs.isEmpty)
+            .accessibilityLabel(l10n["clear_completed_sessions"])
+            .accessibilityHint(l10n["clear_completed_sessions_help"])
+            .accessibilityIdentifier("clearCompletedSessions")
             NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
                 soundEnabled.toggle()
             }
@@ -3739,6 +3749,7 @@ private struct SessionIdentityLine: View {
     let sessionFontSize: CGFloat
     let sessionColor: Color
     let dividerColor: Color
+    var showCatpawSubagentCount = true
     @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
 
@@ -3758,6 +3769,16 @@ private struct SessionIdentityLine: View {
     private func line(showsShortId: Bool) -> some View {
         let headline = session.headline(showProjectName: showProjectName)
         return HStack(spacing: 4) {
+            if showCatpawSubagentCount, let summary = session.catpawChildStatusLabel {
+                SessionTag("+\(session.catpawChildrenRunning + session.catpawChildrenCompleted) Sub", color: .purple)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(3)
+                    .help(summary)
+            }
+            if let label = session.catpawSubagentLabel {
+                SessionTag(label, color: .purple, maxWidth: 150)
+                    .help("\(label) · \(displaySessionId)")
+            }
             if headline.kind == .project {
                 ProjectNameLink(
                     name: headline.text,
@@ -4224,7 +4245,8 @@ private struct SessionCard: View {
                 projectColor: .white.opacity(0.95),
                 sessionFontSize: fontSize,
                 sessionColor: .white.opacity(0.76),
-                dividerColor: .white.opacity(0.28)
+                dividerColor: .white.opacity(0.28),
+                showCatpawSubagentCount: false
             )
             // The line itself fills the gap up to the tags: a Spacer here took
             // a share of the row and truncated a short name beside blank space.
@@ -4235,7 +4257,13 @@ private struct SessionCard: View {
                     SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0), maxWidth: 110)
                         .help("@\(remote)")
                 }
-                if !session.subagents.isEmpty {
+                if let summary = session.catpawChildStatusLabel {
+                    SessionTag("+\(session.catpawChildrenRunning + session.catpawChildrenCompleted) Sub",
+                               color: Color(red: 0.65, green: 0.55, blue: 0.95))
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(3)
+                        .help(summary)
+                } else if !session.subagents.isEmpty {
                     SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
                 }
                 if session.isYoloMode == true {
@@ -5313,6 +5341,8 @@ private let cliIconFiles: [String: String] = [
     "kiro": "kiro",
     "openclaw": "openclaw",
     "minimax": "minimax",
+    "catpaw": "catpaw",
+    "catpaw-idekit": "catpaw",
     "mimo": "mimo",
 ]
 

@@ -22,10 +22,12 @@ struct MascotView: View {
     @AppStorage(SettingsKey.mascotSpeed) private var speedPct = SettingsDefaults.mascotSpeed
     @ObservedObject private var animationGate = MascotAnimationGate.shared
 
-    var body: some View {
+    var routedContent: some View {
         let resolved = SessionSnapshot.normalizedSupportedSource(source) ?? source
-        Group {
+        return Group {
             switch resolved {
+            case "catpaw", "catpaw-idekit":
+                CatPawView(status: status, size: size)
             case "codex":
                 DexView(status: status, size: size)
             case "grok":
@@ -79,8 +81,12 @@ struct MascotView: View {
                 ClawdView(status: status, size: size)
             }
         }
-        .environment(\.mascotSpeed, Double(speedPct) / 100.0)
-        .environment(\.mascotAnimationsActive, animationGate.animationsActive)
-        .environment(\.mascotAnimationEpoch, animationGate.epoch)
+    }
+
+    var body: some View {
+        routedContent
+            .environment(\.mascotSpeed, Double(speedPct) / 100.0)
+            .environment(\.mascotAnimationsActive, animationGate.animationsActive)
+            .environment(\.mascotAnimationEpoch, animationGate.epoch)
     }
 }

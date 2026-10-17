@@ -807,8 +807,13 @@ class HookServer {
             }
 
         case .event:
+            let catpaw = CatPawHookPayload.isSource(event.rawJSON["_source"] as? String)
+            // Observational hooks need delivery acknowledgment, not UI completion.
+            if catpaw { sendResponse(connection: connection, data: Data("{}".utf8)) }
             appState.handleEvent(event)
-            sendResponse(connection: connection, data: Data("{}".utf8))
+            if !catpaw {
+                sendResponse(connection: connection, data: Data("{}".utf8))
+            }
         }
     }
 

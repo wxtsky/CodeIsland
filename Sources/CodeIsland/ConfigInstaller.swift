@@ -375,6 +375,19 @@ struct ConfigInstaller {
             rootOverride: { ConfigInstaller.codexHome() },
             displayPathOverride: { ConfigInstaller.displayCodexPath(filename: "hooks.json") }
         ),
+        // CatPaw: observe only. Stop is captured by the bridge, never reduced.
+        CLIConfig(
+            name: "CatPaw IDE", source: "catpaw",
+            configPath: "Library/Application Support/CatPaw IDE/User/globalStorage/mt-idekit.mt-idekit-code/settings/hooks.json", configKey: "hooks",
+            format: .flat,
+            events: CatPawHookPayload.events.map { ($0, 5, false) }
+        ),
+        CLIConfig(
+            name: "CatPaw · IDEKit", source: "catpaw-idekit",
+            configPath: ".sankuai/idekit/config/settings/hooks.json", configKey: "hooks",
+            format: .flat,
+            events: CatPawHookPayload.events.map { ($0, 5, false) }
+        ),
         // Gemini CLI — timeout in milliseconds
         CLIConfig(
             name: "Gemini", source: "gemini",
@@ -1737,8 +1750,57 @@ struct ConfigInstaller {
 
     // MARK: - External CLIs (use bridge binary directly)
 
+    static func catpawHasBlockingHookConflict(_ hooks: [String: Any]) -> Bool {
+        CatPawHookPayload.events.filter { $0.hasPrefix("before") || $0 == "stop" }.contains { event in
+            guard let value = hooks[event] else { return false }
+            guard let entries = value as? [[String: Any]] else { return true }
+            return entries.contains { !containsOurHook($0) }
+        }
+    }
+
+    static func catpawHookScriptPath(source: String, directory: String? = nil) -> String {
+        (directory ?? codeislandDir) + "/codeisland-\(source)-hook.sh"
+    }
+
+    static func catpawHookScript(source: String) -> String? {
+        guard CatPawHookPayload.isSource(source) else { return nil }
+        return """
+        #!/bin/sh
+        # CodeIsland CatPaw hook v1 (\(source))
+        # CatPaw executes a script path; hook_event_name arrives on stdin.
+        BRIDGE="${0%/*}/codeisland-bridge"
+        if [ -x "$BRIDGE" ]; then
+          exec "$BRIDGE" --source \(source)
+        fi
+        printf '{}\\n'
+        exit 0
+
+        """
+    }
+
+    static func installCatpawHookScript(source: String, fm: FileManager, directory: String? = nil) -> Bool {
+        guard let script = catpawHookScript(source: source) else { return false }
+        let path = catpawHookScriptPath(source: source, directory: directory)
+        do {
+            try fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            if fm.contents(atPath: path) != Data(script.utf8) {
+                try Data(script.utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+            }
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func isCatpawHookScriptInstalled(source: String, fm: FileManager, directory: String? = nil) -> Bool {
+        guard let script = catpawHookScript(source: source) else { return false }
+        let path = catpawHookScriptPath(source: source, directory: directory)
+        return fm.isExecutableFile(atPath: path) && fm.contents(atPath: path) == Data(script.utf8)
+    }
+
     @discardableResult
-    static func installExternalHooks(cli: CLIConfig, fm: FileManager) -> Bool {
+    static func installExternalHooks(cli: CLIConfig, fm: FileManager, catpawScriptDirectory: String? = nil) -> Bool {
         // pi, Oh My Pi, OpenClaw and DeepSeek Harness have no hooks file: their
         // entry points at an extension, a plugin or (DSH) the tool's home
         // directory, which their own installers (or none) take care of. The
@@ -1822,6 +1884,11 @@ struct ConfigInstaller {
             // an upgraded install would keep the dead keys forever.
             hooks = removeManagedHookEntries(from: hooks)
         }
+        // CatPaw runs only the first before/stop command. Do not displace a
+        // user's policy hook, or claim installation while our command cannot run.
+        if CatPawHookPayload.isSource(cli.source), catpawHasBlockingHookConflict(hooks) { return false }
+        if CatPawHookPayload.isSource(cli.source),
+           !installCatpawHookScript(source: cli.source, fm: fm, directory: catpawScriptDirectory) { return false }
         // Quote the path in case home directory contains spaces or special characters
         let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
         let bridgeSource = cli.bridgeSourceOverride ?? cli.source
@@ -1844,7 +1911,13 @@ struct ConfigInstaller {
                     : baseCommand
                 entry = ["hooks": [["type": "command", "command": cmd, "timeout": timeout] as [String: Any]]]
             case .flat:
-                entry = ["command": "\(baseCommand) --event \(event)"]
+                if CatPawHookPayload.isSource(cli.source) {
+                    // CatPaw accepts only a script pathname, not a shell command
+                    // with flags. Each integration has its own source-stamped wrapper.
+                    entry = ["command": catpawHookScriptPath(source: cli.source, directory: catpawScriptDirectory)]
+                } else {
+                    entry = ["command": "\(baseCommand) --event \(event)"]
+                }
             case .traeIDE:
                 let traeCommand = "\(baseCommand) --event \(event)"
                 entry = [
@@ -3276,6 +3349,16 @@ struct ConfigInstaller {
 
         guard let root = parseJSONFile(at: cli.fullPath, fm: fm),
               let hooks = root[cli.configKey] as? [String: Any] else { return false }
+        if CatPawHookPayload.isSource(cli.source), catpawHasBlockingHookConflict(hooks) { return false }
+        if CatPawHookPayload.isSource(cli.source) {
+            let expected = catpawHookScriptPath(source: cli.source)
+            guard isCatpawHookScriptInstalled(source: cli.source, fm: fm),
+                  cli.events.allSatisfy({ event, _, _ in
+                      guard let entries = hooks[event] as? [[String: Any]] else { return false }
+                      let managed = entries.filter { containsOurHook($0) }
+                      return managed.count == 1 && managed[0]["command"] as? String == expected
+                  }) else { return false }
+        }
         // Check that ALL required events have our hook installed, not just any one
         let allPresent = cli.events.allSatisfy { (event, _, _) in
             guard let entries = hooks[event] as? [[String: Any]] else { return false }
@@ -3320,6 +3403,9 @@ struct ConfigInstaller {
     }
 
     private static func shouldPreservePartialHooks(for cli: CLIConfig, fm: FileManager) -> Bool {
+        // Old bridge commands cannot run in CatPaw. Missing/stale wrappers also
+        // need repair, rather than being mistaken for intentionally pruned hooks.
+        if CatPawHookPayload.isSource(cli.source) { return false }
         // Kimi stores hooks in TOML with its own all-or-nothing detection.
         if cli.format == .kimi { return false }
         // The MiniMax plugin pack is generated whole and holds nothing but

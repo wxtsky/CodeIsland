@@ -113,6 +113,7 @@ func bundleIdentifier(forExecutable path: String) -> String? {
 }
 
 func debugLog(_ message: String) {
+    guard !isCatPaw else { return }
     let ts = ISO8601DateFormatter().string(from: Date())
     let line = "[\(ts)] \(message)\n"
     // CODEISLAND_BRIDGE_LOG moves the log: the tests that run this binary point
@@ -201,7 +202,7 @@ func sendAll(_ sock: Int32, data: Data) {
     }
 }
 
-func recvAll(_ sock: Int32) -> Data {
+func recvAll(_ sock: Int32, acknowledgmentOnly: Bool = false) -> Data {
     var response = Data()
     var buf = [UInt8](repeating: 0, count: 4096)
     while true {
@@ -212,6 +213,7 @@ func recvAll(_ sock: Int32) -> Data {
         }
         if n == 0 { break }
         response.append(contentsOf: buf[..<n])
+        if acknowledgmentOnly { break }
     }
     return response
 }
@@ -232,6 +234,14 @@ if let idx = args.firstIndex(of: "--source"), idx + 1 < args.count {
 var eventTag: String? = nil
 if let idx = args.firstIndex(of: "--event"), idx + 1 < args.count {
     eventTag = args[idx + 1]
+}
+
+let isCatPaw = CatPawHookPayload.isSource(sourceTag)
+
+// CatPaw's before hooks are observational and must never hold up its UI.
+// Always emit a valid neutral result, including early exits / unavailable Island.
+if isCatPaw {
+    FileHandle.standardOutput.write(Data("{}".utf8))
 }
 
 // Google Antigravity refuses the tool call when its PreToolUse hook prints no
@@ -264,7 +274,8 @@ if !GrokHookForwardingPolicy.shouldForward(source: sourceTag, environment: env) 
 
 // Quick exit: socket doesn't exist or isn't a socket
 var statBuf = stat()
-guard stat(socketPath, &statBuf) == 0, (statBuf.st_mode & S_IFMT) == S_IFSOCK else { exit(0) }
+let socketAvailable = stat(socketPath, &statBuf) == 0 && (statBuf.st_mode & S_IFMT) == S_IFSOCK
+guard socketAvailable else { exit(0) }
 
 // Safety: arm a short alarm before reading stdin — if the calling process
 // forgot to close its pipe, we bail out instead of blocking forever.
@@ -272,6 +283,21 @@ alarm(5)
 let input = FileHandle.standardInput.readDataToEndOfFile()
 alarm(0)  // stdin done, cancel preliminary alarm
 let parsedInput = try? JSONSerialization.jsonObject(with: input) as? [String: Any]
+// Keep CatPaw payloads out of the bridge debug log.
+// Capture the actual hook ancestry while the parent shell still exists.
+let catpawAncestry = isCatPaw ? buildAncestry(startingAt: getppid(), maxDepth: 32) : []
+let idekitHost = sourceTag == "catpaw-idekit" ? catpawAncestry.first { ancestor in
+    CatPawHookPayload.isIDEKitHost(
+        executablePath: ancestor.executablePath,
+        bundleIdentifier: ancestor.executablePath.flatMap(bundleIdentifier(forExecutable:))
+    )
+} : nil
+var catpawInput: [String: Any]? = nil
+if isCatPaw {
+    guard let raw = parsedInput else { exit(0) }
+    guard let normalized = CatPawHookPayload.normalized(raw, source: sourceTag ?? "") else { exit(0) }
+    catpawInput = normalized
+}
 // Hermes sends the whole conversation (`extra.conversation_history`) with every
 // pre/post_llm_call. Nothing reads it, so it stays out of the log and the event.
 let hermesInput = sourceTag == "hermes" ? parsedInput.map(HermesHookPayload.trimmedForForwarding) : nil
@@ -279,11 +305,11 @@ if let hermesInput,
    let data = try? JSONSerialization.data(withJSONObject: hermesInput),
    let inputStr = String(data: data, encoding: .utf8) {
     debugLog("raw input: \(inputStr)")
-} else if let inputStr = String(data: input, encoding: .utf8) {
+} else if !isCatPaw, let inputStr = String(data: input, encoding: .utf8) {
     debugLog("raw input: \(inputStr)")
 }
 
-guard !input.isEmpty, var json = hermesInput ?? parsedInput else {
+guard !input.isEmpty, var json = catpawInput ?? hermesInput ?? parsedInput else {
     exit(0)
 }
 
@@ -428,7 +454,7 @@ if sourceTag == "cline" {
 // _ppid resolution downstream. Some CLIs execute hooks through `sh -c`, so
 // `getppid()` is a transient shell rather than the long-lived CLI process.
 let immediateParentPID = getppid()
-let ancestry = buildAncestry(startingAt: immediateParentPID)
+let ancestry = isCatPaw ? catpawAncestry : buildAncestry(startingAt: immediateParentPID)
 let coreAncestry = ancestry.map { (pid: Int32($0.pid), executablePath: $0.executablePath) }
 
 // Source tag (e.g. "codex" when called via --source codex). If the caller did not pass
@@ -465,6 +491,12 @@ let resolvedTrackedPID = CLIProcessResolver.resolvedTrackedPID(
 json["_ppid"] = resolvedTrackedPID
 if resolvedTrackedPID != immediateParentPID {
     json["_hook_ppid"] = Int32(immediateParentPID)
+}
+// IDEKit owns a conversation inside a specific IDEA process. Never track the
+// short-lived hook shell or choose an arbitrary running IDEA by bundle ID.
+if sourceTag == "catpaw-idekit" {
+    json["_ppid"] = idekitHost?.pid ?? 0
+    json.removeValue(forKey: "_hook_ppid")
 }
 // Cline hooks are shell scripts spawned by a VSCode extension — the immediate
 // parent is a transient shell, not a persistent agent process. Tracking this
@@ -656,6 +688,11 @@ if let host = env["CLAUDE_CODE_HOST_SESSION_ID"], !host.isEmpty {
     json["_claude_desktop_session"] = host
 }
 
+if sourceTag == "catpaw-idekit" {
+    // Override inherited terminal metadata only with an observed ancestor.
+    json["_term_bundle"] = idekitHost?.executablePath.flatMap(bundleIdentifier(forExecutable:))
+}
+
 // Inject cwd if not already present. Gemini CLI / Google Antigravity hooks do not
 // include a `cwd` field, so CodeIsland cannot resolve the project name and falls back
 // to "Session". Populating it here lets the approval card show the actual folder name.
@@ -699,7 +736,7 @@ if isBlocking {
 
 // Wait for server response — critical: without this, close() races ahead
 // of NWListener's main-thread handler and the event is lost
-let response = recvAll(sock)
+let response = recvAll(sock, acknowledgmentOnly: isCatPaw)
 
 // Blocking events: forward response to stdout
 if isBlocking && !response.isEmpty {

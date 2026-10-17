@@ -10,6 +10,8 @@ public struct SessionSnapshot: Sendable {
     public static let customCLIConfigsKey = "custom_cli_configs_v1"
 
     public static let supportedSources: Set<String> = [
+        "catpaw",
+        "catpaw-idekit",
         "claude",
         "codex",
         "gemini",
@@ -81,6 +83,8 @@ public struct SessionSnapshot: Sendable {
     /// process is a source-less Node binary — from being mis-attributed to
     /// "cursor". (#220)
     public static let ideHostSources: Set<String> = [
+        "catpaw",
+        "catpaw-idekit",
         "cursor",
         "trae",
         "traecn",
@@ -171,6 +175,28 @@ public struct SessionSnapshot: Sendable {
     /// than persisted: the harness may have restarted between runs. (#321)
     public var hostHarness: HostHarness?
     public var source: String = "claude" // "claude" or "codex"
+    /// CatPaw child conversations have their own session id, but no parent id
+    /// or reliable end event. Never insert these into a guessed parent's subagents.
+    var catpawLifecycle = CatPawLifecycle()
+    public var catpawParentSessionID: String?
+    public var catpawChildrenRunning = 0
+    public var catpawChildrenCompleted = 0
+    public var catpawChildStatusLabel: String? {
+        guard catpawChildrenRunning + catpawChildrenCompleted > 0 else { return nil }
+        return "Subagents · \(catpawChildrenRunning) running · \(catpawChildrenCompleted) done"
+    }
+    public func isFoldedCatPawChild(in sessions: [String: SessionSnapshot]) -> Bool {
+        guard catpawIsSubagent, let parent = catpawParentSessionID else { return false }
+        return sessions[parent] != nil
+    }
+    public var catpawIsSubagent: Bool = false
+    public var catpawAgentName: String?
+
+    public var catpawSubagentLabel: String? {
+        guard CatPawHookPayload.isSource(source), catpawIsSubagent else { return nil }
+        guard let name = catpawAgentName, !name.isEmpty else { return "Subagent" }
+        return "Subagent · \(name)"
+    }
     public var interrupted: Bool = false
     /// The last turn ended on an error (Claude Code / Grok `StopFailure`, a
     /// failed AiWork stream or Cowork turn); the card's status reads ERROR
@@ -704,6 +730,8 @@ public struct SessionSnapshot: Sendable {
     /// Source label for display
     public var sourceLabel: String {
         switch source {
+        case "catpaw": return "CatPaw IDE"
+        case "catpaw-idekit": return "CatPaw · IDEKit"
         case "claude": return "Claude"
         case "codex": return "Codex"
         case "gemini": return "Gemini"
@@ -783,6 +811,7 @@ public struct SessionSnapshot: Sendable {
 
     /// Bundle IDs of native apps (not terminals)
     private static let appBundleNames: [String: String] = [
+        "com.meituan.catpaw": "CatPaw IDE",
         "com.todesktop.230313mzl4w4u92": "Cursor",
         "com.trae.app": "Trae",
         "cn.trae.app": "Trae CN",
@@ -808,6 +837,7 @@ public struct SessionSnapshot: Sendable {
     /// Maps native app bundle IDs to their expected source identifier.
     /// Used by isNativeAppMode to distinguish "Cursor agent" from "Claude CLI in Cursor terminal".
     private static let appBundleSources: [String: String] = [
+        "com.meituan.catpaw": "catpaw",
         "com.todesktop.230313mzl4w4u92": "cursor",
         "com.trae.app": "trae",
         // Trae CN ships as its own app (`Trae CN.app`), not inside Trae.app.
@@ -1080,6 +1110,11 @@ public func reduceEvent(
     let eventName = EventNormalizer.normalize(event.eventName)
     var effects: [SideEffect] = []
 
+    // CatPaw stop carries the root identity even when a child finished.
+    if eventName == "CatPawStop", CatPawHookPayload.isSource(event.rawJSON["_source"] as? String) {
+        return CatPawLifecycle.receiveStop(sessions: &sessions, event: event)
+    }
+
     // Ensure session exists
     if sessions[sessionId] == nil {
         sessions[sessionId] = SessionSnapshot()
@@ -1094,6 +1129,29 @@ public func reduceEvent(
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
     } else {
         fillMissingParentMetadataFromSubagentEvent(into: &sessions, sessionId: sessionId, event: event)
+    }
+    if CatPawHookPayload.isSource(event.rawJSON["_source"] as? String) {
+        CatPawLifecycle.observe(sessions: &sessions, event: event, eventName: eventName)
+        if sessions[sessionId]?.catpawIsSubagent == true {
+            // Status-only children bypass chat history, tool history, monitor
+            // discovery, sounds and active-card switching.
+            sessions[sessionId]?.lastUserPrompt = nil
+            sessions[sessionId]?.lastAssistantMessage = nil
+            sessions[sessionId]?.recentMessages.removeAll()
+            sessions[sessionId]?.toolHistory.removeAll()
+            sessions[sessionId]?.currentTool = nil
+            sessions[sessionId]?.toolDescription = nil
+            if sessions[sessionId]?.catpawLifecycle.ended != true {
+                if eventName == "PreToolUse" { sessions[sessionId]?.status = .running }
+                else if eventName != "CatPawResponse" { sessions[sessionId]?.status = .processing }
+            }
+            sessions[sessionId]?.lastActivity = Date()
+            return CatPawLifecycle.resolve(sessions: &sessions)
+        }
+        // Replies may race after stop; accept their text without reviving tools.
+        if sessions[sessionId]?.catpawLifecycle.ended == true, eventName != "CatPawResponse" {
+            return CatPawLifecycle.resolve(sessions: &sessions)
+        }
     }
     let isRemote = sessions[sessionId]?.isRemote == true
 
@@ -1258,6 +1316,12 @@ public func reduceEvent(
             sessions[sessionId]?.status = .processing
             sessions[sessionId]?.currentTool = nil
             sessions[sessionId]?.toolDescription = nil
+        }
+    case "CatPawResponse":
+        if CatPawHookPayload.isSource(sessions[sessionId]?.source),
+           let text = event.rawJSON["text"] as? String, !text.isEmpty {
+            sessions[sessionId]?.lastAssistantMessage = text
+            sessions[sessionId]?.addRecentMessage(ChatMessage(isUser: false, text: text))
         }
     case "AfterAgentResponse":
         // Cursor-specific: AI reply arrives here (in "text" field), not in Stop
@@ -1613,7 +1677,8 @@ public func reduceEvent(
     // turn that died (StopFailure) rings the error sound. See EventSoundRouting.
     // A Hermes gateway chat's start, prompt and turn end stay silent.
     if let sound = EventSoundRouting.soundEvent(rawEventName: event.eventName, normalizedEventName: eventName),
-       !HermesHookPayload.isQuiet(event) {
+       !HermesHookPayload.isQuiet(event),
+       sessions[sessionId]?.catpawIsSubagent != true {
         effects.append(.playSound(sound))
     }
 
@@ -1626,6 +1691,9 @@ public func reduceEvent(
     // Note: the "else if activeSessionId == sessionId → mostActive" case
     // is handled by AppState since it needs to check current activeSessionId
 
+    if CatPawHookPayload.isSource(event.rawJSON["_source"] as? String) {
+        effects += CatPawLifecycle.resolve(sessions: &sessions)
+    }
     return effects
 }
 
@@ -1818,6 +1886,15 @@ private func shouldSurfaceCursorSubagentChat(event: HookEvent, session: SessionS
 }
 
 public func extractMetadata(into sessions: inout [String: SessionSnapshot], sessionId: String, event: HookEvent) {
+    if CatPawHookPayload.isSource(event.rawJSON["_source"] as? String) {
+        if let isSubagent = event.rawJSON["is_sub_agent"] as? Bool {
+            sessions[sessionId]?.catpawIsSubagent = isSubagent
+        }
+        if let rawName = event.rawJSON["agent_name"] as? String {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            sessions[sessionId]?.catpawAgentName = name.isEmpty ? nil : name
+        }
+    }
     let eventCwd = event.rawJSON["cwd"] as? String
     if let cwd = eventCwd, !cwd.isEmpty,
        !SessionSnapshot.isUnhelpfulHookCwd(cwd) {

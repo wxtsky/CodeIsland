@@ -311,6 +311,8 @@ public enum PushEventClassifier {
     ) -> Bool {
         if let agentId, !agentId.isEmpty { return true }
         if raw["_codex_subagent"] as? Bool == true { return true }
+        if CatPawHookPayload.isSource(session?.source ?? raw["_source"] as? String),
+           session?.catpawIsSubagent == true || raw["is_sub_agent"] as? Bool == true { return true }
         guard let session, CursorSubsessionRouter.isCursorFamilySource(session.source) else { return false }
         return CursorSubsessionRouter.isLikelyCursorTaskCard(
             sessionId: sessionId,

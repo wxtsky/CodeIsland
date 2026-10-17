@@ -49,6 +49,7 @@ struct TerminalActivator {
     /// Reverse map: source → native app bundle ID. Used as a fallback when
     /// termBundleId is missing but the source's desktop app is running.
     static let sourceToNativeAppBundleId: [String: String] = [
+        "catpaw": "com.meituan.catpaw",
         "codex": "com.openai.codex",
         "cursor": "com.todesktop.230313mzl4w4u92",
         "trae": "com.trae.app",
@@ -72,6 +73,7 @@ struct TerminalActivator {
     /// When termBundleId matches, bring that app to front;
     /// otherwise fall through to terminal tab-matching.
     private static let nativeAppBundles: [String: String] = [
+        "com.meituan.catpaw": "CatPaw IDE",
         "com.openai.codex": "Codex",
         "com.todesktop.230313mzl4w4u92": "Cursor",
         "com.trae.app": "Trae",
@@ -111,6 +113,21 @@ struct TerminalActivator {
             NotificationCenter.default.post(
                 name: .codeIslandDidJumpToSession, object: nil, userInfo: ["sessionId": sessionId]
             )
+        }
+        // IDEKit: target the recorded process, not any IDEA sharing a bundle ID.
+        // The hook contract has no window/conversation deep link. Do not guess
+        // a project window from its title or launch a different IDE instance.
+        if session.source == "catpaw-idekit" {
+            if let pid = session.cliPid,
+               let app = NSRunningApplication(processIdentifier: pid),
+               idekitProcessToActivate(session: session,
+                                       currentProcess: AppState.liveProcessIdentity(for: pid),
+                                       executablePath: app.executableURL?.path,
+                                       bundleIdentifier: app.bundleIdentifier) != nil {
+                if app.isHidden { app.unhide() }
+                app.activate()
+            }
+            return
         }
         // Claude Desktop Cowork/Chat cards come from Claude's session store, not
         // a terminal: open that exact conversation in Claude Desktop.
@@ -423,6 +440,24 @@ struct TerminalActivator {
     }
 
     // MARK: - Ghostty (AppleScript: match by CWD + session ID in title)
+
+    /// Select only the recorded IDEA instance. Unknown identity, a reused PID,
+    /// or a different host disables the jump; callers must not fall back to a
+    /// bundle-ID scan, project-title matching, or launching an application.
+    static func idekitProcessToActivate(
+        session: SessionSnapshot,
+        currentProcess: ProcessIdentity?,
+        executablePath: String?,
+        bundleIdentifier: String?
+    ) -> pid_t? {
+        guard session.source == "catpaw-idekit", !session.isRemote,
+              let pid = session.cliPid, pid > 0,
+              let started = session.cliStartTime,
+              currentProcess == ProcessIdentity(pid: pid, startTime: started),
+              CatPawHookPayload.isIDEKitHost(executablePath: executablePath,
+                                           bundleIdentifier: bundleIdentifier) else { return nil }
+        return pid
+    }
 
     private static func activateGhostty(
         cwd: String?,

@@ -1636,6 +1636,8 @@ private struct MascotsPage: View {
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
     private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
+        ("CatPaw", "catpaw", "CatPaw IDE", Color(red: 1, green: 0.57, blue: 0.52)),
+        ("CatPaw", "catpaw-idekit", "CatPaw · IDEKit", Color(red: 1, green: 0.57, blue: 0.52)),
         ("Clawd", "claude", "Claude Code", Color(red: 0.871, green: 0.533, blue: 0.427)),
         ("Dex", "codex", "Codex (OpenAI)", Color(red: 0.92, green: 0.92, blue: 0.93)),
         ("Grok", "grok", "Grok CLI", Color.white),

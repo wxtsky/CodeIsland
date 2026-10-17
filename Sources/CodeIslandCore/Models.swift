@@ -64,6 +64,8 @@ public enum CLIProcessResolver {
         let lowercasedPath = path.lowercased()
 
         switch normalizedSource {
+        case "catpaw":
+            return lowercasedPath.contains("/catpaw ide.app/contents/")
         case "traecn":
             // Trae CN runs hooks through `bash -c`, so the bridge's own parent
             // is a throwaway shell. Matching the bundle lets `_ppid` resolve to

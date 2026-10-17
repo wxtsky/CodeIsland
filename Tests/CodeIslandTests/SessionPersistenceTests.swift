@@ -1,7 +1,48 @@
 import XCTest
+import CodeIslandCore
 @testable import CodeIsland
 
 final class SessionPersistenceTests: XCTestCase {
+    func testCatPawChildIdentitySurvivesSaveAndLegacyDecode() throws {
+        let file = URL(fileURLWithPath: SessionPersistence.dirPath).appendingPathComponent("sessions.json")
+        let previous = try? Data(contentsOf: file)
+        defer {
+            if let previous { try? previous.write(to: file, options: .atomic) }
+            else { try? FileManager.default.removeItem(at: file) }
+        }
+        var child = SessionSnapshot()
+        child.source = "catpaw-idekit"
+        child.catpawIsSubagent = true
+        child.catpawAgentName = "Explorer"
+        child.lastUserPrompt = "child task"
+        child.lastAssistantMessage = "child reply"
+        var parent = SessionSnapshot()
+        parent.source = "catpaw"
+        parent.lastUserPrompt = String(repeating: "0", count: 30) + "private-prompt-tail"
+        parent.lastAssistantMessage = String(repeating: "a", count: 30) + "private-reply-tail"
+        var claude = parent
+        claude.source = "claude"
+        SessionPersistence.save(["catpaw-idekit:child": child, "catpaw:parent": parent, "claude": claude])
+        let all = SessionPersistence.load()
+        let main = try XCTUnwrap(all.first { $0.sessionId == "catpaw:parent" })
+        XCTAssertEqual(main.lastUserPrompt, String(repeating: "0", count: 30) + "…")
+        XCTAssertEqual(main.lastAssistantMessage, String(repeating: "a", count: 30) + "…")
+        XCTAssertEqual(all.first { $0.sessionId == "claude" }?.lastAssistantMessage, claude.lastAssistantMessage)
+        let saved = try XCTUnwrap(SessionPersistence.load().first { $0.sessionId == "catpaw-idekit:child" })
+        XCTAssertEqual(saved.catpawIsSubagent, true)
+        XCTAssertEqual(saved.catpawAgentName, "Explorer")
+        XCTAssertNil(saved.lastUserPrompt)
+        XCTAssertNil(saved.lastAssistantMessage)
+        let encoder = JSONEncoder(), decoder = JSONDecoder()
+        let encoded = try encoder.encode(saved)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        legacy.removeValue(forKey: "catpawIsSubagent")
+        legacy.removeValue(forKey: "catpawAgentName")
+        let old = try decoder.decode(PersistedSession.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(old.catpawIsSubagent)
+        XCTAssertNil(old.catpawAgentName)
+    }
+
     func testPersistedSessionDecodesWithoutCliStartTimeForBackwardCompatibility() throws {
         let json = """
         {

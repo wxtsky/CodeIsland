@@ -393,6 +393,7 @@ final class AppState {
     @ObservationIgnored
     nonisolated(unsafe) private var processMonitors: [String: (source: DispatchSourceProcess, process: ProcessIdentity, attachParentPid: pid_t?)] = [:]
     private var exitingSessions: [String: ProcessIdentity] = [:]
+    @ObservationIgnored var manuallyClearedSessions: [String: Date] = [:]
     @ObservationIgnored
     nonisolated(unsafe) private var saveTimer: Timer?
     @ObservationIgnored
@@ -917,6 +918,8 @@ final class AppState {
         // (whose host genuinely IS Antigravity.app) never collides with the fork's
         // "antigravity" CLI sessions (#215).
         case "google-antigravity": return path.contains("/antigravity.app/contents/")
+        case "catpaw-idekit": return path.hasSuffix(".app/contents/macos/idea")
+        case "catpaw":      return path.contains("/catpaw ide.app/contents/")
         case "workbuddy":   return path.contains("/workbuddy.app/contents/")
         case "hermes":      return path.contains("/hermes.app/contents/")
         // Claude Code Desktop (#211): local Code-tab sessions live inside Claude.app.
@@ -1041,7 +1044,7 @@ final class AppState {
     /// Remove a session, clean up its monitor, and resume any pending continuations.
     /// Every removal path (cleanup timer, process exit, reducer effect) goes through here
     /// so leaked continuations / connections are impossible.
-    func removeSession(_ sessionId: String) {
+    func removeSession(_ sessionId: String, refresh: Bool = true) {
         let displayOnlyWaitBefore = displayOnlyWaitKind(forSession: sessionId)
         // Resume ALL pending continuations for this session
         drainPermissions(forSession: sessionId, reason: "removeSession")
@@ -1074,9 +1077,55 @@ final class AppState {
         if activeSessionId == sessionId {
             activeSessionId = mostActiveSessionId()
         }
+        if refresh {
+            startRotationIfNeeded()
+            refreshDerivedState()
+            scheduleSave()
+        }
+    }
+
+    /// Only settled cards without pending interaction or live children may go.
+    var clearableCompletedSessionIDs: Set<String> {
+        let pending = Set(permissionQueue.map { $0.event.sessionId ?? "default" }
+            + questionQueue.map { $0.event.sessionId ?? "default" })
+        let busyParents = Set(sessions.values.filter { $0.status != .idle }.compactMap(\.catpawParentSessionID))
+        let idle = Set(sessions.compactMap { id, session -> String? in
+            guard session.status == .idle, !pending.contains(id), !busyParents.contains(id),
+                  !session.subagents.values.contains(where: { $0.status != .idle }) else { return nil }
+            return id
+        })
+        // Keep a retained parent's folded child evidence and completion counts.
+        return Set(idle.filter { id in
+            guard let parent = sessions[id]?.catpawParentSessionID, sessions[parent] != nil else { return true }
+            return idle.contains(parent)
+        })
+    }
+
+    func clearCompletedSessions() {
+        let ids = clearableCompletedSessionIDs
+        guard !ids.isEmpty else { return }
+        let now = Date()
+        for id in ids.sorted() {
+            manuallyClearedSessions[id] = now
+            followUps.completionSeen(sessionId: id)
+            removeSession(id, refresh: false)
+        }
+        // Bounded suppression for unchanged background discoveries in this run.
+        if manuallyClearedSessions.count > 1024 {
+            let oldest = manuallyClearedSessions.sorted { $0.value < $1.value }
+                .prefix(manuallyClearedSessions.count - 1024)
+            for entry in oldest { manuallyClearedSessions.removeValue(forKey: entry.key) }
+        }
         startRotationIfNeeded()
         refreshDerivedState()
         scheduleSave()
+    }
+
+    func shouldSuppressManuallyClearedDiscovery(_ info: DiscoveredSession) -> Bool {
+        guard let clearedAt = manuallyClearedSessions[info.sessionId] else { return false }
+        guard info.modifiedAt > clearedAt else { return true }
+        manuallyClearedSessions.removeValue(forKey: info.sessionId)
+        return false
     }
 
     // MARK: - Compact bar mascot rotation
@@ -1630,7 +1679,7 @@ final class AppState {
     /// Recompute cached status/source/counts from sessions in a single O(n) pass.
     /// Call after any mutation to `sessions` or session status.
     func refreshDerivedState() {
-        let summary = deriveSessionSummary(from: sessions)
+        let summary = deriveSessionSummary(from: sessions.filter { !$0.value.isFoldedCatPawChild(in: sessions) })
         // Whenever no session is actively working, honor the user-configured
         // default mascot. Covers both "no sessions at all" (#102) and "all
         // sessions idle" (#149) — without this, a user who sets the default
@@ -1694,6 +1743,12 @@ final class AppState {
 
         let sessionId = event.sessionId ?? "default"
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
+        if manuallyClearedSessions[sessionId] != nil {
+            // Passive tail events must not immediately recreate a cleared card.
+            let freshWork: Set<String> = ["SessionStart", "UserPromptSubmit", "PreToolUse", "SubagentStart"]
+            guard freshWork.contains(normalizedEventName) else { return }
+            manuallyClearedSessions.removeValue(forKey: sessionId)
+        }
 
         // Account chatter, not session activity. CodeBuddy fires
         // Notification(auth_success) as the CLI boots — before SessionStart and
@@ -2005,6 +2060,7 @@ final class AppState {
     }
 
     func handlePermissionRequest(_ event: HookEvent, continuation: CheckedContinuation<Data, Never>) {
+        manuallyClearedSessions.removeValue(forKey: event.sessionId ?? "default")
         let sessionId = event.sessionId ?? "default"
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
@@ -2445,6 +2501,7 @@ final class AppState {
     }
 
     func handleQuestion(_ event: HookEvent, continuation: CheckedContinuation<Data, Never>) {
+        manuallyClearedSessions.removeValue(forKey: event.sessionId ?? "default")
         let sessionId = event.sessionId ?? "default"
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
@@ -3458,16 +3515,18 @@ final class AppState {
             var snapshot = SessionSnapshot(startTime: p.startTime)
             snapshot.cwd = p.cwd
             snapshot.source = source
+            snapshot.catpawIsSubagent = p.catpawIsSubagent ?? false
+            snapshot.catpawAgentName = p.catpawAgentName
             snapshot.model = p.model
             snapshot.sessionTitle = p.sessionTitle
             snapshot.sessionTitleSource = p.sessionTitleSource
             snapshot.providerSessionId = p.providerSessionId
-            snapshot.lastUserPrompt = p.lastUserPrompt
-            snapshot.lastAssistantMessage = p.lastAssistantMessage
-            if let prompt = p.lastUserPrompt {
+            snapshot.lastUserPrompt = snapshot.catpawIsSubagent ? nil : (CatPawHookPayload.isSource(source) ? CatPawHookPayload.preview(p.lastUserPrompt) : p.lastUserPrompt)
+            snapshot.lastAssistantMessage = snapshot.catpawIsSubagent ? nil : (CatPawHookPayload.isSource(source) ? CatPawHookPayload.preview(p.lastAssistantMessage) : p.lastAssistantMessage)
+            if let prompt = snapshot.lastUserPrompt {
                 snapshot.addRecentMessage(ChatMessage(isUser: true, text: prompt))
             }
-            if let reply = p.lastAssistantMessage {
+            if let reply = snapshot.lastAssistantMessage {
                 snapshot.addRecentMessage(ChatMessage(isUser: false, text: reply))
             }
             snapshot.termApp = p.termApp
@@ -3860,6 +3919,7 @@ final class AppState {
     func integrateDiscovered(_ discovered: [DiscoveredSession]) {
         var didMutate = false
         for info in discovered {
+            if shouldSuppressManuallyClearedDiscovery(info) { continue }
             if shouldSuppressClosedCodexDesktopDiscovery(info) {
                 continue
             }

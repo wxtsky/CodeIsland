@@ -246,7 +246,7 @@ extension AppState {
             permissionSessionIds: permissionQueue.map { $0.event.sessionId ?? "default" },
             questionSessionIds: questionQueue.map { $0.event.sessionId ?? "default" }
         )
-        return SessionListOrdering.order(sessions, requestRank: rank)
+        return SessionListOrdering.order(sessions.filter { !$0.value.isFoldedCatPawChild(in: sessions) }, requestRank: rank)
     }
 }
 

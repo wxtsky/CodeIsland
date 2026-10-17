@@ -129,8 +129,8 @@ final class PanelChromeTests: XCTestCase {
 
     func testQuitPillFitsBesideTheNotchInEveryLanguage() {
         // Expanded header, narrowest panel, 185pt notch: the right wing holds
-        // two 24pt buttons, the pill, 4pt gaps and 6pt trailing padding.
-        let headerRoom = (580 - 185) / 2 - 6 - 2 * NotchIconButton.hitSize - 2 * 4 - SessionGroupingTabsLayout.notchGap
+        // three 24pt buttons, the pill, 4pt gaps and 6pt trailing padding.
+        let headerRoom = (580 - 185) / 2 - 6 - 3 * NotchIconButton.hitSize - 3 * 4 - SessionGroupingTabsLayout.notchGap
         // The hovered idle bar (no sessions) is only a wing plus 40pt wider
         // than the notch on each side: mascot + 102 for its right side.
         let idleRoom = (26 + 102) - 6 - 2 * NotchIconButton.hitSize - 2 * 4
