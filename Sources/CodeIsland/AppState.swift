@@ -414,9 +414,15 @@ final class AppState {
     nonisolated(unsafe) private var cursorSubagentIndexTask: Task<Void, Never>?
     @ObservationIgnored
     nonisolated(unsafe) private var cursorSubagentIndexRecheck: Task<Void, Never>?
-    /// How many index walks have come back without each unresolved card's id.
+    /// When `cursorSubagentIndexRecheck` fires.
     @ObservationIgnored
-    private var cursorSubagentIndexMisses: [String: Int] = [:]
+    private var cursorSubagentIndexRecheckAt: Date?
+    /// The lookup schedule of each card the index does not resolve.
+    @ObservationIgnored
+    private var cursorSubagentLookups: [String: CursorSubagentLookupSchedule] = [:]
+    /// When such a card is looked up after it first goes unresolved. Tests shorten it.
+    @ObservationIgnored
+    var cursorSubagentLookupDelays = CursorSubagentLookupSchedule.defaultDelays
     private var isShowingCompletion: Bool {
         if case .completionCard = surface { return true }
         return false
@@ -4515,13 +4521,13 @@ final class AppState {
     ///
     /// Runs on every hook event and discovery scan, so it never touches the
     /// disk: cards without a Cursor transcript path are looked up in
-    /// `cursorSubagentIndex`, and a card the index does not resolve asks for a
-    /// fresh walk off the main actor. When that walk finds it, the card is
+    /// `cursorSubagentIndex`, and a card the index does not resolve is looked
+    /// up again by fresh walks off the main actor, on a bounded schedule
+    /// (`scheduleCursorSubagentLookups`). When a walk finds it, the card is
     /// rebranded then (`installCursorSubagentIndex`).
     @discardableResult
     func rebrandMisattributedCursorTaskCards() -> Bool {
         var didMutate = false
-        var unresolved: [String] = []
         for (sessionId, snap) in sessions {
             let normalized = SessionSnapshot.normalizedSupportedSource(snap.source)
             guard normalized == nil || normalized == "claude" else { continue }
@@ -4539,7 +4545,6 @@ final class AppState {
                 sessionId: sessionId,
                 preferredBase: Self.cursorProjectTranscriptBase(cwd: snap.cwd)
             ) else {
-                unresolved.append(sessionId)
                 continue
             }
             sessions[sessionId]?.source = "cursor"
@@ -4548,40 +4553,58 @@ final class AppState {
             }
             didMutate = true
         }
-        requestCursorSubagentIndexRebuild(unresolved: unresolved)
+        scheduleCursorSubagentLookups()
         return didMutate
     }
 
-    /// Start a walk for `unresolved` cards when the refresh policy allows one
-    /// now; arm a timer for a card still owed its prompt re-check.
-    private func requestCursorSubagentIndexRebuild(unresolved: [String]) {
-        guard cursorSubagentIndexTask == nil else { return }  // its completion re-evaluates
-        let missCounts = unresolved.map { cursorSubagentIndexMisses[$0] ?? 0 }
-        guard let due = CursorSubagentTranscriptIndex.nextRebuildDate(
-            lastBuiltAt: cursorSubagentIndex?.builtAt,
-            unresolvedMissCounts: missCounts
-        ) else { return }
-
-        let delay = due.timeIntervalSinceNow
-        if delay <= 0 {
-            startCursorSubagentIndexRebuild()
+    /// Give each card the index does not resolve a lookup schedule (kept
+    /// across calls, dropped once the card is gone or rebranded), then start
+    /// the walk its earliest due lookup needs, or arm the re-check timer for
+    /// it. At most one walk and one timer are ever pending.
+    private func scheduleCursorSubagentLookups(now: Date = Date()) {
+        var lookups: [String: CursorSubagentLookupSchedule] = [:]
+        for sessionId in cursorRebrandCandidateIds()
+        where cursorSubagentIndex?.contains(sessionId: sessionId) != true {
+            lookups[sessionId] = cursorSubagentLookups[sessionId]
+                ?? CursorSubagentLookupSchedule(since: now, delays: cursorSubagentLookupDelays)
+        }
+        cursorSubagentLookups = lookups
+        guard cursorSubagentIndexTask == nil else { return }  // its completion reschedules
+        guard let due = lookups.values.compactMap(\.nextLookup).min() else {
+            cancelCursorSubagentIndexRecheck()
             return
         }
-        // Settled cards are re-checked only when an event brings us back here.
-        guard missCounts.contains(where: { $0 < CursorSubagentTranscriptIndex.promptLookups }),
-              cursorSubagentIndexRecheck == nil else { return }
+        if due <= now {
+            startCursorSubagentIndexRebuild()
+        } else {
+            armCursorSubagentIndexRecheck(at: due)
+        }
+    }
+
+    /// The timer, not hook traffic, drives a card's later lookups.
+    private func armCursorSubagentIndexRecheck(at due: Date) {
+        if cursorSubagentIndexRecheck != nil, let armed = cursorSubagentIndexRecheckAt, armed <= due { return }
+        cursorSubagentIndexRecheck?.cancel()
+        cursorSubagentIndexRecheckAt = due
+        let delay = max(0, due.timeIntervalSinceNow)
         cursorSubagentIndexRecheck = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64((delay * 1_000_000_000).rounded(.up)))
             guard let self, !Task.isCancelled else { return }
             self.cursorSubagentIndexRecheck = nil
-            self.requestCursorSubagentIndexRebuild(unresolved: self.cursorRebrandCandidateIds())
+            self.cursorSubagentIndexRecheckAt = nil
+            self.scheduleCursorSubagentLookups()
         }
+    }
+
+    private func cancelCursorSubagentIndexRecheck() {
+        cursorSubagentIndexRecheck?.cancel()
+        cursorSubagentIndexRecheck = nil
+        cursorSubagentIndexRecheckAt = nil
     }
 
     private func startCursorSubagentIndexRebuild() {
         guard cursorSubagentIndexTask == nil else { return }
-        cursorSubagentIndexRecheck?.cancel()
-        cursorSubagentIndexRecheck = nil
+        cancelCursorSubagentIndexRecheck()
         cursorSubagentIndexTask = Task.detached(priority: .utility) { [weak self] in
             guard !Task.isCancelled else { return }
             let index = Self.cursorSubagentIndexScanner()
@@ -4595,28 +4618,21 @@ final class AppState {
         }
     }
 
-    /// Adopt a freshly walked index: count a miss against every card it does
-    /// not resolve, and rebrand (and fold) the cards it does.
+    /// Adopt a freshly walked index: count it against the schedule of every
+    /// card it does not resolve, and rebrand (and fold) the cards it does.
     func installCursorSubagentIndex(_ index: CursorSubagentTranscriptIndex) {
         cursorSubagentIndex = index
-        let candidates = cursorRebrandCandidateIds()
-        var misses: [String: Int] = [:]
-        var resolvedAny = false
-        for sessionId in candidates {
-            if index.contains(sessionId: sessionId) {
-                resolvedAny = true
-            } else {
-                misses[sessionId] = (cursorSubagentIndexMisses[sessionId] ?? 0) + 1
-            }
+        for sessionId in Array(cursorSubagentLookups.keys) where !index.contains(sessionId: sessionId) {
+            cursorSubagentLookups[sessionId]?.recordMiss(walkStartedAt: index.builtAt)
         }
-        cursorSubagentIndexMisses = misses
 
+        let resolvedAny = cursorRebrandCandidateIds().contains { index.contains(sessionId: $0) }
         if resolvedAny, applyCursorSubsessionModeToKnownSessions() {
             scheduleSave()
             startRotationIfNeeded()
             refreshDerivedState()
         } else {
-            requestCursorSubagentIndexRebuild(unresolved: Array(misses.keys))
+            scheduleCursorSubagentLookups()
         }
     }
 
@@ -4971,8 +4987,7 @@ final class AppState {
         lastCodexDesktopDiscoveryPollAt = nil
         cursorSubagentIndexTask?.cancel()
         cursorSubagentIndexTask = nil
-        cursorSubagentIndexRecheck?.cancel()
-        cursorSubagentIndexRecheck = nil
+        cancelCursorSubagentIndexRecheck()
         for key in Array(processMonitors.keys) { stopMonitor(key) }
     }
 

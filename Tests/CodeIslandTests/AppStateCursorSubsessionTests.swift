@@ -269,6 +269,99 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertEqual(probe.calls, 0, "the local Cursor store can never hold a remote card's Task transcript")
     }
 
+    func testUnresolvedCardIsLookedUpOnItsScheduleThenLeftAlone() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: Date())
+        }
+
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let appState = AppState()
+        appState.cursorSubagentLookupDelays = [0, 0.05, 0.1, 0.15, 0.2]
+        var card = SessionSnapshot()
+        card.source = "claude"
+        card.status = .running
+        appState.sessions[childId] = card
+
+        // One event; the re-check timer drives every later lookup.
+        appState.applyCursorSubsessionModeToKnownSessions()
+        await waitUntil("no lookup after the first one came without an event") { probe.calls >= 2 }
+
+        // Past its last delay the card is left alone. (A walk that starts late
+        // covers every lookup due by then, so a loaded machine may walk fewer
+        // than five times — never more.)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        let walks = probe.calls
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(probe.calls, walks, "a card past its last lookup is not walked for again")
+        XCTAssertLessThanOrEqual(walks, 5, "at most one walk per scheduled lookup")
+
+        // A hook that later brings the Task's transcript path still rebrands it.
+        let transcript = "/Users/u/.cursor/projects/x/agent-transcripts/e1247fd5-d9a0-48ef-8457-0304606b1833"
+            + "/subagents/\(childId).jsonl"
+        appState.sessions[childId]?.transcriptPath = transcript
+        XCTAssertTrue(appState.rebrandMisattributedCursorTaskCards())
+        XCTAssertEqual(appState.sessions[childId]?.source, "cursor")
+    }
+
+    func testCardFirstSeenDuringAWalkKeepsItsImmediateLookup() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        let release = DispatchSemaphore(value: 0)
+        defer {
+            release.signal()
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            let startedAt = Date()
+            probe.record()
+            if probe.calls == 1 { _ = release.wait(timeout: .now() + asyncTestTimeout) }
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: startedAt)
+        }
+
+        let appState = AppState()
+        // Far enough apart that no later lookup can stand in for the immediate one.
+        appState.cursorSubagentLookupDelays = [0, 30, 60, 90, 120]
+        var first = SessionSnapshot()
+        first.source = "claude"
+        first.status = .running
+        appState.sessions["claude-first"] = first
+        appState.applyCursorSubsessionModeToKnownSessions()
+        await waitUntil("the first walk never started") { probe.calls == 1 }
+
+        // A card that shows up while that walk is still running ...
+        var late = SessionSnapshot()
+        late.source = "claude"
+        late.status = .running
+        appState.sessions["claude-late"] = late
+        appState.applyCursorSubsessionModeToKnownSessions()
+        release.signal()
+
+        // ... gets a walk of its own instead of being charged for one that started before it existed.
+        await waitUntil(timeout: 2, "the late card never got its immediate lookup") { probe.calls == 2 }
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)

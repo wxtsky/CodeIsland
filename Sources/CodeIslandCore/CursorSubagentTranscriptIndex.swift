@@ -62,27 +62,41 @@ public struct CursorSubagentTranscriptIndex: Sendable {
         }
         return paths.first
     }
+}
 
-    /// Lookups a card gets soon after it is first seen: once on sight, once
-    /// more `promptRecheckInterval` later in case its transcript landed just
-    /// after its first hook. After that the card is almost certainly a real
-    /// Claude session and is re-checked only every `settledRefreshInterval`.
-    public static let promptLookups = 2
-    public static let promptRecheckInterval: TimeInterval = 5
-    public static let settledRefreshInterval: TimeInterval = 60
+/// When fresh walks look up a default-Claude card the index does not
+/// resolve: `delays` after the card first went unresolved, then never again.
+///
+/// A Cursor Task's transcript lands within seconds of its first hook, so a
+/// card still unresolved after the last lookup is a real Claude session.
+/// Walking on behalf of every such card for as long as it lives would re-read
+/// all of `~/.cursor/projects` every so often for as long as Claude Code runs.
+public struct CursorSubagentLookupSchedule: Sendable {
+    public static let defaultDelays: [TimeInterval] = [0, 5, 15, 45, 120]
 
-    /// When the next walk may start for cards the current index does not
-    /// resolve, given how many walks already missed each of them. Nil when no
-    /// card is waiting on one.
-    public static func nextRebuildDate(
-        lastBuiltAt: Date?,
-        unresolvedMissCounts: [Int]
-    ) -> Date? {
-        guard !unresolvedMissCounts.isEmpty else { return nil }
-        guard let lastBuiltAt else { return .distantPast }
-        let awaitingPromptLookup = unresolvedMissCounts.contains { $0 < promptLookups }
-        return lastBuiltAt.addingTimeInterval(
-            awaitingPromptLookup ? promptRecheckInterval : settledRefreshInterval
-        )
+    /// When the card first went unresolved.
+    public let since: Date
+    /// Ascending.
+    public let delays: [TimeInterval]
+    /// How many of `delays` walks have covered so far.
+    public private(set) var lookupsDone = 0
+
+    public init(since: Date, delays: [TimeInterval] = defaultDelays) {
+        self.since = since
+        self.delays = delays
+    }
+
+    /// When the next lookup is due; nil once every lookup is done.
+    public var nextLookup: Date? {
+        lookupsDone < delays.count ? since.addingTimeInterval(delays[lookupsDone]) : nil
+    }
+
+    /// A walk that started at `walkStartedAt` did not find the card. It covers
+    /// every lookup due by then (a transcript on disk earlier would still be
+    /// there) and none due later, so a walk already running when the card was
+    /// first seen leaves it its immediate lookup.
+    public mutating func recordMiss(walkStartedAt: Date) {
+        let covered = delays.prefix(while: { since.addingTimeInterval($0) <= walkStartedAt }).count
+        lookupsDone = max(lookupsDone, covered)
     }
 }

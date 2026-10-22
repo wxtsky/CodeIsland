@@ -71,27 +71,36 @@ final class CursorSubagentTranscriptIndexTests: XCTestCase {
         XCTAssertFalse(CursorSubagentTranscriptIndex.scan(home: home).contains(sessionId: childId))
     }
 
-    func testNextRebuildDatePolicy() {
-        let built = Date(timeIntervalSince1970: 1_700_000_000)
+    func testLookupScheduleRunsItsDelaysThenStops() {
+        let since = Date(timeIntervalSince1970: 1_700_000_000)
+        var lookup = CursorSubagentLookupSchedule(since: since)
 
-        XCTAssertNil(
-            CursorSubagentTranscriptIndex.nextRebuildDate(lastBuiltAt: built, unresolvedMissCounts: []),
-            "nothing unresolved, nothing to walk"
-        )
+        XCTAssertEqual(CursorSubagentLookupSchedule.defaultDelays, [0, 5, 15, 45, 120])
+        for delay in CursorSubagentLookupSchedule.defaultDelays {
+            XCTAssertEqual(lookup.nextLookup, since.addingTimeInterval(delay))
+            lookup.recordMiss(walkStartedAt: since.addingTimeInterval(delay))
+        }
+        XCTAssertNil(lookup.nextLookup, "a card still unresolved after its last lookup is left alone")
+    }
+
+    func testAWalkCoversOnlyTheLookupsDueWhenItStarted() {
+        let since = Date(timeIntervalSince1970: 1_700_000_000)
+        var lookup = CursorSubagentLookupSchedule(since: since)
+
+        lookup.recordMiss(walkStartedAt: since.addingTimeInterval(-0.5))
+        XCTAssertEqual(lookup.nextLookup, since, "a walk already running when the card was first seen is not its lookup")
+
+        lookup.recordMiss(walkStartedAt: since)
+        lookup.recordMiss(walkStartedAt: since.addingTimeInterval(3))
         XCTAssertEqual(
-            CursorSubagentTranscriptIndex.nextRebuildDate(lastBuiltAt: nil, unresolvedMissCounts: [0]),
-            .distantPast,
-            "never walked: walk now"
+            lookup.nextLookup, since.addingTimeInterval(5),
+            "a walk some other card asked for before this one's next delay does not use it up"
         )
+
+        lookup.recordMiss(walkStartedAt: since.addingTimeInterval(50))
         XCTAssertEqual(
-            CursorSubagentTranscriptIndex.nextRebuildDate(lastBuiltAt: built, unresolvedMissCounts: [2, 1]),
-            built.addingTimeInterval(CursorSubagentTranscriptIndex.promptRecheckInterval),
-            "a card still owed its prompt re-check"
-        )
-        XCTAssertEqual(
-            CursorSubagentTranscriptIndex.nextRebuildDate(lastBuiltAt: built, unresolvedMissCounts: [2, 5]),
-            built.addingTimeInterval(CursorSubagentTranscriptIndex.settledRefreshInterval),
-            "only settled cards: slow refresh"
+            lookup.nextLookup, since.addingTimeInterval(120),
+            "a late walk covers every lookup due by the time it started"
         )
     }
 }
