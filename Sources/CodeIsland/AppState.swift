@@ -4562,6 +4562,13 @@ final class AppState {
     /// the walk its earliest due lookup needs, or arm the re-check timer for
     /// it. At most one walk and one timer are ever pending.
     private func scheduleCursorSubagentLookups(now: Date = Date()) {
+        // `separate` folds nothing, so nothing is looked up; leaving it starts
+        // every card's schedule afresh (`applyCurrentPluginSessionMode`).
+        let mode = Self.currentPluginSessionMode()
+        guard mode == "merge" || mode == "hide" else {
+            resetCursorSubagentLookups()
+            return
+        }
         var lookups: [String: CursorSubagentLookupSchedule] = [:]
         for sessionId in cursorRebrandCandidateIds()
         where cursorSubagentIndex?.contains(sessionId: sessionId) != true {
@@ -4600,6 +4607,12 @@ final class AppState {
         cursorSubagentIndexRecheck?.cancel()
         cursorSubagentIndexRecheck = nil
         cursorSubagentIndexRecheckAt = nil
+    }
+
+    /// Drop every card's lookup schedule and the timer driving them.
+    private func resetCursorSubagentLookups() {
+        cursorSubagentLookups = [:]
+        cancelCursorSubagentIndexRecheck()
     }
 
     private func startCursorSubagentIndexRebuild() {
@@ -4677,6 +4690,8 @@ final class AppState {
 
         switch mode {
         case "separate":
+            // Back in merge or hide, every default-Claude card is looked up afresh.
+            resetCursorSubagentLookups()
             didMutate = separateMergedCodexSubagents()
             didMutate = separateMergedCursorSubagents() || didMutate
         case "merge":

@@ -362,6 +362,94 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         await waitUntil(timeout: 2, "the late card never got its immediate lookup") { probe.calls == 2 }
     }
 
+    func testRecheckTimerDoesNotWalkInSeparateMode() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: Date())
+        }
+
+        let appState = AppState()
+        appState.cursorSubagentLookupDelays = [0, 0.05, 0.1, 0.15, 0.2]
+        var card = SessionSnapshot()
+        card.source = "claude"
+        card.status = .running
+        appState.sessions["claude-1"] = card
+        appState.applyCursorSubsessionModeToKnownSessions()
+        await waitUntil("the first walk never ran") { probe.calls == 1 }
+
+        // Switched behind the timer's back: it has to check for itself.
+        UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(probe.calls, 1, "separate folds nothing, so nothing is walked for")
+    }
+
+    func testLeavingSeparateModeLooksCardsUpAgain() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let childTranscript =
+            "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            // The Task's transcript lands only after the first walk.
+            let paths = probe.calls > 1 ? [childId: [childTranscript]] : [:]
+            return CursorSubagentTranscriptIndex(pathsBySessionId: paths, builtAt: Date())
+        }
+
+        let appState = AppState()
+        appState.cursorSubagentLookupDelays = [0]  // one lookup, then the card is left alone
+        var parent = SessionSnapshot()
+        parent.source = "cursor"
+        parent.status = .running
+        parent.providerSessionId = parentId
+        parent.transcriptPath = "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/\(parentId).jsonl"
+        appState.sessions[parentId] = parent
+        var child = SessionSnapshot()
+        child.source = "claude"
+        child.status = .running
+        child.lastActivity = Date()
+        appState.sessions[childId] = child
+
+        appState.applyCursorSubsessionModeToKnownSessions()
+        await waitUntil("the first walk never ran") { probe.calls == 1 }
+        try? await Task.sleep(nanoseconds: 50_000_000)  // it lands: the card's only lookup is used up
+
+        UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
+        appState.applyCurrentPluginSessionMode(persist: false)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        appState.applyCurrentPluginSessionMode(persist: false)
+
+        await waitUntil("back in merge, the card was never looked up again") { appState.sessions[childId] == nil }
+        XCTAssertEqual(appState.sessions[parentId]?.subagents[childId]?.agentType, "cursor-subagent")
+        XCTAssertEqual(probe.calls, 2)
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
