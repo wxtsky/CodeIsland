@@ -4532,6 +4532,8 @@ final class AppState {
                 didMutate = true
                 continue
             }
+            // A remote card's transcripts live on its own host, never in the local index.
+            guard !snap.isRemote else { continue }
 
             guard let found = cursorSubagentIndex?.transcriptPath(
                 sessionId: sessionId,
@@ -4618,11 +4620,11 @@ final class AppState {
         }
     }
 
-    /// Default-Claude cards whose transcript path does not already say Cursor.
+    /// Local default-Claude cards whose transcript path does not already say Cursor.
     private func cursorRebrandCandidateIds() -> [String] {
         sessions.compactMap { sessionId, snap in
             let normalized = SessionSnapshot.normalizedSupportedSource(snap.source)
-            guard normalized == nil || normalized == "claude",
+            guard normalized == nil || normalized == "claude", !snap.isRemote,
                   !CursorSessionFolding.isCursorAgentTranscriptPath(snap.transcriptPath) else { return nil }
             return sessionId
         }

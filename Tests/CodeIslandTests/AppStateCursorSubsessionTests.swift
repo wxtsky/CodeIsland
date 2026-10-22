@@ -236,6 +236,39 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         )
     }
 
+    func testRemoteClaudeCardsNeverStartAWalk() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        defer {
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [:], builtAt: Date())
+        }
+
+        let appState = AppState()
+        var remote = SessionSnapshot()
+        remote.source = "claude"
+        remote.status = .running
+        remote.remoteHostId = "devbox"
+        appState.sessions["remote-claude"] = remote
+
+        appState.applyCursorSubsessionModeToKnownSessions()
+        // Long enough for a walk, had one started, to reach the scanner.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(probe.calls, 0, "the local Cursor store can never hold a remote card's Task transcript")
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
