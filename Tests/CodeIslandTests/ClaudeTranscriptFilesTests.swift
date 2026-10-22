@@ -24,6 +24,35 @@ final class ClaudeTranscriptFilesTests: XCTestCase {
         }
     }
 
+    func testFollowsASymlinkedProjectDirLikeThePerFileStat() throws {
+        let root = NSTemporaryDirectory() + "claude-transcript-files-" + UUID().uuidString
+        let fm = FileManager.default
+        let real = "\(root)/real"
+        try fm.createDirectory(atPath: real, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(atPath: root) }
+
+        try "{}\n".write(toFile: "\(real)/a.jsonl", atomically: true, encoding: .utf8)
+        // A transcript that is itself a symlink reports its own mtime, not its target's.
+        let target = "\(root)/elsewhere.jsonl"
+        try "{}\n".write(toFile: target, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(-1000)], ofItemAtPath: target)
+        try fm.createSymbolicLink(atPath: "\(real)/b.jsonl", withDestinationPath: target)
+        // The project dir itself symlinked (say, history kept across a moved checkout).
+        let linked = "\(root)/linked"
+        try fm.createSymbolicLink(atPath: linked, withDestinationPath: real)
+
+        let files = try XCTUnwrap(
+            AppState.claudeTranscriptFiles(in: linked, fm: fm),
+            "contentsOfDirectory(atPath:), which this replaced, follows a symlinked dir"
+        )
+
+        XCTAssertEqual(Set(files.map(\.name)), ["a.jsonl", "b.jsonl"])
+        for file in files {
+            let stat = try fm.attributesOfItem(atPath: "\(linked)/\(file.name)")[.modificationDate] as? Date
+            XCTAssertEqual(file.modified, stat, file.name)
+        }
+    }
+
     func testMissingProjectDirIsNil() {
         XCTAssertNil(AppState.claudeTranscriptFiles(in: "/nonexistent-\(UUID().uuidString)", fm: .default))
     }

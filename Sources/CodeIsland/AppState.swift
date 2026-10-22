@@ -5119,9 +5119,14 @@ final class AppState {
 
     /// The `.jsonl` transcripts in one Claude project dir with their mtimes,
     /// read in one bulk directory listing instead of a stat per file.
+    ///
+    /// Unlike `contentsOfDirectory(atPath:)`, the URL listing fails on a
+    /// project dir that is itself a symlink, so resolve the dir first. Entries
+    /// are not resolved: a symlinked transcript still reports its own mtime,
+    /// as the per-file stat did.
     nonisolated static func claudeTranscriptFiles(in projectPath: String, fm: FileManager) -> [ClaudeTranscriptFile]? {
         guard let urls = try? fm.contentsOfDirectory(
-            at: URL(fileURLWithPath: projectPath, isDirectory: true),
+            at: URL(fileURLWithPath: projectPath, isDirectory: true).resolvingSymlinksInPath(),
             includingPropertiesForKeys: [.contentModificationDateKey]
         ) else { return nil }
         return urls.compactMap { url in
