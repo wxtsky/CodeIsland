@@ -84,25 +84,30 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertEqual(appState.sessions[parentId]?.source, "cursor")
     }
 
-    func testFindCursorSubagentTranscriptPathLocatesFileUnderProject() throws {
+    func testIndexLocatesTaskTranscriptUnderTheCardsCwdProject() throws {
         let home = NSTemporaryDirectory() + "cursor-subagent-find-" + UUID().uuidString
         let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
         let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
-        let cwd = "/Users/zephyr/Code/CodeIsland"
-        let project = cwd.appProjectDirEncoded()
-        let dir = "\(home)/.cursor/projects/\(project)/agent-transcripts/\(parentId)/subagents"
-        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: home) }
 
-        let path = "\(dir)/\(childId).jsonl"
-        try " {}\n".write(toFile: path, atomically: true, encoding: .utf8)
+        // The same Task id under two projects: the card's cwd picks its own.
+        var paths: [String: String] = [:]
+        for cwd in ["/Users/zephyr/Code/CodeIsland", "/Users/zephyr/Code/Other"] {
+            let project = cwd.appProjectDirEncoded()
+            let dir = "\(home)/.cursor/projects/\(project)/agent-transcripts/\(parentId)/subagents"
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            paths[cwd] = "\(dir)/\(childId).jsonl"
+            try " {}\n".write(toFile: "\(dir)/\(childId).jsonl", atomically: true, encoding: .utf8)
+        }
 
-        let found = AppState.findCursorSubagentTranscriptPath(
-            sessionId: childId,
-            cwd: cwd,
-            home: home
-        )
-        XCTAssertEqual(found, path)
+        let index = CursorSubagentTranscriptIndex.scan(home: home)
+        for (cwd, path) in paths {
+            let found = index.transcriptPath(
+                sessionId: childId,
+                preferredBase: AppState.cursorProjectTranscriptBase(cwd: cwd, home: home)
+            )
+            XCTAssertEqual(found, path, cwd)
+        }
     }
 
     func testMisbrandedClaudeCardWithoutTranscriptRebrandsFromIndexBuiltOffMainActor() async {
@@ -187,7 +192,7 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 50_000_000)
         for _ in 0..<50 { appState.applyCursorSubsessionModeToKnownSessions() }
 
-        XCTAssertEqual(probe.calls, 1, "the prompt re-check waits out its interval instead of walking again")
+        XCTAssertEqual(probe.calls, 1, "the next lookup waits for its delay instead of walking again")
         XCTAssertTrue(appState.sessions.values.allSatisfy { $0.source == "claude" })
     }
 

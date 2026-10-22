@@ -4633,7 +4633,7 @@ final class AppState {
 
     /// Adopt a freshly walked index: count it against the schedule of every
     /// card it does not resolve, and rebrand (and fold) the cards it does.
-    func installCursorSubagentIndex(_ index: CursorSubagentTranscriptIndex) {
+    private func installCursorSubagentIndex(_ index: CursorSubagentTranscriptIndex) {
         cursorSubagentIndex = index
         for sessionId in Array(cursorSubagentLookups.keys) where !index.contains(sessionId: sessionId) {
             cursorSubagentLookups[sessionId]?.recordMiss(walkStartedAt: index.builtAt)
@@ -4667,21 +4667,6 @@ final class AppState {
     ) -> String? {
         guard let cwd, !cwd.isEmpty else { return nil }
         return "\(home)/.cursor/projects/\(cwd.appProjectDirEncoded())/agent-transcripts"
-    }
-
-    /// Locate `…/agent-transcripts/<parent>/subagents/<sessionId>.jsonl` under
-    /// `~/.cursor/projects`. Prefers the cwd-encoded project when available.
-    /// Walks the whole store — a one-off lookup; hot paths use the index.
-    nonisolated static func findCursorSubagentTranscriptPath(
-        sessionId: String,
-        cwd: String?,
-        home: String = FileManager.default.homeDirectoryForCurrentUser.path,
-        fm: FileManager = .default
-    ) -> String? {
-        CursorSubagentTranscriptIndex.scan(home: home, fm: fm).transcriptPath(
-            sessionId: sessionId,
-            preferredBase: cursorProjectTranscriptBase(cwd: cwd, home: home)
-        )
     }
 
     func applyCurrentPluginSessionMode(persist: Bool = true) {
