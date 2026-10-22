@@ -4581,9 +4581,12 @@ final class AppState {
         cursorSubagentIndexRecheck?.cancel()
         cursorSubagentIndexRecheck = nil
         cursorSubagentIndexTask = Task.detached(priority: .utility) { [weak self] in
+            guard !Task.isCancelled else { return }
             let index = Self.cursorSubagentIndexScanner()
+            guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                // Cancelled by teardown, which already dropped the handle.
+                guard let self, !Task.isCancelled else { return }
                 self.cursorSubagentIndexTask = nil
                 self.installCursorSubagentIndex(index)
             }
@@ -4964,6 +4967,10 @@ final class AppState {
         codexDesktopDiscoveryScanTask?.cancel()
         codexDesktopDiscoveryScanTask = nil
         lastCodexDesktopDiscoveryPollAt = nil
+        cursorSubagentIndexTask?.cancel()
+        cursorSubagentIndexTask = nil
+        cursorSubagentIndexRecheck?.cancel()
+        cursorSubagentIndexRecheck = nil
         for key in Array(processMonitors.keys) { stopMonitor(key) }
     }
 
@@ -5005,6 +5012,8 @@ final class AppState {
         tearDownMainThreadResources()
         discoveryScanTask?.cancel()
         codexDesktopDiscoveryScanTask?.cancel()
+        cursorSubagentIndexTask?.cancel()
+        cursorSubagentIndexRecheck?.cancel()
         codexAppServerReconnectTask?.cancel()
         for (_, monitor) in processMonitors {
             monitor.source.cancel()

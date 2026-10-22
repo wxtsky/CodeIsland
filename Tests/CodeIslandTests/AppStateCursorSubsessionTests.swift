@@ -191,6 +191,51 @@ final class AppStateCursorSubsessionTests: XCTestCase {
         XCTAssertTrue(appState.sessions.values.allSatisfy { $0.source == "claude" })
     }
 
+    func testStopSessionDiscoveryDropsAnIndexWalkStillInFlight() async {
+        let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
+        UserDefaults.standard.set("merge", forKey: SettingsKey.pluginSessionMode)
+        let previousScanner = AppState.cursorSubagentIndexScanner
+        let release = DispatchSemaphore(value: 0)
+        defer {
+            release.signal()
+            AppState.cursorSubagentIndexScanner = previousScanner
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: SettingsKey.pluginSessionMode)
+            } else {
+                UserDefaults.standard.removeObject(forKey: SettingsKey.pluginSessionMode)
+            }
+        }
+
+        let parentId = "e1247fd5-d9a0-48ef-8457-0304606b1833"
+        let childId = "2528cb91-6379-48f2-aff8-40f4b804dafa"
+        let childTranscript =
+            "/Users/u/.cursor/projects/x/agent-transcripts/\(parentId)/subagents/\(childId).jsonl"
+        let probe = CursorIndexScanProbe()
+        AppState.cursorSubagentIndexScanner = {
+            probe.record()
+            _ = release.wait(timeout: .now() + asyncTestTimeout)
+            return CursorSubagentTranscriptIndex(pathsBySessionId: [childId: [childTranscript]], builtAt: Date())
+        }
+
+        let appState = AppState()
+        var child = SessionSnapshot()
+        child.source = "claude"
+        child.status = .running
+        appState.sessions[childId] = child
+
+        appState.applyCursorSubsessionModeToKnownSessions()
+        await waitUntil("the index walk never started") { probe.calls == 1 }
+        appState.stopSessionDiscovery()
+        release.signal()
+        // Long enough for a walk that ignored the stop to land on the main actor.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(
+            appState.sessions[childId]?.source, "claude",
+            "a walk that outlives stopSessionDiscovery must not rebrand or fold cards"
+        )
+    }
+
     func testSeparateModeSplitsMergedCursorSubagent() {
         let previousMode = UserDefaults.standard.object(forKey: SettingsKey.pluginSessionMode)
         UserDefaults.standard.set("separate", forKey: SettingsKey.pluginSessionMode)
