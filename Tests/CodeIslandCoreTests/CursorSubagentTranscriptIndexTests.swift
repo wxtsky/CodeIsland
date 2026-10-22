@@ -54,9 +54,15 @@ final class CursorSubagentTranscriptIndexTests: XCTestCase {
 
         let index = CursorSubagentTranscriptIndex.scan(home: home)
 
+        // Both ways round: whichever project the directory listing happens to
+        // return first must not decide it.
         XCTAssertEqual(
             index.transcriptPath(sessionId: childId, preferredBase: own),
             "\(own)/\(parentId)/subagents/\(childId).jsonl"
+        )
+        XCTAssertEqual(
+            index.transcriptPath(sessionId: childId, preferredBase: other),
+            "\(other)/\(parentId)/subagents/\(childId).jsonl"
         )
     }
 
