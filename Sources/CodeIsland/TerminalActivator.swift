@@ -6,6 +6,23 @@ import CodeIslandCore
 /// Supports tab-level switching for: Ghostty, iTerm2, Terminal.app, WezTerm, kitty.
 /// Falls back to app-level activation for: Alacritty, Warp, Hyper, Tabby, Rio.
 struct TerminalActivator {
+    /// DeepSeek Harness desktop — an Electron app with a single window and no
+    /// terminal of its own. Sessions from it carry source `dsh` (and, once the
+    /// dsh-island bridge reports them, `_term_bundle`); a `dsh` CLI run inside a
+    /// real terminal carries that terminal's bundle ID, so the check below only
+    /// catches the desktop case.
+    static let deepSeekHarnessBundleId = "com.deepseek.dsh"
+
+    /// True for a DeepSeek Harness desktop session. The app is a single-window
+    /// Electron shell with no terminal, so it has no `_term_bundle` of its own
+    /// (older bridge versions send none), while a `dsh` CLI run inside a real
+    /// terminal reports that terminal's bundle id and must keep its terminal
+    /// jump.
+    static func isDeepSeekHarnessDesktopSession(_ session: SessionSnapshot) -> Bool {
+        guard session.source == "dsh" else { return false }
+        return session.termBundleId == nil || session.termBundleId == deepSeekHarnessBundleId
+    }
+
     // Internal (not private) so support tests can assert a terminal is recognized,
     // matching sourceToNativeAppBundleId's visibility. See TeraxSupportTests.
     static let knownTerminals: [(name: String, bundleId: String)] = [
@@ -76,7 +93,8 @@ struct TerminalActivator {
     /// out of the map above so a running Codex.app can't steal a CLI session's
     /// jump; with no session there is no jump to steal.
     static func desktopAppBundleId(forSource source: String) -> String? {
-        sourceToNativeAppBundleId[source] ?? (source == "codex" ? AppState.codexAppBundleId : nil)
+        if source == "dsh" { return deepSeekHarnessBundleId }
+        return sourceToNativeAppBundleId[source] ?? (source == "codex" ? AppState.codexAppBundleId : nil)
     }
 
     /// Bundle IDs of apps that have both APP and CLI modes.
@@ -108,6 +126,11 @@ struct TerminalActivator {
         // most "claude" sessions are terminal CLI runs, and that fallback would
         // steal their click-to-jump whenever the desktop app happens to be open.
         "com.anthropic.claudefordesktop": "Claude",
+        // DeepSeek Harness desktop. Like Claude Desktop, deliberately NOT in
+        // sourceToNativeAppBundleId — a DSH CLI run in a terminal must keep its
+        // terminal jump; the early `dsh` branch in `activate` handles the
+        // desktop-app case by bundle ID (`_term_bundle`) instead.
+        deepSeekHarnessBundleId: "DeepSeek Harness",
     ]
 
     static func activate(
@@ -145,6 +168,18 @@ struct TerminalActivator {
             return
         }
         if allowHerdr && activateHerdrIfAvailable(session: session, sessionId: sessionId) {
+            return
+        }
+
+        // DeepSeek Harness desktop: an Electron app with one window and no
+        // terminal, so app-level activation is the whole jump. It must happen
+        // before the generic terminal path — a desktop session has no TTY and
+        // would otherwise fall through to `detectRunningTerminal()` and raise
+        // an unrelated terminal (or nothing). `activateByBundleId` deliberately
+        // skips AppleScript, so the click needs no Automation permission and
+        // still switches Spaces like other Electron apps.
+        if isDeepSeekHarnessDesktopSession(session) {
+            activateByBundleId(deepSeekHarnessBundleId)
             return
         }
 

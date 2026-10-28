@@ -850,6 +850,10 @@ public struct SessionSnapshot: Sendable {
         // Claude Code Desktop (#211): local Code-tab sessions run the same engine
         // and fire the same ~/.claude/settings.json hooks as the CLI.
         "com.anthropic.claudefordesktop": "Claude",
+        // DeepSeek Harness desktop: its dsh-island bridge tags events with the
+        // app's bundle id, so the card can show the app's name instead of a
+        // terminal badge.
+        "com.deepseek.dsh": "DeepSeek Harness",
         "com.alipay.dtcoder.ide": "AiWork",
         // Xiaomi MiMo desktop — mainland and overseas ("AI") editions are
         // separate installs with their own bundle ids.
@@ -884,6 +888,10 @@ public struct SessionSnapshot: Sendable {
         // plugin's events carry the app's __CFBundleIdentifier.
         "com.xiaomi.mimo.desktop": "mimo",
         "com.xiaomi.mimo.desktop-ai": "mimo",
+        // DeepSeek Harness desktop: the dsh-island bridge tags events with the
+        // app's bundle id, so `dsh` + com.deepseek.dsh is the desktop app, while
+        // a `dsh` CLI run in a terminal carries that terminal's bundle id.
+        "com.deepseek.dsh": "dsh",
     ]
 
     /// Source id for the native app that owns `bundleId`, if any.
