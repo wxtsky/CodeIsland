@@ -34,9 +34,9 @@ final class MiMoSourceTests: XCTestCase {
         var session = SessionSnapshot()
         session.source = "mimo"
         XCTAssertEqual(session.sourceLabel, "MiMo")
-        // Every firmware slot is taken; MiMo Code is an OpenCode fork.
-        XCTAssertEqual(MascotID(sourceName: "mimo"), .opencode)
-        XCTAssertEqual(MascotID(sourceName: "mimo-code"), .opencode)
+        // Slot 23 in the 24-slot Buddy firmware.
+        XCTAssertEqual(MascotID(sourceName: "mimo"), .mimo)
+        XCTAssertEqual(MascotID(sourceName: "mimo-code"), .mimo)
     }
 
     // MARK: - Process matching

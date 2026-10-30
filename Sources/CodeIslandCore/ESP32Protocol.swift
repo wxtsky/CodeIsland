@@ -8,7 +8,7 @@ import Foundation
 /// - Notify (Buddy→host):          `0000beef-0002-1000-8000-00805f9b34fb`
 ///
 /// Downlink agent frame (≤ 20 bytes):
-///   byte[0] = sourceId (0..15, MascotID)
+///   byte[0] = sourceId (0..23, MascotID)
 ///   byte[1] = statusId (0..4, MascotStatusCode)
 ///   byte[2] = toolLen  (0..17)
 ///   byte[3..] = toolName UTF-8 (truncated to 17 bytes)
@@ -141,7 +141,7 @@ public enum BuddyUplinkEvent: Equatable, Sendable {
     public init?(payload: Data) {
         guard let first = payload.first else { return nil }
         // Pair responses (0xE0–0xE2) are checked first. This is safe because
-        // MascotID raw values are 0..15, well below the 0xE0 reserved range.
+        // MascotID raw values are 0..23, well below the 0xE0 reserved range.
         // If MascotID ever grows past 0xDF this ordering MUST be revisited.
         if let pairResp = BuddyPairResponse(rawValue: first) {
             self = .pairResponse(pairResp)
@@ -188,7 +188,7 @@ public enum BuddyScreenOrientation: String, CaseIterable, Identifiable, Sendable
     }
 }
 
-/// Mascot slot on Buddy (0..15). The index is the on-wire `sourceId`.
+/// Mascot slot on Buddy (0..23). The index is the on-wire `sourceId`.
 /// Raw values MUST stay below 0xE0 (see ESP32Protocol pairing reserved range).
 public enum MascotID: UInt8, CaseIterable, Sendable {
     case claude = 0
@@ -207,6 +207,14 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
     case workbuddy = 13
     case hermes = 14
     case kimi = 15
+    case grok = 16
+    case cline = 17
+    case pi = 18
+    case openclaw = 19
+    case kiro = 20
+    case minimax = 21
+    case aiwork = 22
+    case mimo = 23
 
     /// Canonical source name used throughout CodeIsland (matches
     /// `SessionSnapshot.supportedSources` keys).
@@ -228,11 +236,19 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         case .workbuddy:    return "workbuddy"
         case .hermes:       return "hermes"
         case .kimi:         return "kimi"
+        case .grok:         return "grok"
+        case .cline:        return "cline"
+        case .pi:           return "pi"
+        case .openclaw:     return "openclaw"
+        case .kiro:         return "kiro"
+        case .minimax:      return "minimax"
+        case .aiwork:       return "aiwork"
+        case .mimo:         return "mimo"
         }
     }
 
     /// Fold a CodeIsland source string (including aliases like `traecn`,
-    /// `traecli`, `codybuddycn`, `factory`, `ag`) into one of the 16 slots
+    /// `traecli`, `codybuddycn`, `factory`, `ag`) into one of the 24 slots
     /// supported by the Buddy firmware.
     public init?(sourceName: String?) {
         guard let raw = sourceName,
@@ -242,9 +258,8 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         switch canonical {
         case "claude":                               self = .claude
         case "codex":                                self = .codex
-        // Google Antigravity is Gemini-based; fold it onto the Gemini Buddy slot
-        // (the 16 firmware mascot slots are all assigned). Mirrors how cursor-cli
-        // folds onto .cursor (#215).
+        // Google Antigravity is Gemini-based; fold it onto the Gemini Buddy slot.
+        // Mirrors how cursor-cli folds onto .cursor (#215).
         case "gemini", "google-antigravity":         self = .gemini
         case "cursor", "cursor-cli":                 self = .cursor
         case "copilot":                              self = .copilot
@@ -253,14 +268,20 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         case "droid":                                self = .droid
         case "codebuddy", "codybuddycn":             self = .codebuddy
         case "stepfun":                              self = .stepfun
-        // MiMo Code is an OpenCode fork (and the Xiaomi MiMo desktop's
-        // engine); every firmware slot is taken, so it shares OpenCode's.
-        case "opencode", "mimo":                     self = .opencode
+        case "opencode":                             self = .opencode
         case "qwen":                                 self = .qwen
         case "antigravity":                          self = .antigravity
         case "workbuddy":                            self = .workbuddy
         case "hermes":                               self = .hermes
         case "kimi":                                 self = .kimi
+        case "grok":                                 self = .grok
+        case "cline":                                self = .cline
+        case "pi":                                   self = .pi
+        case "openclaw":                             self = .openclaw
+        case "kiro":                                 self = .kiro
+        case "minimax":                              self = .minimax
+        case "aiwork", "aiwork-cli":                 self = .aiwork
+        case "mimo":                                 self = .mimo
         default:                                     return nil
         }
     }
