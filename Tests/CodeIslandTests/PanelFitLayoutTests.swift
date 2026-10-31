@@ -48,6 +48,29 @@ final class PanelFitLayoutTests: XCTestCase {
         XCTAssertGreaterThan(try panel.gapUnderPanel(), 0, "the session list runs off the bottom of the window")
     }
 
+    func testComfortableCardsKeepTheirHeightAfterCollapseAndReopen() throws {
+        UserDefaults.standard.set("comfortable", forKey: SettingsKey.sessionListDensity)
+        let state = try tallSessions(count: 3)
+        defer { state.release() }
+        let panel = try PanelHost(state.state, notchHeight: 32)
+        defer { panel.close() }
+        panel.settle()
+        panel.settle()
+        let expandedGap = try panel.gapUnderPanel()
+        XCTAssertGreaterThan(expandedGap, 0)
+
+        state.state.surface = .collapsed
+        panel.settle()
+        panel.settle()
+        XCTAssertEqual(try panel.gapUnderPanel(), panel.height - 32, accuracy: 2)
+
+        state.state.surface = .sessionList
+        panel.settle()
+        panel.settle()
+        XCTAssertEqual(try panel.gapUnderPanel(), expandedGap, accuracy: 1,
+                       "comfortable content must retain its final layout across transitions")
+    }
+
     func testTallSessionsAtALargeFontStayInsideTheWindow() throws {
         UserDefaults.standard.set(16, forKey: SettingsKey.contentFontSize)
         let state = try tallSessions(count: 4)

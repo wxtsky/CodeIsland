@@ -21,7 +21,7 @@ private class KeyablePanel: NSPanel {
 /// Also guards against NSHostingView constraint-update re-entrancy crash:
 /// during updateConstraints(), SwiftUI may invalidate the view graph and
 /// call setNeedsUpdateConstraints again, which AppKit forbids.
-private class NotchHostingView<Content: View>: NSHostingView<Content> {
+class NotchHostingView<Content: View>: NSHostingView<Content> {
     /// When true, the deferred handler is setting super — don't re-defer.
     private var applyingDeferred = false
 
