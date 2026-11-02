@@ -5,7 +5,6 @@ import SwiftUI
 struct HermesView: View {
     let status: MascotAgentStatus
     var size: CGFloat = 27
-    @State private var alive = false
 
     private static let bodyC   = Color(red: 0.478, green: 0.345, blue: 0.690) // #7A58B0 medium purple
     private static let bodyDk  = Color(red: 0.380, green: 0.260, blue: 0.580)
@@ -26,11 +25,6 @@ struct HermesView: View {
         }
         .frame(width: size, height: size)
         .clipped()
-        .onAppear { alive = true }
-        .onChange(of: status) {
-            alive = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { alive = true }
-        }
     }
 
     private struct V {
@@ -127,8 +121,7 @@ struct HermesView: View {
                         let phase = max(0, ((t - delay).truncatingRemainder(dividingBy: cycle)) / cycle)
                         let fontSize = max(6, size * CGFloat(0.18 + phase * 0.10))
                         let opacity = phase < 0.8 ? (0.7 - ci * 0.1) : (1.0 - phase) * 3.5 * (0.7 - ci * 0.1)
-                        Text("z").font(.system(size: fontSize, weight: .black, design: .monospaced))
-                            .foregroundStyle(Self.eyeC.opacity(opacity))
+                        MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.18 + 0.10)), color: Self.eyeC, opacity: opacity)
                             .offset(x: size * CGFloat(0.15 + ci * 0.08), y: -size * CGFloat(0.15 + phase * 0.38))
                     }
                 }
@@ -164,9 +157,7 @@ struct HermesView: View {
 
     private var alertScene: some View {
         ZStack {
-            Circle().fill(Self.alertC.opacity(alive ? 0.12 : 0)).frame(width: size * 0.8)
-                .blur(radius: size * 0.05)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: alive)
+            MascotAlertGlow(color: Self.alertC, peak: 0.12, size: size)
             MascotTimeline(interval: 0.03) { t in
                 let pct = t.truncatingRemainder(dividingBy: 3.5) / 3.5
                 let jumpY = lerp([(0,0),(0.03,0),(0.175,-8),(0.25,1.5),(0.275,-6),(0.35,1),(0.375,-4),(0.45,0.8),(0.475,-2),(0.55,0.3),(0.62,0),(1,0)], at: pct)

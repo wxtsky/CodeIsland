@@ -21,14 +21,23 @@ struct CodexPermissionRules {
     }
 
     /// Whether "Always allow" saves a Codex rule (persistAlwaysAllowRule) —
-    /// what the approval card's link says it does: an MCP tool's approval, or
-    /// a command's prefix rule (``prefixPattern(for:)``). A remote Codex
-    /// request's "Always" holds for its session instead
-    /// (AppState.approvePermission), and so does a local one no rule can
-    /// describe — an apply_patch, a command that starts with a variable.
+    /// what the approval card's link says it does: an MCP tool's approval in
+    /// the table of a server config.toml declares, or a command's prefix
+    /// rules (``prefixPatterns(for:)``). A remote Codex request's "Always"
+    /// holds for its session instead (AppState.approvePermission), and so
+    /// does a local one no rule can describe — an apply_patch, a command
+    /// with a redirection or an expansion, a tool of a server config.toml
+    /// does not declare.
+    ///
+    /// Either way the island answers the rest of the session itself: Codex
+    /// reads its rules and config.toml when a session starts, so a rule
+    /// saved now stops only the sessions started after it.
     static func alwaysSavesRule(for event: HookEvent) -> Bool {
-        isCodexEvent(event) && !isRemoteEvent(event)
-            && (mcpToolApprovalTarget(for: event) != nil || prefixPattern(for: event) != nil)
+        guard isCodexEvent(event), !isRemoteEvent(event) else { return false }
+        if mcpToolApprovalTarget(for: event) != nil {
+            return declaredMCPToolApprovalTarget(for: event) != nil
+        }
+        return prefixPatterns(for: event) != nil
     }
 
     /// The Codex root the event's session runs under — its config.toml and
@@ -227,8 +236,18 @@ struct CodexPermissionRules {
         return false
     }
 
-    /// The prefix rule "Always" saves for a command: its first words, up to
-    /// three — what the card's link spells out, and nothing else.
+    /// Most prefix rules one "Always" saves — one per command of the script.
+    /// The link names every rule it saves, and a longer list is not one a
+    /// glance takes in: such a script's "Always" holds for the session.
+    static let maxPrefixRulesPerApproval = 4
+
+    /// The prefix rules "Always" saves for a command: for each command of
+    /// the script, its first words, up to three — what the card's link
+    /// spells out, and nothing else. Nil when no prefix rule can describe
+    /// the script: Codex checks a rule only against the commands of a script
+    /// it reads as plain words (``plainCommands(in:)``), each of them, so a
+    /// rule from a redirected or expanded command never matched it, and one
+    /// from the first command of `cd app && make` alone left `make` asking.
     ///
     /// Only the command is read. Codex's PermissionRequest hook input carries
     /// no rule of its own to save (codex-rs/hooks/schema/generated/
@@ -239,48 +258,94 @@ struct CodexPermissionRules {
     /// the hook; Codex itself screens the one its model suggests to it. Taken
     /// from there, `["bash"]` was saved for a card that showed `ls -la`, and
     /// allowed every command after it.
-    static func prefixPattern(for event: HookEvent) -> [String]? {
+    static func prefixPatterns(for event: HookEvent) -> [[String]]? {
+        guard let commands = shellCommands(of: event) else { return nil }
+        var patterns: [[String]] = []
+        for command in commands {
+            let pattern = Array(command.prefix(3))
+            if !patterns.contains(pattern) { patterns.append(pattern) }
+        }
+        guard patterns.count <= maxPrefixRulesPerApproval else { return nil }
+        return patterns
+    }
+
+    /// Whether every command of `event`'s script starts with one of
+    /// `patterns`, as Codex matches a prefix rule (codex-rs/execpolicy/src/
+    /// rule.rs `matches_prefix`): the rules an "Always" of this session
+    /// saved, which the session itself never loads (``alwaysSavesRule(for:)``).
+    /// A script Codex would not split into plain commands matches none.
+    static func commandsStart(_ event: HookEvent, withAnyOf patterns: Set<[String]>) -> Bool {
+        guard !patterns.isEmpty, let commands = shellCommands(of: event) else { return false }
+        return commands.allSatisfy { command in
+            patterns.contains { !$0.isEmpty && command.starts(with: $0) }
+        }
+    }
+
+    /// The commands of a shell request's script (``plainCommands(in:)``).
+    private static func shellCommands(of event: HookEvent) -> [[String]]? {
         guard event.toolName == "Bash",
               let command = event.toolInput?["command"] as? String else {
             return nil
         }
-
-        return shellPrefix(from: command, maxTokens: 3)
+        return plainCommands(in: command)
     }
 
     @discardableResult
     func persistAlwaysAllowRule(for event: HookEvent) -> Bool {
-        // A remote command or tool must never become a rule for this Mac's Codex.
-        guard !Self.isRemoteEvent(event) else { return false }
-        let codexHome = Self.codexHome(for: event)
         if let mcpTool = Self.mcpToolApprovalTarget(for: event) {
-            return persistMCPToolApproval(serverID: mcpTool.serverID, toolName: mcpTool.toolName, codexHome: codexHome)
+            // A remote tool must never become an approval for this Mac's Codex.
+            guard !Self.isRemoteEvent(event) else { return false }
+            return persistMCPToolApproval(serverID: mcpTool.serverID, toolName: mcpTool.toolName, codexHome: Self.codexHome(for: event))
         }
+        guard let patterns = Self.prefixPatterns(for: event) else { return false }
+        return persistPrefixRules(patterns, for: event)
+    }
 
-        guard let pattern = Self.prefixPattern(for: event), !pattern.isEmpty else {
-            return false
-        }
+    /// Saves `patterns` — the ones the card's link named — as allow rules in
+    /// the event's Codex root.
+    @discardableResult
+    func persistPrefixRules(_ patterns: [[String]], for event: HookEvent) -> Bool {
+        // A remote command must never become a rule for this Mac's Codex.
+        guard !Self.isRemoteEvent(event) else { return false }
+        let patterns = patterns.filter { !$0.isEmpty }
+        guard !patterns.isEmpty else { return false }
 
-        let rulesDirectory = codexHome + "/rules"
+        let rulesDirectory = Self.codexHome(for: event) + "/rules"
         let rulesPath = rulesDirectory + "/codeisland.rules"
-        let block = Self.ruleBlock(for: pattern)
-        let patternLine = Self.patternLine(for: pattern)
 
         do {
             try fileManager.createDirectory(atPath: rulesDirectory, withIntermediateDirectories: true)
 
             let existing = (try? String(contentsOfFile: rulesPath, encoding: .utf8)) ?? ""
-            if existing.contains(patternLine), existing.contains(#"decision = "allow""#) {
-                return true
+            var updated = existing
+            for pattern in patterns where !updated.contains(Self.patternLine(for: pattern)) {
+                if !updated.isEmpty, !updated.hasSuffix("\n") { updated += "\n" }
+                updated += Self.ruleBlock(for: pattern)
             }
-
-            let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
-            let updated = existing + separator + block
+            guard updated != existing else { return true }
             // A symlinked rules file (dotfiles) is written at its target.
             return ConfigPathIdentity.write(Data(updated.utf8), to: rulesPath, fileManager: fileManager)
         } catch {
             return false
         }
+    }
+
+    /// An MCP tool's approval target under the server config.toml declares
+    /// for its namespace (``declaredMCPServerID(in:forToolNamespace:)``);
+    /// nil when it declares none — the built-in `codex_apps`, a plugin's
+    /// server — and nothing can be saved for the tool.
+    static func declaredMCPToolApprovalTarget(
+        for event: HookEvent,
+        fileManager: FileManager = .default
+    ) -> (serverID: String, toolName: String)? {
+        guard let target = mcpToolApprovalTarget(for: event) else { return nil }
+        let configPath = codexHome(for: event) + "/config.toml"
+        guard let data = fileManager.contents(atPath: configPath),
+              let contents = String(data: data, encoding: .utf8),
+              let declaredID = declaredMCPServerID(in: contents, forToolNamespace: target.serverID) else {
+            return nil
+        }
+        return (declaredID, target.toolName)
     }
 
     private func persistMCPToolApproval(serverID: String, toolName: String, codexHome: String) -> Bool {
@@ -293,7 +358,8 @@ struct CodexPermissionRules {
             // Codex rejects the whole config.toml when a `mcp_servers.*` table has
             // no transport, so a tools table under a server we never declared (the
             // built-in `codex_app` namespace, say) would break every unrelated
-            // setting. Approve the call in-session instead of persisting it.
+            // setting. The card said "this session" for such a tool
+            // (alwaysSavesRule); were config.toml changed since, nothing is saved.
             guard let declaredID = Self.declaredMCPServerID(in: existing, forToolNamespace: serverID) else {
                 return false
             }
@@ -676,88 +742,150 @@ struct CodexPermissionRules {
         return "\"\(escaped)\""
     }
 
-    private static func shellPrefix(from command: String, maxTokens: Int) -> [String]? {
-        var tokens: [String] = []
-        var current = ""
-        var quote: Character?
-        var escaping = false
-        var index = command.startIndex
+    /// The commands of a shell script as Codex reads it for its rules
+    /// (codex-rs/shell-command/src/bash.rs `parse_shell_script_into_commands`,
+    /// which codex-rs/core/src/exec_policy.rs applies to `bash -lc <script>`):
+    /// plain commands joined by `&&`, `||`, `;`, `|` or newlines, each word
+    /// literal — bare, '…', or "…" with no expansion or escape in it. Nil
+    /// for any other script — a redirection, a substitution, a variable, a
+    /// glob, `~`, a subshell, a comment, an assignment, control flow: Codex
+    /// then checks the whole `bash -lc` command, which no rule made of the
+    /// script's words matches. Where the two readings differ (`!`, a reserved
+    /// word, a line continuation) this one refuses, so a script it accepts is
+    /// one Codex splits into the same commands.
+    static func plainCommands(in script: String) -> [[String]]? {
+        let scalars = Array(script.unicodeScalars)
+        var commands: [[String]] = []
+        var words: [String] = []
+        var word = String.UnicodeScalarView()
+        var inWord = false
+        // An unquoted stretch of the word has begun: `=` may not open one
+        // (zsh's `=cmd` expansion).
+        var inUnquotedRun = false
+        // Codex reads a command's name only from a bare word.
+        var nameIsQuoted = false
+        // After `&&`, `||` or `|`: a command must follow.
+        var awaitingCommand = false
+        // The quoted and bare stretches the word is made of: Codex refuses
+        // several that make an empty word (`''""`).
+        var wordParts = 0
+        var madeEmptyConcatenation = false
 
-        func appendCurrentToken() {
-            guard !current.isEmpty else { return }
-            tokens.append(current)
-            current = ""
+        func endWord() {
+            guard inWord else { return }
+            if wordParts > 1, word.isEmpty { madeEmptyConcatenation = true }
+            words.append(String(word))
+            word = String.UnicodeScalarView()
+            inWord = false
+            inUnquotedRun = false
+            wordParts = 0
+        }
+        func endCommand() -> Bool {
+            endWord()
+            guard let name = words.first, !nameIsQuoted, isPlainCommandName(name) else { return false }
+            commands.append(words)
+            words = []
+            nameIsQuoted = false
+            return true
         }
 
-        while index < command.endIndex {
-            let char = command[index]
-            let next = command.index(after: index)
-
-            if escaping {
-                current.append(char)
-                escaping = false
-                index = next
-                continue
-            }
-
-            if char == "\\" {
-                escaping = true
-                index = next
-                continue
-            }
-
-            if let activeQuote = quote {
-                if char == activeQuote {
-                    quote = nil
-                } else {
-                    current.append(char)
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
+            switch scalar {
+            case " ", "\t":
+                endWord()
+            case "\n":
+                // A line may end in `&&`, `||` or `|`; the command follows.
+                if !awaitingCommand, inWord || !words.isEmpty {
+                    guard endCommand() else { return nil }
                 }
-                index = next
-                continue
-            }
-
-            if char == "'" || char == "\"" {
-                quote = char
-                index = next
-                continue
-            }
-
-            if char == "$", next < command.endIndex, command[next] == "(" {
-                appendCurrentToken()
-                break
-            }
-
-            if char == "\n" || char == "|" || char == ";" || char == "<" || char == ">" || char == "&" {
-                appendCurrentToken()
-                break
-            }
-
-            if char.isWhitespace {
-                appendCurrentToken()
-                if tokens.count >= maxTokens {
-                    break
+            case ";":
+                // `;;` belongs to `case`.
+                guard !awaitingCommand, next != ";", endCommand() else { return nil }
+            case "&":
+                // A lone `&` runs in the background; `&>` redirects.
+                guard next == "&", !awaitingCommand, endCommand() else { return nil }
+                awaitingCommand = true
+                index += 1
+            case "|":
+                guard next != "&", !awaitingCommand, endCommand() else { return nil }
+                awaitingCommand = true
+                if next == "|" { index += 1 }
+            case "'":
+                guard let close = scalars[(index + 1)...].firstIndex(of: "'") else { return nil }
+                if words.isEmpty { nameIsQuoted = true }
+                word.append(contentsOf: scalars[(index + 1)..<close])
+                wordParts += 1
+                inWord = true
+                inUnquotedRun = false
+                awaitingCommand = false
+                index = close
+            case "\"":
+                var close = index + 1
+                while close < scalars.count, scalars[close] != "\"" {
+                    let inner = scalars[close]
+                    // Expansions run, and escapes change, what the shell passes.
+                    if inner == "$" || inner == "`" { return nil }
+                    if inner == "\\", close + 1 < scalars.count,
+                       escapedInDoubleQuotes.contains(scalars[close + 1]) {
+                        return nil
+                    }
+                    close += 1
                 }
-            } else {
-                current.append(char)
+                guard close < scalars.count else { return nil }
+                if words.isEmpty { nameIsQuoted = true }
+                word.append(contentsOf: scalars[(index + 1)..<close])
+                wordParts += 1
+                inWord = true
+                inUnquotedRun = false
+                awaitingCommand = false
+                index = close
+            default:
+                if nonLiteralUnquoted.contains(scalar) || scalar.value < 0x20 || scalar.value == 0x7F {
+                    return nil
+                }
+                if !inUnquotedRun {
+                    if scalar == "=" { return nil }
+                    wordParts += 1
+                }
+                word.append(scalar)
+                inWord = true
+                inUnquotedRun = true
+                awaitingCommand = false
             }
-
-            index = next
+            index += 1
         }
 
-        appendCurrentToken()
-
-        let prefix = Array(tokens.prefix(maxTokens))
-        guard !prefix.isEmpty, !looksLikeEnvironmentAssignment(prefix[0]) else {
-            return nil
+        guard !awaitingCommand else { return nil }
+        if inWord || !words.isEmpty {
+            guard endCommand() else { return nil }
         }
-        return prefix
+        return commands.isEmpty || madeEmptyConcatenation ? nil : commands
     }
 
-    private static func looksLikeEnvironmentAssignment(_ token: String) -> Bool {
-        guard let equalsIndex = token.firstIndex(of: "="), equalsIndex != token.startIndex else {
-            return false
-        }
-        let name = token[..<equalsIndex]
-        return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+    /// Unquoted, these make a word something other than its spelling (a glob,
+    /// an expansion, an escape, a comment — Codex's `is_literal_word_or_number`)
+    /// or make the script more than plain commands (a subshell, a
+    /// redirection, history or negation).
+    private static let nonLiteralUnquoted: Set<Unicode.Scalar> = [
+        "{", "}", "*", "?", "[", "]", "\\", "~", "^", "#", "$", "`",
+        "(", ")", "<", ">", "!",
+    ]
+
+    /// What a backslash escapes inside double quotes.
+    private static let escapedInDoubleQuotes: Set<Unicode.Scalar> = ["$", "`", "\"", "\\", "\n"]
+
+    /// Words that open shell syntax rather than name a program.
+    private static let shellReservedWords: Set<String> = [
+        "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while",
+        "until", "do", "done", "in", "function", "time", "coproc",
+    ]
+
+    /// A command's first word names a program: not a reserved word, and not
+    /// a variable assignment (`FOO=1 make` sets FOO for `make`).
+    private static func isPlainCommandName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("=") && !shellReservedWords.contains(name)
     }
 }

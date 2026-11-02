@@ -90,11 +90,16 @@ final class UIGalleryHarness: XCTestCase {
 
     private func renderList(_ lang: GalleryLang) async throws {
         struct Job { let name: String; let count: Int; let settings: [(String, Any)]; let quota: Bool
-                     var wallpaper: StageWallpaper = .dark; var appearance: NSAppearance.Name = .darkAqua }
+                     var wallpaper: StageWallpaper = .dark; var appearance: NSAppearance.Name = .darkAqua
+                     /// The header's trash clicked: the confirmation banner over the list.
+                     var removeIdle = false }
         var jobs = [
             Job(name: "1", count: 1, settings: [], quota: false),
             Job(name: "4", count: 4, settings: [], quota: false),
             Job(name: "8", count: 8, settings: [], quota: false),
+            // One idle card of four (the singular), three of eight with the list scrolling.
+            Job(name: "4-remove-idle", count: 4, settings: [], quota: false, removeIdle: true),
+            Job(name: "8-remove-idle", count: 8, settings: [], quota: false, removeIdle: true),
             Job(name: "4-f16", count: 4, settings: [(SettingsKey.contentFontSize, 16)], quota: false),
             Job(name: "8-quota", count: 8, settings: [], quota: true),
             Job(name: "8-status", count: 8, settings: [(SettingsKey.sessionGroupingMode, "status")], quota: false),
@@ -116,13 +121,15 @@ final class UIGalleryHarness: XCTestCase {
                 ], quota: true),
                 Job(name: "4-light", count: 4, settings: [], quota: false, wallpaper: .light),
                 Job(name: "4-lightmode", count: 4, settings: [], quota: false, appearance: .aqua),
+                Job(name: "8-compact-remove-idle", count: 8, settings: [(SettingsKey.sessionListDensity, "compact")],
+                    quota: true, removeIdle: true),
             ]
         }
         for job in jobs {
             GallerySettings.reset()
             for (key, value) in job.settings { GallerySettings.set(value, key) }
             if job.quota { GallerySettings.set(true, SettingsKey.showClaudeQuota, suiteOnly: true) }
-            let demo = try await GalleryDemo.list(count: job.count, lang: lang, quota: job.quota)
+            let demo = try await GalleryDemo.list(count: job.count, lang: lang, quota: job.quota, removeIdle: job.removeIdle)
             defer { demo.release() }
             try renderOnStage(demo, group: "list", name: job.name, lang: lang, screen: .macBook14,
                               layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false),
@@ -319,20 +326,25 @@ enum GallerySettings {
 
 // MARK: - Variants
 
+/// The island's language for a render. `tr` and `ja` (opt-in through
+/// `UI_GALLERY_LANGS`) check the chrome's own strings — Turkish runs long —
+/// around the English demo sessions.
 enum GalleryLang: String {
-    case en, zh, de
+    case en, zh, de, tr, ja
 
     var clock: String {
         switch self {
         case .en: return "Tue 9:41"
         case .zh: return "周二 9:41"
         case .de: return "Di. 9:41"
+        case .tr: return "Sal 9:41"
+        case .ja: return "火 9:41"
         }
     }
 
     func t(_ en: String, _ zh: String, _ de: String) -> String {
         switch self {
-        case .en: return en
+        case .en, .tr, .ja: return en
         case .zh: return zh
         case .de: return de
         }
@@ -636,7 +648,7 @@ enum GalleryDemo {
 
     // MARK: Session list
 
-    static func list(count: Int, lang: GalleryLang, quota: Bool) async throws -> GalleryDemoState {
+    static func list(count: Int, lang: GalleryLang, quota: Bool, removeIdle: Bool = false) async throws -> GalleryDemoState {
         let state = AppState()
         state.claudeUsage = usage()
         var sessions: [String: SessionSnapshot] = [:]
@@ -666,6 +678,7 @@ enum GalleryDemo {
         if quota { applyQuota(state) }
         state.refreshDerivedState()
         state.surface = .sessionList
+        if removeIdle { state.toggleIdleSessionRemovalRequest() }
         return GalleryDemoState(state: state, release: release)
     }
 

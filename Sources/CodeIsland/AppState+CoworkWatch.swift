@@ -264,6 +264,8 @@ extension AppState {
             // retires it on the same clock as every other card.
             snapshot.lastActivity = lastActivity
         }
+        let evidence: RemovedSessionRevivalEvidence = snapshot.status == .idle ? .passive : .activeWork
+        guard shouldAdmitRemovedSession(key, evidence: evidence) else { return }
         sessions[key] = snapshot
         if movesTurnState {
             noteCoworkTurnHost(key)
@@ -425,7 +427,7 @@ extension AppState {
            app.isHidden {
             app.unhide()
         }
-        guard let appURL = workspace.urlForApplication(withBundleIdentifier: claudeDesktopBundleId) else {
+        guard let appURL = TerminalActivator.appURL(forBundleId: claudeDesktopBundleId) else {
             return
         }
         let configuration = NSWorkspace.OpenConfiguration()

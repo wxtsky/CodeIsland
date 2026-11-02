@@ -67,12 +67,32 @@ final class NotchCardRedesignTests: XCTestCase {
         XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .session), "Always allow Bash this session")
         XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "mcp__github__create_pull_request", scope: .session),
                        "Always allow create_pull_request this session")
-        XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .codexRules(pattern: ["git", "push", "--force"])),
+        XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .codexRules(patterns: [["git", "push", "--force"]])),
                        "Always allow commands starting with git push --force — saved to ~/.codex/rules")
+        XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .codexRules(patterns: [["cd", "app"], ["make"]])),
+                       "Always allow commands starting with cd app or make — saved to ~/.codex/rules")
         XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "mcp__docs__search", scope: .codexMCPConfig),
                        "Always allow — saved to ~/.codex/config.toml")
         L10n.shared.language = "zh"
         XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .session), "本会话始终允许 Bash")
+        XCTAssertEqual(ApprovalCopy.alwaysLink(tool: "Bash", scope: .codexRules(patterns: [["cd", "app"], ["make"]])),
+                       "始终允许以 cd app 或 make 开头的命令——保存到 ~/.codex/rules")
+    }
+
+    /// A Codex root whose config.toml declares the `docs` MCP server.
+    private func withCodexHomeDeclaringDocs(_ body: () throws -> Void) throws {
+        let previous = ProcessInfo.processInfo.environment["CODEX_HOME"]
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ci-card-codex-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try "[mcp_servers.docs]\ncommand = \"docs-mcp\"\n"
+            .write(to: home.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+        setenv("CODEX_HOME", home.path, 1)
+        defer {
+            if let previous { setenv("CODEX_HOME", previous, 1) } else { unsetenv("CODEX_HOME") }
+            try? FileManager.default.removeItem(at: home)
+        }
+        try body()
     }
 
     func testAlwaysScopeFollowsWhereTheRuleIsSaved() throws {
@@ -83,15 +103,20 @@ final class NotchCardRedesignTests: XCTestCase {
             payload["_source"] = source
             return try XCTUnwrap(HookEvent(json: payload))
         }
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__github__create_pull_request", source: nil)), .session)
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("Bash")), .codexRules(pattern: ["make", "test"]))
-        // CodexPermissionRules writes an MCP tool's approval to config.toml.
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__docs__search")), .codexMCPConfig)
-        // Nothing a rule can say: "Always" holds for the session.
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__malformed")), .session)
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("apply_patch", input: ["command": "*** Begin Patch"])), .session)
-        XCTAssertEqual(ApprovalAlwaysScope(for: try request("Bash", input: ["command": "FOO=1 make"])), .session)
-        XCTAssertTrue(ApprovalHints.always(scope: .codexRules(pattern: ["make"])).contains("~/.codex/rules"))
+        try withCodexHomeDeclaringDocs {
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__github__create_pull_request", source: nil)), .session)
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("Bash")), .codexRules(patterns: [["make", "test"]]))
+            // CodexPermissionRules writes an MCP tool's approval to config.toml,
+            // under the server config.toml declares.
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__docs__search")), .codexMCPConfig)
+            // Nothing a rule can say: "Always" holds for the session.
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__github__create_issue")), .session, "no such server declared")
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("mcp__malformed")), .session)
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("apply_patch", input: ["command": "*** Begin Patch"])), .session)
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("Bash", input: ["command": "FOO=1 make"])), .session)
+            XCTAssertEqual(ApprovalAlwaysScope(for: try request("Bash", input: ["command": "make 2>&1 | tail"])), .session)
+        }
+        XCTAssertTrue(ApprovalHints.always(scope: .codexRules(patterns: [["make"]])).contains("~/.codex/rules"))
         XCTAssertTrue(ApprovalHints.always(scope: .codexMCPConfig).contains("~/.codex/config.toml"))
         XCTAssertTrue(ApprovalHints.always(scope: .session).contains("session"))
     }
@@ -107,16 +132,18 @@ final class NotchCardRedesignTests: XCTestCase {
             payload["_remote_host_id"] = remoteHost
             return try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: payload)))
         }
-        for tool in ["Bash", "mcp__docs__search"] {
-            let remote = try codexRequest(tool, remoteHost: "devbox")
-            // The card and the session list's inline row both read this scope.
-            let scope = ApprovalAlwaysScope(for: remote)
-            XCTAssertEqual(scope, .session, tool)
-            XCTAssertFalse(ApprovalCopy.alwaysLink(tool: tool, scope: scope).contains("~/.codex"), tool)
-            XCTAssertFalse(ApprovalHints.always(scope: scope).contains("~/.codex"), tool)
+        try withCodexHomeDeclaringDocs {
+            for tool in ["Bash", "mcp__docs__search"] {
+                let remote = try codexRequest(tool, remoteHost: "devbox")
+                // The card and the session list's inline row both read this scope.
+                let scope = ApprovalAlwaysScope(for: remote)
+                XCTAssertEqual(scope, .session, tool)
+                XCTAssertFalse(ApprovalCopy.alwaysLink(tool: tool, scope: scope).contains("~/.codex"), tool)
+                XCTAssertFalse(ApprovalHints.always(scope: scope).contains("~/.codex"), tool)
 
-            let local = try codexRequest(tool, remoteHost: nil)
-            XCTAssertNotEqual(ApprovalAlwaysScope(for: local), .session, "a local Codex still saves its rule, \(tool)")
+                let local = try codexRequest(tool, remoteHost: nil)
+                XCTAssertNotEqual(ApprovalAlwaysScope(for: local), .session, "a local Codex still saves its rule, \(tool)")
+            }
         }
     }
 
@@ -132,7 +159,7 @@ final class NotchCardRedesignTests: XCTestCase {
             "always_hint_saved_mcp", "card_permission_tag", "card_queue_position", "card_allow_once", "card_deny",
             "card_hide", "card_skip", "card_back", "card_confirm", "card_submit", "card_always_session",
             "card_always_saved", "card_always_saved_prefix", "always_hint_saved", "session_inline_always_prefix",
-            "card_jump_hint", "approval_title_command", "approval_title_change_file",
+            "always_patterns_joiner", "card_jump_hint", "approval_title_command", "approval_title_change_file",
             "approval_title_change", "approval_title_read_file", "approval_title_read", "approval_title_search",
             "approval_title_web", "approval_title_mcp", "approval_title_agent", "approval_title_generic",
         ]

@@ -40,7 +40,7 @@ final class PanelCopyTests: XCTestCase {
         let saved = L10n.shared.language
         defer { L10n.shared.language = saved }
         L10n.shared.language = "en"
-        XCTAssertTrue(ApprovalHints.always(scope: .codexRules(pattern: ["make"])).contains("~/.codex/rules"))
+        XCTAssertTrue(ApprovalHints.always(scope: .codexRules(patterns: [["make"]])).contains("~/.codex/rules"))
         XCTAssertTrue(ApprovalHints.always(scope: .session).contains("session"))
     }
 }

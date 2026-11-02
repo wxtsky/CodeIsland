@@ -23,7 +23,7 @@ enum SettingsKey {
 
     // General - System
     static let launchAtLogin = "launchAtLogin"
-    static let displayChoice = "displayChoice"             // "auto", "builtin", "main"
+    static let displayChoice = "displayChoice"             // "auto", "display:<UUID>" (DisplayChoice)
     static let allowHorizontalDrag = "allowHorizontalDrag"
     static let avoidMenuBarIcons = "avoidMenuBarIcons"
     static let panelHorizontalOffset = "panelHorizontalOffset"

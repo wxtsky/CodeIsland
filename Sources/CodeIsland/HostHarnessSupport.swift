@@ -191,7 +191,7 @@ enum HostHarnessSupport {
                 if app.isHidden { app.unhide() }
                 app.activate()
             }
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            if let url = TerminalActivator.appURL(forBundleId: bundleId) {
                 NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
                 return true
             }

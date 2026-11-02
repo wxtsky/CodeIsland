@@ -64,10 +64,32 @@ final class AppState {
                     dismissedQuestionIds.formIntersection(queued)
                 }
             }
+            // So does what the user had typed into its card.
+            if !questionDrafts.isEmpty {
+                let queued = Set(questionQueue.map(\.id))
+                questionDrafts = questionDrafts.filter { queued.contains($0.key) }
+            }
             followUps.waitingChanged()
             PushNotifier.shared.requestsChanged()
         }
     }
+    /// What the user has typed and picked on a question card, by request. The
+    /// card's view is rebuilt whenever the island moves to another display or
+    /// the displays change, and its own state went with it: half an answer
+    /// typed, a multi-question wizard's earlier answers. Kept while the
+    /// request is queued, closed cards included.
+    @ObservationIgnored
+    private var questionDrafts: [UUID: QuestionWizardState] = [:]
+
+    func questionDraft(for requestId: UUID) -> QuestionWizardState? {
+        questionDrafts[requestId]
+    }
+
+    func saveQuestionDraft(_ draft: QuestionWizardState) {
+        guard let id = draft.requestId, questionQueue.contains(where: { $0.id == id }) else { return }
+        questionDrafts[id] = draft
+    }
+
     /// Follow-up reminders for waiting approvals / questions and unseen
     /// completions. Holds no entries and arms no timer while the setting is off.
     @ObservationIgnored
@@ -159,6 +181,11 @@ final class AppState {
     /// `beforeSubmitPrompt` arrives twice (#377). See ``CursorHookPayload``.
     @ObservationIgnored
     var cursorHookDeliveries = CursorHookDeliveryFilter()
+    /// Claude Code compacting finished sessions in the background: the
+    /// compaction's own hooks leave the card as it was. See
+    /// ``BackgroundCompactionFilter``.
+    @ObservationIgnored
+    var backgroundCompactions = BackgroundCompactionFilter()
 
     /// Per-agent AiWork/Agentix daemon watch clients (`sessions.watch`).
     /// Keyed by agent id (e.g. `"coder"`). See AppState+AiWorkWatch.
@@ -239,6 +266,9 @@ final class AppState {
             }
             if surface != oldValue {
                 followUps.surfaceChanged(surface)
+            }
+            if surface != .sessionList, idleSessionRemovalRequest != nil {
+                idleSessionRemovalRequest = nil
             }
             switch surface {
             case .approvalCard(let sid): cardRequestId = pendingPermission(forSession: sid)?.id
@@ -330,6 +360,14 @@ final class AppState {
     private let processMonitor = SessionProcessMonitor()
     /// Sessions in the grace period after their process exited, with that process.
     private var exitingSessions: [String: ProcessIdentity] = [:]
+    /// Run-local tombstones keep passive discovery from immediately restoring cards the user removed.
+    @ObservationIgnored var manuallyRemovedSessions: [String: Date] = [:]
+    /// The connected group recorded at removal time; real activity revives all of its members together.
+    @ObservationIgnored private var manuallyRemovedSessionPeers: [String: Set<String>] = [:]
+    /// The idle cards the session list's banner asks the user to confirm
+    /// removing, as they were when the header button was clicked. nil: no
+    /// banner. Leaving the list, or nothing in it staying removable, drops it.
+    var idleSessionRemovalRequest: IdleSessionRemovalSelection?
     @ObservationIgnored
     nonisolated(unsafe) private var saveTimer: Timer?
     /// Session discovery: the session-store watcher and the scans it runs off
@@ -896,8 +934,9 @@ final class AppState {
 
     /// Remove a session, clean up its monitor, and resume any pending continuations.
     /// Every removal path (cleanup timer, process exit, reducer effect) goes through here
-    /// so leaked continuations / connections are impossible.
-    func removeSession(_ sessionId: String) {
+    /// so leaked continuations / connections are impossible. Atomic batch removals defer
+    /// derived-state work with `refresh: false`, then refresh once after the whole group is gone.
+    func removeSession(_ sessionId: String, refresh: Bool = true) {
         let displayOnlyWaitBefore = displayOnlyWaitKind(forSession: sessionId)
         // Resume ALL pending continuations for this session
         drainPermissions(forSession: sessionId, reason: "removeSession")
@@ -916,6 +955,13 @@ final class AppState {
                 _ = showNextPending()
             }
         }
+        // An AiWork card that comes back is hydrated (title, folder, client)
+        // again, whichever way it went — not only through the AiWork sweeps.
+        if sessionId.hasPrefix(Self.aiworkSessionPrefix) {
+            forgetAiWorkHydrateState(
+                sessions[sessionId]?.providerSessionId ?? String(sessionId.dropFirst(Self.aiworkSessionPrefix.count))
+            )
+        }
         sessions.removeValue(forKey: sessionId)
         noteDisplayOnlyWait(sessionId: sessionId, was: displayOnlyWaitBefore)
         stopMonitor(sessionId)
@@ -931,9 +977,127 @@ final class AppState {
         if activeSessionId == sessionId {
             activeSessionId = mostActiveSessionId()
         }
+        if refresh {
+            startRotationIfNeeded()
+            refreshDerivedState()
+            scheduleSave()
+        }
+    }
+
+    /// Parent/child cards form one removal unit. Any live work or pending
+    /// interaction retains the whole connected group.
+    var idleSessionRemovalSelection: IdleSessionRemovalSelection {
+        let blocked = Set(permissionQueue.map { $0.event.sessionId ?? "default" }
+            + questionQueue.map { $0.event.sessionId ?? "default" })
+        return IdleSessionRemovalPolicy.selection(sessions: sessions, blockedSessionIDs: blocked)
+    }
+
+    func validatedIdleSessionRemovalSelection(
+        _ requested: IdleSessionRemovalSelection
+    ) -> IdleSessionRemovalSelection {
+        // Preserve only exact groups captured when confirmation opened. A new child or a status
+        // change retains the original group, while unrelated sessions that later become idle stay put.
+        let current = idleSessionRemovalSelection
+        let requestedGroups = Set(requested.groups)
+        return IdleSessionRemovalSelection(groups: current.groups.filter(requestedGroups.contains))
+    }
+
+    /// The header button: ask to confirm removing the idle cards it would
+    /// remove now — or, with the banner up, put the banner away. A request
+    /// with nothing left to show (its cards came back) counts as no banner.
+    func toggleIdleSessionRemovalRequest() {
+        if pendingIdleSessionRemoval != nil {
+            idleSessionRemovalRequest = nil
+            return
+        }
+        let selection = surface == .sessionList ? idleSessionRemovalSelection : .empty
+        idleSessionRemovalRequest = selection.isEmpty ? nil : selection
+    }
+
+    /// What the banner offers to remove right now: the request's groups that
+    /// are still removable exactly as they were. nil: no banner.
+    var pendingIdleSessionRemoval: IdleSessionRemovalSelection? {
+        guard let request = idleSessionRemovalRequest else { return nil }
+        let current = validatedIdleSessionRemovalSelection(request)
+        return current.isEmpty ? nil : current
+    }
+
+    func confirmIdleSessionRemoval() {
+        guard let request = idleSessionRemovalRequest else { return }
+        idleSessionRemovalRequest = nil
+        removeIdleSessions(selection: request)
+    }
+
+    func cancelIdleSessionRemoval() {
+        idleSessionRemovalRequest = nil
+    }
+
+    func removeIdleSessions(selection requested: IdleSessionRemovalSelection? = nil) {
+        let selection = requested.map(validatedIdleSessionRemovalSelection) ?? idleSessionRemovalSelection
+        guard !selection.isEmpty else { return }
+        let now = Date()
+        for group in selection.groups {
+            for id in group {
+                manuallyRemovedSessions[id] = now
+                manuallyRemovedSessionPeers[id] = group
+            }
+            for id in group.sorted() {
+                followUps.completionSeen(sessionId: id)
+                removeSession(id, refresh: false)
+            }
+        }
+        // Tombstones need only cover recent passive callbacks and must not grow for the app's lifetime.
+        if manuallyRemovedSessions.count > 1024 {
+            let oldest = manuallyRemovedSessions.sorted { $0.value < $1.value }
+                .prefix(manuallyRemovedSessions.count - 1024)
+            for entry in oldest {
+                manuallyRemovedSessions.removeValue(forKey: entry.key)
+                manuallyRemovedSessionPeers.removeValue(forKey: entry.key)
+            }
+        }
         startRotationIfNeeded()
         refreshDerivedState()
         scheduleSave()
+    }
+
+    /// Whether an input may bring back a card the user removed. Any input may
+    /// for a card that was not removed. A removed card comes back — its whole
+    /// group with it — for work; passive input (a store snapshot, a hook
+    /// trailing the finished turn, a delayed read) leaves it away, and so does
+    /// work observed (`observedAt`) no later than the removal: a scan that
+    /// started before the click.
+    ///
+    /// A card back on the island by any other way (a fold creating its parent,
+    /// a request) makes the tombstone moot: its later hooks must reach it.
+    @discardableResult
+    func shouldAdmitRemovedSession(
+        _ sessionId: String,
+        evidence: RemovedSessionRevivalEvidence,
+        observedAt: Date? = nil
+    ) -> Bool {
+        guard let removedAt = manuallyRemovedSessions[sessionId] else { return true }
+        if sessions[sessionId] == nil {
+            switch evidence {
+            case .passive:
+                return false
+            case .activeWork:
+                if let observedAt, observedAt <= removedAt { return false }
+            case .blockingRequest:
+                break
+            }
+        }
+        let group = manuallyRemovedSessionPeers[sessionId] ?? [sessionId]
+        for member in group {
+            manuallyRemovedSessions.removeValue(forKey: member)
+            manuallyRemovedSessionPeers.removeValue(forKey: member)
+        }
+        return true
+    }
+
+    /// A request an agent blocks on — a permission, a question — always
+    /// surfaces, on a removed card too: it brings the card's group back.
+    func reviveRemovedSession(_ sessionId: String) {
+        shouldAdmitRemovedSession(sessionId, evidence: .blockingRequest)
     }
 
     // MARK: - Compact bar mascot rotation
@@ -1408,6 +1572,11 @@ final class AppState {
         if primarySource != effectiveSource { primarySource = effectiveSource }
         if activeSessionCount != summary.activeSessionCount { activeSessionCount = summary.activeSessionCount }
         if totalSessionCount != summary.totalSessionCount { totalSessionCount = summary.totalSessionCount }
+        // A banner whose cards all came back to life asks nothing any more:
+        // it must not reappear if they go idle again later.
+        if idleSessionRemovalRequest != nil, pendingIdleSessionRemoval == nil {
+            idleSessionRemovalRequest = nil
+        }
         ESP32StatePublisher.shared.notifyDirty()
         AppleCompanionPublisher.shared.notifyDirty()
     }
@@ -1519,6 +1688,19 @@ final class AppState {
 
         let sessionId = event.sessionId ?? "default"
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
+        // Claude Code compacting a finished session in the background: no
+        // card to open again, none to wake — not by its PreCompact, nor by
+        // the stop of the agent writing the summary or the restart from it.
+        // Before the removed-card check: none of it is the user's session
+        // waking, so a card the user removed stays removed (#385).
+        if backgroundCompactions.absorbs(event, session: sessions[sessionId], now: Date()) {
+            return
+        }
+
+        guard shouldAdmitRemovedSession(
+            sessionId,
+            evidence: .forHookEvent(event, normalizedEventName: normalizedEventName)
+        ) else { return }
 
         // Account chatter, not session activity. CodeBuddy fires
         // Notification(auth_success) as the CLI boots — before SessionStart and
@@ -1574,11 +1756,13 @@ final class AppState {
         // Cache PreToolUse payloads so downstream events sharing tool_use_id can be
         // correlated, and drain queue entries whose agent already moved on.
         cachePreToolUseIfApplicable(event)
-        resolveToolUseIfCompleted(event)
         // #216: permission requests with no correlatable tool_use_id can't be drained by
         // resolveToolUseIfCompleted. A later step of the agent that asked means it was
         // answered in the terminal: its card goes, answered with no decision — never allow.
+        // Runs first: the step's call is known by its PreToolUse, which
+        // resolveToolUseIfCompleted forgets once that call is done.
         resolveOrphanPermissionsOnActivity(event)
+        resolveToolUseIfCompleted(event)
 
         let reduction = reduceHookEvent(sessions: &sessions, event: event, maxHistory: maxHistory,
                                         replyCompletePlaceholder: L10n.shared["reply_complete_placeholder"])
@@ -1899,6 +2083,7 @@ final class AppState {
         hookConnectionId: UUID? = nil
     ) {
         let sessionId = event.sessionId ?? "default"
+        reviveRemovedSession(sessionId)
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
@@ -1922,16 +2107,11 @@ final class AppState {
             return
         }
 
-        // "Always allow … this session" on a Codex card that saved no rule
-        // (approvePermission) — a remote Codex's, or a request no rule can
-        // describe: nothing in Codex remembers it, so it is answered here,
-        // for every request of the tool, as the card said.
-        if let toolName = event.toolName,
-           CodexPermissionRules.isCodexEvent(event),
-           sessions[sessionId]?.alwaysAllowedTools.contains(toolName) == true {
-            continuation.resume(returning: Data(
-                #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8
-            ))
+        // "Always allow" on an earlier card of this session, for an agent
+        // that keeps nothing which stops it asking again (approvePermission):
+        // the island answers the request, as that card said it would.
+        if sessionAlwaysAllows(event, sessionId: sessionId) {
+            continuation.resume(returning: Self.plainAllowAnswer)
             return
         }
 
@@ -2062,53 +2242,9 @@ final class AppState {
         let pending = permissionQueue.remove(at: index)
         let sessionId = pending.event.sessionId ?? "default"
         dismissedPermissionSessionIds.remove(sessionId)
-        let responseData: Data
-        if always, CodexPermissionRules.isCodexEvent(pending.event) {
-            if CodexPermissionRules.alwaysSavesRule(for: pending.event) {
-                _ = CodexPermissionRules().persistAlwaysAllowRule(for: pending.event)
-            } else if let toolName = pending.event.toolName, !toolName.isEmpty {
-                // A remote Codex reads its rules on its own host, and none
-                // may be written to this Mac's; and a local request no rule
-                // can describe has none to save. "Always" holds for this
-                // session instead — what the card said — and the island
-                // answers the session's next requests for the tool.
-                sessions[sessionId]?.alwaysAllowedTools.insert(toolName)
-            }
-            let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
-            responseData = Data(response.utf8)
-        } else if always, Self.isZcodeEvent(pending.event) {
-            responseData = Self.zcodeAlwaysAllowResponse(toolName: pending.event.toolName)
-        } else if always {
-            let toolName = pending.event.toolName ?? ""
-            // MCP tools (`mcp__server__tool`) don't accept a rule specifier — the
-            // rule must be the bare tool name. Sending `ruleContent: "*"` makes
-            // Claude Code assemble `mcp__server__tool(*)`, which never matches an
-            // actual MCP call, so the "always allow" rule silently fails to
-            // persist and the same approval keeps re-prompting. Non-MCP tools
-            // (Bash/Read/Edit/…) keep the `*` specifier. (#224)
-            var rule: [String: Any] = ["toolName": toolName]
-            if !toolName.hasPrefix("mcp__") {
-                rule["ruleContent"] = "*"
-            }
-            let obj: [String: Any] = [
-                "hookSpecificOutput": [
-                    "hookEventName": "PermissionRequest",
-                    "decision": [
-                        "behavior": "allow",
-                        "updatedPermissions": [[
-                            "type": "addRules",
-                            "rules": [rule],
-                            "behavior": "allow",
-                            "destination": "session"
-                        ]]
-                    ] as [String: Any]
-                ] as [String: Any]
-            ]
-            responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
-        } else {
-            let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
-            responseData = Data(response.utf8)
-        }
+        let responseData = always
+            ? alwaysAllowAnswer(for: pending, sessionId: sessionId)
+            : Self.plainAllowAnswer
         pending.continuation.resume(returning: responseData)
         resolveMergedSubagentAfterUI(
             sessionId: sessionId,
@@ -2117,49 +2253,171 @@ final class AppState {
             keepSubagentTool: pending.event.toolName,
             idleParentWhenNoAgent: false
         )
+        if always {
+            answerQueuedRequestsCoveredByAlways(sessionId: sessionId)
+        }
 
         showNextPending()
         refreshDerivedState()
     }
 
-    nonisolated static func isZcodeEvent(_ event: HookEvent) -> Bool {
-        SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) == "zcode"
+    /// The session's requests that were already waiting when the user chose
+    /// "Always" on one of them — a parallel call's, a subagent's — and that
+    /// the island now holds that "Always" for (sessionAlwaysAllows): answered
+    /// as the session's later ones will be, rather than each asking again.
+    private func answerQueuedRequestsCoveredByAlways(sessionId: String) {
+        let covered = permissionQueue.filter {
+            ($0.event.sessionId ?? "default") == sessionId && sessionAlwaysAllows($0.event, sessionId: sessionId)
+        }
+        guard !covered.isEmpty else { return }
+        let ids = Set(covered.map(\.id))
+        permissionQueue.removeAll { ids.contains($0.id) }
+        for request in covered {
+            request.continuation.resume(returning: Self.plainAllowAnswer)
+            resolveMergedSubagentAfterUI(
+                sessionId: sessionId,
+                agentId: request.event.agentId,
+                subagentStatus: .running,
+                keepSubagentTool: request.event.toolName,
+                idleParentWhenNoAgent: false
+            )
+        }
     }
 
-    nonisolated static func isQoderEvent(_ event: HookEvent) -> Bool {
-        guard let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) else { return false }
-        return source == "qoder" || source == "qoder-cli"
+    /// Allows `pending`, and makes its "Always" hold for what its card said:
+    /// in the rule the agent keeps, or — where the agent keeps none that
+    /// stops its next request asking — in the session, which the island
+    /// answers (sessionAlwaysAllows).
+    private func alwaysAllowAnswer(for pending: PermissionRequest, sessionId: String) -> Data {
+        let event = pending.event
+        if CodexPermissionRules.isCodexEvent(event) {
+            // A running Codex never takes in what "Always" saves: it reads
+            // ~/.codex/rules and config.toml when a session starts
+            // (codex-rs/core/src/session/mod.rs, `ExecPolicyManager::load`;
+            // only its own approvals reach the session's policy), and its
+            // PermissionRequest output holds nothing beyond this call. The
+            // rule stops the sessions Codex starts from now on; this one's
+            // next requests come here, and the island answers them as the
+            // card said. A remote Codex reads its rules on its own host and
+            // none may be written to this Mac's, and a request no rule can
+            // describe has none to save: "Always" holds for the session.
+            rememberCodexAlways(pending, sessionId: sessionId)
+            return Self.plainAllowAnswer
+        }
+        if Self.agentKeepsAlwaysRule(for: event) {
+            return Self.claudeAlwaysAllowResponse(
+                toolName: event.toolName ?? "",
+                bareToolName: SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) == "minimax"
+            )
+        }
+        if let toolName = event.toolName, !toolName.isEmpty {
+            sessions[sessionId]?.alwaysAllowedTools.insert(toolName)
+        }
+        // This call only. What these agents would make of a rule is not what
+        // the card said: nothing at all; only the patterns OpenCode picked,
+        // shared by every session in the folder (1.x) or saved to the project
+        // for good (2.x); a rule ZCode saves to the project for good. A
+        // Codex-family agent (Trae CLI Next) refuses an answer carrying one.
+        return Self.plainAllowAnswer
     }
 
-    /// "Always allow" response for a ZCode PermissionRequest hook (#258).
+    /// Codex's "Always", as its card's link put it (``PermissionRequest/alwaysScope``):
+    /// the rule saved for the sessions Codex starts from now on, and held by
+    /// the island for this one.
+    private func rememberCodexAlways(_ pending: PermissionRequest, sessionId: String) {
+        let event = pending.event
+        let toolName = event.toolName ?? ""
+        switch pending.alwaysScope {
+        case .codexRules(let patterns):
+            _ = CodexPermissionRules().persistPrefixRules(patterns, for: event)
+            sessions[sessionId]?.alwaysAllowedCommandPrefixes.formUnion(patterns)
+        case .codexMCPConfig:
+            _ = CodexPermissionRules().persistAlwaysAllowRule(for: event)
+            if !toolName.isEmpty { sessions[sessionId]?.alwaysAllowedTools.insert(toolName) }
+        case .session:
+            if !toolName.isEmpty { sessions[sessionId]?.alwaysAllowedTools.insert(toolName) }
+        }
+    }
+
+    /// Whether an "Always" the user chose on an earlier card of this session
+    /// answers `event` (approvePermission): the tool it named, or — for Codex
+    /// — a command each of whose commands starts with words a rule it saved
+    /// names. Only the session's own: a subagent filed under it is in it, and
+    /// a remote host's sessions are filed under ids of their own.
+    private func sessionAlwaysAllows(_ event: HookEvent, sessionId: String) -> Bool {
+        guard let session = sessions[sessionId],
+              let toolName = event.toolName, !toolName.isEmpty else { return false }
+        if session.alwaysAllowedTools.contains(toolName) { return true }
+        return CodexPermissionRules.isCodexEvent(event)
+            && CodexPermissionRules.commandsStart(event, withAnyOf: session.alwaysAllowedCommandPrefixes)
+    }
+
+    /// Whether the agent keeps the rule "Always allow" sends with its answer
+    /// for the rest of the session — the tool, every call of it — so that
+    /// its later requests for the tool never come here. What it asks after
+    /// that is its own call (a protected path, a safety check), for the user
+    /// to answer.
+    /// - Claude Code adds `updatedPermissions` to the session's rules, where
+    ///   `Bash(*)` reads as the bare tool, and a subagent's go into the same
+    ///   rules (2.1.312: a subagent's context is handed the session's
+    ///   `setSessionToolPermissionContext`).
+    /// - Qoder CLI and Qoder CN (`qoder-cli`, 1.1.80) apply them the same
+    ///   way, kept in memory for the session.
+    /// - MiniMax Code (0.7.1, CodeIsland's pack is a Claude-format plugin)
+    ///   keeps a `session` rule in its plugin permission store; its file
+    ///   tools match a `ruleContent` as a path, so it gets the bare tool name.
     ///
-    /// ZCode validates hook stdout with a STRICT schema (unknown keys void the
-    /// whole decision, and ZCode falls back to its own dialog). Persistent
-    /// rules therefore go in `permissionUpdates` — NOT Claude's
-    /// `updatedPermissions` — and there is no `destination` key. A rule with a
-    /// bare `toolName` (no `ruleContent`) matches every future call of that
-    /// tool, which is exactly the "always allow this tool" semantic; a
-    /// `ruleContent` of "*" would instead be compared against the call's
-    /// command/path subject and never match. Events without a tool name can't
-    /// form a valid rule (toolName must be non-empty), so they degrade to a
-    /// plain one-time allow.
-    nonisolated static func zcodeAlwaysAllowResponse(toolName: String?) -> Data {
-        let plainAllow = Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#.utf8)
-        guard let toolName, !toolName.isEmpty else { return plainAllow }
+    /// The rest read one decision from the answer and ask again for the next
+    /// call: Gemini CLI (an allow cannot even skip its own confirmation),
+    /// Qwen Code (its PermissionRequest result has no field for the rules),
+    /// the Qoder IDE and app, Trae CLI, pi, Oh My Pi, OpenClaw, DeepSeek
+    /// Harness's plugin, ZCode (which saves the rule to the project, for
+    /// good) and OpenCode (which keeps patterns of its own choosing, for
+    /// every session in the folder or the project). The island keeps
+    /// "Always" for those (sessionAlwaysAllows). Codex is handled on its own
+    /// (rememberCodexAlways).
+    nonisolated static func agentKeepsAlwaysRule(for event: HookEvent) -> Bool {
+        // A hook that names no source is Claude Code's.
+        guard let raw = event.rawJSON["_source"] as? String,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
+        switch SessionSnapshot.normalizedSupportedSource(raw) {
+        case "claude", "qoder-cli", "minimax": return true
+        default: return false
+        }
+    }
+
+    /// "Always allow" as Claude Code reads it: a session rule for the tool.
+    nonisolated static func claudeAlwaysAllowResponse(toolName: String, bareToolName: Bool = false) -> Data {
+        // MCP tools (`mcp__server__tool`) don't accept a rule specifier — the
+        // rule must be the bare tool name. Sending `ruleContent: "*"` makes
+        // Claude Code assemble `mcp__server__tool(*)`, which never matches an
+        // actual MCP call, so the "always allow" rule silently fails to
+        // persist and the same approval keeps re-prompting. Non-MCP tools
+        // (Bash/Read/Edit/…) keep the `*` specifier. (#224)
+        var rule: [String: Any] = ["toolName": toolName]
+        if !bareToolName, !toolName.hasPrefix("mcp__") {
+            rule["ruleContent"] = "*"
+        }
         let obj: [String: Any] = [
             "hookSpecificOutput": [
                 "hookEventName": "PermissionRequest",
                 "decision": [
                     "behavior": "allow",
-                    "permissionUpdates": [[
+                    "updatedPermissions": [[
                         "type": "addRules",
+                        "rules": [rule],
                         "behavior": "allow",
-                        "rules": [["toolName": toolName]],
-                    ] as [String: Any]]
+                        "destination": "session"
+                    ]]
                 ] as [String: Any]
             ] as [String: Any]
         ]
-        return (try? JSONSerialization.data(withJSONObject: obj)) ?? plainAllow
+        return (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+    }
+
+    nonisolated static func isQoderEvent(_ event: HookEvent) -> Bool {
+        guard let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String) else { return false }
+        return source == "qoder" || source == "qoder-cli"
     }
 
     /// `expectedSessionId` is the session the remote surface was showing when
@@ -2317,6 +2575,7 @@ final class AppState {
         hookConnectionId: UUID? = nil
     ) {
         let sessionId = event.sessionId ?? "default"
+        reviveRemovedSession(sessionId)
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
@@ -2374,6 +2633,7 @@ final class AppState {
         hookConnectionId: UUID? = nil
     ) {
         let sessionId = event.sessionId ?? "default"
+        reviveRemovedSession(sessionId)
         if sessions[sessionId] == nil {
             sessions[sessionId] = SessionSnapshot()
         }
@@ -3308,6 +3568,11 @@ final class AppState {
     func integrateDiscovered(_ discovered: [DiscoveredSession]) {
         var didMutate = false
         for info in discovered {
+            guard shouldAdmitRemovedSession(
+                info.sessionId,
+                evidence: info.status.map { $0 == .idle ? .passive : .activeWork } ?? .passive,
+                observedAt: info.modifiedAt
+            ) else { continue }
             if shouldSuppressClosedCodexDesktopDiscovery(info) {
                 continue
             }

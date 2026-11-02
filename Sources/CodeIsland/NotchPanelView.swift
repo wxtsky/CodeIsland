@@ -130,11 +130,15 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.showSessionRecap) private var showSessionRecap = SettingsDefaults.showSessionRecap
     @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
     @State private var isHovered = false
     @State private var idleHovered = false
+    /// The remove-idle banner's height while it is up, which the session list
+    /// gives up (its estimate until the first layout measures it).
+    @State private var removalBannerHeight: CGFloat = 50
     /// Three-stage hover: collapsed → prehover (immediate ack) → expanded (after delay)
     @State private var hoverPhase: NotchHoverPhase = .collapsed
     /// Curtain animation for tool status toggle
@@ -325,7 +329,7 @@ struct NotchPanelView: View {
                                 session: session,
                                 sessionId: sid,
                                 appState: appState,
-                                alwaysScope: ApprovalAlwaysScope(for: pending.event),
+                                alwaysScope: pending.alwaysScope,
                                 onAllow: { appState.approvePermission(always: false, expectedSessionId: sid) },
                                 onAlwaysAllow: { appState.approvePermission(always: true, expectedSessionId: sid) },
                                 onDeny: { appState.denyPermission(expectedSessionId: sid) },
@@ -386,8 +390,28 @@ struct NotchPanelView: View {
                         SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
                     case .sessionList:
-                        SessionListView(appState: appState, onlySessionId: nil)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
+                        VStack(spacing: 0) {
+                            // Only what is still removable as it was when the
+                            // button was clicked: the count follows, and the
+                            // banner goes once nothing is left to remove.
+                            let pending = appState.pendingIdleSessionRemoval
+                            if let pending {
+                                IdleSessionRemovalBanner(
+                                    count: pending.cardCount,
+                                    onCancel: appState.cancelIdleSessionRemoval,
+                                    onRemove: appState.confirmIdleSessionRemoval
+                                )
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { removalBannerHeight = $0 }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            SessionListView(
+                                appState: appState,
+                                onlySessionId: nil,
+                                reservedHeight: pending == nil ? 0 : removalBannerHeight
+                            )
+                        }
+                        .animation(reduceMotion ? nil : NotchAnimation.micro, value: appState.pendingIdleSessionRemoval != nil)
+                        .transition(.blurFade.combined(with: .move(edge: .top)))
                     case .collapsed:
                         EmptyView()
                     }
@@ -769,9 +793,6 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
-    /// The waiting badges pulse forever; with Reduce Motion they hold still
-    /// (a one-off follow-up bounce still marks a reminder).
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Re-evaluated on every re-render; the compact bar redraws often enough
     /// that the moon appears/disappears close to the window edges.
@@ -796,7 +817,7 @@ private struct CompactRightWing: View {
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                ExpandedHeaderControls(soundEnabled: $soundEnabled)
+                ExpandedHeaderControls(appState: appState, soundEnabled: $soundEnabled)
             } else {
                 // Quiet hours active — explains why event sounds are silent.
                 if inQuietHours {
@@ -822,7 +843,7 @@ private struct CompactRightWing: View {
                     Image(systemName: "questionmark.bubble.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+                        .modifier(WaitingBadgePulse())
                         .symbolEffect(.bounce, value: appState.followUps.hintPulse)
                         .help(l10n["question_waiting_hint"])
                 } else if appState.followUps.hintActive {
@@ -839,7 +860,7 @@ private struct CompactRightWing: View {
                     Image(systemName: "bell.fill")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
-                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+                        .modifier(WaitingBadgePulse())
                 }
 
                 if showToolStatus {
@@ -882,6 +903,27 @@ private struct CompactRightWing: View {
         .background(GeometryReader { geo in
             Color.clear.preference(key: CompactRightWingWidthKey.self, value: expanded ? 0 : geo.size.width)
         })
+    }
+}
+
+/// The pulse on a waiting badge, for as long as an approval or a question
+/// waits behind the collapsed bar. It runs on the island's clock (FrameClock):
+/// `symbolEffect(.pulse, options: .repeating)` updated on every display frame
+/// and laid the island out each time. With Reduce Motion, or while the
+/// island's animations are held, the badge holds still (a one-off follow-up
+/// bounce still marks a reminder).
+private struct WaitingBadgePulse: ViewModifier {
+    @ObservedObject private var animationGate = MascotAnimationGate.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if animationGate.animationsActive && !reduceMotion {
+            FrameClock(interval: FrameTicker.step) { now in
+                content.opacity(0.45 + 0.55 * MascotMotion.glowPulse(now))
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -1079,9 +1121,11 @@ struct NotchIconButton: View {
     let icon: String
     var tint: Color = .white
     var tooltip: String? = nil
+    var accessibilityTitle: String? = nil
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     /// The drawn circle, and the hit target around it.
     static let circleSize: CGFloat = 22
@@ -1091,13 +1135,13 @@ struct NotchIconButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(tint.opacity(hovering ? 1.0 : 0.85))
+                .foregroundStyle(tint.opacity(isEnabled ? (hovering ? 1.0 : 0.85) : 0.3))
                 .frame(width: Self.circleSize, height: Self.circleSize)
                 .background(
                     Circle()
-                        .fill(tint.opacity(hovering ? 0.2 : 0.08))
+                        .fill(tint.opacity(isEnabled && hovering ? 0.2 : 0.08))
                 )
-                .scaleEffect(hovering && !reduceMotion ? 1.1 : 1.0)
+                .scaleEffect(isEnabled && hovering && !reduceMotion ? 1.1 : 1.0)
                 .frame(width: Self.hitSize, height: Self.hitSize)
                 .contentShape(Rectangle())
         }
@@ -1106,20 +1150,41 @@ struct NotchIconButton: View {
         .help(tooltip ?? "")
         // Icon-only: VoiceOver would otherwise read the symbol name
         // ("gearshape"), in English, instead of what the button does.
-        .accessibilityLabel(tooltip ?? icon)
+        .accessibilityLabel(accessibilityTitle ?? tooltip ?? icon)
     }
 }
 
-/// The expanded header's buttons: sound, Settings, and Quit, which asks once.
+/// The expanded header's buttons: remove idle cards (on the session list,
+/// while it has some), sound, Settings, and Quit, which asks once.
 private struct ExpandedHeaderControls: View {
+    var appState: AppState
     @Binding var soundEnabled: Bool
     @StateObject private var quit = QuitConfirmation()
     @ObservedObject private var l10n = L10n.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Only where it can act: an approval, question or completion card has
+    /// nothing to remove, and a greyed-out trash can there only raised the
+    /// question why. It leads the row, so coming and going moves nothing else.
+    /// (The banner's cards are a subset of these, so it never outlives the button.)
+    private var showsRemoveIdle: Bool {
+        appState.surface == .sessionList && !appState.idleSessionRemovalSelection.isEmpty
+    }
+
     var body: some View {
         // 4pt between 24pt hit targets keeps the 6pt gap between the circles.
         HStack(spacing: 4) {
+            if showsRemoveIdle {
+                // Tinted like the banner while it is up; a second click puts it away.
+                NotchIconButton(icon: "trash",
+                                tint: appState.pendingIdleSessionRemoval != nil ? IdleSessionRemovalBanner.tint : .white,
+                                tooltip: l10n["remove_idle_sessions_help"],
+                                accessibilityTitle: l10n["remove_idle_sessions"]) {
+                    appState.toggleIdleSessionRemovalRequest()
+                }
+                .accessibilityIdentifier("removeIdleSessions")
+                .transition(.opacity)
+            }
             NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
                 soundEnabled.toggle()
             }
@@ -1131,6 +1196,7 @@ private struct ExpandedHeaderControls: View {
         // The pill is wider than the icon: the other buttons slide over to
         // make room, or with Reduce Motion simply move.
         .animation(reduceMotion ? nil : NotchAnimation.micro, value: quit.isArmed)
+        .animation(reduceMotion ? nil : NotchAnimation.micro, value: showsRemoveIdle)
     }
 }
 
@@ -1488,33 +1554,39 @@ private struct ApprovalToolDetailView: View {
 enum ApprovalHints {
     /// What "Always" commits to differs by agent: Claude-style hooks add a
     /// rule for the rest of the session, Codex gets a rule saved to disk
-    /// (CodexPermissionRules) that outlives it — for the commands that start
-    /// with the words it names or, for an MCP tool, an approval in
-    /// config.toml — except where Codex saves none (a remote Codex, a request
-    /// no rule can describe), whose "Always" lasts the session
+    /// (CodexPermissionRules) for the sessions it starts from now on — for
+    /// the commands that start with the words it names or, for an MCP tool,
+    /// an approval in config.toml — and the island holds it for this one,
+    /// which never reads it. Where Codex saves none (a remote Codex, a
+    /// request no rule can describe), "Always" lasts the session
     /// (CodexPermissionRules.alwaysSavesRule).
     static func always(scope: ApprovalAlwaysScope) -> String {
         switch scope {
         case .session: return L10n.shared["always_hint_session"]
-        case .codexRules(let pattern):
-            return String(format: L10n.shared["always_hint_saved"], ApprovalCopy.commandWords(pattern))
+        case .codexRules(let patterns):
+            return String(format: L10n.shared["always_hint_saved"], ApprovalCopy.commandWords(anyOf: patterns))
         case .codexMCPConfig: return L10n.shared["always_hint_saved_mcp"]
         }
     }
 }
 
 /// Where "Always allow" puts its rule — what the approval card's link says.
+/// Worked out once, when the request is queued (``PermissionRequest``): the
+/// card's words and what the click does come from the same value.
 enum ApprovalAlwaysScope: Equatable {
-    /// Claude-style hooks: a rule for this tool, for the rest of the session.
-    /// A remote Codex gets the same, kept by the island (its rules are on
-    /// its own host), and so does a local Codex request no rule can describe.
+    /// This tool, for the rest of the session. Claude Code keeps the rule
+    /// itself; for an agent that keeps none, the island does
+    /// (AppState.approvePermission) — a remote Codex (its rules are on its
+    /// own host), a local Codex request no rule can describe.
     case session
-    /// Codex: a prefix rule in ~/.codex/rules, kept for every session, for
-    /// the commands that start with `pattern` — the words the link names are
-    /// the words saved (CodexPermissionRules.prefixPattern).
-    case codexRules(pattern: [String])
+    /// Codex: prefix rules in ~/.codex/rules for the commands that start
+    /// with one of `patterns` — the words the link names are the words saved
+    /// (CodexPermissionRules.prefixPatterns). Codex reads them in the
+    /// sessions it starts from now on; the island holds them for this one.
+    case codexRules(patterns: [[String]])
     /// Codex MCP tool: an approval in ~/.codex/config.toml
-    /// (CodexPermissionRules.persistAlwaysAllowRule).
+    /// (CodexPermissionRules.persistAlwaysAllowRule), for the sessions Codex
+    /// starts from now on; the island holds it for this one.
     case codexMCPConfig
 
     /// Where "Always" puts the rule for `event`.
@@ -1525,8 +1597,8 @@ enum ApprovalAlwaysScope: Equatable {
         }
         if CodexPermissionRules.mcpToolApprovalTarget(for: event) != nil {
             self = .codexMCPConfig
-        } else if let pattern = CodexPermissionRules.prefixPattern(for: event) {
-            self = .codexRules(pattern: pattern)
+        } else if let patterns = CodexPermissionRules.prefixPatterns(for: event) {
+            self = .codexRules(patterns: patterns)
         } else {
             self = .session
         }
@@ -1641,10 +1713,10 @@ enum ApprovalCopy {
     }
 
     /// "Always allow Bash this session", or where Codex saves the rule — and
-    /// for a command's rule, the words it covers.
+    /// for a command's rules, the words they cover.
     static func alwaysLink(tool: String, scope: ApprovalAlwaysScope) -> String {
-        if case .codexRules(let pattern) = scope, let path = scope.savedPath {
-            return String(format: L10n.shared["card_always_saved_prefix"], commandWords(pattern), path)
+        if case .codexRules(let patterns) = scope, let path = scope.savedPath {
+            return String(format: L10n.shared["card_always_saved_prefix"], commandWords(anyOf: patterns), path)
         }
         if let path = scope.savedPath {
             return String(format: L10n.shared["card_always_saved"], path)
@@ -1652,11 +1724,14 @@ enum ApprovalCopy {
         return String(format: L10n.shared["card_always_session"], displayName(tool))
     }
 
-    /// The session list's "Always" button: the tool, or the words a Codex
-    /// rule covers.
+    /// The session list's "Always" button: the tool, or the words Codex
+    /// rules cover.
     static func inlineAlwaysTitle(tool: String, scope: ApprovalAlwaysScope) -> String {
-        if case .codexRules(let pattern) = scope {
-            return String(format: L10n.shared["session_inline_always_prefix"], commandWords(pattern))
+        if case .codexRules(let patterns) = scope {
+            // "git add -A … or git commit -m …": the format ends the last one.
+            let words = patterns.map(commandWords)
+                .joined(separator: " …" + L10n.shared["always_patterns_joiner"])
+            return String(format: L10n.shared["session_inline_always_prefix"], words)
         }
         return String(format: L10n.shared["session_inline_always"], ToolNameDisplay.compact(tool))
     }
@@ -1666,6 +1741,12 @@ enum ApprovalCopy {
     /// visible — so the words shown are the words saved.
     static func commandWords(_ pattern: [String]) -> String {
         pattern.map(shellWord).joined(separator: " ")
+    }
+
+    /// Several rules' patterns, as the card names them: "git add -A or git
+    /// commit -m".
+    static func commandWords(anyOf patterns: [[String]]) -> String {
+        patterns.map(commandWords).joined(separator: L10n.shared["always_patterns_joiner"])
     }
 
     private static let plainShellWordCharacters = CharacterSet(
@@ -2212,7 +2293,7 @@ func makeQuestionBarFreeTextAnswer(
 /// answers collected for A then led B's submission, and since answers are
 /// mapped onto questions by position, B's question was sent A's answer.
 /// Recording against a different request therefore starts over. (#333)
-struct QuestionWizardState {
+struct QuestionWizardState: Equatable {
     private(set) var requestId: UUID?
     private(set) var currentQuestionIndex = 0
     private(set) var collectedAnswers: [AskUserQuestionAnswer] = []
@@ -2385,7 +2466,17 @@ private struct QuestionBar: View {
         .onChange(of: requestId, initial: true) { _, newId in
             // The caller keys this view by request, so a new request normally
             // gets a fresh view; this keeps the wizard honest if it does not.
-            wizard.bind(to: newId)
+            // A view rebuilt under the same request — the island moving to
+            // another display, the displays changing — takes up what the user
+            // had typed and picked there.
+            if let newId, let draft = appState.questionDraft(for: newId) {
+                wizard = draft
+            } else {
+                wizard.bind(to: newId)
+            }
+        }
+        .onChange(of: wizard) { _, draft in
+            appState.saveQuestionDraft(draft)
         }
         .onDisappear {
             jumpValidationTask?.cancel()
@@ -2864,6 +2955,10 @@ private struct SessionListView: View {
     var appState: AppState
     /// When set, only show this session (auto-expand on completion)
     var onlySessionId: String? = nil
+    /// Height the panel shows above the list inside the window's budget (the
+    /// remove-idle banner): the list scrolls that much sooner, so its footer
+    /// and the panel's bottom stay in the window.
+    var reservedHeight: CGFloat = 0
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
@@ -2913,38 +3008,7 @@ private struct SessionListView: View {
             }
 
         case "cli":
-            let cliOrder: [(source: String, name: String)] = [
-                ("claude", "Claude"),
-                ("codex", "Codex"),
-                ("gemini", "Gemini"),
-                ("antigravity", "AntiGravity"),
-                ("google-antigravity", "Google Antigravity"),
-                ("cursor", "Cursor"),
-                ("trae", "Trae"),
-                ("traecn", "Trae CN"),
-                ("traecli", "Trae CLI"),
-                ("copilot", "Copilot"),
-                ("qoder", "Qoder"),
-                ("qoderwork", "QoderWork"),
-                ("droid", "Factory"),
-                ("codebuddy", "CodeBuddy"),
-                ("codybuddycn", "CodyBuddyCN"),
-                ("stepfun", "StepFun"),
-                ("workbuddy", "WorkBuddy"),
-                ("hermes", "Hermes"),
-                ("openclaw", "OpenClaw"),
-                ("qwen", "Qwen Code"),
-                ("kimi", "Kimi Code CLI"),
-                ("opencode", "OpenCode"),
-                ("mimo", "MiMo"),
-                ("pi", "Pi"),
-                ("kiro", "Kiro"),
-                ("cline", "Cline"),
-                ("zcode", "ZCode"),
-                ("minimax", "MiniMax Code CLI"),
-                ("aiwork", "AiWork"),
-                ("aiwork-cli", "AiWork CLI"),
-            ]
+            let cliOrder = SessionListGrouping.cliSections
             var result: [(String, String?, [String])] = []
             var seen = Set<String>()
             for cli in cliOrder {
@@ -2980,7 +3044,7 @@ private struct SessionListView: View {
         let needsScroll = SessionListMetrics.needsScroll(
             isCompletionCard: onlySessionId != nil,
             sessionCount: totalSessionCount,
-            contentHeight: contentHeight,
+            contentHeight: contentHeight + reservedHeight,
             maxVisibleSessions: maxVisibleSessions,
             density: density
         )
@@ -2998,6 +3062,10 @@ private struct SessionListView: View {
                 CompactSessionRowMetrics.statusColumnWidth(fontSize: CompactSessionRowMetrics.statusFontSize(fontSize))
             )
             : (0, 0)
+        // While the remove-idle banner asks, the cards it would take are marked.
+        let markedForRemoval = onlySessionId == nil
+            ? appState.pendingIdleSessionRemoval?.sessionIDs ?? []
+            : []
         let content = VStack(spacing: density == .compact ? CompactSessionRowMetrics.spacing : 6) {
             ForEach(groups, id: \.header) { group in
                 if !group.header.isEmpty {
@@ -3019,6 +3087,7 @@ private struct SessionListView: View {
 
                 ForEach(group.ids, id: \.self) { sessionId in
                     if let session = appState.sessions[sessionId] {
+                        let marked = markedForRemoval.contains(sessionId)
                         SessionCard(
                             appState: appState,
                             sessionId: sessionId,
@@ -3026,8 +3095,11 @@ private struct SessionListView: View {
                             isCompletion: onlySessionId != nil,
                             density: density,
                             compactProjectWidth: compactColumns.project,
-                            compactStatusWidth: compactColumns.status
+                            compactStatusWidth: compactColumns.status,
+                            markedForRemoval: marked
                         )
+                        .opacity(marked ? 0.6 : 1)
+                        .accessibilityHint(marked ? Text(L10n.shared["remove_idle_sessions_marked"]) : Text(""))
                     }
                 }
             }
@@ -3072,7 +3144,7 @@ private struct SessionListView: View {
 
         VStack(spacing: 0) {
             if needsScroll {
-                ThinScrollView(maxHeight: SessionListMetrics.scrollHeight(maxVisibleSessions: maxVisibleSessions)) {
+                ThinScrollView(maxHeight: SessionListMetrics.scrollHeight(maxVisibleSessions: maxVisibleSessions) - reservedHeight) {
                     content
                 }
                 .clipShape(
@@ -3717,6 +3789,14 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
 
+    /// The height cap, kept so it can follow `maxHeight` (the session list
+    /// gives up room to the remove-idle banner while it is up).
+    final class Coordinator {
+        var maxHeightConstraint: NSLayoutConstraint?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     /// AppKit puts the system's preferred style back (legacy with a mouse
     /// attached or "Show scroll bars: Always") on its own schedule; a legacy
     /// scroller took 13pt off the session list's width until the next update.
@@ -3740,10 +3820,12 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
         scrollView.documentView = hosting
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        let maxHeightConstraint = scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight)
+        context.coordinator.maxHeightConstraint = maxHeightConstraint
         NSLayoutConstraint.activate([
             hosting.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             hosting.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight),
+            maxHeightConstraint,
         ])
 
         return scrollView
@@ -3752,6 +3834,9 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         if let hosting = scrollView.documentView as? NSHostingView<Content> {
             hosting.rootView = content
+        }
+        if let constraint = context.coordinator.maxHeightConstraint, constraint.constant != maxHeight {
+            constraint.constant = maxHeight
         }
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller?.controlSize = .mini
@@ -4107,6 +4192,8 @@ private struct SessionCard: View {
     /// Compact rows: column widths every row shares, so the words line up.
     var compactProjectWidth: CGFloat = 150
     var compactStatusWidth: CGFloat = 64
+    /// The remove-idle banner is up and would take this card.
+    var markedForRemoval = false
     @State private var hovering = false
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
@@ -4376,11 +4463,12 @@ private struct SessionCard: View {
     private func approvalBlock(queueIndex idx: Int) -> some View {
         // Approval details require the provider's raw tool name; the
         // session itself may hold a friendly Codex activity label.
-        let event = appState.permissionQueue[idx].event
+        let request = appState.permissionQueue[idx]
+        let event = request.event
         let tool = event.toolName ?? session.currentTool ?? "Unknown"
         let input = event.toolInput
         approvalRequestLine(tool: tool, input: input, position: idx + 1, total: appState.permissionQueue.count)
-        inlineApprovalActions(tool: tool, event: event)
+        inlineApprovalActions(tool: tool, alwaysScope: request.alwaysScope)
 
         // Expanded detail view
         if showApprovalDetails {
@@ -4441,10 +4529,9 @@ private struct SessionCard: View {
     /// Always (a link that names its scope) … Details · Deny · Allow once.
     /// Allow once is the only filled button. Only the head of the queue can
     /// be answered from here; the others say why their buttons are dim.
-    private func inlineApprovalActions(tool: String, event: HookEvent) -> some View {
+    private func inlineApprovalActions(tool: String, alwaysScope: ApprovalAlwaysScope) -> some View {
         let enabled = isActiveApproval
         let queuedHint = enabled ? nil : L10n.shared["session_inline_queued_hint"]
-        let alwaysScope = ApprovalAlwaysScope(for: event)
         return HStack(spacing: 8) {
             SessionInlineButton(
                 title: ApprovalCopy.inlineAlwaysTitle(tool: tool, scope: alwaysScope),
@@ -4655,6 +4742,12 @@ private struct SessionCard: View {
                 .frame(width: 3)
         }
         .clipShape(shape)
+        .overlay {
+            if markedForRemoval {
+                shape.strokeBorder(IdleSessionRemovalBanner.tint.opacity(0.8),
+                                   style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+        }
         .accessibilityHidden(true)
     }
 
@@ -5488,52 +5581,62 @@ private struct TypingIndicator: View {
     var label: String? = nil
     var bright: Bool = false
     var color: Color? = nil
-    @State private var phase: CGFloat = -60
+    /// Each indicator starts its sweep at the left edge.
+    @State private var origin = Date.timeIntervalSinceReferenceDate
+    @ObservedObject private var animationGate = MascotAnimationGate.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let sweepDuration: Double = 2.5
 
     var body: some View {
         if let label {
-            let baseColor: Color = color ?? .white
-            let baseOpacity: Double = bright ? 0.6 : 0.35
-            let peakOpacity: Double = bright ? 0.8 : 0.5
-            let midOpacity: Double = bright ? 0.5 : 0.3
-            let bandWidth: CGFloat = bright ? 80 : 60
-            let duration: Double = 2.5
-            let endPhase: CGFloat = bright ? 100 : 80
-            let startPhase: CGFloat = bright ? -80 : -60
-
-            Text(label)
-                .font(.system(size: fontSize, design: .monospaced))
-                .foregroundStyle(baseColor.opacity(baseOpacity))
-                .overlay(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .white.opacity(midOpacity), location: bright ? 0.35 : 0.4),
-                            .init(color: .white.opacity(peakOpacity), location: 0.5),
-                            .init(color: .white.opacity(midOpacity), location: bright ? 0.65 : 0.6),
-                            .init(color: .clear, location: 1),
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: bandWidth)
-                    .offset(x: phase)
-                    .mask(
-                        Text(label)
-                            .font(.system(size: fontSize, design: .monospaced))
-                    )
-                )
-                .onAppear {
-                    phase = startPhase
-                    // Reduce Motion: the label stays, the endless shimmer goes.
-                    guard !reduceMotion else { return }
-                    withAnimation(.easeInOut(duration: duration).repeatForever(autoreverses: false)) {
-                        phase = endPhase
-                    }
+            // Reduce Motion, or the island's animations held (hidden, asleep):
+            // the label stays, the endless shimmer goes.
+            if animationGate.animationsActive && !reduceMotion {
+                // On the island's clock: as a repeatForever animation the sweep
+                // laid the panel out on every display frame (FrameClock).
+                FrameClock(interval: FrameTicker.step) { now in
+                    let progress = ((now - origin) / Self.sweepDuration).truncatingRemainder(dividingBy: 1)
+                    shimmer(label, sweep: MascotMotion.easeInOut(CGFloat(max(0, progress))))
                 }
-                .onDisappear { phase = startPhase }
+            } else {
+                shimmer(label, sweep: 0)
+            }
         }
+    }
+
+    /// The label with its bright band `sweep` (0…1) of the way across.
+    private func shimmer(_ label: String, sweep: CGFloat) -> some View {
+        let baseColor: Color = color ?? .white
+        let baseOpacity: Double = bright ? 0.6 : 0.35
+        let peakOpacity: Double = bright ? 0.8 : 0.5
+        let midOpacity: Double = bright ? 0.5 : 0.3
+        let bandWidth: CGFloat = bright ? 80 : 60
+        let startPhase: CGFloat = bright ? -80 : -60
+        let endPhase: CGFloat = bright ? 100 : 80
+
+        return Text(label)
+            .font(.system(size: fontSize, design: .monospaced))
+            .foregroundStyle(baseColor.opacity(baseOpacity))
+            .overlay(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white.opacity(midOpacity), location: bright ? 0.35 : 0.4),
+                        .init(color: .white.opacity(peakOpacity), location: 0.5),
+                        .init(color: .white.opacity(midOpacity), location: bright ? 0.65 : 0.6),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: bandWidth)
+                .offset(x: startPhase + (endPhase - startPhase) * sweep)
+                .mask(
+                    Text(label)
+                        .font(.system(size: fontSize, design: .monospaced))
+                )
+            )
     }
 }
 

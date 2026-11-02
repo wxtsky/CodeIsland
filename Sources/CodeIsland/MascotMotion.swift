@@ -41,6 +41,13 @@ enum MascotMotion {
         }
     }
 
+    /// The pulse of a waiting mascot's glow, and of the island's waiting
+    /// badges: full at t = 0, out and back once per `period` with eased ends.
+    /// Returns 0…1.
+    static func glowPulse(_ t: Double, period: Double = 1.0) -> Double {
+        0.5 + 0.5 * cos(t / period * 2 * .pi)
+    }
+
     // MARK: - Blinking
 
     /// Natural blink signal: 1 = eyes open, 0 = eyes shut, with eased lids.

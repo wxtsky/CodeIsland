@@ -15,9 +15,6 @@ import SwiftUI
 struct AiWorkView: View {
     let status: MascotAgentStatus
     var size: CGFloat = 27
-    @State private var alive = false
-    @Environment(\.mascotAnimationsActive) private var animationsActive
-    @Environment(\.mascotAnimationEpoch) private var animationEpoch
 
     // ── Official AiWork mark palette ──
     private static let greenLt = Color(red: 0.44, green: 0.85, blue: 0.30) // lime
@@ -58,11 +55,6 @@ struct AiWorkView: View {
         }
         .frame(width: size, height: size)
         .clipped()
-        .onAppear { alive = true }
-        .onChange(of: status) {
-            alive = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { alive = true }
-        }
     }
 
     // ── Coordinate helper: maps SVG units to view points ──
@@ -192,9 +184,7 @@ struct AiWorkView: View {
                 let fontSize = max(6, size * CGFloat(0.18 + phase * 0.10))
                 let baseOp = 0.7 - ci * 0.1
                 let opacity = phase < 0.8 ? baseOp : (1.0 - phase) * 3.5 * baseOp
-                Text("z")
-                    .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white.opacity(opacity))
+                MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.18 + 0.10)), color: .white, opacity: opacity)
                     .offset(x: size * CGFloat(0.15 + ci * 0.08),
                             y: -size * CGFloat(0.15 + phase * 0.38))
             }
@@ -270,21 +260,8 @@ struct AiWorkView: View {
 
     // ━━━━━━ ALERT ━━━━━━
     private var alertScene: some View {
-        // Gate the pulsing glow on the animation state so the repeatForever
-        // CAAnimation can't pin a core across display wake (#225).
-        let glowActive = alive && animationsActive
-        return ZStack {
-            Circle()
-                .fill(Self.alertC.opacity(glowActive ? 0.14 : 0))
-                .frame(width: size * 0.82)
-                .blur(radius: size * 0.05)
-                .animation(
-                    animationsActive
-                        ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
-                        : .default,
-                    value: glowActive
-                )
-                .id(animationEpoch)
+        ZStack {
+            MascotAlertGlow(color: Self.alertC, peak: 0.14, size: size, scale: 0.82)
 
             MascotTimeline(interval: 0.03) { t in
                 alertCanvas(t: t)

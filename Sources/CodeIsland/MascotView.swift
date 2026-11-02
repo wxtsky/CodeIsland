@@ -75,6 +75,8 @@ struct MascotView: View {
                 AiWorkView(status: status, size: size)
             case "minimax":
                 MinimaxView(status: status, size: size)
+            case "dsh":
+                DeepSeekView(status: status, size: size)
             default:
                 ClawdView(status: status, size: size)
             }

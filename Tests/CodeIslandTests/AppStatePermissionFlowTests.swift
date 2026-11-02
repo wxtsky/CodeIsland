@@ -260,7 +260,7 @@ final class AppStatePermissionFlowTests: XCTestCase {
             sessionId: "s-codex-always-allow",
             toolName: "Bash",
             toolInput: [
-                "command": "php vendor/bin/phpstan analyse $(git diff --name-only origin/master...HEAD | rg '\\.php$' | tr '\\n' ' ' )"
+                "command": "php vendor/bin/phpstan analyse src tests --memory-limit=1G"
             ],
             source: "codex"
         )
@@ -368,11 +368,12 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertEqual(rule["ruleContent"] as? String, "*")
     }
 
-    /// #258: ZCode validates hook stdout with a STRICT schema — "always allow"
-    /// must ship the rule in `permissionUpdates` (bare toolName, no
-    /// `destination`), never Claude's `updatedPermissions` shape, or the whole
-    /// decision is silently voided and ZCode re-prompts in its own dialog.
-    func testZcodeAlwaysAllowEmitsPermissionUpdatesNotUpdatedPermissions() async throws {
+    /// #258: ZCode validates hook stdout with a STRICT schema — Claude's
+    /// `updatedPermissions` would void the whole decision and ZCode would
+    /// re-prompt in its own dialog. #380: its own `permissionUpdates` is saved
+    /// to the project for good, more than the card's "this session", so
+    /// "Always" sends the decision alone and the island holds the rest.
+    func testZcodeAlwaysAllowSendsOnlyTheDecision() async throws {
         let appState = AppState()
         let event = try makePermissionRequestEvent(
             sessionId: "s-zcode-always",
@@ -387,15 +388,32 @@ final class AppStatePermissionFlowTests: XCTestCase {
         let decision = try extractPermissionDecision(from: await awaitValue(of: responseTask))
         XCTAssertEqual(decision["behavior"] as? String, "allow")
         XCTAssertNil(decision["updatedPermissions"])
+        XCTAssertNil(decision["permissionUpdates"])
+        XCTAssertEqual(appState.sessions["s-zcode-always"]?.alwaysAllowedTools, ["Bash"])
+    }
 
-        let updates = try XCTUnwrap(decision["permissionUpdates"] as? [[String: Any]])
-        let update = try XCTUnwrap(updates.first)
-        XCTAssertEqual(update["type"] as? String, "addRules")
-        XCTAssertEqual(update["behavior"] as? String, "allow")
-        XCTAssertNil(update["destination"])
-        let rules = try XCTUnwrap(update["rules"] as? [[String: Any]])
-        XCTAssertEqual(rules.first?["toolName"] as? String, "Bash")
-        XCTAssertNil(rules.first?["ruleContent"])
+    /// MiniMax Code reads a Claude-format plugin's `updatedPermissions` into
+    /// its session rules, but matches a file tool's `ruleContent` as a path:
+    /// `Read(*)` never matched, and the next read asked again. It gets the
+    /// bare tool name, which covers every call.
+    func testMiniMaxAlwaysAllowSendsABareToolRule() async throws {
+        for tool in ["Read", "Bash", "mcp__docs__search"] {
+            let appState = AppState()
+            let event = try makePermissionRequestEvent(
+                sessionId: "s-minimax-always",
+                toolName: tool,
+                toolInput: ["file_path": "/tmp/a.txt"],
+                source: "minimax"
+            )
+
+            let responseTask = await startHookRequest { appState.handlePermissionRequest(event, continuation: $0) }
+            appState.approvePermission(always: true)
+
+            let rule = try firstAlwaysAllowRule(from: await awaitValue(of: responseTask))
+            XCTAssertEqual(rule["toolName"] as? String, tool)
+            XCTAssertNil(rule["ruleContent"], tool)
+            XCTAssertTrue(appState.sessions["s-minimax-always"]?.alwaysAllowedTools.isEmpty ?? true, "MiniMax keeps it itself")
+        }
     }
 
     /// Plain (one-time) allow and deny for ZCode use the shared minimal shape,
@@ -734,7 +752,11 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: codexHome.path), "nothing written under CODEX_HOME")
     }
 
-    func testLocalCodexAlwaysAllowStillSavesARuleAndAsksAgainThroughCodex() async throws {
+    /// #380: Codex loads ~/.codex/rules when a session starts and never
+    /// again, so the rule "Always" saved reached only the sessions started
+    /// after it; the one the user clicked in asked again for the same
+    /// command. The island answers that session's covered commands itself.
+    func testLocalCodexAlwaysAllowSavesARuleAndHoldsItForTheRunningSession() async throws {
         let codexHome = makeTemporaryCodexHome()
         defer { try? FileManager.default.removeItem(at: codexHome) }
         let appState = AppState()
@@ -751,12 +773,22 @@ final class AppStatePermissionFlowTests: XCTestCase {
         try await assertBehavior(of: task, "allow")
         XCTAssertTrue(try readCodeIslandRules(in: codexHome).contains(#"pattern = ["make", "test"]"#))
 
-        // Codex itself applies the saved rule; a request that still reaches
-        // the island is one Codex wants asked.
         let again = await startHookRequest { appState.handlePermissionRequest(event, continuation: $0) }
+        XCTAssertTrue(appState.permissionQueue.isEmpty, "the running session never reads the rule; the island holds it")
+        try await assertBehavior(of: again, "allow")
+
+        // Codex asks in another session only when it started before the
+        // rule was saved: the user answers that card.
+        let other = try makePermissionRequestEvent(
+            sessionId: "s-local-codex-2",
+            toolName: "Bash",
+            toolInput: ["command": "make test"],
+            source: "codex"
+        )
+        let otherTask = await startHookRequest { appState.handlePermissionRequest(other, continuation: $0) }
         XCTAssertEqual(appState.permissionQueue.count, 1)
-        appState.denyPermission(expectedSessionId: "s-local-codex")
-        try await assertBehavior(of: again, "deny")
+        appState.denyPermission(expectedSessionId: "s-local-codex-2")
+        try await assertBehavior(of: otherTask, "deny")
     }
 
     func testCodexAutoReviewConfigDefersPermissionRequestToCodex() throws {

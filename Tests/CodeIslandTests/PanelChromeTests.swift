@@ -129,8 +129,8 @@ final class PanelChromeTests: XCTestCase {
 
     func testQuitPillFitsBesideTheNotchInEveryLanguage() {
         // Expanded header, narrowest panel, 185pt notch: the right wing holds
-        // two 24pt buttons, the pill, 4pt gaps and 6pt trailing padding.
-        let headerRoom = (580 - 185) / 2 - 6 - 2 * NotchIconButton.hitSize - 2 * 4 - SessionGroupingTabsLayout.notchGap
+        // three 24pt buttons, the pill, 4pt gaps and 6pt trailing padding.
+        let headerRoom = (580 - 185) / 2 - 6 - 3 * NotchIconButton.hitSize - 3 * 4 - SessionGroupingTabsLayout.notchGap
         // The hovered idle bar (no sessions) is only a wing plus 40pt wider
         // than the notch on each side: mascot + 102 for its right side.
         let idleRoom = (26 + 102) - 6 - 2 * NotchIconButton.hitSize - 2 * 4
@@ -318,9 +318,12 @@ final class PanelChromeTests: XCTestCase {
 
     func testEveryLanguageHasTheNewChromeStrings() {
         let keys = ["usage_last_5h", "usage_span", "usage_in_out", "usage_tooltip_title", "usage_tooltip_breakdown",
-                    "quota_resets_in", "quit_confirm", "quit_confirm_hint"]
+                    "quota_resets_in", "quit_confirm", "quit_confirm_hint", "remove_idle_sessions",
+                    "remove_idle_sessions_help", "remove_idle_sessions_confirm_help",
+                    "remove_idle_sessions_cancel", "remove_idle_sessions_count",
+                    "remove_idle_sessions_count_one", "remove_idle_sessions_remove"]
         func placeholders(_ s: String) -> [String] {
-            let regex = try! NSRegularExpression(pattern: "%(\\d\\$)?@")
+            let regex = try! NSRegularExpression(pattern: "%(\\d+\\$)?(?:@|ld)")
             return regex.matches(in: s, range: NSRange(s.startIndex..., in: s))
                 .map { String(s[Range($0.range, in: s)!]) }.sorted()
         }

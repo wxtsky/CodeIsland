@@ -334,6 +334,10 @@ extension AppState {
         }
 
         let sessionId = AppState.aiworkSessionPrefix + daemonSessionId
+        let revivalEvidence: RemovedSessionRevivalEvidence = mappedStatus.map {
+            $0 == .idle ? .passive : .activeWork
+        } ?? .passive
+        guard shouldAdmitRemovedSession(sessionId, evidence: revivalEvidence) else { return }
         let isNew = sessions[sessionId] == nil
         let previousStatus = sessions[sessionId]?.status
         let waitBefore = displayOnlyWaitKind(forSession: sessionId)
@@ -744,6 +748,7 @@ extension AppState {
         daemonSessionId: String,
         entry: [String: AnyCodableLike]
     ) {
+        guard shouldAdmitRemovedSession(key, evidence: .passive) else { return }
         var snapshot = sessions[key] ?? SessionSnapshot(startTime: Date())
         snapshot.providerSessionId = daemonSessionId
         AppState.applyAiWorkAppIdentity(&snapshot)
@@ -816,6 +821,7 @@ extension AppState {
                 ?? obj["sessionId"]?.asString
             guard let sid, !sid.isEmpty else { continue }
             let sessionId = AppState.aiworkSessionPrefix + sid
+            guard shouldAdmitRemovedSession(sessionId, evidence: .activeWork) else { continue }
             var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())
             snapshot.providerSessionId = sid
             // Prefer client_type from the stats row when present; otherwise
@@ -873,6 +879,7 @@ extension AppState {
             }
 
             let sessionId = AppState.aiworkSessionPrefix + sid
+            guard shouldAdmitRemovedSession(sessionId, evidence: .activeWork) else { continue }
             var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())
             AppState.applyAiWorkListEntry(
                 &snapshot,

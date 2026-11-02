@@ -12,17 +12,23 @@ struct PermissionRequest {
     /// The hook connection waiting on the answer (``HookServer``), nil when
     /// none does. When that hook is gone, this request goes, and no other.
     let hookConnectionId: UUID?
+    /// What "Always allow" does for this request, as its card's link says
+    /// it. Worked out once, when the request is queued, so the click does
+    /// what the link said even if config.toml changes while the card is up.
+    let alwaysScope: ApprovalAlwaysScope
 
     init(
         id: UUID = UUID(),
         event: HookEvent,
         continuation: CheckedContinuation<Data, Never>,
-        hookConnectionId: UUID? = nil
+        hookConnectionId: UUID? = nil,
+        alwaysScope: ApprovalAlwaysScope? = nil
     ) {
         self.id = id
         self.event = event
         self.continuation = continuation
         self.hookConnectionId = hookConnectionId
+        self.alwaysScope = alwaysScope ?? ApprovalAlwaysScope(for: event)
     }
 
     var toolUseId: String? { event.toolUseId }
@@ -34,7 +40,7 @@ struct AskUserQuestionItem {
     let multiSelect: Bool
 }
 
-struct AskUserQuestionAnswer {
+struct AskUserQuestionAnswer: Equatable {
     let question: String
     let answer: String
     let selectedOptions: [String]

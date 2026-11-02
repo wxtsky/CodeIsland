@@ -107,4 +107,26 @@ final class PiAgentEventFlowTests: XCTestCase {
         ])
         XCTAssertTrue(stopEffects.contains(.enqueueCompletion(sessionId: sessionId)))
     }
+
+    /// The pi and Oh My Pi extensions send a turn the user aborted (Esc) as
+    /// `stop_reason: "interrupted"` (#386): it ends the turn as interrupted,
+    /// which AttentionPolicy ends without the completion chime.
+    func testPiStopTheUserAbortedEndsTheTurnInterrupted() throws {
+        let sessionId = "pi-e2e-esc"
+        var sessions: [String: SessionSnapshot] = [:]
+        let base: [String: Any] = ["session_id": sessionId, "_source": "pi", "cwd": "/Users/dev/project"]
+
+        _ = try apply(base.merging(["hook_event_name": "UserPromptSubmit", "prompt": "go"]) { _, new in new }, to: &sessions)
+        _ = try apply(base.merging([
+            "hook_event_name": "Stop",
+            "stop_reason": "interrupted",
+            "last_assistant_message": "Starting with",
+        ]) { _, new in new }, to: &sessions)
+        XCTAssertEqual(sessions[sessionId]?.interrupted, true)
+        XCTAssertEqual(sessions[sessionId]?.status, .idle)
+
+        _ = try apply(base.merging(["hook_event_name": "UserPromptSubmit", "prompt": "again"]) { _, new in new }, to: &sessions)
+        _ = try apply(base.merging(["hook_event_name": "Stop", "last_assistant_message": "Done."]) { _, new in new }, to: &sessions)
+        XCTAssertEqual(sessions[sessionId]?.interrupted, false)
+    }
 }

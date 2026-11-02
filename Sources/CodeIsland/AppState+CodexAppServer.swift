@@ -317,6 +317,7 @@ extension AppState {
         }
 
         guard !askItems.isEmpty else { return }
+        reviveRemovedSession(sessionId)
 
         // Make sure the session exists so the popup has context to render.
         if sessions[sessionId] == nil {
@@ -424,6 +425,7 @@ extension AppState {
         guard let thread = params["thread"]?.asObject else { return }
         guard let threadId = thread["id"]?.asString else { return }
         let sessionId = AppState.codexAppSessionPrefix + threadId
+        guard shouldAdmitRemovedSession(sessionId, evidence: .activeWork) else { return }
         closedCodexAppThreads.removeValue(forKey: threadId)
 
         var snapshot = sessions[sessionId] ?? SessionSnapshot(startTime: Date())

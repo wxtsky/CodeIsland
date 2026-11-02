@@ -137,6 +137,106 @@ final class CardShortcutTests: XCTestCase {
         XCTAssertEqual(appState.surface, .sessionList)
     }
 
+    // MARK: - Island off screen (#384)
+
+    /// The approval card opened by itself while Hide in Fullscreen kept the
+    /// island hidden over a fullscreen app: the press brings it up instead
+    /// of approving what nobody saw.
+    func testApproveShortcutOnAHiddenIslandOnlyBringsUpItsCard() async throws {
+        try await requestApproval("PF")
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "PF"))
+
+        XCTAssertEqual(
+            appState.performCardShortcut(.approve, islandOnScreen: false),
+            .opened(.approvalCard(sessionId: "PF"))
+        )
+        XCTAssertEqual(appState.permissionQueue.count, 1, "a card off screen must not be approved")
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "PF"))
+
+        // Up now: the next press approves.
+        XCTAssertEqual(appState.performCardShortcut(.approve), .acted(sessionId: "PF"))
+        XCTAssertEqual(appState.permissionQueue.count, 0)
+    }
+
+    func testDenyShortcutOnAHiddenIslandKeepsTheCardItShows() async throws {
+        try await requestApproval("head")
+        try await requestApproval("shown")
+        appState.surface = .approvalCard(sessionId: "shown")
+
+        XCTAssertEqual(
+            appState.performCardShortcut(.deny, islandOnScreen: false),
+            .opened(.approvalCard(sessionId: "shown"))
+        )
+        XCTAssertEqual(appState.permissionQueue.count, 2)
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "shown"))
+    }
+
+    func testSkipShortcutOnAHiddenIslandOnlyBringsUpItsCard() async throws {
+        try await ask("QF")
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: "QF"))
+
+        XCTAssertEqual(
+            appState.performCardShortcut(.skipQuestion, islandOnScreen: false),
+            .opened(.questionCard(sessionId: "QF"))
+        )
+        XCTAssertEqual(appState.questionQueue.count, 1, "a card off screen must not be skipped")
+
+        XCTAssertEqual(appState.performCardShortcut(.skipQuestion), .acted(sessionId: "QF"))
+        XCTAssertEqual(appState.questionQueue.count, 0)
+    }
+
+    /// Hidden and collapsed, with an approval waiting: its card opens, as on
+    /// screen.
+    func testApproveShortcutOnAHiddenCollapsedIslandOpensTheWaitingCard() async throws {
+        UserDefaults.standard.set(false, forKey: SettingsKey.autoExpandOnPermission)
+        try await requestApproval("PC")
+        XCTAssertEqual(appState.surface, .collapsed)
+
+        XCTAssertEqual(
+            appState.performCardShortcut(.approve, islandOnScreen: false),
+            .opened(.approvalCard(sessionId: "PC"))
+        )
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "PC"))
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+    }
+
+    func testCardShortcutsOnAHiddenIslandDoNothingWithNothingWaiting() {
+        for action in [ShortcutAction.approve, .approveAlways, .deny, .skipQuestion] {
+            XCTAssertEqual(appState.performCardShortcut(action, islandOnScreen: false), .ignored)
+        }
+        XCTAssertEqual(appState.surface, .collapsed)
+    }
+
+    // MARK: - Toggle Panel (#384)
+
+    func testToggleOpensACollapsedIsland() {
+        XCTAssertEqual(appState.togglePanelFromShortcut(islandAway: false), .opened)
+        XCTAssertEqual(appState.surface, .sessionList)
+    }
+
+    /// Collapsed and away is the same: it opens, and is brought to the user.
+    func testToggleOpensACollapsedIslandThatIsAway() {
+        XCTAssertEqual(appState.togglePanelFromShortcut(islandAway: true), .opened)
+        XCTAssertEqual(appState.surface, .sessionList)
+    }
+
+    func testToggleClosesAnIslandInSight() {
+        appState.surface = .sessionList
+        XCTAssertEqual(appState.togglePanelFromShortcut(islandAway: false), .collapsed)
+        XCTAssertEqual(appState.surface, .collapsed)
+    }
+
+    /// Open on the other display, or hidden over a fullscreen app: the press
+    /// keeps it open, card and all, rather than closing it unseen.
+    func testToggleKeepsAnIslandOpenOutOfSight() async throws {
+        try await requestApproval("PA")
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "PA"))
+
+        XCTAssertEqual(appState.togglePanelFromShortcut(islandAway: true), .keptOpen)
+        XCTAssertEqual(appState.surface, .approvalCard(sessionId: "PA"))
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+    }
+
     // MARK: - Helpers
 
     private func requestApproval(_ sid: String) async throws {

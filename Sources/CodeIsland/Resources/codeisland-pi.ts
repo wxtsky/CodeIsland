@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v6
+// version: v7
 
 /**
  * @fileoverview CodeIsland Integration Extension.
@@ -30,9 +30,17 @@
  *   before_agent_start     →  UserPromptSubmit
  *   tool_call              →  PreToolUse  (or PermissionRequest for dangerous bash)
  *   tool_result            →  PostToolUse
- *   agent_end              →  Stop
+ *   agent_settled          →  Stop  (agent_end on a pi before 0.80.4)
  *   session_before_compact →  PreCompact
  *   session_compact        →  PostCompact
+ *
+ * Turn end (#386):
+ *   `agent_end` ends one run, not the turn: a retry, error recovery,
+ *   compaction, a queued message or a subagent's result can start another
+ *   run after it. pi 0.80.4+ emits `agent_settled` once none is left, and the
+ *   turn's Stop goes out there, with its latest reply. A turn the user
+ *   aborted (Esc) is sent with `stop_reason: "interrupted"`, which CodeIsland
+ *   ends without the completion chime.
  *
  * Permission handling:
  *   Dangerous bash commands (`rm -rf`, `sudo`, `chmod 777`) are intercepted and
@@ -326,19 +334,25 @@ function displayToolName(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+/** The last assistant message in an event.messages array. */
+function lastAssistant(
+  messages: readonly unknown[],
+): AssistantMessage | undefined {
+  return messages
+    .filter(
+      (m): m is AssistantMessage =>
+        !!m &&
+        typeof m === "object" &&
+        (m as { role?: string }).role === "assistant",
+    )
+    .at(-1);
+}
+
 /** Extracts plain text from the last assistant message in an event.messages array. */
 function extractLastAssistantText(
   messages: readonly unknown[],
 ): string {
-  const assistants = messages.filter(
-    (m): m is AssistantMessage =>
-      !!m &&
-      typeof m === "object" &&
-      (m as { role?: string }).role === "assistant",
-  );
-  const last = assistants.at(-1);
-  if (!last) return "";
-  const content = last.content;
+  const content = lastAssistant(messages)?.content;
   if (!Array.isArray(content)) return "";
   return content
     .filter((c): c is { type: "text"; text: string } => c?.type === "text")
@@ -366,6 +380,21 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   const pendingPermissionSessions = new Set<string>();
   /** Sessions for which CodeIsland has already received SessionStart. */
   const startedSessions = new Set<string>();
+
+  /**
+   * Whether this pi emits `agent_settled` (0.80.4+), where a turn's Stop goes
+   * out (#386). The extension API has no version to read; registerEntryRenderer
+   * arrived in the same release, so its presence marks a pi that settles. An
+   * older pi never settles and its turn ends at `agent_end`, as before. One
+   * that settles without it is caught at its first `agent_settled`.
+   */
+  let settles =
+    typeof (pi as { registerEntryRenderer?: unknown }).registerEntryRenderer === "function";
+  /**
+   * A turn `agent_settled` has yet to end, per session: its latest reply, and
+   * whether its last run was aborted.
+   */
+  const unsettledTurns = new Map<string, { reply: string; aborted: boolean }>();
 
   /**
    * An event payload for this pi session. A pi-subagents child also names its
@@ -397,6 +426,24 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       }),
     );
     startedSessions.add(sid);
+  }
+
+  /** Ends the session's turn. One the user aborted ends without the completion chime. */
+  async function sendStop(
+    sessionId: string,
+    cwd: string,
+    reply: string,
+    aborted: boolean,
+  ): Promise<void> {
+    const sessionName = pi.getSessionName();
+    await sendToSocket(
+      payload(sessionId, cwd, {
+        hook_event_name: "Stop",
+        last_assistant_message: reply || undefined,
+        ...(aborted ? { stop_reason: "interrupted" } : {}),
+        ...(sessionName ? { session_title: sessionName } : {}),
+      }),
+    );
   }
 
 
@@ -516,6 +563,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
       payload(sessionId, ctx.cwd, { hook_event_name: "SessionEnd" }),
     );
     startedSessions.delete(`pi-${sessionId}`);
+    unsettledTurns.delete(`pi-${sessionId}`);
   });
 
   // ── Agent lifecycle ────────────────────────────────────────────────────────
@@ -542,20 +590,44 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    const reply = extractLastAssistantText(event.messages);
+    const aborted = lastAssistant(event.messages)?.stopReason === "aborted";
+
+    if (settles) {
+      // One run of the turn; agent_settled ends it. A run without a reply (a
+      // retried error, a parent yielding to its subagent) keeps the last one.
+      unsettledTurns.set(sid, {
+        reply: reply || unsettledTurns.get(sid)?.reply || "",
+        aborted,
+      });
+      return;
+    }
+
     await ensureSessionStarted(sessionId, ctx.cwd);
 
     if (pendingPermissionSessions.has(sid)) return;
 
-    const lastAssistantMessage = extractLastAssistantText(event.messages);
-    const sessionName = pi.getSessionName();
+    await sendStop(sessionId, ctx.cwd, reply, aborted);
+  });
 
-    await sendToSocket(
-      payload(sessionId, ctx.cwd, {
-        hook_event_name: "Stop",
-        last_assistant_message: lastAssistantMessage || undefined,
-        ...(sessionName ? { session_title: sessionName } : {}),
-      }),
-    );
+  pi.on("agent_settled", async (event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    const sid = `pi-${sessionId}`;
+    const turn = unsettledTurns.get(sid);
+    unsettledTurns.delete(sid);
+    if (!settles) {
+      // This turn's agent_end already ended it; from now on, this does.
+      settles = true;
+      return;
+    }
+
+    await ensureSessionStarted(sessionId, ctx.cwd);
+
+    if (pendingPermissionSessions.has(sid)) return;
+
+    // `aborted` arrived in pi 1.1.0; before it, the turn's last run tells.
+    const aborted = typeof event.aborted === "boolean" ? event.aborted : turn?.aborted === true;
+    await sendStop(sessionId, ctx.cwd, turn?.reply ?? "", aborted);
   });
 
   // ── Tool calls ─────────────────────────────────────────────────────────────

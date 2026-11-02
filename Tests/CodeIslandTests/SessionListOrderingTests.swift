@@ -9,6 +9,22 @@ import CodeIslandCore
 @MainActor
 final class SessionListOrderingTests: XCTestCase {
 
+    // MARK: - Group by CLI
+
+    /// Every agent CodeIsland supports gets its own "Group by CLI" section;
+    /// Grok and DeepSeek Harness sessions used to land under "Other".
+    func testEverySupportedSourceHasACLISection() {
+        let sections = SessionListGrouping.cliSections.map(\.source)
+        XCTAssertEqual(Set(sections).count, sections.count, "a source is listed twice")
+        // These two sit in their IDE's section (SessionListView).
+        let groupedWithTheirIDE: Set<String> = ["cursor-cli", "qoder-cli"]
+        let missing = SessionSnapshot.supportedSources
+            .subtracting(groupedWithTheirIDE)
+            .subtracting(sections)
+        XCTAssertEqual(missing, [], "no section for \(missing.sorted())")
+        XCTAssertEqual(Set(sections).subtracting(SessionSnapshot.supportedSources), [])
+    }
+
     // MARK: - Status words
 
     func testEveryStatusHasItsOwnWord() {

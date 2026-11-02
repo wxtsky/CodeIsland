@@ -341,48 +341,48 @@ final class ZCodeSupportTests: XCTestCase {
         XCTAssertEqual(event.toolUseId, "call-42")
     }
 
-    // MARK: - Always-allow decision shape (#258)
+    // MARK: - Always-allow decision shape (#258, #380)
 
-    func testZcodeAlwaysAllowResponseUsesStrictSchemaShape() throws {
-        let data = AppState.zcodeAlwaysAllowResponse(toolName: "Bash")
+    /// ZCode validates hook stdout with a strict schema, so Claude's
+    /// `updatedPermissions` voids the whole decision. Its own
+    /// `permissionUpdates` is not what the card offers either: ZCode saves
+    /// the rule to the project, for good (zcode.cjs 3.1.0: `saveProjectPermission`,
+    /// scope "project", in ~/.zcode/cli/db/db.sqlite). "Always" answers with
+    /// the decision alone, and the island holds it for the session.
+    @MainActor
+    func testZcodeAlwaysAllowsTheCallAndTheIslandHoldsItForTheSession() async throws {
+        let appState = AppState()
+        func request(_ tool: String) throws -> HookEvent {
+            try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: [
+                "hookEventName": "PermissionRequest", "sessionId": "zc-always", "_source": "zcode",
+                "toolName": tool, "toolInput": ["command": "npm run build"],
+            ])))
+        }
+
+        let bash = try request("Bash")
+        let edit = try request("Edit")
+        let first = await startHookRequest { appState.handlePermissionRequest(bash, continuation: $0) }
+        appState.approvePermission(always: true, expectedSessionId: "zc-always")
+        let data = try await awaitValue(of: first)
         let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let output = try XCTUnwrap(root["hookSpecificOutput"] as? [String: Any])
         XCTAssertEqual(output["hookEventName"] as? String, "PermissionRequest")
-
         let decision = try XCTUnwrap(output["decision"] as? [String: Any])
+        XCTAssertEqual(decision.keys.sorted(), ["behavior"], "nothing ZCode's strict schema refuses, nothing it saves")
         XCTAssertEqual(decision["behavior"] as? String, "allow")
-        // Claude's key would fail ZCode's strict schema and void the decision.
-        XCTAssertNil(decision["updatedPermissions"])
 
-        let updates = try XCTUnwrap(decision["permissionUpdates"] as? [[String: Any]])
-        let update = try XCTUnwrap(updates.first)
-        XCTAssertEqual(update["type"] as? String, "addRules")
-        XCTAssertEqual(update["behavior"] as? String, "allow")
-        // `destination` does not exist in ZCode's schema.
-        XCTAssertNil(update["destination"])
+        let again = await startHookRequest { appState.handlePermissionRequest(bash, continuation: $0) }
+        XCTAssertTrue(appState.permissionQueue.isEmpty, "the session's Always answers it")
+        let againData = try await awaitValue(of: again)
+        XCTAssertTrue(String(decoding: againData, as: UTF8.self).contains(#""behavior":"allow""#))
 
-        let rules = try XCTUnwrap(update["rules"] as? [[String: Any]])
-        let rule = try XCTUnwrap(rules.first)
-        XCTAssertEqual(rule["toolName"] as? String, "Bash")
-        // A bare toolName rule matches every call of the tool; a "*"
-        // ruleContent would be compared against the command text and never match.
-        XCTAssertNil(rule["ruleContent"])
+        let editTask = await startHookRequest { appState.handlePermissionRequest(edit, continuation: $0) }
+        XCTAssertEqual(appState.permissionQueue.count, 1, "another tool still asks")
+        appState.denyPermission(expectedSessionId: "zc-always")
+        _ = try await awaitValue(of: editTask)
     }
 
-    func testZcodeAlwaysAllowResponseWithoutToolNameFallsBackToPlainAllow() throws {
-        for toolName in [nil, ""] as [String?] {
-            let data = AppState.zcodeAlwaysAllowResponse(toolName: toolName)
-            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            let output = try XCTUnwrap(root["hookSpecificOutput"] as? [String: Any])
-            let decision = try XCTUnwrap(output["decision"] as? [String: Any])
-            XCTAssertEqual(decision["behavior"] as? String, "allow")
-            // An empty toolName can't form a schema-valid rule (min length 1) —
-            // emitting one would void the WHOLE decision upstream.
-            XCTAssertNil(decision["permissionUpdates"])
-        }
-    }
-
-    func testIsZcodeEventDetectsNormalizedSource() throws {
+    func testZcodeIsAnAgentWhoseAlwaysTheIslandKeeps() throws {
         let zcodePayload: [String: Any] = [
             "hookEventName": "PermissionRequest", "sessionId": "s1", "_source": "zcode",
         ]
@@ -391,7 +391,7 @@ final class ZCodeSupportTests: XCTestCase {
         ]
         let zcodeEvent = try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: zcodePayload)))
         let claudeEvent = try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: claudePayload)))
-        XCTAssertTrue(AppState.isZcodeEvent(zcodeEvent))
-        XCTAssertFalse(AppState.isZcodeEvent(claudeEvent))
+        XCTAssertFalse(AppState.agentKeepsAlwaysRule(for: zcodeEvent))
+        XCTAssertTrue(AppState.agentKeepsAlwaysRule(for: claudeEvent))
     }
 }

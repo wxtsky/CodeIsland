@@ -63,6 +63,12 @@ final class MascotAnimationGate: ObservableObject {
     /// a static sleeping frame instead. Any state change — a session waking, the
     /// panel expanding on hover — re-enables it immediately. (#299)
     ///
+    /// (A TimelineView whose entries are under about a quarter second apart
+    /// updates on every display frame, whatever its schedule says. The mascots
+    /// have since moved to FrameClock, which updates the island 20 times a
+    /// second however many of them move (#381); a settled island still runs no
+    /// clock at all.)
+    ///
     /// With Reduce Motion on, the mascots hold their status pose instead of
     /// looping forever next to whatever the user is reading.
     static func shouldAnimate(isVisible: Bool, isAwake: Bool, isIdleSettled: Bool = false,

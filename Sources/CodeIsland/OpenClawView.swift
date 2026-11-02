@@ -111,9 +111,7 @@ struct OpenClawView: View {
                 let opacity: Double = p < 0.8 ? 0.6 - ci * 0.15 : (1 - p) * 3 * 0.6
                 let dx = size * CGFloat(0.12 + ci * 0.06)
                 let dy = -size * CGFloat(0.12 + p * 0.34)
-                Text("z")
-                    .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white.opacity(opacity))
+                MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.16 + 0.08)), color: .white, opacity: opacity)
                     .offset(x: dx, y: dy)
             }
         }

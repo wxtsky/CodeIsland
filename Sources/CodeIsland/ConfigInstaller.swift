@@ -2635,8 +2635,9 @@ struct ConfigInstaller {
     // exactly {behavior, permissionUpdates?/updatedInput?} or
     // {behavior: "deny", interrupt?, message?} — Claude's
     // `updatedPermissions`/`destination` keys fail validation and the whole
-    // decision is discarded (ZCode then shows its own dialog). See
-    // AppState.zcodeAlwaysAllowResponse for the always-allow shape. No
+    // decision is discarded (ZCode then shows its own dialog). "Always" sends
+    // a plain allow: `permissionUpdates` would be saved to the project for
+    // good, not the session the card names (AppState.agentKeepsAlwaysRule). No
     // hot-reload; a ZCode restart is required after any config.json edit.
 
     /// The only 7 event names ZCode's schema accepts. Writing anything else
@@ -3462,13 +3463,13 @@ struct ConfigInstaller {
     // MARK: - pi Extension
 
     /// Current pi extension version — bump when codeisland-pi.ts changes.
-    private static let piExtensionVersion = "v6"
+    private static let piExtensionVersion = "v7"
 
     /// Current omp extension version — bump when codeisland-omp.ts changes.
     /// Kept independent of pi (OMP reuses the "CodeIsland pi extension" banner
     /// but ships its own resource file), so a pi-only bump does not false-flag
     /// healthy OMP installs as needing repair.
-    private static let ompExtensionVersion = "v10"
+    private static let ompExtensionVersion = "v11"
 
     private static func piExtensionSource() -> String? {
         if let url = Bundle.appModule.url(forResource: "codeisland-pi", withExtension: "ts", subdirectory: "Resources"),

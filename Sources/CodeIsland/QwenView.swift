@@ -5,7 +5,6 @@ import SwiftUI
 struct QwenView: View {
     let status: MascotAgentStatus
     var size: CGFloat = 27
-    @State private var alive = false
 
     // Qwen brand palette — purple/violet
     private static let bodyC   = Color(red: 0.486, green: 0.228, blue: 0.929) // #7C3AED violet
@@ -27,11 +26,6 @@ struct QwenView: View {
         }
         .frame(width: size, height: size)
         .clipped()
-        .onAppear { alive = true }
-        .onChange(of: status) {
-            alive = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { alive = true }
-        }
     }
 
     private struct V {
@@ -146,9 +140,7 @@ struct QwenView: View {
                 let xOffsetRatio = 0.15 + ci * 0.08 + wave
                 let xOff = size * CGFloat(xOffsetRatio)
                 let yOff = -size * CGFloat(0.15 + phase * 0.38)
-                Text("z")
-                    .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white.opacity(opacity))
+                MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.18 + 0.10)), color: .white, opacity: opacity)
                     .offset(x: xOff, y: yOff)
             }
         }
@@ -221,11 +213,7 @@ struct QwenView: View {
     // ━━━━━━ ALERT ━━━━━━
     private var alertScene: some View {
         ZStack {
-            Circle()
-                .fill(Self.alertC.opacity(alive ? 0.12 : 0))
-                .frame(width: size * 0.8)
-                .blur(radius: size * 0.05)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: alive)
+            MascotAlertGlow(color: Self.alertC, peak: 0.12, size: size)
 
             MascotTimeline(interval: 0.03) { t in
                 alertCanvas(t: t)

@@ -5,7 +5,6 @@ import SwiftUI
 struct BuddyView: View {
     let status: MascotAgentStatus
     var size: CGFloat = 27
-    @State private var alive = false
 
     // CodeBuddy brand palette
     private static let bodyC   = Color(red: 0.424, green: 0.302, blue: 1.0)   // #6C4DFF purple
@@ -27,11 +26,6 @@ struct BuddyView: View {
         }
         .frame(width: size, height: size)
         .clipped()
-        .onAppear { alive = true }
-        .onChange(of: status) {
-            alive = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { alive = true }
-        }
     }
 
     private struct V {
@@ -167,9 +161,7 @@ struct BuddyView: View {
                 let fontSize = max(6, size * CGFloat(0.18 + phase * 0.10))
                 let baseOp = 0.7 - ci * 0.1
                 let opacity = phase < 0.8 ? baseOp : (1.0 - phase) * 3.5 * baseOp
-                Text("z")
-                    .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white.opacity(opacity))
+                MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.18 + 0.10)), color: .white, opacity: opacity)
                     .offset(x: size * CGFloat(0.15 + ci * 0.08),
                             y: -size * CGFloat(0.15 + phase * 0.38))
             }
@@ -238,11 +230,7 @@ struct BuddyView: View {
     // ━━━━━━ ALERT ━━━━━━
     private var alertScene: some View {
         ZStack {
-            Circle()
-                .fill(Self.glowC.opacity(alive ? 0.15 : 0))
-                .frame(width: size * 0.8)
-                .blur(radius: size * 0.05)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: alive)
+            MascotAlertGlow(color: Self.glowC, peak: 0.15, size: size)
 
             MascotTimeline(interval: 0.03) { t in
                 alertCanvas(t: t)

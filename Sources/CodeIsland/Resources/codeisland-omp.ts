@@ -1,5 +1,5 @@
 // CodeIsland pi extension
-// version: v10
+// version: v11
 // OMP-compatible install
 
 /**
@@ -16,6 +16,13 @@
  *   CodeIsland session id) and `agent_type`, so CodeIsland can fold it into
  *   the parent's card or hide it (Agent Sub-Sessions), and never rings the
  *   completion sound for a subagent's turn — only the parent's (#378).
+ *
+ * Turn end (#386):
+ *   `agent_end` ends one run, not the turn: OMP 17.0.2+ marks a run it goes
+ *   on from (a retry, recovery, compaction, a reminder, a wait on background
+ *   jobs) with `willContinue`, and the turn's Stop waits for the run that
+ *   ends it. A turn the user interrupted (Esc) is sent with `stop_reason:
+ *   "interrupted"`, which CodeIsland ends without the completion chime.
  */
 
 import { execFile, execFileSync } from "node:child_process";
@@ -337,25 +344,50 @@ function displayToolName(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+/** An assistant message, as much of it as this extension reads. */
+interface AssistantMessageFields {
+  role: "assistant";
+  content: unknown;
+  stopReason?: unknown;
+  errorMessage?: unknown;
+}
+
+/** The last assistant message in an event.messages array. */
+function lastAssistant(
+  messages: readonly unknown[],
+): AssistantMessageFields | undefined {
+  return messages
+    .filter(
+      (m): m is AssistantMessageFields =>
+        !!m &&
+        typeof m === "object" &&
+        (m as { role?: string }).role === "assistant",
+    )
+    .at(-1);
+}
+
 /** Extracts plain text from the last assistant message in an event.messages array. */
 function extractLastAssistantText(
   messages: readonly unknown[],
 ): string {
-  const assistants = messages.filter(
-    (m): m is { role: "assistant"; content: unknown } =>
-      !!m &&
-      typeof m === "object" &&
-      (m as { role?: string }).role === "assistant",
-  );
-  const last = assistants.at(-1);
-  if (!last) return "";
-  const content = last.content;
+  const content = lastAssistant(messages)?.content;
   if (!Array.isArray(content)) return "";
   return content
     .filter((c): c is { type: "text"; text: string } => c?.type === "text")
     .map((c) => c.text)
     .join("")
     .trim();
+}
+
+/**
+ * Whether the last assistant message in an event.messages array is one the
+ * user cut off (Esc): OMP aborts it with the reason "Interrupted by user"
+ * (USER_INTERRUPT_LABEL), kept on its `errorMessage`. OMP's own aborts, such
+ * as a subagent's final `yield`, carry other reasons.
+ */
+export function interruptedByUser(messages: readonly unknown[]): boolean {
+  const last = lastAssistant(messages);
+  return last?.stopReason === "aborted" && last.errorMessage === "Interrupted by user";
 }
 
 export interface AskRaceSettlement<T> {
@@ -476,6 +508,8 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   const startedSessions = new Set<string>();
   /** A subagent session's parent card, kept once found so it never flips back. */
   const parentCards = new Map<string, string>();
+  /** A turn's latest reply, per session, while OMP goes on with it (#386). */
+  const continuedReplies = new Map<string, string>();
 
   /**
    * Record which CodeIsland session this agent runs, for its subagents to
@@ -947,6 +981,7 @@ export default function codeislandExtension(pi: ExtensionAPI) {
     );
     startedSessions.delete(`pi-${sessionId}`);
     parentCards.delete(`pi-${sessionId}`);
+    continuedReplies.delete(`pi-${sessionId}`);
     unregisterAgentCard(ctx, sessionId);
   });
 
@@ -974,17 +1009,28 @@ export default function codeislandExtension(pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
     const sid = `pi-${sessionId}`;
+    const reply = extractLastAssistantText(event.messages) || continuedReplies.get(sid) || "";
+
+    // OMP goes on with this turn (OMP's own Warp bridge reads the flag the
+    // same way): its Stop, and the chime, wait for the run that ends it. An
+    // OMP before 17.0.2 sends no flag, and every run ends a turn as before.
+    if (event.willContinue === true) {
+      if (reply) continuedReplies.set(sid, reply);
+      return;
+    }
+    continuedReplies.delete(sid);
+
     await ensureSessionStarted(ctx, sessionId);
 
     if (pendingPermissionSessions.has(sid)) return;
 
-    const lastAssistantMessage = extractLastAssistantText(event.messages);
     const sessionName = pi.getSessionName();
 
     await sendToSocket(
       payload(ctx, sessionId, {
         hook_event_name: "Stop",
-        last_assistant_message: lastAssistantMessage || undefined,
+        last_assistant_message: reply || undefined,
+        ...(interruptedByUser(event.messages) ? { stop_reason: "interrupted" } : {}),
         ...(sessionName ? { session_title: sessionName } : {}),
       }),
     );

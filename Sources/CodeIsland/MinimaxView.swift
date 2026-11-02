@@ -115,9 +115,7 @@ struct MinimaxView: View {
                     let p = max(0, ((t - ci * 1.4).truncatingRemainder(dividingBy: cycle)) / cycle)
                     let fontSize: CGFloat = max(6, size * CGFloat(0.15 + p * 0.08))
                     let opacity: Double = p < 0.8 ? 0.55 - ci * 0.15 : (1 - p) * 3 * 0.55
-                    Text("z")
-                        .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                        .foregroundStyle(.white.opacity(opacity))
+                    MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.15 + 0.08)), color: .white, opacity: opacity)
                         .offset(x: size * CGFloat(0.16 + ci * 0.06), y: -size * CGFloat(0.12 + p * 0.3))
                 }
             }

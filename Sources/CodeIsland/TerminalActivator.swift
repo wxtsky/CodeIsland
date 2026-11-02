@@ -156,6 +156,13 @@ struct TerminalActivator {
         // no cwd or no matching window, so this never regresses single-window apps.
         if let bundleId = session.termBundleId,
            nativeAppBundles[bundleId] != nil {
+            // Codex Desktop keeps every thread in one window: open the card's
+            // own thread. Raising the app left the user on whichever thread it
+            // last showed.
+            if let link = codexDesktopThreadLink(for: session) {
+                openInCodexDesktop(link, fallbackCwd: session.cwd)
+                return
+            }
             activateIDEWindow(bundleId: bundleId, cwd: session.cwd)
             return
         }
@@ -1363,6 +1370,53 @@ struct TerminalActivator {
 
     // MARK: - Activate by bundle ID
 
+    /// `codex://threads/<id>`, the link Codex Desktop itself uses for a local
+    /// thread. Desktop cards are keyed `codexapp:<id>` here, but the thread's
+    /// own id stays in `providerSessionId`. Nil for anything but a Desktop
+    /// session with a well-formed thread id, so a click never opens a guessed
+    /// URL — a Codex CLI run in Codex's own terminal included.
+    static func codexDesktopThreadLink(for session: SessionSnapshot) -> URL? {
+        guard session.termBundleId == AppState.codexAppBundleId,
+              session.isNativeAppMode,
+              let threadId = session.providerSessionId,
+              UUID(uuidString: threadId) != nil
+        else { return nil }
+        return URL(string: "codex://threads/\(threadId)")
+    }
+
+    /// Hands the link to the Codex that is running. More than one installed
+    /// app can claim Codex's bundle id and the `codex:` scheme, and the
+    /// system's default handler need not be the one holding the thread. Codex
+    /// brings its window back (minimized included) and shows the thread; if
+    /// macOS can't deliver the link, the jump raises the app as before.
+    private static func openInCodexDesktop(_ link: URL, fallbackCwd: String?) {
+        let bundleId = AppState.codexAppBundleId
+        guard let codexURL = appURL(forBundleId: bundleId) else {
+            activateIDEWindow(bundleId: bundleId, cwd: fallbackCwd)
+            return
+        }
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first,
+           running.isHidden {
+            running.unhide()
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open([link], withApplicationAt: codexURL, configuration: configuration) { _, error in
+            guard error != nil else { return }
+            DispatchQueue.main.async { activateIDEWindow(bundleId: bundleId, cwd: fallbackCwd) }
+        }
+    }
+
+    /// The copy of an app to hand an open to: the one running, else the one
+    /// Launch Services prefers. Several installs can share a bundle id (an old
+    /// Codex.app next to ChatGPT.app, a beta, a second copy in Downloads), and
+    /// opening the preferred one would launch it next to the copy holding the
+    /// user's windows.
+    static func appURL(forBundleId bundleId: String) -> URL? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.bundleURL
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+    }
+
     private static func activateByBundleId(_ bundleId: String) {
         if let app = NSWorkspace.shared.runningApplications.first(where: {
             $0.bundleIdentifier == bundleId
@@ -1371,7 +1425,7 @@ struct TerminalActivator {
             app.activate()
         }
         // Also use openApplication for reliable Space switching (Electron apps like VSCode)
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+        if let url = appURL(forBundleId: bundleId) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
     }
@@ -1387,7 +1441,7 @@ struct TerminalActivator {
         }) {
             if app.isHidden { app.unhide() }
         }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+        if let url = appURL(forBundleId: bundleId) {
             NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
     }
@@ -1603,7 +1657,7 @@ struct TerminalActivator {
             }
 
             guard attemptsRemaining > 0 else { return }
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            if let url = appURL(forBundleId: bundleId) {
                 NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
             }
             sendWarpGoToTabWhenFrontmost(

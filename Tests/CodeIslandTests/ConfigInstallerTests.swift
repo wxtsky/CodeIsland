@@ -1540,12 +1540,14 @@ hooks:
 
         let contents = try String(contentsOf: piExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v6"))
+        XCTAssertTrue(contents.contains("// version: v7"))
         XCTAssertTrue(contents.contains("__codeislandAllowedToolCalls"))
         XCTAssertTrue(contents.contains("@earendil-works/pi-coding-agent"))
         // pi-subagents children name their parent's card (#378).
         XCTAssertTrue(contents.contains("PI_SUBAGENT_PARENT_SESSION"))
         XCTAssertTrue(contents.contains(DeclaredSubsession.parentKey))
+        // A turn ends once, when pi settles (#386).
+        XCTAssertTrue(contents.contains("agent_settled"))
         XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
     }
 
@@ -1570,6 +1572,29 @@ hooks:
         ))
         XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
         XCTAssertTrue(try String(contentsOf: piExtensionPath).contains("_parent_session_id"))
+    }
+
+    /// A v6 install rings at every run of a pi turn, a parent yielding to its
+    /// subagent included (#386); it must be replaced, not left as healthy.
+    func testV6PiExtensionIsRewrittenToTheSettleAwareVersion() throws {
+        let fm = FileManager.default
+        let tempDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let piAgentDir = tempDir.appendingPathComponent(".pi/agent")
+        let piExtensionDir = piAgentDir.appendingPathComponent("extensions")
+        let piExtensionPath = piExtensionDir.appendingPathComponent("codeisland.ts")
+        try fm.createDirectory(at: piExtensionDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tempDir) }
+        try "// CodeIsland pi extension\n// version: v6\n".write(to: piExtensionPath, atomically: true, encoding: .utf8)
+
+        XCTAssertFalse(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+        XCTAssertTrue(ConfigInstaller.installPiExtension(
+            piAgentDir: piAgentDir.path,
+            piExtensionDir: piExtensionDir.path,
+            piExtensionPath: piExtensionPath.path,
+            fm: fm
+        ))
+        XCTAssertTrue(ConfigInstaller.isPiExtensionInstalled(piExtensionPath: piExtensionPath.path, fm: fm))
+        XCTAssertTrue(try String(contentsOf: piExtensionPath).contains("agent_settled"))
     }
 
     func testInstallPiExtensionSkipsWhenPiAgentDirIsMissing() throws {
@@ -1639,7 +1664,7 @@ hooks:
         try fm.createDirectory(at: ompExtensionDir, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tempDir) }
 
-        for version in ["v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9"] {
+        for version in ["v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10"] {
             try """
             // CodeIsland pi extension
             // version: \(version)
@@ -1663,7 +1688,7 @@ hooks:
             )
 
             let rewritten = try String(contentsOf: ompExtensionPath)
-            XCTAssertTrue(rewritten.contains("// version: v10"))
+            XCTAssertTrue(rewritten.contains("// version: v11"))
             XCTAssertTrue(
                 ConfigInstaller.isOmpExtensionInstalled(
                     ompExtensionPath: ompExtensionPath.path,
@@ -1691,11 +1716,13 @@ hooks:
 
         let contents = try String(contentsOf: ompExtensionPath)
         XCTAssertTrue(contents.contains("CodeIsland pi extension"))
-        XCTAssertTrue(contents.contains("// version: v10"))
+        XCTAssertTrue(contents.contains("// version: v11"))
         XCTAssertTrue(contents.contains("@oh-my-pi/pi-coding-agent"))
         XCTAssertFalse(contents.contains("@earendil-works/pi-coding-agent"))
         // OMP subagents name their parent's card (#378).
         XCTAssertTrue(contents.contains(DeclaredSubsession.parentKey))
+        // A turn ends at the run OMP does not go on from (#386).
+        XCTAssertTrue(contents.contains("willContinue"))
         XCTAssertTrue(ConfigInstaller.isOmpExtensionInstalled(ompExtensionPath: ompExtensionPath.path, fm: fm))
     }
 

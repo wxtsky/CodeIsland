@@ -93,9 +93,7 @@ struct KiroView: View {
                     let opacity: Double = p < 0.8 ? 0.55 - ci * 0.15 : (1 - p) * 3 * 0.55
                     let dx = size * CGFloat(0.14 + ci * 0.05)
                     let dy = -size * CGFloat(0.14 + p * 0.32)
-                    Text("z")
-                        .font(.system(size: fontSize, weight: .black, design: .monospaced))
-                        .foregroundStyle(.white.opacity(opacity))
+                    MascotSleepZ(fontSize: fontSize, fullSize: max(6, size * CGFloat(0.15 + 0.08)), color: .white, opacity: opacity)
                         .offset(x: dx, y: dy)
                 }
             }

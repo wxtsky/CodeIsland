@@ -300,22 +300,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func executeShortcut(_ action: ShortcutAction) {
         switch action {
+        // Whatever the press opens comes to the user: onto the display they
+        // work on, and up over a fullscreen app Hide in Fullscreen hid it
+        // behind (#384).
         case .togglePanel:
-            if appState.surface.isExpanded {
-                withAnimation(NotchAnimation.close) { appState.surface = .collapsed }
-            } else {
-                withAnimation(NotchAnimation.open) {
-                    appState.surface = .sessionList
-                    appState.cancelCompletionQueue()
-                    if appState.activeSessionId == nil {
-                        appState.activeSessionId = appState.sessions.keys.sorted().first
-                    }
-                }
+            let away = panelController?.isIslandAwayFromUser ?? false
+            if appState.togglePanelFromShortcut(islandAway: away) != .collapsed {
+                panelController?.bringIslandIntoSight()
             }
         // Card shortcuts act only on the card on screen (#308); with the
         // request hidden they open its card instead of acting unseen.
         case .approve, .approveAlways, .deny, .skipQuestion:
-            appState.performCardShortcut(action)
+            let onScreen = panelController?.isIslandOnScreen ?? true
+            if case .opened = appState.performCardShortcut(action, islandOnScreen: onScreen) {
+                panelController?.bringIslandIntoSight()
+            }
         case .jumpToTerminal:
             if let id = appState.activeSessionId, let session = appState.sessions[id] {
                 TerminalActivator.activate(session: session, sessionId: id)

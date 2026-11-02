@@ -1,5 +1,6 @@
 import XCTest
 @testable import CodeIsland
+import CodeIslandCore
 
 /// The question card's answer state belongs to one request. SwiftUI hands a
 /// view's @State to whatever request is rendered into the same slot next, so
@@ -93,4 +94,38 @@ final class QuestionWizardStateTests: XCTestCase {
     private func answer(_ question: String, _ text: String) -> AskUserQuestionAnswer {
         AskUserQuestionAnswer(question: question, answer: text, selectedOptions: [text], customInput: nil)
     }
+
+    // MARK: - Drafts outlive the card's view
+
+    /// The island rebuilds its view when it moves to another display or the
+    /// displays change. What the user typed and picked on a question card
+    /// comes back with the rebuilt card, for as long as the request waits.
+    @MainActor
+    func testADraftOutlivesTheCardsViewButNotItsRequest() throws {
+        let appState = AppState()
+        let event = try XCTUnwrap(HookEvent(from: JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "Notification", "session_id": "s-draft",
+        ])))
+        let request = QuestionRequest(
+            event: event,
+            question: QuestionPayload(question: "Which name?", options: ["a", "b"], header: nil),
+            resolution: .codexAppServer { _ in }
+        )
+        appState.questionQueue.append(request)
+
+        var typed = QuestionWizardState(requestId: request.id)
+        typed.showOtherInput = true
+        typed.otherText = "half an ans"
+        appState.saveQuestionDraft(typed)
+        XCTAssertEqual(appState.questionDraft(for: request.id), typed)
+
+        // No draft for a request that isn't waiting, nor for one without an id.
+        appState.saveQuestionDraft(QuestionWizardState(requestId: UUID()))
+        appState.saveQuestionDraft(QuestionWizardState())
+        XCTAssertEqual(appState.questionQueue.count, 1)
+
+        appState.questionQueue.removeAll()
+        XCTAssertNil(appState.questionDraft(for: request.id), "answered, skipped or drained: the draft goes too")
+    }
 }
+

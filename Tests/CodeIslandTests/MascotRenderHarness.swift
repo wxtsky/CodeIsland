@@ -238,6 +238,9 @@ private struct ReadmeGifSpec {
                       isCalm: calm(blinkSeed: 0xCDD, pause: (11.3, 1.2, 0xCDC))),
         ReadmeGifSpec(name: "kimi", source: "kimi", period: 1.2, frames: 15,
                       isCalm: calm(blinkSeed: 0x35F, pause: (10.8, 1.2, 0x35E))),
+        // DeepSeek: 1.2s bob and spout, 0.6s fin flap ×2.
+        ReadmeGifSpec(name: "dsh", source: "dsh", period: 1.2, frames: 15,
+                      isCalm: calm(blinkSeed: 0xD5E2, pause: nil)),
         // AiWork's caret pulses every 0.9s: start in its dark half so the
         // loop seam lands while it's off at both ends.
         ReadmeGifSpec(name: "aiwork", source: "aiwork", period: 1.2, frames: 15,
@@ -485,6 +488,7 @@ private struct MascotContactSheet: View {
         case "cline": ClineView(status: status, size: size)
         case "aiwork", "aiwork-cli": AiWorkView(status: status, size: size)
         case "minimax": MinimaxView(status: status, size: size)
+        case "dsh": DeepSeekView(status: status, size: size)
         default: ClawdView(status: status, size: size)
         }
     }

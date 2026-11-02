@@ -189,6 +189,44 @@ enum SessionListGrouping {
     ) -> [(labelKey: String, ids: [String])] {
         byStatus(orderedIds) { sessions[$0]?.status }
     }
+
+    /// "Group by CLI" sections, in display order. Every supported source has
+    /// one (`cursor-cli` and `qoder-cli` sit with their IDE); a source missing
+    /// here lands under "Other".
+    static let cliSections: [(source: String, name: String)] = [
+        ("claude", "Claude"),
+        ("codex", "Codex"),
+        ("gemini", "Gemini"),
+        ("antigravity", "AntiGravity"),
+        ("google-antigravity", "Google Antigravity"),
+        ("cursor", "Cursor"),
+        ("trae", "Trae"),
+        ("traecn", "Trae CN"),
+        ("traecli", "Trae CLI"),
+        ("copilot", "Copilot"),
+        ("qoder", "Qoder"),
+        ("qoderwork", "QoderWork"),
+        ("droid", "Factory"),
+        ("codebuddy", "CodeBuddy"),
+        ("codybuddycn", "CodyBuddyCN"),
+        ("stepfun", "StepFun"),
+        ("workbuddy", "WorkBuddy"),
+        ("hermes", "Hermes"),
+        ("openclaw", "OpenClaw"),
+        ("grok", "Grok CLI"),
+        ("qwen", "Qwen Code"),
+        ("kimi", "Kimi Code CLI"),
+        ("opencode", "OpenCode"),
+        ("mimo", "MiMo"),
+        ("pi", "Pi"),
+        ("kiro", "Kiro"),
+        ("cline", "Cline"),
+        ("zcode", "ZCode"),
+        ("minimax", "MiniMax Code CLI"),
+        ("dsh", "DeepSeek Harness"),
+        ("aiwork", "AiWork"),
+        ("aiwork-cli", "AiWork CLI"),
+    ]
 }
 
 /// Holds the list's order while the pointer is over it, so a card never
