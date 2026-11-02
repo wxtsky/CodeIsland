@@ -3115,6 +3115,7 @@ private struct SessionListView: View {
             }
         }
         .padding(.vertical, 4)
+        .fixedSize(horizontal: false, vertical: true)
         // The same in both branches: inside the scroll view the content still
         // lays out at its natural height, so switching never flips it back.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
@@ -3881,6 +3882,7 @@ private struct SessionIdentityLine: View {
             line(showsShortId: false)
             line(showsShortId: true)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func line(showsShortId: Bool) -> some View {
@@ -4331,6 +4333,9 @@ private struct SessionCard: View {
         .padding(.vertical, 10)
         .background(cardBackground(cornerRadius: 10))
         .padding(.horizontal, 6)
+        // Cards retain their natural height; the enclosing list owns scrolling.
+        // Avoid recursively measuring each card at compressed/infinite heights.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Character + subagent icons.
@@ -4395,6 +4400,7 @@ private struct SessionCard: View {
                 TerminalBadge(session: session)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// Chat history + live status.
