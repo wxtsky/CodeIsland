@@ -146,7 +146,7 @@ final class ESP32ProtocolTests: XCTestCase {
         XCTAssertEqual(BuddyUplinkEvent(payload: Data([0xF2])), .command(.skipCurrentQuestion))
     }
 
-    // MARK: - All 16 × 5 round-trip sanity
+    // MARK: - All 24 × 5 round-trip sanity
 
     func testAllMascotStatusCombinationsEncodeWithinLimits() {
         for mascot in MascotID.allCases {
