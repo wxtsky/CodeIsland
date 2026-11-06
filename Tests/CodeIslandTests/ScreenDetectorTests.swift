@@ -3,7 +3,7 @@ import XCTest
 @testable import CodeIsland
 
 final class ScreenDetectorTests: XCTestCase {
-    func testAutoPreferredIndexUsesActiveWorkScreenBeforeBuiltInScreen() {
+    func testAutoPreferredIndexPrefersBuiltInNotchScreenOverExternalDisplays() {
         let candidates = [
             ScreenDetector.Candidate(
                 frame: NSRect(x: 0, y: 0, width: 1512, height: 982),
@@ -17,15 +17,17 @@ final class ScreenDetectorTests: XCTestCase {
             )
         ]
 
+        // Even when an active app window is on the external display (monitor 2),
+        // the island stays anchored to the built-in notch display (index 0) like BoringNotch.
         let index = ScreenDetector.autoPreferredIndex(
             candidates: candidates,
             activeWindowBounds: NSRect(x: 1800, y: 100, width: 1000, height: 800)
         )
 
-        XCTAssertEqual(index, 1)
+        XCTAssertEqual(index, 0)
     }
 
-    func testAutoPreferredIndexFallsBackToBuiltInScreenWhenNoActiveWorkScreenExists() {
+    func testAutoPreferredIndexPrefersBuiltInScreenWhenNotchScreenExists() {
         let candidates = [
             ScreenDetector.Candidate(
                 frame: NSRect(x: 0, y: 0, width: 1512, height: 982),

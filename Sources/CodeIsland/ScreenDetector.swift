@@ -14,30 +14,17 @@ struct ScreenDetector {
         return min(max(screenW * 0.14, 160), 240)
     }
 
-    static func autoPreferredIndex(candidates: [Candidate], activeWindowBounds: CGRect?) -> Int? {
+    static func autoPreferredIndex(candidates: [Candidate], activeWindowBounds: CGRect? = nil) -> Int? {
         guard !candidates.isEmpty else { return nil }
 
-        if let activeWindowBounds {
-            let center = CGPoint(x: activeWindowBounds.midX, y: activeWindowBounds.midY)
-            if let index = candidates.firstIndex(where: { $0.frame.contains(center) }) {
-                return index
-            }
-
-            let bestOverlap = candidates.enumerated()
-                .map { offset, candidate in
-                    (offset, overlapArea(lhs: candidate.frame, rhs: activeWindowBounds))
-                }
-                .max { lhs, rhs in lhs.1 < rhs.1 }
-
-            if let bestOverlap, bestOverlap.1 > 0 {
-                return bestOverlap.0
-            }
-        }
-
+        // Like BoringNotch, anchor to the built-in screen with hardware notch first
+        // so the island stays correlated with the Mac's physical display instead
+        // of jumping across monitors when interacting with external screens.
         if let notchIndex = candidates.firstIndex(where: \.hasNotch) {
             return notchIndex
         }
 
+        // Next fallback: primary Mac display (NSScreen.main)
         if let mainIndex = candidates.firstIndex(where: \.isMain) {
             return mainIndex
         }
@@ -45,7 +32,7 @@ struct ScreenDetector {
         return candidates.indices.first
     }
 
-    /// Preferred screen: active work screen first, then built-in (notch), then main
+    /// Preferred screen: built-in display (with hardware notch) first, then primary Mac display (NSScreen.main)
     static var preferredScreen: NSScreen {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {
@@ -61,10 +48,7 @@ struct ScreenDetector {
             )
         }
 
-        if let index = autoPreferredIndex(
-            candidates: candidates,
-            activeWindowBounds: frontmostApplicationWindowBounds()
-        ), index < screens.count {
+        if let index = autoPreferredIndex(candidates: candidates), index < screens.count {
             return screens[index]
         }
 

@@ -617,7 +617,20 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             return NSScreen.screens[index]
         }
 
-        // "auto" — prefer notch screen, fallback to main
+        if choice == "main", let main = NSScreen.main {
+            return main
+        }
+
+        if choice == "builtin" {
+            if let notch = NSScreen.screens.first(where: { ScreenDetector.screenHasNotch($0) }) {
+                return notch
+            }
+            if let main = NSScreen.main {
+                return main
+            }
+        }
+
+        // "auto" — prefer notch screen (built-in Mac screen), fallback to main screen
         return ScreenDetector.preferredScreen
     }
 
