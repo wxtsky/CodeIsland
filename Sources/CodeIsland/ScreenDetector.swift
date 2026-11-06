@@ -24,7 +24,7 @@ struct ScreenDetector {
             return notchIndex
         }
 
-        // Next fallback: primary Mac display (NSScreen.main)
+        // Next fallback: primary Mac display (first screen at origin (0, 0))
         if let mainIndex = candidates.firstIndex(where: \.isMain) {
             return mainIndex
         }
@@ -32,19 +32,40 @@ struct ScreenDetector {
         return candidates.indices.first
     }
 
-    /// Preferred screen: built-in display (with hardware notch) first, then primary Mac display (NSScreen.main)
+    /// Check if a display is the built-in screen of the Mac
+    static func isBuiltinScreen(_ screen: NSScreen) -> Bool {
+        if screenHasNotch(screen) { return true }
+        if let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            return CGDisplayIsBuiltin(screenNumber) != 0
+        }
+        let name = screen.localizedName
+        return name.localizedCaseInsensitiveContains("built-in") || name.contains("内置")
+    }
+
+    /// Preferred screen: built-in display (with hardware notch) first, then primary Mac display (origin (0, 0))
     static var preferredScreen: NSScreen {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {
             return NSScreen.main ?? NSScreen()
         }
 
-        let mainScreen = NSScreen.main
+        // 1. Built-in screen with notch
+        if let notchScreen = screens.first(where: { screenHasNotch($0) }) {
+            return notchScreen
+        }
+
+        // 2. Built-in screen (laptop screen when external monitor attached)
+        if let builtinScreen = screens.first(where: { isBuiltinScreen($0) }) {
+            return builtinScreen
+        }
+
+        // 3. Primary screen of the Mac (NSScreen.screens.first has origin (0, 0) in AppKit)
+        let primaryScreen = screens.first ?? screens[0]
         let candidates = screens.map { screen in
             Candidate(
                 frame: screen.frame,
                 hasNotch: screenHasNotch(screen),
-                isMain: mainScreen == screen
+                isMain: primaryScreen == screen
             )
         }
 
@@ -52,7 +73,7 @@ struct ScreenDetector {
             return screens[index]
         }
 
-        return mainScreen ?? screens.first ?? NSScreen()
+        return primaryScreen
     }
 
     static var hasNotch: Bool {
