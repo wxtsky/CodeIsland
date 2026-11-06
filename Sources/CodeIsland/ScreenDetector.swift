@@ -14,30 +14,17 @@ struct ScreenDetector {
         return min(max(screenW * 0.14, 160), 240)
     }
 
-    static func autoPreferredIndex(candidates: [Candidate], activeWindowBounds: CGRect?) -> Int? {
+    static func autoPreferredIndex(candidates: [Candidate], activeWindowBounds: CGRect? = nil) -> Int? {
         guard !candidates.isEmpty else { return nil }
 
-        if let activeWindowBounds {
-            let center = CGPoint(x: activeWindowBounds.midX, y: activeWindowBounds.midY)
-            if let index = candidates.firstIndex(where: { $0.frame.contains(center) }) {
-                return index
-            }
-
-            let bestOverlap = candidates.enumerated()
-                .map { offset, candidate in
-                    (offset, overlapArea(lhs: candidate.frame, rhs: activeWindowBounds))
-                }
-                .max { lhs, rhs in lhs.1 < rhs.1 }
-
-            if let bestOverlap, bestOverlap.1 > 0 {
-                return bestOverlap.0
-            }
-        }
-
+        // Like BoringNotch, anchor to the built-in screen with hardware notch first
+        // so the island stays correlated with the Mac's physical display instead
+        // of jumping across monitors when interacting with external screens.
         if let notchIndex = candidates.firstIndex(where: \.hasNotch) {
             return notchIndex
         }
 
+        // Next fallback: primary Mac display (first screen at origin (0, 0))
         if let mainIndex = candidates.firstIndex(where: \.isMain) {
             return mainIndex
         }
@@ -45,30 +32,48 @@ struct ScreenDetector {
         return candidates.indices.first
     }
 
-    /// Preferred screen: active work screen first, then built-in (notch), then main
+    /// Check if a display is the built-in screen of the Mac
+    static func isBuiltinScreen(_ screen: NSScreen) -> Bool {
+        if screenHasNotch(screen) { return true }
+        if let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+            return CGDisplayIsBuiltin(screenNumber) != 0
+        }
+        let name = screen.localizedName
+        return name.localizedCaseInsensitiveContains("built-in") || name.contains("内置")
+    }
+
+    /// Preferred screen: built-in display (with hardware notch) first, then primary Mac display (origin (0, 0))
     static var preferredScreen: NSScreen {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {
             return NSScreen.main ?? NSScreen()
         }
 
-        let mainScreen = NSScreen.main
+        // 1. Built-in screen with notch
+        if let notchScreen = screens.first(where: { screenHasNotch($0) }) {
+            return notchScreen
+        }
+
+        // 2. Built-in screen (laptop screen when external monitor attached)
+        if let builtinScreen = screens.first(where: { isBuiltinScreen($0) }) {
+            return builtinScreen
+        }
+
+        // 3. Primary screen of the Mac (NSScreen.screens.first has origin (0, 0) in AppKit)
+        let primaryScreen = screens.first ?? screens[0]
         let candidates = screens.map { screen in
             Candidate(
                 frame: screen.frame,
                 hasNotch: screenHasNotch(screen),
-                isMain: mainScreen == screen
+                isMain: primaryScreen == screen
             )
         }
 
-        if let index = autoPreferredIndex(
-            candidates: candidates,
-            activeWindowBounds: frontmostApplicationWindowBounds()
-        ), index < screens.count {
+        if let index = autoPreferredIndex(candidates: candidates), index < screens.count {
             return screens[index]
         }
 
-        return mainScreen ?? screens.first ?? NSScreen()
+        return primaryScreen
     }
 
     static var hasNotch: Bool {

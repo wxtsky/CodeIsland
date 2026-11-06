@@ -313,7 +313,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             }
         }
 
-        // Frontmost app change
+        // Frontmost app change — do NOT hop screens on app focus, just update visibility if needed
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
@@ -321,7 +321,6 @@ class PanelWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                self.refreshCurrentScreen()
                 if !self.fullscreenLatch { self.updateVisibility() }
             }
         }
@@ -499,19 +498,7 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     private func configureAutoScreenPolling() {
         autoScreenPoller?.invalidate()
         autoScreenPoller = nil
-
-        guard SettingsManager.shared.displayChoice == "auto" else { return }
-
-        // Screen-parameter / Space-change / frontmost-app notifications already cover the
-        // common cases. This poller is a fallback for the rare path where a window is
-        // dragged to another display without switching focus — a low cadence is enough
-        // and every tick runs a full CGWindowListCopyWindowInfo, which was measurably
-        // contributing to Energy Impact (#92).
-        autoScreenPoller = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshCurrentScreen()
-            }
-        }
+        // No screen hopping polling — the notch remains securely anchored to the primary/built-in screen.
     }
 
     private func updatePosition() {
@@ -617,7 +604,21 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             return NSScreen.screens[index]
         }
 
-        // "auto" — prefer notch screen, fallback to main
+        if choice == "main", let first = NSScreen.screens.first {
+            return first
+        }
+
+        if choice == "builtin" {
+            if let notch = NSScreen.screens.first(where: { ScreenDetector.screenHasNotch($0) }) {
+                return notch
+            }
+            if let builtin = NSScreen.screens.first(where: { ScreenDetector.isBuiltinScreen($0) }) {
+                return builtin
+            }
+            return NSScreen.screens.first ?? NSScreen()
+        }
+
+        // "auto" — prefer notch screen (built-in Mac screen), fallback to main screen
         return ScreenDetector.preferredScreen
     }
 
