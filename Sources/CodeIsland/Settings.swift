@@ -22,6 +22,7 @@ public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
     case capsule = "capsule"
     case frostedGlass = "frostedGlass"
     case neonHud = "neonHud"
+    case seamlessGlass = "seamlessGlass"
 
     public var id: String { rawValue }
 
@@ -31,6 +32,7 @@ public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
         case .capsule: return "Cyber Capsule (Black Pill)"
         case .frostedGlass: return "Frosted Glass (Blur Pill)"
         case .neonHud: return "Cyberpunk HUD (Brackets)"
+        case .seamlessGlass: return "Seamless Glass (No Border)"
         }
     }
 
@@ -40,6 +42,7 @@ public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
         case .capsule: return "CAPSULE"
         case .frostedGlass: return "GLASS"
         case .neonHud: return "HUD"
+        case .seamlessGlass: return "SEAMLESS"
         }
     }
 
@@ -49,6 +52,7 @@ public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
         case .capsule: return "Solid black capsule with glowing cyber gradient border and equalizer."
         case .frostedGlass: return "Apple-style translucent frosted blur pill."
         case .neonHud: return "Futuristic HUD with bracket accents and monospace telemetry."
+        case .seamlessGlass: return "Borderless translucent frosted glass with smooth vertical roll-up lyrics and pure text focus."
         }
     }
 }

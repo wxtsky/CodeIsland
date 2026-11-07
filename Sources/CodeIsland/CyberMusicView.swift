@@ -320,6 +320,9 @@ struct SubNotchFloatingLyricCapsuleView: View {
         case .neonHud:
             chromeWidth = 84
             minWidth = 140
+        case .seamlessGlass:
+            chromeWidth = 44
+            minWidth = 100
         }
 
         let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
@@ -483,6 +486,28 @@ struct SubNotchFloatingLyricCapsuleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4.5)
+
+        case .seamlessGlass:
+            // Preset 5: Seamless Glass — borderless translucent frosted glass with pure text focus and iPad Spotify vertical roll-up
+            HStack(spacing: 0) {
+                ZStack {
+                    Text(activeDisplayText)
+                        .font(.system(size: CGFloat(floatingLyricFontSize), weight: .semibold, design: activeFontDesign))
+                        .foregroundStyle(activeTextColor)
+                        .shadow(color: Color.black.opacity(0.55), radius: 2.5, x: 0, y: 1)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .id(activeDisplayText)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 14)),
+                            removal: .opacity.combined(with: .offset(y: -14))
+                        ))
+                }
+                .frame(maxWidth: .infinity)
+                .clipped()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4.5)
         }
     }
 
@@ -550,6 +575,12 @@ struct SubNotchFloatingLyricCapsuleView: View {
                 )
                 .shadow(color: Color.black.opacity(0.9), radius: 6, x: 0, y: 3)
                 .shadow(color: Color(red: 0.0, green: 0.96, blue: 0.83).opacity(isHovered ? 0.30 : 0.10), radius: 4, x: 0, y: 0)
+
+        case .seamlessGlass:
+            // Borderless translucent frosted blur pill (no stroke, pure subtle opacity)
+            Capsule()
+                .fill(Color.black.opacity(isHovered ? 0.45 : 0.32))
+                .shadow(color: Color.black.opacity(0.40), radius: 6, x: 0, y: 2)
         }
     }
 
