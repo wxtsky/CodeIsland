@@ -119,7 +119,7 @@ final class NowPlayingManager: ObservableObject {
             artist: trackArtist,
             album: trackAlbum,
             source: "Music",
-            position: rawPos > 0 ? rawPos : nil,
+            position: rawPos,
             duration: rawDuration > 0 ? rawDuration : nil
         )
         fetchPlaybackDetails()
@@ -150,7 +150,7 @@ final class NowPlayingManager: ObservableObject {
             artist: trackArtist,
             album: trackAlbum,
             source: "Spotify",
-            position: rawPos > 0 ? rawPos : nil,
+            position: rawPos,
             duration: rawDuration > 0 ? rawDuration : nil
         )
         fetchPlaybackDetails()
@@ -175,17 +175,26 @@ final class NowPlayingManager: ObservableObject {
         if let duration = duration, duration > 0 {
             self.trackDuration = duration
         }
-        if let position = position {
+
+        if trackChanged {
+            self.playerPosition = position ?? 0.0
+            self.currentLyricIndex = 0
+            self.lyrics = []
+            triggerToast()
+            fetchLyrics(title: title, artist: artist)
+        } else if let position = position {
             self.playerPosition = position
+            self.updateCurrentLyricIndex()
+        }
+
+        // Clamp: position can never exceed duration
+        if self.trackDuration > 0 && self.playerPosition > self.trackDuration {
+            self.playerPosition = 0.0
             self.updateCurrentLyricIndex()
         }
 
         if playing {
             startProgressTimer()
-            if trackChanged {
-                triggerToast()
-                fetchLyrics(title: title, artist: artist)
-            }
         } else {
             stopProgressTimer()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
@@ -354,7 +363,7 @@ final class NowPlayingManager: ObservableObject {
                 self.title = title
                 self.artist = artist
                 self.album = album
-                if pos > 0 || self.playerPosition == 0 {
+                if pos >= 0 {
                     if abs(self.playerPosition - pos) > 0.75 || self.playerPosition == 0 {
                         self.playerPosition = pos
                         self.updateCurrentLyricIndex()
@@ -548,6 +557,8 @@ final class NowPlayingManager: ObservableObject {
             let result = appleScript.executeAndReturnError(&error)
             if error == nil {
                 return result.stringValue
+            } else if let err = error {
+                NSLog("[CodeIsland] AppleScript error: %@", err)
             }
         }
         return nil
