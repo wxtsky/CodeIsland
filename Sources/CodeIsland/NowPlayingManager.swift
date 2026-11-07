@@ -402,18 +402,39 @@ final class NowPlayingManager: ObservableObject {
         lyricsLoading = true
 
         guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)") else {
+              let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
             lyricsLoading = false
             return
         }
 
+        var primaryUrlString = "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)"
+        let shouldIncludeDuration = trackDuration > 0
+        if shouldIncludeDuration {
+            primaryUrlString += "&duration=\(Int(trackDuration))"
+        }
+
+        guard let primaryUrl = URL(string: primaryUrlString) else {
+            lyricsLoading = false
+            return
+        }
+
+        let fallbackUrl = URL(string: "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)")
+        requestLyricsURL(url: primaryUrl, fallbackUrl: shouldIncludeDuration ? fallbackUrl : nil)
+    }
+
+    private func requestLyricsURL(url: URL, fallbackUrl: URL?) {
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            defer {
-                Task { @MainActor in self?.lyricsLoading = false }
-            }
             guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                if let fallback = fallbackUrl {
+                    Task { @MainActor [weak self] in
+                        self?.requestLyricsURL(url: fallback, fallbackUrl: nil)
+                    }
+                } else {
+                    Task { @MainActor in self?.lyricsLoading = false }
+                }
+                return
+            }
 
             var parsed: [LyricLine] = []
             if let synced = json["syncedLyrics"] as? String, !synced.isEmpty {
@@ -423,7 +444,15 @@ final class NowPlayingManager: ObservableObject {
                 parsed = rawLines.enumerated().map { LyricLine(id: $0.offset, timestamp: Double($0.offset) * 4.0, text: $0.element) }
             }
 
+            if parsed.isEmpty, let fallback = fallbackUrl {
+                Task { @MainActor [weak self] in
+                    self?.requestLyricsURL(url: fallback, fallbackUrl: nil)
+                }
+                return
+            }
+
             Task { @MainActor in
+                self?.lyricsLoading = false
                 self?.lyrics = parsed
                 if let self = self {
                     if self.trackDuration <= 0, let lastTs = parsed.last?.timestamp, lastTs > 0 {

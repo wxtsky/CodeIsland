@@ -635,36 +635,20 @@ struct SubNotchFloatingLyricCapsuleView: View {
 typealias SubNotchIntegratedLyricChinView = SubNotchFloatingLyricCapsuleView
 typealias SubNotchLyricCapsuleView = SubNotchFloatingLyricCapsuleView
 
-// MARK: - Karaoke Word-by-Word Glow View
+// MARK: - Full Solid Lyric Line View (Immediate 100% line display, no staggered word popup)
 
 struct KaraokeLyricLineView: View {
     let text: String
     let isCurrent: Bool
-    let currentFraction: Double // 0.0 ... 1.0
+    let currentFraction: Double // 0.0 ... 1.0 (kept for backwards signature compatibility)
     let primaryColor: Color
     var fontSize: CGFloat = 10.0
 
     var body: some View {
-        let words = text.components(separatedBy: " ").filter { !$0.isEmpty }
-        if isCurrent && words.count > 1 {
-            let activeIdx = min(words.count - 1, max(0, Int(currentFraction * Double(words.count))))
-            HStack(spacing: 3) {
-                ForEach(Array(words.enumerated()), id: \.offset) { idx, word in
-                    let isSinging = idx == activeIdx
-                    let isPast = idx < activeIdx
-                    Text(word)
-                        .font(.system(size: fontSize, weight: isSinging ? .bold : (isPast ? .semibold : .regular), design: .monospaced))
-                        .foregroundStyle(isSinging ? primaryColor : (isPast ? Color.white.opacity(0.95) : Color.white.opacity(0.42)))
-                        .shadow(color: isSinging ? primaryColor.opacity(0.9) : Color.clear, radius: isSinging ? 4 : 0)
-                        .scaleEffect(isSinging ? 1.06 : 1.0)
-                }
-            }
-        } else {
-            Text(text)
-                .font(.system(size: fontSize, weight: isCurrent ? .bold : .regular, design: .monospaced))
-                .foregroundStyle(isCurrent ? primaryColor : Color(white: 0.45))
-                .shadow(color: isCurrent ? primaryColor.opacity(0.6) : Color.clear, radius: isCurrent ? 3 : 0)
-        }
+        Text(text)
+            .font(.system(size: fontSize, weight: isCurrent ? .bold : .medium, design: .rounded))
+            .foregroundStyle(isCurrent ? Color.white : Color.white.opacity(0.40))
+            .shadow(color: isCurrent ? primaryColor.opacity(0.65) : Color.clear, radius: isCurrent ? 3.5 : 0)
     }
 }
 
@@ -940,34 +924,6 @@ struct CyberMusicHUDView: View {
                             .foregroundStyle(Color(white: 0.45))
                     }
                     .frame(maxWidth: .infinity, minHeight: 78, maxHeight: 78, alignment: .center)
-                } else if floatingLyricPreset == FloatingLyricPreset.seamlessGlass.rawValue {
-                    // Seamless Glass: Spotify iPad single-line vertical roll-up stage
-                    let currentLineText = nowPlaying.currentLyricText.isEmpty
-                        ? (nowPlaying.lyricsLoading ? "Loading lyrics..." : (nowPlaying.title.isEmpty ? "No track playing" : nowPlaying.title))
-                        : nowPlaying.currentLyricText
-
-                    VStack(spacing: 0) {
-                        Spacer()
-                        ZStack {
-                            Text(currentLineText)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.white)
-                                .shadow(color: Color.black.opacity(0.65), radius: 3, x: 0, y: 1.5)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .padding(.horizontal, 14)
-                                .id("hud-seamless-lyric-\(nowPlaying.currentLyricIndex)")
-                                .transition(.asymmetric(
-                                    insertion: .offset(y: 28).combined(with: .opacity),
-                                    removal: .offset(y: -28).combined(with: .opacity)
-                                ))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 78, maxHeight: 78)
-                    .contentShape(Rectangle())
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
