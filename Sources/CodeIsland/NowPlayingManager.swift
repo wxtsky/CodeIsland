@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AppKit
 import SwiftUI
+import ApplicationServices
 
 // MARK: - Synced Lyric Model
 
@@ -37,7 +38,20 @@ final class NowPlayingManager: ObservableObject {
 
     init() {
         setupObservers()
+        requestAutomationPermissionIfNeeded()
         fetchPlaybackDetails()
+    }
+
+    func requestAutomationPermissionIfNeeded() {
+        let targets = ["com.spotify.client", "com.apple.Music"]
+        for target in targets {
+            let desc = NSAppleEventDescriptor(bundleIdentifier: target)
+            if let aeDescPtr = desc.aeDesc {
+                var addressDesc = aeDescPtr.pointee
+                _ = AEDeterminePermissionToAutomateTarget(&addressDesc, typeWildCard, typeWildCard, true)
+                AEDisposeDesc(&addressDesc)
+            }
+        }
     }
 
     private func setupObservers() {
@@ -214,8 +228,8 @@ final class NowPlayingManager: ObservableObject {
                 }
                 self.updateCurrentLyricIndex()
 
-                // Every 10 ticks (5 seconds), poll AppleScript to prevent clock drift
-                if tickCount % 10 == 0 {
+                // Every 3 ticks (1.5 seconds), poll AppleScript to detect seeks and sync position
+                if tickCount % 3 == 0 {
                     self.fetchPlaybackDetails()
                 }
             }
@@ -341,7 +355,10 @@ final class NowPlayingManager: ObservableObject {
                 self.artist = artist
                 self.album = album
                 if pos > 0 || self.playerPosition == 0 {
-                    self.playerPosition = pos
+                    if abs(self.playerPosition - pos) > 0.75 || self.playerPosition == 0 {
+                        self.playerPosition = pos
+                        self.updateCurrentLyricIndex()
+                    }
                 }
                 if dur > 0 {
                     self.trackDuration = dur
