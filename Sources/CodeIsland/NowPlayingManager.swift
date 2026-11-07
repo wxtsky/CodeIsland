@@ -245,11 +245,16 @@ final class NowPlayingManager: ObservableObject {
         if let idx = lyrics.lastIndex(where: { $0.timestamp <= effectiveTime }) {
             let targetId = lyrics[idx].id
             if self.currentLyricIndex != targetId {
-                self.currentLyricIndex = targetId
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.currentLyricIndex = targetId
+                }
             }
         } else {
-            if self.currentLyricIndex != (lyrics.first?.id ?? 0) {
-                self.currentLyricIndex = lyrics.first?.id ?? 0
+            let firstId = lyrics.first?.id ?? 0
+            if self.currentLyricIndex != firstId {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.currentLyricIndex = firstId
+                }
             }
         }
     }
