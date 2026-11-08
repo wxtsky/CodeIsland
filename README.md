@@ -310,7 +310,17 @@ Cowork runs inside Claude Desktop's sandbox, where hooks never fire, so CodeIsla
 
 <br>
 
-**Settings → Behavior → Push notifications** sends approvals, questions (with numbered options), finished turns, turn errors and follow-up reminders to Bark, ntfy, DingTalk, Lark / Feishu, WeCom, Slack or Telegram — several at once, each with its own event choices and a **Send test** button that shows the service's real reply. By default a push only goes out while you're away (screen locked, screen saver, displays asleep, or no keyboard / mouse input for 5 minutes), and subagent turns are never pushed. Commands and messages go through the same credential redaction as the rest of the app. Pushes answer nothing: approve on the Mac.
+**Settings → Behavior → Push notifications** sends approvals, questions (with numbered options), finished turns, turn errors and follow-up reminders to Bark, ntfy, DingTalk, Lark / Feishu, WeCom, Slack or Telegram — several at once, each with its own event choices and a **Send test** button that shows the service's real reply. By default a push only goes out while you're away (screen locked, screen saver, displays asleep, or no keyboard / mouse input for 5 minutes), and subagent turns are never pushed. Commands and messages go through the same credential redaction as the rest of the app. Pushes answer nothing: approve on the Mac, or with Feishu remote approval below.
+
+</details>
+
+<a name="feishu-approval"></a>
+<details>
+<summary><b>Feishu remote approval</b></summary>
+
+<br>
+
+**Settings → Behavior → Feishu remote approval** can answer a permission request from a private Feishu chat: Allow once, or Deny. It is not the one-way Feishu webhook under Push notifications, and a text reply never approves a command. Use a company self-built bot. The App Secret stays in the Keychain. Turn the long connection on here before saving the Feishu event and card subscriptions, keep the bot available only to yourself, and do not add it to a group. The card has no Always allow. A timeout, a disconnect, another account, or a second tap on the same card does not allow the command.
 
 </details>
 
@@ -326,14 +336,14 @@ AI tool (Claude Code / Codex / Gemini / Cursor / …)
 
 CodeIsland installs lightweight hooks into each tool's own config. When the tool fires an event — session start, tool call, permission request, question, stop — the bridge forwards it as JSON over a local Unix socket, and the island updates instantly. For events that wait on you, the answer travels back the same way.
 
-**Privacy:** events never leave your Mac unless you opt in. The only network requests CodeIsland makes are Sparkle update checks, plus — only if you turn them on — Claude plan-limit lookups (sent to `api.anthropic.com` with your own Claude Code login), webhook forwarding to the URL you configure, and pushes to the services you set up.
+**Privacy:** events never leave your Mac unless you opt in. The only network requests CodeIsland makes are Sparkle update checks, plus — only if you turn them on — Claude plan-limit lookups (sent to `api.anthropic.com` with your own Claude Code login), webhook forwarding to the URL you configure, pushes to the services you set up, and — only while Feishu remote approval is connected — an outbound long connection that sends private approval cards.
 
 ## Settings
 
 | Page | What's there |
 |------|--------------|
 | **General** | Language, launch at login, display selection |
-| **Behavior** | Auto-expand (approvals and questions separately), hover delay, smart suppress, completion style, follow-up reminders, session cleanup, silence rules, auto-approve, push notifications, webhook |
+| **Behavior** | Auto-expand (approvals and questions separately), hover delay, smart suppress, completion style, follow-up reminders, session cleanup, silence rules, auto-approve, push notifications, Feishu remote approval, webhook |
 | **Appearance** | Panel size, notch width, font size, reply lines, open/close speed, project name, git branch, task progress, session recap, model label, usage stats, plan limits |
 | **Mascots** | Preview every character and its animations |
 | **Sound** | 8-bit sounds per event, volume, quiet hours, mute while away |

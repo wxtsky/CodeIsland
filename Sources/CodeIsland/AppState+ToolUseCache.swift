@@ -198,6 +198,7 @@ extension AppState {
         permissionQueue.removeAll { droppedIds.contains($0.id) }
         for stale in dropped {
             log.notice("⚠️ permission dropped, no decision reason=\(reason, privacy: .public) session=\(stale.event.sessionId ?? "nil", privacy: .public) toolUseId=\(stale.toolUseId ?? "nil", privacy: .public) tool=\(stale.event.toolName ?? "nil", privacy: .public) triggerEvent=\(triggerEvent, privacy: .public)")
+            notifyFeishuPermissionFinished(stale.id, decision: "gone")
             stale.continuation.resume(returning: Self.noDecisionAnswer)
         }
 

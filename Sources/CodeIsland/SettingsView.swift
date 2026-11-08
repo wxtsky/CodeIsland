@@ -674,6 +674,8 @@ private struct BehaviorPage: View {
                 }
             }
 
+            FeishuApprovalSettingsSection()
+
             PushNotificationsSection()
 
             Section(l10n["sessions"]) {

@@ -80,6 +80,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if isolated {
             Self.log.notice("Isolated (CODEISLAND_ISOLATED=1): no hooks installed, no sessions discovered, no remote hosts connected")
         } else {
+            FeishuApprovalCenter.shared.attach(appState)
+            FeishuApprovalCenter.shared.startIfConfigured()
             Task.detached(priority: .userInitiated) {
                 if ConfigInstaller.install() {
                     Self.log.info("Hooks installed")

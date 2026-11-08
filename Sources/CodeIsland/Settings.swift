@@ -164,6 +164,12 @@ enum SettingsKey {
     static let pushAwayIdleMinutes = "pushAwayIdleMinutes"
     static let pushSummaryLength = "pushSummaryLength"
     static let pushChannels = "pushChannels"  // JSON [PushChannelConfig]; empty = nothing configured
+
+    // Feishu long-connection approvals. The App Secret is not a default: it
+    // lives in the Keychain (FeishuSecretStore).
+    static let feishuApprovalEnabled = "feishuApprovalEnabled"
+    static let feishuApprovalAppID = "feishuApprovalAppID"
+    static let feishuApprovalOpenID = "feishuApprovalOpenID"
 }
 
 struct SettingsDefaults {
@@ -263,6 +269,9 @@ struct SettingsDefaults {
     static let pushAwayIdleMinutes = 5
     static let pushSummaryLength = PushMessageFormatter.defaultSummaryLimit
     static let pushChannels = ""
+
+    static let feishuApprovalEnabled = false
+    static let feishuApprovalAppID = ""
 }
 
 @MainActor
@@ -349,6 +358,8 @@ class SettingsManager {
             SettingsKey.pushAwayIdleMinutes: SettingsDefaults.pushAwayIdleMinutes,
             SettingsKey.pushSummaryLength: SettingsDefaults.pushSummaryLength,
             SettingsKey.pushChannels: SettingsDefaults.pushChannels,
+            SettingsKey.feishuApprovalEnabled: SettingsDefaults.feishuApprovalEnabled,
+            SettingsKey.feishuApprovalAppID: SettingsDefaults.feishuApprovalAppID,
         ])
     }
 
