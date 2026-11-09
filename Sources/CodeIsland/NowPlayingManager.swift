@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AppKit
 import SwiftUI
+import ApplicationServices
 
 // MARK: - Synced Lyric Model
 
@@ -37,7 +38,20 @@ final class NowPlayingManager: ObservableObject {
 
     init() {
         setupObservers()
+        requestAutomationPermissionIfNeeded()
         fetchPlaybackDetails()
+    }
+
+    func requestAutomationPermissionIfNeeded() {
+        let targets = ["com.spotify.client", "com.apple.Music"]
+        for target in targets {
+            let desc = NSAppleEventDescriptor(bundleIdentifier: target)
+            if let aeDescPtr = desc.aeDesc {
+                var addressDesc = aeDescPtr.pointee
+                _ = AEDeterminePermissionToAutomateTarget(&addressDesc, typeWildCard, typeWildCard, true)
+                AEDisposeDesc(&addressDesc)
+            }
+        }
     }
 
     private func setupObservers() {
@@ -66,6 +80,23 @@ final class NowPlayingManager: ObservableObject {
         }
     }
 
+    private func extractDouble(from dict: [AnyHashable: Any], keys: [String]) -> Double? {
+        for key in keys {
+            if let val = dict[key] {
+                if let num = val as? NSNumber {
+                    return num.doubleValue
+                } else if let d = val as? Double {
+                    return d
+                } else if let i = val as? Int {
+                    return Double(i)
+                } else if let s = val as? String, let parsed = Double(s) {
+                    return parsed
+                }
+            }
+        }
+        return nil
+    }
+
     private func handleAppleMusicNotification(_ notification: Notification) {
         guard let info = notification.userInfo else { return }
         let state = info["Player State"] as? String ?? ""
@@ -75,12 +106,21 @@ final class NowPlayingManager: ObservableObject {
         let trackArtist = info["Artist"] as? String ?? ""
         let trackAlbum = info["Album"] as? String ?? ""
 
+        var rawDuration = extractDouble(from: info, keys: ["Total Time", "Duration"]) ?? 0
+        if rawDuration > 1000 {
+            rawDuration /= 1000.0
+        }
+
+        let rawPos = extractDouble(from: info, keys: ["Player Position", "Position"]) ?? 0
+
         updateBasicInfo(
             playing: playing,
             title: trackTitle,
             artist: trackArtist,
             album: trackAlbum,
-            source: "Music"
+            source: "Music",
+            position: rawPos,
+            duration: rawDuration > 0 ? rawDuration : nil
         )
         fetchPlaybackDetails()
     }
@@ -94,17 +134,37 @@ final class NowPlayingManager: ObservableObject {
         let trackArtist = info["Artist"] as? String ?? ""
         let trackAlbum = info["Album"] as? String ?? ""
 
+        var rawDuration = extractDouble(from: info, keys: ["Duration", "duration", "Total Time"]) ?? 0
+        if rawDuration > 1000 {
+            rawDuration /= 1000.0
+        }
+
+        var rawPos = extractDouble(from: info, keys: ["Playback Position", "Position", "position", "Player Position"]) ?? 0
+        if rawPos > 1000 && rawDuration > 0 && rawPos > rawDuration {
+            rawPos /= 1000.0
+        }
+
         updateBasicInfo(
             playing: playing,
             title: trackTitle,
             artist: trackArtist,
             album: trackAlbum,
-            source: "Spotify"
+            source: "Spotify",
+            position: rawPos,
+            duration: rawDuration > 0 ? rawDuration : nil
         )
         fetchPlaybackDetails()
     }
 
-    private func updateBasicInfo(playing: Bool, title: String, artist: String, album: String, source: String) {
+    private func updateBasicInfo(
+        playing: Bool,
+        title: String,
+        artist: String,
+        album: String,
+        source: String,
+        position: Double? = nil,
+        duration: Double? = nil
+    ) {
         let trackChanged = (self.title != title || self.artist != artist) && !title.isEmpty
         self.isPlaying = playing
         self.title = title
@@ -112,12 +172,29 @@ final class NowPlayingManager: ObservableObject {
         self.album = album
         self.player = source
 
+        if let duration = duration, duration > 0 {
+            self.trackDuration = duration
+        }
+
+        if trackChanged {
+            self.playerPosition = position ?? 0.0
+            self.currentLyricIndex = 0
+            self.lyrics = []
+            triggerToast()
+            fetchLyrics(title: title, artist: artist)
+        } else if let position = position {
+            self.playerPosition = position
+            self.updateCurrentLyricIndex()
+        }
+
+        // Clamp: position can never exceed duration
+        if self.trackDuration > 0 && self.playerPosition > self.trackDuration {
+            self.playerPosition = 0.0
+            self.updateCurrentLyricIndex()
+        }
+
         if playing {
             startProgressTimer()
-            if trackChanged {
-                triggerToast()
-                fetchLyrics(title: title, artist: artist)
-            }
         } else {
             stopProgressTimer()
             withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
@@ -145,12 +222,24 @@ final class NowPlayingManager: ObservableObject {
 
     private func startProgressTimer() {
         progressTimer?.invalidate()
+        var tickCount = 0
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self, self.isPlaying else { return }
-                if self.trackDuration > 0 && self.playerPosition < self.trackDuration {
+                tickCount += 1
+
+                if self.trackDuration > 0 {
+                    if self.playerPosition < self.trackDuration {
+                        self.playerPosition = min(self.trackDuration, self.playerPosition + 0.5)
+                    }
+                } else {
                     self.playerPosition += 0.5
-                    self.updateCurrentLyricIndex()
+                }
+                self.updateCurrentLyricIndex()
+
+                // Every 3 ticks (1.5 seconds), poll AppleScript to detect seeks and sync position
+                if tickCount % 3 == 0 {
+                    self.fetchPlaybackDetails()
                 }
             }
         }
@@ -162,8 +251,14 @@ final class NowPlayingManager: ObservableObject {
     }
 
     var currentLyricText: String {
-        guard !lyrics.isEmpty, currentLyricIndex >= 0, currentLyricIndex < lyrics.count else { return "" }
-        return lyrics[currentLyricIndex].text
+        guard !lyrics.isEmpty else { return "" }
+        if let line = lyrics.first(where: { $0.id == currentLyricIndex }) {
+            return line.text
+        }
+        if currentLyricIndex >= 0 && currentLyricIndex < lyrics.count {
+            return lyrics[currentLyricIndex].text
+        }
+        return ""
     }
 
     private func updateCurrentLyricIndex() {
@@ -171,63 +266,76 @@ final class NowPlayingManager: ObservableObject {
         let offset = UserDefaults.standard.double(forKey: SettingsKey.lyricSyncOffset)
         let effectiveTime = max(0, playerPosition + offset)
         if let idx = lyrics.lastIndex(where: { $0.timestamp <= effectiveTime }) {
-            if self.currentLyricIndex != idx {
-                self.currentLyricIndex = idx
+            let targetId = lyrics[idx].id
+            if self.currentLyricIndex != targetId {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.currentLyricIndex = targetId
+                }
+            }
+        } else {
+            let firstId = lyrics.first?.id ?? 0
+            if self.currentLyricIndex != firstId {
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    self.currentLyricIndex = firstId
+                }
             }
         }
     }
 
     func fetchPlaybackDetails() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            // Try Spotify first
-            let spotifyScript = """
-            tell application "System Events"
-                if exists (process "Spotify") then
-                    tell application "Spotify"
-                        set trackName to name of current track
-                        set trackArtist to artist of current track
-                        set trackAlbum to album of current track
-                        set trackPos to player position
-                        set trackDur to (duration of current track) / 1000
-                        set artUrl to artwork url of current track
-                        set pState to player state as string
-                        return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackPos & "|||" & trackDur & "|||" & artUrl & "|||" & pState
-                    end tell
-                end if
-            end tell
-            """
+            let isSpotifyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").contains { !$0.isTerminated }
+            let isMusicRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").contains { !$0.isTerminated }
 
-            var output = Self.runAppleScript(spotifyScript)
+            var output: String?
             var detectedSource = "Spotify"
 
-            // If Spotify returned empty, try Apple Music
-            if output == nil || output?.isEmpty == true {
+            // Direct AppleScript targeting Spotify without brittle System Events wrapper
+            if isSpotifyRunning {
+                let spotifyScript = """
+                tell application "Spotify"
+                    set trackName to name of current track
+                    set trackArtist to artist of current track
+                    set trackAlbum to album of current track
+                    set trackPos to player position
+                    set trackDur to (duration of current track) / 1000
+                    try
+                        set artUrl to artwork url of current track
+                    on error
+                        set artUrl to ""
+                    end try
+                    set pState to player state as string
+                    return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackPos & "|||" & trackDur & "|||" & artUrl & "|||" & pState
+                end tell
+                """
+                output = Self.runAppleScript(spotifyScript)
+                detectedSource = "Spotify"
+            }
+
+            // Direct AppleScript targeting Apple Music without System Events wrapper
+            if (output == nil || output?.isEmpty == true) && isMusicRunning {
                 let musicScript = """
-                tell application "System Events"
-                    if exists (process "Music") then
-                        tell application "Music"
-                            set trackName to name of current track
-                            set trackArtist to artist of current track
-                            set trackAlbum to album of current track
-                            set trackPos to player position
-                            set trackDur to duration of current track
-                            set pState to player state as string
-                            try
-                                if exists (artwork 1 of current track) then
-                                    set theData to data of artwork 1 of current track
-                                    set theFile to (open for access POSIX file "/tmp/codeisland_music_art.png" with write permission)
-                                    set eof theFile to 0
-                                    write theData to theFile
-                                    close access theFile
-                                end if
-                            on error
-                                try
-                                    close access file "/tmp/codeisland_music_art.png"
-                                end try
-                            end try
-                            return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackPos & "|||" & trackDur & "|||/tmp/codeisland_music_art.png|||" & pState
-                        end tell
-                    end if
+                tell application "Music"
+                    set trackName to name of current track
+                    set trackArtist to artist of current track
+                    set trackAlbum to album of current track
+                    set trackPos to player position
+                    set trackDur to duration of current track
+                    set pState to player state as string
+                    try
+                        if exists (artwork 1 of current track) then
+                            set theData to data of artwork 1 of current track
+                            set theFile to (open for access POSIX file "/tmp/codeisland_music_art.png" with write permission)
+                            set eof theFile to 0
+                            write theData to theFile
+                            close access theFile
+                        end if
+                    on error
+                        try
+                            close access file "/tmp/codeisland_music_art.png"
+                        end try
+                    end try
+                    return trackName & "|||" & trackArtist & "|||" & trackAlbum & "|||" & trackPos & "|||" & trackDur & "|||/tmp/codeisland_music_art.png|||" & pState
                 end tell
                 """
                 output = Self.runAppleScript(musicScript)
@@ -255,8 +363,15 @@ final class NowPlayingManager: ObservableObject {
                 self.title = title
                 self.artist = artist
                 self.album = album
-                self.playerPosition = pos
-                self.trackDuration = dur
+                if pos >= 0 {
+                    if abs(self.playerPosition - pos) > 0.75 || self.playerPosition == 0 {
+                        self.playerPosition = pos
+                        self.updateCurrentLyricIndex()
+                    }
+                }
+                if dur > 0 {
+                    self.trackDuration = dur
+                }
                 self.isPlaying = playing
                 self.player = detectedSource
 
@@ -265,6 +380,8 @@ final class NowPlayingManager: ObservableObject {
                 } else {
                     self.stopProgressTimer()
                 }
+
+                self.updateCurrentLyricIndex()
 
                 // Load artwork if changed
                 if self.artworkURL != artPathOrUrl {
@@ -311,18 +428,39 @@ final class NowPlayingManager: ObservableObject {
         lyricsLoading = true
 
         guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)") else {
+              let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
             lyricsLoading = false
             return
         }
 
+        var primaryUrlString = "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)"
+        let shouldIncludeDuration = trackDuration > 0
+        if shouldIncludeDuration {
+            primaryUrlString += "&duration=\(Int(trackDuration))"
+        }
+
+        guard let primaryUrl = URL(string: primaryUrlString) else {
+            lyricsLoading = false
+            return
+        }
+
+        let fallbackUrl = URL(string: "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)")
+        requestLyricsURL(url: primaryUrl, fallbackUrl: shouldIncludeDuration ? fallbackUrl : nil)
+    }
+
+    private func requestLyricsURL(url: URL, fallbackUrl: URL?) {
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            defer {
-                Task { @MainActor in self?.lyricsLoading = false }
-            }
             guard let data = data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                if let fallback = fallbackUrl {
+                    Task { @MainActor [weak self] in
+                        self?.requestLyricsURL(url: fallback, fallbackUrl: nil)
+                    }
+                } else {
+                    Task { @MainActor in self?.lyricsLoading = false }
+                }
+                return
+            }
 
             var parsed: [LyricLine] = []
             if let synced = json["syncedLyrics"] as? String, !synced.isEmpty {
@@ -332,9 +470,22 @@ final class NowPlayingManager: ObservableObject {
                 parsed = rawLines.enumerated().map { LyricLine(id: $0.offset, timestamp: Double($0.offset) * 4.0, text: $0.element) }
             }
 
+            if parsed.isEmpty, let fallback = fallbackUrl {
+                Task { @MainActor [weak self] in
+                    self?.requestLyricsURL(url: fallback, fallbackUrl: nil)
+                }
+                return
+            }
+
             Task { @MainActor in
+                self?.lyricsLoading = false
                 self?.lyrics = parsed
-                self?.currentLyricIndex = 0
+                if let self = self {
+                    if self.trackDuration <= 0, let lastTs = parsed.last?.timestamp, lastTs > 0 {
+                        self.trackDuration = lastTs + 5.0
+                    }
+                    self.updateCurrentLyricIndex()
+                }
             }
         }.resume()
     }
@@ -406,6 +557,8 @@ final class NowPlayingManager: ObservableObject {
             let result = appleScript.executeAndReturnError(&error)
             if error == nil {
                 return result.stringValue
+            } else if let err = error {
+                NSLog("[CodeIsland] AppleScript error: %@", err)
             }
         }
         return nil

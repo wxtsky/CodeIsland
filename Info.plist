@@ -26,7 +26,7 @@
 		<true/>
 	</dict>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>CodeIsland needs to control terminal apps to jump to the correct window and tab when you click a session.</string>
+	<string>CodeIsland needs permission to control Spotify and Apple Music to synchronize playback progress, scrubber position, and live lyrics.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>CodeIsland uses Bluetooth to mirror the island onto Buddy.</string>
 	<key>NSBonjourServices</key>
