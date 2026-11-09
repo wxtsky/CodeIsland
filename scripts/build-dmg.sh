@@ -37,6 +37,7 @@ esac
 echo "==> Building CodeIsland ${VERSION} (${BUILD_ARCH})"
 
 cd "$REPO_ROOT"
+"$REPO_ROOT/scripts/build-feishu-bridge.sh" "$BUILD_ARCH"
 source "$REPO_ROOT/scripts/swiftpm-release.sh"
 ARM_DIR=$(swiftpm_release_build arm64)
 if [ "$BUILD_ARCH" = universal ]; then
@@ -65,6 +66,17 @@ case "$BUILD_ARCH" in
         ;;
 esac
 chmod +x "$CONTENTS_DIR/MacOS/CodeIsland" "$CONTENTS_DIR/Helpers/codeisland-bridge"
+
+FEISHU_DIST="$REPO_ROOT/helpers/feishu-bridge/dist"
+case "$BUILD_ARCH" in
+    universal)
+        cp "$FEISHU_DIST/feishu-bridge" "$CONTENTS_DIR/Helpers/feishu-bridge"
+        ;;
+    arm64)
+        cp "$FEISHU_DIST/feishu-bridge-arm64" "$CONTENTS_DIR/Helpers/feishu-bridge"
+        ;;
+esac
+chmod +x "$CONTENTS_DIR/Helpers/feishu-bridge"
 
 # Write Info.plist (use the root Info.plist as base, update version)
 CURRENT_VER=$(defaults read "$REPO_ROOT/Info.plist" CFBundleShortVersionString)

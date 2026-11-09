@@ -2186,6 +2186,7 @@ final class AppState {
         // already in progress.
         let burstAlreadyInProgress = nextVisiblePermissionIndex() != nil
         permissionQueue.append(request)
+        publishFeishuPermission(request)
         let attention = decideAttention(.approvalQueued(firstOfBurst: !burstAlreadyInProgress), sessionId: sessionId)
         pushPermissionQueued(event, sessionId: sessionId, push: attention.push)
 
@@ -2232,6 +2233,26 @@ final class AppState {
         refreshDerivedState()
     }
 
+    func notifyFeishuPermissionFinished(_ id: UUID, decision: String) {
+        FeishuApprovalCenter.shared.noteFinished(id: id, decision: decision)
+    }
+
+    func publishFeishuPermission(_ request: PermissionRequest) {
+        let event = request.event
+        FeishuApprovalCenter.shared.offer(
+            id: request.id,
+            source: (event.rawJSON["_source"] as? String) ?? "",
+            tool: event.toolName ?? "",
+            cwd: (event.rawJSON["cwd"] as? String) ?? "",
+            command: PushDetailSummarizer.permissionDetail(
+                toolInput: event.toolInput,
+                fallback: event.toolDescription,
+                cwd: event.rawJSON["cwd"] as? String
+            ) ?? "",
+            sessionId: event.sessionId ?? ""
+        )
+    }
+
     func approvePermission(always: Bool = false, expectedSessionId: String? = nil) {
         guard let index = permissionIndex(expecting: expectedSessionId) else {
             if let expectedSessionId {
@@ -2239,6 +2260,19 @@ final class AppState {
             }
             return
         }
+        approveQueuedPermission(at: index, always: always)
+    }
+
+    /// A Feishu card names one request, which may not be the card on screen.
+    /// Allow once only: remote approval never writes an always-allow rule.
+    @discardableResult
+    func approvePermission(requestId: UUID) -> Bool {
+        guard let index = permissionQueue.firstIndex(where: { $0.id == requestId }) else { return false }
+        approveQueuedPermission(at: index, always: false)
+        return true
+    }
+
+    private func approveQueuedPermission(at index: Int, always: Bool) {
         let pending = permissionQueue.remove(at: index)
         let sessionId = pending.event.sessionId ?? "default"
         dismissedPermissionSessionIds.remove(sessionId)
@@ -2257,6 +2291,7 @@ final class AppState {
             answerQueuedRequestsCoveredByAlways(sessionId: sessionId)
         }
 
+        notifyFeishuPermissionFinished(pending.id, decision: "allow")
         showNextPending()
         refreshDerivedState()
     }
@@ -2274,6 +2309,7 @@ final class AppState {
         permissionQueue.removeAll { ids.contains($0.id) }
         for request in covered {
             request.continuation.resume(returning: Self.plainAllowAnswer)
+            notifyFeishuPermissionFinished(request.id, decision: "allow")
             resolveMergedSubagentAfterUI(
                 sessionId: sessionId,
                 agentId: request.event.agentId,
@@ -2523,6 +2559,18 @@ final class AppState {
             }
             return
         }
+        denyQueuedPermission(at: index)
+    }
+
+    /// See `approvePermission(requestId:)`.
+    @discardableResult
+    func denyPermission(requestId: UUID) -> Bool {
+        guard let index = permissionQueue.firstIndex(where: { $0.id == requestId }) else { return false }
+        denyQueuedPermission(at: index)
+        return true
+    }
+
+    private func denyQueuedPermission(at index: Int) {
         let pending = permissionQueue.remove(at: index)
         let sessionId = pending.event.sessionId ?? "default"
         dismissedPermissionSessionIds.remove(sessionId)
@@ -2541,6 +2589,7 @@ final class AppState {
             activeSessionId = mostActiveSessionId()
         }
 
+        notifyFeishuPermissionFinished(pending.id, decision: "deny")
         showNextPending()
         refreshDerivedState()
     }
@@ -3071,6 +3120,7 @@ final class AppState {
         permissionQueue.removeAll { item in
             guard item.event.sessionId == sessionId, matches(item.event) else { return false }
             log.notice("⚠️ permission dropped, no decision reason=drainPermissions(\(reason, privacy: .public)) session=\(sessionId, privacy: .public) toolUseId=\(item.toolUseId ?? "nil", privacy: .public) tool=\(item.event.toolName ?? "nil", privacy: .public)")
+            notifyFeishuPermissionFinished(item.id, decision: "gone")
             item.continuation.resume(returning: Self.noDecisionAnswer)
             return true
         }
@@ -3102,6 +3152,7 @@ final class AppState {
             let pending = permissionQueue.remove(at: index)
             sessionId = pending.event.sessionId ?? "default"
             log.notice("⚠️ permission deny reason=hookGone session=\(sessionId, privacy: .public) toolUseId=\(pending.toolUseId ?? "nil", privacy: .public) tool=\(pending.event.toolName ?? "nil", privacy: .public)")
+            notifyFeishuPermissionFinished(pending.id, decision: "gone")
             // Nobody reads it, but the continuation must not leak.
             pending.continuation.resume(returning: Data(
                 #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8

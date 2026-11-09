@@ -1,5 +1,6 @@
 # Build artifacts
 .build/
+helpers/feishu-bridge/dist/
 .swiftpm/
 
 # Superpowers artifacts

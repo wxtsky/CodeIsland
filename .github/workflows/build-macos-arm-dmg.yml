@@ -134,6 +134,11 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD"
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
       - name: Build DMG
         run: ./scripts/build-dmg.sh "$VERSION"
 
@@ -144,6 +149,8 @@ jobs:
           SPARKLE_ARCHS="$(lipo -archs .build/dmg-staging/CodeIsland.app/Contents/Frameworks/Sparkle.framework/Sparkle)"
           test "$APP_ARCHS" = "arm64"
           test "$HELPER_ARCHS" = "arm64"
+          FEISHU_ARCHS="$(lipo -archs .build/dmg-staging/CodeIsland.app/Contents/Helpers/feishu-bridge)"
+          test "$FEISHU_ARCHS" = "arm64"
           test "$SPARKLE_ARCHS" = "arm64"
           test -s .build/dmg-staging/CodeIsland.app/Contents/Resources/AppIcon.icns
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' .build/dmg-staging/CodeIsland.app/Contents/Info.plist)" = "AppIcon"
