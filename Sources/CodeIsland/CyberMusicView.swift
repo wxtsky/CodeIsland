@@ -815,7 +815,7 @@ struct ModernCleanMusicHUDContentView: View {
 
                     Spacer(minLength: 2)
 
-                    // Di tengah: Scrubber Bar & Durasi
+                    // Di tengah: Scrubber Bar & Durasi (diberi padding kanan agar tidak mepet border)
                     VStack(spacing: 2) {
                         GeometryReader { geo in
                             let totalWidth = geo.size.width
@@ -855,6 +855,7 @@ struct ModernCleanMusicHUDContentView: View {
                                 .foregroundStyle(Color.white.opacity(0.48))
                         }
                     }
+                    .padding(.trailing, 10)
 
                     Spacer(minLength: 2)
 
@@ -900,6 +901,7 @@ struct ModernCleanMusicHUDContentView: View {
                 }
                 .frame(height: 86)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 6)
             }
             .frame(width: 250, alignment: .leading)
 
