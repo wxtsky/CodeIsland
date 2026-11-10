@@ -267,7 +267,7 @@ struct NotchPanelView: View {
     /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
     private var symmetricWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
-            return 115
+            return 118
         }
         if isHoveringRightWing && !shouldShowExpanded {
             return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 128 : 95
@@ -430,10 +430,10 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, shouldShowExpanded ? 8 : 0)
+                            .padding(.trailing, (isThinking || isHoveringRightWing || shouldShowExpanded) ? 8 : 0)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: shouldShowExpanded ? .trailing : .center
+                                alignment: (isThinking || isHoveringRightWing || shouldShowExpanded) ? .trailing : .center
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())

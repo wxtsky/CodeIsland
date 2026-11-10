@@ -255,7 +255,7 @@ struct CyberMusicWingView: View {
                 if isHovered {
                     ModernMarqueeText(
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
-                        maxWidth: 72
+                        maxWidth: 60
                     )
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
