@@ -1486,6 +1486,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showModelLabel) private var showModelLabel = SettingsDefaults.showModelLabel
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
     @AppStorage(SettingsKey.floatingLyricFontDesign) private var floatingLyricFontDesign = SettingsDefaults.floatingLyricFontDesign
@@ -1690,6 +1691,20 @@ private struct AppearancePage: View {
             }
 
             Section("Music & Synced Lyrics") {
+                // Music HUD Theme Selector (Modern Clean Island vs Retro Cyber Pixel)
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Music HUD Theme", selection: $musicHUDTheme) {
+                        ForEach(MusicHUDTheme.allCases) { theme in
+                            Text(theme.title).tag(theme.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text(MusicHUDTheme(rawValue: musicHUDTheme)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Show Synced Lyrics Below Notch", isOn: $showCompactLyrics)
                     Text("Display a floating lyric ticker directly beneath the notch cutout during playback.")

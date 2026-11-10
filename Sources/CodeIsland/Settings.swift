@@ -17,6 +17,29 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
+    case modernClean = "modernClean"
+    case retroCyber = "retroCyber"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .modernClean: return "Modern Clean (Island)"
+        case .retroCyber: return "Retro Cyber (Pixel)"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .modernClean:
+            return "Modern Dynamic Island aesthetic with squircle artwork, circular playback controls, and seamless lyrics."
+        case .retroCyber:
+            return "Classic cyberpunk terminal look with monospaced typography, retro buttons, and disco visualizer."
+        }
+    }
+}
+
 public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
     case pureText = "pureText"
     case capsule = "capsule"
@@ -131,6 +154,7 @@ enum SettingsKey {
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
     static let showCompactLyrics = "showCompactLyrics"
+    static let musicHUDTheme = "musicHUDTheme"
     static let floatingLyricPreset = "floatingLyricPreset"
     static let floatingLyricFontSize = "floatingLyricFontSize"
     static let floatingLyricFontDesign = "floatingLyricFontDesign"
@@ -278,6 +302,7 @@ struct SettingsDefaults {
     static let aiMessageLines = 1
     static let showAgentDetails = false
     static let showCompactLyrics = true
+    static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
     static let floatingLyricPreset = FloatingLyricPreset.pureText.rawValue
     static let floatingLyricFontSize: Double = 10.0
     static let floatingLyricFontDesign = FloatingLyricFontDesign.rounded.rawValue
@@ -390,6 +415,7 @@ class SettingsManager {
             SettingsKey.aiMessageLines: SettingsDefaults.aiMessageLines,
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.showCompactLyrics: SettingsDefaults.showCompactLyrics,
+            SettingsKey.musicHUDTheme: SettingsDefaults.musicHUDTheme,
             SettingsKey.floatingLyricPreset: SettingsDefaults.floatingLyricPreset,
             SettingsKey.floatingLyricFontSize: SettingsDefaults.floatingLyricFontSize,
             SettingsKey.floatingLyricFontDesign: SettingsDefaults.floatingLyricFontDesign,
