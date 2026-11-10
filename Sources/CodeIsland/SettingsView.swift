@@ -1715,6 +1715,10 @@ private struct AppearancePage: View {
                         }
                         .pickerStyle(.menu)
 
+                        Text("Choose font family: Modern Rounded, Monospaced code, Clean System, or Elegant Serif.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+
                         // Text Highlight Color
                         Picker("Highlight Color", selection: $floatingLyricTextColor) {
                             ForEach(FloatingLyricTextColor.allCases) { col in
@@ -1722,6 +1726,10 @@ private struct AppearancePage: View {
                             }
                         }
                         .pickerStyle(.menu)
+
+                        Text("Illumination color and glow accent for the currently active lyric line.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
 
                         // Font Size Slider
                         VStack(alignment: .leading, spacing: 3) {
@@ -1741,6 +1749,9 @@ private struct AppearancePage: View {
                                     .font(.system(size: 9, design: .monospaced))
                                     .foregroundStyle(.secondary)
                             }
+                            Text("Scale text size of the floating lyric line below the notch.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
                         }
 
                         // Vertical Gap (Distance from Notch)
@@ -1770,7 +1781,7 @@ private struct AppearancePage: View {
 
                 // Timing Offset (applies to both Notch HUD and Floating Lyrics)
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack {
+                    HStack(spacing: 6) {
                         Text("Lyric Timing Offset")
                         Spacer()
                         Text(String(format: "%+.2f s", lyricSyncOffset))
@@ -1778,12 +1789,25 @@ private struct AppearancePage: View {
                             .foregroundStyle(abs(lyricSyncOffset) > 0.01 ? Color(red: 0.0, green: 0.96, blue: 0.83) : .secondary)
 
                         if abs(lyricSyncOffset) > 0.01 {
-                            Button("Reset") {
+                            Button(action: {
                                 lyricSyncOffset = 0.0
+                            }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .font(.system(size: 8.5, weight: .semibold))
+                                    Text("Reset")
+                                        .font(.system(size: 10, weight: .medium))
+                                }
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3.5)
+                                        .fill(Color.white.opacity(0.08))
+                                )
                             }
                             .buttonStyle(.plain)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                            .help("Reset timing offset back to 0.00s")
                         }
                     }
 
