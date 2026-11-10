@@ -1738,7 +1738,7 @@ private struct AppearancePage: View {
                                 Spacer()
                                 Text(String(format: "%.1f pt", floatingLyricFontSize))
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                                    .foregroundStyle(.secondary)
                             }
                             HStack(spacing: 8) {
                                 Text("8pt")
@@ -1761,7 +1761,7 @@ private struct AppearancePage: View {
                                 Spacer()
                                 Text(String(format: "%.1f pt (~%.2f cm)", floatingLyricVerticalGap, floatingLyricVerticalGap * 0.035))
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                                    .foregroundStyle(.secondary)
                             }
                             HStack(spacing: 8) {
                                 Text("0pt")
@@ -1786,7 +1786,7 @@ private struct AppearancePage: View {
                         Spacer()
                         Text(String(format: "%+.2f s", lyricSyncOffset))
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(abs(lyricSyncOffset) > 0.01 ? Color(red: 0.0, green: 0.96, blue: 0.83) : .secondary)
+                            .foregroundStyle(.secondary)
 
                         if abs(lyricSyncOffset) > 0.01 {
                             Button(action: {
