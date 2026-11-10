@@ -77,3 +77,6 @@ __pycache__/
 
 # Local-only spec drafts (kept out of the repo on request)
 docs/spec-spotify-web-browser-detection.md
+
+# Local wayfinder map + tickets (never committed)
+.scratch/
