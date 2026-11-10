@@ -701,159 +701,153 @@ struct ModernCleanMusicHUDContentView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (215pt fixed width)
-            VStack(alignment: .leading, spacing: 4.5) {
-                // Top: Artwork & Track Info
-                HStack(spacing: 10) {
-                    // Album Cover (54x54 squircle - enlarged & prominent)
-                    ZStack {
-                        if let art = nowPlaying.artworkImage {
-                            Image(nsImage: art)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 54, height: 54)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
-                                )
-                                .shadow(color: Color.black.opacity(0.40), radius: 5, x: 0, y: 2.5)
-                        } else {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(LinearGradient(
-                                    colors: [Color(white: 0.16), Color(white: 0.08)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ))
-                                .frame(width: 54, height: 54)
-                                .overlay(
-                                    Image(systemName: "music.note")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(Color.white.opacity(0.6))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
-                                )
-                        }
+            // LEFT BLOCK: Full Image on Left + Info & Controls Stack Beside It (250pt fixed width)
+            HStack(alignment: .center, spacing: 12) {
+                // 1. FULL ALBUM IMAGE (86x86 squircle - spans full vertical height)
+                ZStack {
+                    if let art = nowPlaying.artworkImage {
+                        Image(nsImage: art)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 86, height: 86)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
+                            )
+                            .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
+                    } else {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [Color(white: 0.16), Color(white: 0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                            .frame(width: 86, height: 86)
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(Color.white.opacity(0.6))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
+                            )
                     }
-                    .id(nowPlaying.title + nowPlaying.artist)
+                }
+                .id(nowPlaying.title + nowPlaying.artist)
 
-                    // Track Title, Artist, & Source
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .id(nowPlaying.title)
+                // 2. STACK BESIDE IMAGE (Title on top, Artist & Spotify, Scrubber, Controls on bottom)
+                VStack(alignment: .leading, spacing: 3.5) {
+                    // Di atas: Title song
+                    Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .id(nowPlaying.title)
 
+                    // Di samping gambar: Artist name & Source
+                    HStack(spacing: 5) {
                         Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
                             .font(.system(size: 11, weight: .medium, design: .default))
-                            .foregroundStyle(Color.white.opacity(0.65))
+                            .foregroundStyle(Color.white.opacity(0.70))
                             .lineLimit(1)
                             .truncationMode(.tail)
 
-                        HStack(spacing: 4.5) {
-                            Circle()
-                                .fill(nowPlaying.player.lowercased().contains("apple") ? Color(red: 0.98, green: 0.20, blue: 0.35) : Color(red: 0.12, green: 0.84, blue: 0.38))
-                                .frame(width: 4.5, height: 4.5)
-
-                            Text(nowPlaying.player.isEmpty ? "Spotify" : (nowPlaying.player.lowercased().contains("spotify") ? "Spotify" : "Apple Music"))
-                                .font(.system(size: 9.5, weight: .medium, design: .default))
-                                .foregroundStyle(Color.white.opacity(0.68))
-                        }
-                        .padding(.top, 0.5)
-                    }
-                }
-                .frame(height: 54)
-
-                // Middle: Modern Interactive Scrubber (Warm Coral/Peach Gradient)
-                VStack(spacing: 2.5) {
-                    GeometryReader { geo in
-                        let totalWidth = geo.size.width
-                        let progressFraction: CGFloat = nowPlaying.trackDuration > 0
-                            ? min(1.0, max(0.0, CGFloat(nowPlaying.playerPosition / nowPlaying.trackDuration)))
-                            : 0.0
-
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.18))
-                                .frame(height: 3)
-
-                            Capsule()
-                                .fill(LinearGradient(
-                                    colors: [Color(red: 1.0, green: 0.68, blue: 0.48), Color(red: 1.0, green: 0.58, blue: 0.38)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                ))
-                                .frame(width: totalWidth * progressFraction, height: 3)
-                        }
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onEnded { value in
-                                    guard nowPlaying.trackDuration > 0 else { return }
-                                    let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
-                                    let targetTime = Double(fraction) * nowPlaying.trackDuration
-                                    nowPlaying.seek(to: targetTime)
-                                }
-                        )
-                    }
-                    .frame(height: 3)
-
-                    HStack {
-                        Text(formatTime(nowPlaying.playerPosition))
-                            .font(.system(size: 7.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.48))
-                        Spacer()
-                        Text(formatRemainingTime(position: nowPlaying.playerPosition, duration: nowPlaying.trackDuration))
-                            .font(.system(size: 7.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.48))
-                    }
-                }
-
-                // Bottom: Clean Circular Playback Controls (Zero Overflow, Plentiful Clearance)
-                HStack(spacing: 20) {
-                    Spacer()
-
-                    Button(action: { nowPlaying.previousTrack() }) {
-                        Image(systemName: "backward.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: { nowPlaying.togglePlayPause() }) {
                         Circle()
-                            .fill(Color.white)
-                            .frame(width: 26, height: 26)
-                            .overlay(
-                                Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(Color.black)
-                                    .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
-                            )
-                            .shadow(color: Color.white.opacity(0.22), radius: 4, y: 1)
-                    }
-                    .buttonStyle(.plain)
+                            .fill(nowPlaying.player.lowercased().contains("apple") ? Color(red: 0.98, green: 0.20, blue: 0.35) : Color(red: 0.12, green: 0.84, blue: 0.38))
+                            .frame(width: 4, height: 4)
 
-                    Button(action: { nowPlaying.nextTrack() }) {
-                        Image(systemName: "forward.fill")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.85))
-                            .frame(width: 22, height: 22)
+                        Text(nowPlaying.player.isEmpty ? "Spotify" : (nowPlaying.player.lowercased().contains("spotify") ? "Spotify" : "Apple Music"))
+                            .font(.system(size: 9, weight: .medium, design: .default))
+                            .foregroundStyle(Color.white.opacity(0.65))
+                    }
+
+                    // Scrubber (Warm Coral/Peach Gradient)
+                    VStack(spacing: 2) {
+                        GeometryReader { geo in
+                            let totalWidth = geo.size.width
+                            let progressFraction: CGFloat = nowPlaying.trackDuration > 0
+                                ? min(1.0, max(0.0, CGFloat(nowPlaying.playerPosition / nowPlaying.trackDuration)))
+                                : 0.0
+
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(height: 3)
+
+                                Capsule()
+                                    .fill(LinearGradient(
+                                        colors: [Color(red: 1.0, green: 0.68, blue: 0.48), Color(red: 1.0, green: 0.58, blue: 0.38)],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    ))
+                                    .frame(width: totalWidth * progressFraction, height: 3)
+                            }
                             .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onEnded { value in
+                                        guard nowPlaying.trackDuration > 0 else { return }
+                                        let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
+                                        let targetTime = Double(fraction) * nowPlaying.trackDuration
+                                        nowPlaying.seek(to: targetTime)
+                                    }
+                            )
+                        }
+                        .frame(height: 3)
 
-                    Spacer()
+                        HStack {
+                            Text(formatTime(nowPlaying.playerPosition))
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.48))
+                            Spacer()
+                            Text(formatRemainingTime(position: nowPlaying.playerPosition, duration: nowPlaying.trackDuration))
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.48))
+                        }
+                    }
+
+                    // Di bawah: Kanan kiri dan pause
+                    HStack(spacing: 16) {
+                        Button(action: { nowPlaying.previousTrack() }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.togglePlayPause() }) {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 24, height: 24)
+                                .overlay(
+                                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 9.5, weight: .bold))
+                                        .foregroundStyle(Color.black)
+                                        .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
+                                )
+                                .shadow(color: Color.white.opacity(0.22), radius: 3, y: 1)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.nextTrack() }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .frame(height: 24)
                 }
-                .frame(height: 26)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: 215, alignment: .leading)
+            .frame(width: 250, alignment: .leading)
 
             // Soft vertical separator line (subtle gradient fade)
             Rectangle()
