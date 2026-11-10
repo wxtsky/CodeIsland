@@ -311,7 +311,7 @@ struct NotchPanelView: View {
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
         if showIdleIndicator {
-            let wing = idleHovered ? 106 : compactWingWidth
+            let wing = idleHovered ? (compactWingWidth + 6) : compactWingWidth
             return nw + wing * 2
         }
         if !isActive { return nw }
@@ -1918,15 +1918,10 @@ private struct IdleIndicatorBar: View {
     let hasNotch: Bool
     let hovered: Bool
     var onExpand: (() -> Void)? = nil
-    @ObservedObject private var l10n = L10n.shared
-    @ObservedObject private var nowPlaying = NowPlayingManager.shared
-    @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
-    @StateObject private var quit = QuitConfirmation()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var wingWidth: CGFloat {
-        hovered ? 106 : compactWingWidth
+        hovered ? (compactWingWidth + 6) : compactWingWidth
     }
 
     var body: some View {
@@ -1934,8 +1929,8 @@ private struct IdleIndicatorBar: View {
             // Left Wing: mascot with precise positioning
             HStack {
                 MascotView(source: defaultSource, status: .idle, size: mascotSize)
-                    .opacity(hovered ? 0.9 : 0.6)
-                    .padding(.leading, hovered ? 8 : 5)
+                    .opacity(hovered ? 0.95 : 0.65)
+                    .padding(.leading, hovered ? 7 : 5)
                 Spacer(minLength: 0)
             }
             .frame(width: wingWidth, alignment: .leading)
@@ -1949,36 +1944,26 @@ private struct IdleIndicatorBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand?() }
 
-            // Right Wing: expanded buttons or subtle balanced status dot
+            // Right Wing: sleek, ultra-compact expand indicator (Option 1)
             HStack {
                 Spacer(minLength: 0)
-                if hovered {
-                    HStack(spacing: 4) {
-                        NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
-                            soundEnabled.toggle()
-                        }
-                        NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                            SettingsWindowController.shared.show()
-                        }
-                        QuitConfirmButton(confirmation: quit)
-                    }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: hovered ? 8 : 7.5, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(hovered ? 0.9 : 0.45))
+                    .frame(width: 18, height: 18)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(hovered ? 0.12 : 0))
+                    )
                     .padding(.trailing, 8)
-                    .transition(.opacity)
-                } else {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.45))
-                        .padding(.trailing, 8)
-                        .transition(.opacity)
-                }
             }
             .frame(width: wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
+            .help("Click to expand tabs (Agents / Workspace / Music)")
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
-        .animation(reduceMotion ? nil : NotchAnimation.micro, value: quit.isArmed)
     }
 }
 
