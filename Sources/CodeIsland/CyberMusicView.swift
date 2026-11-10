@@ -657,9 +657,6 @@ struct KaraokeLyricLineView: View {
 struct CyberMusicHUDView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
-    @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
-    @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
-    @AppStorage(SettingsKey.lyricSyncOffset) private var lyricSyncOffset = SettingsDefaults.lyricSyncOffset
 
     init(nowPlaying: NowPlayingManager, appState: AppState) {
         self.nowPlaying = nowPlaying
@@ -802,116 +799,20 @@ struct CyberMusicHUDView: View {
                 .fill(Color(red: 0.16, green: 0.19, blue: 0.24))
                 .frame(width: 1, height: 92)
 
-            // RIGHT COLUMN: Synced Real-Time Lyrics View (balanced 50% width)
-            VStack(alignment: .leading, spacing: 3) {
+            // RIGHT COLUMN: Synced Real-Time Lyrics View (clean, full-height lyrics only)
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text("LYRICS")
                         .font(.system(size: 7.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
 
-                    // Prominent Interactive Notch Lyrics Toggle Button
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showCompactLyrics.toggle()
-                        }
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: showCompactLyrics ? "text.bubble.fill" : "text.bubble")
-                                .font(.system(size: 6.5, weight: .bold))
-                            Text(showCompactLyrics ? "SUB-NOTCH: ON" : "SUB-NOTCH: OFF")
-                                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                        }
-                        .foregroundStyle(showCompactLyrics ? Color.black : Color.white.opacity(0.65))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(showCompactLyrics ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color(white: 0.12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .stroke(showCompactLyrics ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color(white: 0.25), lineWidth: 0.75)
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help("Turn ON/OFF live synced lyrics ticker directly below the notch cutout")
-
-                    // Quick Timing Offset Nudge: [-0.25s] [Offset] [+0.25s]
-                    HStack(spacing: 2) {
-                        Button(action: {
-                            lyricSyncOffset = min(3.0, max(-3.0, lyricSyncOffset - 0.25))
-                        }) {
-                            Text("-0.25s")
-                                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.7))
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1.5)
-                                .background(RoundedRectangle(cornerRadius: 2).fill(Color(white: 0.14)))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Delay lyrics (if lyrics are too fast)")
-
-                        Text(String(format: "%+.2fs", lyricSyncOffset))
-                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(abs(lyricSyncOffset) > 0.01 ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color.white.opacity(0.4))
-                            .onTapGesture {
-                                lyricSyncOffset = 0.0
-                            }
-                            .help("Click to reset offset to 0.00s")
-
-                        Button(action: {
-                            lyricSyncOffset = min(3.0, max(-3.0, lyricSyncOffset + 0.25))
-                        }) {
-                            Text("+0.25s")
-                                .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.7))
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1.5)
-                                .background(RoundedRectangle(cornerRadius: 2).fill(Color(white: 0.14)))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Advance lyrics (if lyrics are too slow)")
-                    }
-
                     Spacer()
+
                     if nowPlaying.lyricsLoading {
                         Text("LOADING...")
                             .font(.system(size: 7, design: .monospaced))
                             .foregroundStyle(Color(white: 0.45))
                     }
-                }
-
-                if showCompactLyrics {
-                    HStack(spacing: 3) {
-                        Text("STYLE:")
-                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.white.opacity(0.45))
-
-                        ForEach(FloatingLyricPreset.allCases) { preset in
-                            Button(action: {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    floatingLyricPreset = preset.rawValue
-                                }
-                            }) {
-                                Text(preset.shortLabel)
-                                    .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(floatingLyricPreset == preset.rawValue ? Color.black : Color.white.opacity(0.7))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1.5)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 2.5)
-                                            .fill(floatingLyricPreset == preset.rawValue ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color(white: 0.12))
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 2.5)
-                                                    .stroke(floatingLyricPreset == preset.rawValue ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color(white: 0.20), lineWidth: 0.5)
-                                            )
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .help(preset.title)
-                        }
-                    }
-                    .padding(.top, 1)
                 }
 
                 if nowPlaying.lyrics.isEmpty {
@@ -923,7 +824,7 @@ struct CyberMusicHUDView: View {
                             .font(.system(size: 8.5, design: .monospaced))
                             .foregroundStyle(Color(white: 0.45))
                     }
-                    .frame(maxWidth: .infinity, minHeight: 78, maxHeight: 78, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 82, maxHeight: 82, alignment: .center)
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
@@ -960,7 +861,7 @@ struct CyberMusicHUDView: View {
                             }
                             .padding(.trailing, 4)
                         }
-                        .frame(height: 78)
+                        .frame(height: 82)
                         .simultaneousGesture(
                             DragGesture(minimumDistance: 4)
                                 .onChanged { _ in

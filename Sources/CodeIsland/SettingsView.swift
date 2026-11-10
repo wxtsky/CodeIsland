@@ -1783,29 +1783,54 @@ private struct AppearancePage: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                         }
-
-                        // Timing Offset
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("Lyric Timing Offset")
-                                Spacer()
-                                Text(String(format: "%+.2f s", lyricSyncOffset))
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(abs(lyricSyncOffset) > 0.01 ? Color(red: 0.0, green: 0.96, blue: 0.83) : .secondary)
-                            }
-                            Slider(value: $lyricSyncOffset, in: -3.0...3.0, step: 0.05) {
-                                Text("Lyric Timing Offset")
-                            } minimumValueLabel: {
-                                Text("-3s").font(.system(size: 9))
-                            } maximumValueLabel: {
-                                Text("+3s").font(.system(size: 9))
-                            }
-                            Text("Fine-tune lyric sync: drag left (negative) if lyrics appear too early; drag right (positive) if lyrics appear late.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
-                        }
                     }
                     .padding(.leading, 12)
+                }
+
+                // Timing Offset (applies to both Notch HUD and Floating Lyrics)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Lyric Timing Offset")
+                        Spacer()
+                        Text(String(format: "%+.2f s", lyricSyncOffset))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(abs(lyricSyncOffset) > 0.01 ? Color(red: 0.0, green: 0.96, blue: 0.83) : .secondary)
+
+                        if abs(lyricSyncOffset) > 0.01 {
+                            Button("Reset") {
+                                lyricSyncOffset = 0.0
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Button("-0.25s") {
+                            lyricSyncOffset = max(-3.0, lyricSyncOffset - 0.25)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+
+                        Slider(value: $lyricSyncOffset, in: -3.0...3.0, step: 0.05) {
+                            Text("Lyric Timing Offset")
+                        } minimumValueLabel: {
+                            Text("-3s").font(.system(size: 9))
+                        } maximumValueLabel: {
+                            Text("+3s").font(.system(size: 9))
+                        }
+
+                        Button("+0.25s") {
+                            lyricSyncOffset = min(3.0, lyricSyncOffset + 0.25)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+
+                    Text("Fine-tune lyric sync: negative to delay lyrics, positive to advance. Applies to Notch HUD and floating lyrics.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle(l10n["show_usage_stats"], isOn: $showUsageStats)
