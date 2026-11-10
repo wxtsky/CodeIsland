@@ -264,25 +264,16 @@ struct NotchPanelView: View {
         return false
     }
 
-    /// Left wing width: expands when agent is thinking or running tools
-    private var compactLeftWingWidth: CGFloat {
+    /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
+    private var symmetricWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
             return 115
         }
-        return 48
-    }
-
-    /// Right wing width: sized for music cover + title + equalizer in Modern Clean, or compact in Retro Cyber
-    private var compactRightWingWidth: CGFloat {
-        if nowPlaying.isPlaying {
-            if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
-                return (isHoveringRightWing && !shouldShowExpanded) ? 128 : 50
-            } else {
-                return (isHoveringRightWing && !shouldShowExpanded) ? 95 : 54
-            }
-        }
         if isHoveringRightWing && !shouldShowExpanded {
-            return 95
+            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 128 : 95
+        }
+        if nowPlaying.isPlaying {
+            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 52 : 54
         }
         return 48
     }
@@ -328,8 +319,9 @@ struct NotchPanelView: View {
         if nowPlaying.showToast && !appState.surface.isExpanded {
             return min(330, maxPanelWidth)
         }
+        let wing = symmetricWingWidth
         let clearance: CGFloat = 0
-        return nw + compactLeftWingWidth + compactRightWingWidth + clearance
+        return nw + wing * 2 + clearance
     }
 
     /// Room the collapsed right wing lacks to clear the notch; 0 whenever it fits.
@@ -404,10 +396,10 @@ struct NotchPanelView: View {
                         )
                             .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
                             .frame(
-                                width: shouldShowExpanded ? expandedWingWidth : compactLeftWingWidth,
+                                width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
                                 alignment: shouldShowExpanded ? .leading : (isThinking ? .leading : .center)
                             )
-                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactLeftWingWidth)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 guard !shouldShowExpanded else { return }
@@ -438,12 +430,12 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, shouldShowExpanded ? 8 : 10)
+                            .padding(.trailing, shouldShowExpanded ? 8 : 0)
                             .frame(
-                                width: shouldShowExpanded ? expandedWingWidth : compactRightWingWidth,
-                                alignment: .trailing
+                                width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
+                                alignment: shouldShowExpanded ? .trailing : .center
                             )
-                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactRightWingWidth)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
                             .onHover { hovering in
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -633,8 +625,7 @@ struct NotchPanelView: View {
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: shouldShowExpanded)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: nowPlaying.showToast)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isThinking)
-            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactLeftWingWidth)
-            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactRightWingWidth)
+            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: nowPlaying.isPlaying)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: expandedTab)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: workspaceManager.isExpandedDetail)
@@ -1248,7 +1239,7 @@ private struct CompactRightWing: View {
         return false
     }
     private var shouldExpandRightWing: Bool {
-        isHovered
+        isHovered || isThinking
     }
 
     var body: some View {
