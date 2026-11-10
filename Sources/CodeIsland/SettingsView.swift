@@ -1723,7 +1723,7 @@ private struct AppearancePage: View {
                         }
                         .pickerStyle(.menu)
 
-                        // Font Size Slider & Quick Presets
+                        // Font Size Slider
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text("Lyric Font Size")
@@ -1732,24 +1732,15 @@ private struct AppearancePage: View {
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
                             }
-                            HStack(spacing: 6) {
-                                ForEach([("Compact", 9.0), ("Medium", 10.5), ("Large", 12.0)], id: \.0) { label, sz in
-                                    Button(action: {
-                                        floatingLyricFontSize = sz
-                                    }) {
-                                        Text("\(label) (\(Int(sz))pt)")
-                                            .font(.system(size: 10, weight: abs(floatingLyricFontSize - sz) < 0.2 ? .bold : .regular))
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .fill(abs(floatingLyricFontSize - sz) < 0.2 ? Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.2) : Color.white.opacity(0.08))
-                                            )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                            HStack(spacing: 8) {
+                                Text("8pt")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                Slider(value: $floatingLyricFontSize, in: 8.0...14.0, step: 0.5)
+                                Text("14pt")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.secondary)
                             }
-                            Slider(value: $floatingLyricFontSize, in: 8.0...14.0, step: 0.5)
                         }
 
                         // Vertical Gap (Distance from Notch)
@@ -1761,24 +1752,15 @@ private struct AppearancePage: View {
                                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
                             }
-                            HStack(spacing: 6) {
-                                ForEach([("Razor (0.1cm)", 2.5), ("Slim (0.2cm)", 5.5), ("Spacious (0.3cm)", 8.5)], id: \.0) { label, gap in
-                                    Button(action: {
-                                        floatingLyricVerticalGap = gap
-                                    }) {
-                                        Text(label)
-                                            .font(.system(size: 10, weight: abs(floatingLyricVerticalGap - gap) < 0.3 ? .bold : .regular))
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .fill(abs(floatingLyricVerticalGap - gap) < 0.3 ? Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.2) : Color.white.opacity(0.08))
-                                            )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                            HStack(spacing: 8) {
+                                Text("0pt")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                Slider(value: $floatingLyricVerticalGap, in: 0.0...12.0, step: 0.5)
+                                Text("12pt")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(.secondary)
                             }
-                            Slider(value: $floatingLyricVerticalGap, in: 0.0...12.0, step: 0.5)
                             Text("Adjust the vertical clearance between the physical Mac notch and the floating lyrics bar.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
@@ -1787,7 +1769,7 @@ private struct AppearancePage: View {
                 }
 
                 // Timing Offset (applies to both Notch HUD and Floating Lyrics)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text("Lyric Timing Offset")
                         Spacer()
@@ -1806,12 +1788,6 @@ private struct AppearancePage: View {
                     }
 
                     HStack(spacing: 8) {
-                        Button("-0.25s") {
-                            lyricSyncOffset = max(-3.0, lyricSyncOffset - 0.25)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
-
                         Text("-3s")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -1821,12 +1797,6 @@ private struct AppearancePage: View {
                         Text("+3s")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.secondary)
-
-                        Button("+0.25s") {
-                            lyricSyncOffset = min(3.0, lyricSyncOffset + 0.25)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
                     }
 
                     Text("Fine-tune lyric sync: negative to delay lyrics, positive to advance. Applies to Notch HUD and floating lyrics.")
