@@ -143,10 +143,10 @@ final class NowPlayingManager: ObservableObject {
         if rawPos > 1000 && rawDuration > 0 && rawPos > rawDuration {
             rawPos /= 1000.0
         }
-        // Spotify macOS audio pipeline outputs audio ~2.85s ahead of its IPC/CEF state clock.
+        // Spotify macOS audio pipeline outputs audio ~2.15s ahead of its IPC/CEF state clock.
         // Compensate position so that default offset 0.0 strictly synchronizes with Spotify audio output.
         if playing && rawPos > 0 {
-            rawPos += 2.85
+            rawPos += 2.15
         }
         if rawDuration > 0 {
             rawPos = min(rawDuration, rawPos)
@@ -367,9 +367,9 @@ final class NowPlayingManager: ObservableObject {
             let playing = (state == "playing")
 
             // Spotify macOS IPC lag compensation:
-            // Spotify's AppleScript IPC position lags behind CoreAudio output by ~2.85s due to internal buffer/crossfade clock.
+            // Spotify's AppleScript IPC position lags behind CoreAudio output by ~2.15s due to internal buffer/crossfade clock.
             if detectedSource == "Spotify" && pos > 0 && playing {
-                pos += 2.85
+                pos += 2.15
             }
             if dur > 0 {
                 pos = min(dur, pos)

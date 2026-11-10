@@ -701,38 +701,38 @@ struct ModernCleanMusicHUDContentView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (190pt fixed width)
-            VStack(alignment: .leading, spacing: 5) {
+            // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (215pt fixed width)
+            VStack(alignment: .leading, spacing: 4.5) {
                 // Top: Artwork & Track Info
-                HStack(spacing: 9) {
-                    // Album Cover (46x46 squircle)
+                HStack(spacing: 10) {
+                    // Album Cover (54x54 squircle - enlarged & prominent)
                     ZStack {
                         if let art = nowPlaying.artworkImage {
                             Image(nsImage: art)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: 46, height: 46)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .frame(width: 54, height: 54)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
                                 )
-                                .shadow(color: Color.black.opacity(0.35), radius: 4, x: 0, y: 2)
+                                .shadow(color: Color.black.opacity(0.40), radius: 5, x: 0, y: 2.5)
                         } else {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(LinearGradient(
                                     colors: [Color(white: 0.16), Color(white: 0.08)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ))
-                                .frame(width: 46, height: 46)
+                                .frame(width: 54, height: 54)
                                 .overlay(
                                     Image(systemName: "music.note")
-                                        .font(.system(size: 18))
+                                        .font(.system(size: 20))
                                         .foregroundColor(Color.white.opacity(0.6))
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                                         .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
                                 )
                         }
@@ -742,7 +742,7 @@ struct ModernCleanMusicHUDContentView: View {
                     // Track Title, Artist, & Source
                     VStack(alignment: .leading, spacing: 2) {
                         Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.white)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -766,7 +766,7 @@ struct ModernCleanMusicHUDContentView: View {
                         .padding(.top, 0.5)
                     }
                 }
-                .frame(height: 46)
+                .frame(height: 54)
 
                 // Middle: Modern Interactive Scrubber (Warm Coral/Peach Gradient)
                 VStack(spacing: 2.5) {
@@ -853,7 +853,7 @@ struct ModernCleanMusicHUDContentView: View {
                 }
                 .frame(height: 26)
             }
-            .frame(width: 190, alignment: .leading)
+            .frame(width: 215, alignment: .leading)
 
             // Soft vertical separator line (subtle gradient fade)
             Rectangle()
@@ -918,8 +918,8 @@ struct ModernCleanMusicHUDContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.leading, 12)
         }
-        .frame(height: 104)
-        .padding(.horizontal, 12)
+        .frame(height: 106)
+        .padding(.horizontal, 14)
         .padding(.vertical, 4)
     }
 }
