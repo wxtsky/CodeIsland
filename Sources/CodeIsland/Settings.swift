@@ -137,6 +137,7 @@ enum SettingsKey {
     static let floatingLyricTextColor = "floatingLyricTextColor"
     static let floatingLyricVerticalGap = "floatingLyricVerticalGap"
     static let lyricSyncOffset = "lyricSyncOffset"
+    static let detectSpotifyWebInBrowsers = "detectSpotifyWebInBrowsers"
     static let notchHeightMode = "notchHeightMode"
     static let customNotchHeight = "customNotchHeight"
 
@@ -284,6 +285,7 @@ struct SettingsDefaults {
     static let floatingLyricTextColor = FloatingLyricTextColor.white.rawValue
     static let floatingLyricVerticalGap: Double = 2.5
     static let lyricSyncOffset = 0.0
+    static let detectSpotifyWebInBrowsers = true
     static let notchHeightMode = NotchHeightMode.matchNotch.rawValue
     static let customNotchHeight = 37.0
 
@@ -396,6 +398,7 @@ class SettingsManager {
             SettingsKey.floatingLyricTextColor: SettingsDefaults.floatingLyricTextColor,
             SettingsKey.floatingLyricVerticalGap: SettingsDefaults.floatingLyricVerticalGap,
             SettingsKey.lyricSyncOffset: SettingsDefaults.lyricSyncOffset,
+            SettingsKey.detectSpotifyWebInBrowsers: SettingsDefaults.detectSpotifyWebInBrowsers,
             SettingsKey.notchHeightMode: SettingsDefaults.notchHeightMode,
             SettingsKey.customNotchHeight: SettingsDefaults.customNotchHeight,
             SettingsKey.soundEnabled: SettingsDefaults.soundEnabled,
