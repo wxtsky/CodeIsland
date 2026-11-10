@@ -3,6 +3,9 @@ import Combine
 import AppKit
 import SwiftUI
 import ApplicationServices
+import os
+
+private let log = Logger(subsystem: "com.codeisland", category: "NowPlaying")
 
 // MARK: - Synced Lyric Model
 
@@ -37,6 +40,16 @@ enum WebMusicService: String, CaseIterable, Equatable, Hashable, Sendable {
 
     func badge(for browser: SpotifyWebBrowser) -> String {
         "\(badgePrefix) · \(browser.shortBrowserName)"
+    }
+
+    /// Lower wins. Desktop players outrank browsers; among browsers the Spotify probe is the
+    /// most mature, so it outranks the two title-only-friendly services.
+    var priority: Int {
+        switch self {
+        case .spotifyWeb: return 2
+        case .youtubeMusic: return 3
+        case .appleMusicWeb: return 4
+        }
     }
 }
 
@@ -112,6 +125,16 @@ enum PlaybackSourceKind: Equatable, Hashable, Sendable {
             return service.badge(for: browser)
         }
     }
+
+    /// Lower wins. Explicit so `resolvePreferredSnapshot` never depends on the order
+    /// `fetchPlaybackDetails` happens to append candidates in.
+    var priority: Int {
+        switch self {
+        case .spotifyDesktop: return 0
+        case .appleMusic: return 1
+        case .webMusic(let service, _): return service.priority
+        }
+    }
 }
 
 struct PlaybackSnapshot: Equatable, Sendable {
@@ -124,6 +147,27 @@ struct PlaybackSnapshot: Equatable, Sendable {
     let isPlaying: Bool
     let source: PlaybackSourceKind
     let isJSBridgeAvailable: Bool
+}
+
+/// Serializes playback probes and lets a queued request detect that a newer one superseded it.
+/// Thread-safe because the probe queue asks "am I still current?" without hopping to the main actor.
+final class FetchGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+
+    /// Registers a new request. Every earlier ticket becomes stale.
+    func begin() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        generation &+= 1
+        return generation
+    }
+
+    func isCurrent(_ ticket: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ticket == generation
+    }
 }
 
 /// Observes currently playing tracks from Apple Music, Spotify Desktop, and Web Music Players (Spotify Web, YouTube Music, Apple Music Web) across macOS browsers.
@@ -152,7 +196,9 @@ final class NowPlayingManager: ObservableObject {
     private var progressTimer: Timer?
     private var idleDiscoveryTimer: Timer?
     private var lastFetchedLyricsKey: String = ""
-    private var lastBrowserSnapshots: [SpotifyWebBrowser: PlaybackSnapshot] = [:]
+    private var lastBrowserSnapshots: [PlaybackSourceKind: PlaybackSnapshot] = [:]
+    private let probeQueue = DispatchQueue(label: "com.codeisland.nowplaying.probe", qos: .userInitiated)
+    private let fetchGate = FetchGate()
 
     init() {
         setupObservers()
@@ -445,8 +491,10 @@ final class NowPlayingManager: ObservableObject {
             let range = NSRange(cleanArtist.startIndex..<cleanArtist.endIndex, in: cleanArtist)
             cleanArtist = topicRegex.stringByReplacingMatches(in: cleanArtist, options: [], range: range, withTemplate: "")
         }
-        if cleanArtist.count > 4,
-           let vevoRegex = try? NSRegularExpression(pattern: #"vevo$"#, options: [.caseInsensitive]) {
+        // Strip a trailing VEVO channel suffix. A run-together result ("KatyPerryVEVO" ->
+        // "KatyPerry") is left as-is: it matches LRCLIB no better or worse than the original,
+        // and re-spacing it would mangle real names such as "McCartney".
+        if let vevoRegex = try? NSRegularExpression(pattern: #"\s*vevo$"#, options: [.caseInsensitive]) {
             let range = NSRange(cleanArtist.startIndex..<cleanArtist.endIndex, in: cleanArtist)
             cleanArtist = vevoRegex.stringByReplacingMatches(in: cleanArtist, options: [], range: range, withTemplate: "")
         }
@@ -632,24 +680,27 @@ final class NowPlayingManager: ObservableObject {
         let valid = candidates.filter { !$0.title.isEmpty }
         guard !valid.isEmpty else { return nil }
 
+        // Rank by explicit source priority, never by the order candidates were collected.
+        let ranked = valid.sorted { $0.source.priority < $1.source.priority }
+
         // 1. Any actively playing source wins in priority order
-        if let playingCandidate = valid.first(where: { $0.isPlaying }) {
+        if let playingCandidate = ranked.first(where: { $0.isPlaying }) {
             return playingCandidate
         }
 
         // 2. When all sources are paused, retain the most recently active source
         if let lastSource = lastActiveSource,
-           let stickyCandidate = valid.first(where: { $0.source == lastSource }) {
+           let stickyCandidate = ranked.first(where: { $0.source == lastSource }) {
             return stickyCandidate
         }
 
-        // 3. Fallback to first valid candidate
-        return valid.first
+        // 3. Fallback to the highest-priority valid candidate
+        return ranked.first
     }
 
     // MARK: - AppleScript Builders (Multi-Service Web Bridge)
 
-    nonisolated private static let webMusicDOMProbeJS: String =
+    nonisolated static let webMusicDOMProbeJS: String =
         "(function(){try{" +
         "var host=location.hostname||'';" +
         "var ms=navigator.mediaSession&&navigator.mediaSession.metadata;" +
@@ -782,15 +833,41 @@ final class NowPlayingManager: ObservableObject {
         """
     }
 
+    /// Reads the browser-detection toggle without relying on `SettingsManager.shared` having
+    /// registered its defaults first. `bool(forKey:)` returns `false` for an absent key, so a
+    /// plain read can disagree with the documented default depending on singleton init order.
+    nonisolated static func isWebMusicDetectionEnabled(defaults: UserDefaults = .standard) -> Bool {
+        guard let stored = defaults.object(forKey: SettingsKey.detectSpotifyWebInBrowsers) as? Bool else {
+            return SettingsDefaults.detectSpotifyWebInBrowsers
+        }
+        return stored
+    }
+
+    /// The service a probe line belongs to, read from its `DOM|||<svc>|||` / `FALLBACK|||<svc>|||`
+    /// prefix. Needed before parsing so each service gets its own previous snapshot.
+    nonisolated static func serviceTag(inProbeLine line: String) -> WebMusicService? {
+        let parts = line.components(separatedBy: "|||")
+        guard parts.count >= 2 else { return nil }
+        let raw = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        if let service = WebMusicService(rawValue: raw) { return service }
+        // Legacy single-service lines carried no tag.
+        return parts[0].hasPrefix("DOM") || parts[0].hasPrefix("FALLBACK") ? .spotifyWeb : nil
+    }
+
     // MARK: - Fetching Playback Details
 
     func fetchPlaybackDetails() {
         guard !RuntimeEnvironment.isRunningTests else { return }
-        let detectWeb = UserDefaults.standard.bool(forKey: SettingsKey.detectSpotifyWebInBrowsers)
+        let detectWeb = Self.isWebMusicDetectionEnabled()
         let lastSource = self.activeSource
         let previousWebSnapshots = self.lastBrowserSnapshots
+        let ticket = fetchGate.begin()
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // Serial: a slow probe (a browser blocked on a modal dialog) cannot overlap the next one.
+        probeQueue.async { [weak self] in
+            guard let self else { return }
+            // A newer request was enqueued while this one waited; skip the expensive probing.
+            guard self.fetchGate.isCurrent(ticket) else { return }
             let isSpotifyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").contains { !$0.isTerminated }
             let isMusicRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").contains { !$0.isTerminated }
             let runningBrowsers: [SpotifyWebBrowser] = detectWeb
@@ -799,7 +876,10 @@ final class NowPlayingManager: ObservableObject {
                 }
                 : []
 
-            guard isSpotifyRunning || isMusicRunning || !runningBrowsers.isEmpty else { return }
+            guard isSpotifyRunning || isMusicRunning || !runningBrowsers.isEmpty else {
+                Task { @MainActor [weak self] in self?.resetToIdle() }
+                return
+            }
 
             var candidates: [PlaybackSnapshot] = []
             var updatedWebSnapshots = previousWebSnapshots
@@ -866,12 +946,14 @@ final class NowPlayingManager: ObservableObject {
                 if let rawOutput = Self.runAppleScript(probeScript) {
                     let lines = rawOutput.components(separatedBy: .newlines)
                     for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                        let service = Self.serviceTag(inProbeLine: line) ?? .spotifyWeb
+                        let sourceKind = PlaybackSourceKind.webMusic(service: service, browser: browser)
                         if let snapshot = Self.parseBrowserScriptOutput(
                             line,
                             browser: browser,
-                            previousSnapshot: previousWebSnapshots[browser]
+                            previousSnapshot: previousWebSnapshots[sourceKind]
                         ) {
-                            updatedWebSnapshots[browser] = snapshot
+                            updatedWebSnapshots[sourceKind] = snapshot
                             candidates.append(snapshot)
                         }
                     }
@@ -879,8 +961,12 @@ final class NowPlayingManager: ObservableObject {
             }
 
             guard let chosen = Self.resolvePreferredSnapshot(candidates: candidates, lastActiveSource: lastSource) else {
+                Task { @MainActor [weak self] in self?.resetToIdle() }
                 return
             }
+
+            // Discard a result that a newer request has already superseded.
+            guard self.fetchGate.isCurrent(ticket) else { return }
 
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
@@ -944,7 +1030,7 @@ final class NowPlayingManager: ObservableObject {
         }
 
         if trackChanged {
-            self.playerPosition = max(0.0, chosen.position)
+            self.playerPosition = chosen.isJSBridgeAvailable ? max(0.0, chosen.position) : 0.0
             self.currentLyricIndex = 0
             self.lyrics = []
             if chosen.isPlaying {
@@ -964,7 +1050,10 @@ final class NowPlayingManager: ObservableObject {
         }
 
         self.isPlaying = chosen.isPlaying
-        if chosen.isPlaying {
+        // Only a probe that could observe transport state may drive the interpolation timer.
+        // A title-only (Tier 2) snapshot knows the track but not the position, so advancing
+        // from 0 would report progress that was never observed.
+        if chosen.isPlaying && chosen.isJSBridgeAvailable {
             self.startProgressTimer()
         } else {
             self.stopProgressTimer()
@@ -982,6 +1071,36 @@ final class NowPlayingManager: ObservableObject {
         if self.lyrics.isEmpty && !chosen.title.isEmpty {
             self.fetchLyrics(title: chosen.title, artist: chosen.artist)
         }
+    }
+
+    /// Clears everything the HUD reads. Called when no source is playing any more so the island
+    /// does not keep showing a frozen track (and a position clamped at duration) forever.
+    func resetToIdle() {
+        guard activeSource != nil || isPlaying || !title.isEmpty else { return }
+
+        stopProgressTimer()
+        toastDismissTimer?.invalidate()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+            showToast = false
+        }
+
+        isPlaying = false
+        title = ""
+        artist = ""
+        album = ""
+        player = ""
+        artworkURL = ""
+        artworkImage = nil
+        playerPosition = 0
+        trackDuration = 0
+        lyrics = []
+        currentLyricIndex = 0
+        lyricsLoading = false
+        lastFetchedLyricsKey = ""
+        activeSource = nil
+        isBrowserJSHintVisible = false
+        browserJSHintText = ""
+        lastBrowserSnapshots = [:]
     }
 
     private func loadArtwork(from pathOrUrl: String) {
@@ -1009,6 +1128,7 @@ final class NowPlayingManager: ObservableObject {
     // MARK: - Lyrics Engine
 
     func fetchLyrics(title: String, artist: String) {
+        guard !RuntimeEnvironment.isRunningTests else { return }
         let sanitized = Self.sanitizeForLyricsSearch(title: title, artist: artist)
         let key = "\(sanitized.title):::\(sanitized.artist)"
         guard key != lastFetchedLyricsKey && !sanitized.title.isEmpty else { return }
@@ -1236,6 +1356,9 @@ final class NowPlayingManager: ObservableObject {
     func seek(to position: Double) {
         if case .webMusic(let service, let browser) = activeSource {
             guard trackDuration > 0 else { return }
+            // A title-only probe cannot seek; moving the scrubber anyway makes it jump back on
+            // the next poll.
+            guard !isBrowserJSHintVisible else { return }
             let fraction = min(1.0, max(0.0, position / trackDuration))
             let js: String
             switch service {
@@ -1259,13 +1382,15 @@ final class NowPlayingManager: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.runAppleScript(script)
             }
+            self.playerPosition = position
+            updateCurrentLyricIndex()
         } else {
             let app = (activeSource == .appleMusic || player == "Music") ? "Music" : "Spotify"
             let script = "tell application \"\(app)\" to set player position to \(position)"
             _ = Self.runAppleScript(script)
+            self.playerPosition = position
+            updateCurrentLyricIndex()
         }
-        self.playerPosition = position
-        updateCurrentLyricIndex()
     }
 
     nonisolated private static func runAppleScript(_ script: String) -> String? {
@@ -1276,6 +1401,12 @@ final class NowPlayingManager: ObservableObject {
             if error == nil {
                 return result.stringValue
             }
+            // Debug level on purpose: a denied Automation grant fails on every poll, so an
+            // error-level line here would flood the log. Read it with
+            // `log show --debug --predicate 'subsystem == "com.codeisland"'`.
+            let number = error?[NSAppleScript.errorNumber] as? Int ?? 0
+            let message = error?[NSAppleScript.errorMessage] as? String ?? "unknown"
+            log.debug("AppleScript failed (\(number, privacy: .public)): \(message, privacy: .public)")
         }
         return nil
     }

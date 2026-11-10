@@ -78,16 +78,26 @@ Extend CodeIsland's Now Playing engine and Music HUD with a **Multi-Browser Web 
      - **Spotify Web (`open.spotify.com`)**: Reads `[data-testid="context-item-info-title"]`, `[data-testid="context-item-info-subtitles"]`, `navigator.mediaSession.metadata`, `[data-testid="playback-position"]`, `[data-testid="playback-duration"]`, and `[data-testid="control-button-playpause"]`.
      - **YouTube Music (`music.youtube.com`)**: Reads `document.querySelector('video')` for exact `currentTime`, `duration`, and `!paused`; reads track/artist/album/artwork from `navigator.mediaSession.metadata` and `<ytmusic-player-bar>` (`.title.ytmusic-player-bar`, `.byline.ytmusic-player-bar`).
      - **Apple Music Web (`music.apple.com`)**: Reads `MusicKit.getInstance()` and/or `document.querySelector('audio')` + `navigator.mediaSession.metadata` for title, artist, album, artwork, playback time, duration, and playing state.
+     - **UNVERIFIED**: `window.MusicKit` is an undocumented global and the `<audio>` element is the only fallback. This branch has never been exercised against a logged-in subscription; it is covered by parser tests only, not by a live probe. Treat it as best-effort.
    - If JavaScript execution is disabled in the browser, catch the error in AppleScript and emit `FALLBACK|||<service>|||<tabTitle>`.
 
 3. **Lyrics Query Sanitization (`sanitizeForLyricsSearch`)**
    - Provide a pure function `NowPlayingManager.sanitizeForLyricsSearch(title:artist:) -> (title: String, artist: String)` that strips common video suffixes (`(Official Music Video)`, `(Official Video)`, `(Official Audio)`, `(Lyrics)`, `(Lyric Video)`, `(Visualizer)`, `[Official Video]`, `[Lyrics]`, etc.) and artist suffixes (`- Topic`, `VEVO`) before querying `lrclib.net`.
+   - A run-together result (`KatyPerryVEVO` → `KatyPerry`) is left as-is: it matches `lrclib.net` no better or worse than the original, and re-spacing it would mangle real names such as `McCartney`.
 
 4. **Service-Specific Playback Controls & Seeking**
    - Route `togglePlayPause()`, `nextTrack()`, `previousTrack()`, `seek(to:)`, and `activateCurrentPlayer()` according to the active `WebMusicService`:
      - **Spotify Web**: clicks `[data-testid="control-button-*"]` and dispatches mouse seek events on `[data-testid="playback-progressbar"]`.
      - **YouTube Music**: clicks `#play-pause-button`, `.next-button`, `.previous-button`, and seeks directly via `document.querySelector('video').currentTime = position`.
      - **Apple Music Web**: invokes `MusicKit.getInstance()` playback/seek methods with fallback to `<audio>` element and playback control buttons.
+   - `seek(to:)` only moves the scrubber when the active source can actually observe position (Tier 1). A Tier 2 seek is dropped rather than applied optimistically.
+
+5. **Poll Lifecycle & State Ownership**
+   - **Single probe in flight**: `fetchPlaybackDetails()` enqueues onto a serial queue and carries a `FetchGate` ticket. A request superseded before it runs skips the expensive AppleScript pass, and a result superseded before it lands is discarded. A browser blocked on a modal dialog therefore cannot overlap the next poll.
+   - **Explicit source priority**: `PlaybackSourceKind.priority` (and `WebMusicService.priority`) define the ranking, so `resolvePreferredSnapshot` never depends on the order candidates were collected in.
+   - **Title-only snapshots do not fabricate progress**: a Tier 2 snapshot knows the track but not the position, so it must not drive the 0.5s interpolation timer. The HUD shows the observed position (or `0:00`) plus the setup hint rather than a position that was never measured.
+   - **Reset to idle**: when no desktop player and no browser music tab is found, `resetToIdle()` clears the published state so the island does not keep showing a frozen track with a position clamped at duration.
+   - **Per-source previous snapshots**: the Tier 2 retention cache is keyed by `PlaybackSourceKind`, not by browser, because one browser can host several services at once.
 
 ---
 
@@ -99,8 +109,11 @@ Extend CodeIsland's Now Playing engine and Music HUD with a **Multi-Browser Web 
    - `NowPlayingManager`:
      - Tier 1 DOM output parsing for Spotify Web, YouTube Music Web, and Apple Music Web.
      - Tier 2 fallback tab-title parsing across services and paused-track retention.
-     - Multi-source priority resolution (`resolvePreferredSnapshot`) across Desktop and Web sources.
+     - Multi-source priority resolution (`resolvePreferredSnapshot`) across Desktop and Web sources, including order independence.
      - Lyrics metadata sanitization (`sanitizeForLyricsSearch`) for noisy YouTube Music titles and `- Topic` artists.
+     - Observable playback state on a `NowPlayingManager` instance: title-only snapshots must not fabricate progress, `resetToIdle()` must clear the HUD, and `seek(to:)` must be a no-op without the JS bridge.
+     - `FetchGate` ticket supersession and `serviceTag(inProbeLine:)` extraction.
+     - The invariant that `webMusicDOMProbeJS` contains no `"`, since it is interpolated into an AppleScript string literal.
    - `Settings` / `SettingsManager`: default registration of `detectSpotifyWebInBrowsers`.
 
 ---
@@ -116,3 +129,5 @@ Extend CodeIsland's Now Playing engine and Music HUD with a **Multi-Browser Web 
 
 - In Chromium browsers (Brave, Chrome, Arc, Edge), enable Tier 1 DOM sync via: **View → Developer → Allow JavaScript from Apple Events**.
 - In Safari, enable Tier 1 DOM sync via: **Develop → Allow JavaScript from Apple Events**.
+- **Tier 2 cannot observe transport state.** Spotify Web reverts its tab title to the page name when paused, so a title-derived `isPlaying` is correct there; YouTube Music and Apple Music Web keep the track name in the title, so a paused player can be reported as playing. The mitigation is that Tier 2 never advances the progress timer, and enabling JavaScript resolves it.
+- Arc and Edge are catalogued but unverified: Arc does not expose `execute javascript` the way the other Chromium browsers do, and neither is installed on the reference machine.

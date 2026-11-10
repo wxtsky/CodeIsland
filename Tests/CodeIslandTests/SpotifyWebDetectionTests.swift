@@ -10,6 +10,213 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertTrue(UserDefaults.standard.bool(forKey: SettingsKey.detectSpotifyWebInBrowsers))
     }
 
+    func testWebMusicDetectionDefaultIsReadWithoutDependingOnSettingsManager() {
+        let suiteName = "codeisland.tests.detectweb"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Key absent: the registered default must apply, not `bool(forKey:)`'s implicit false.
+        XCTAssertTrue(NowPlayingManager.isWebMusicDetectionEnabled(defaults: defaults))
+
+        defaults.set(false, forKey: SettingsKey.detectSpotifyWebInBrowsers)
+        XCTAssertFalse(NowPlayingManager.isWebMusicDetectionEnabled(defaults: defaults))
+
+        defaults.set(true, forKey: SettingsKey.detectSpotifyWebInBrowsers)
+        XCTAssertTrue(NowPlayingManager.isWebMusicDetectionEnabled(defaults: defaults))
+    }
+
+    func testProbeJavaScriptIsSafeToEmbedInAppleScriptStringLiteral() {
+        // buildBrowserProbeScript interpolates this between double quotes; a stray quote
+        // produces an AppleScript syntax error at runtime with no compile-time signal.
+        XCTAssertFalse(NowPlayingManager.webMusicDOMProbeJS.contains("\""))
+        XCTAssertFalse(NowPlayingManager.webMusicDOMProbeJS.isEmpty)
+    }
+
+    private func snapshot(
+        _ source: PlaybackSourceKind,
+        title: String,
+        isPlaying: Bool,
+        position: Double = 0,
+        duration: Double = 200,
+        jsBridge: Bool = true
+    ) -> PlaybackSnapshot {
+        PlaybackSnapshot(
+            title: title,
+            artist: "Artist",
+            album: "Album",
+            position: position,
+            duration: duration,
+            artworkURLOrPath: "",
+            isPlaying: isPlaying,
+            source: source,
+            isJSBridgeAvailable: jsBridge
+        )
+    }
+
+    func testSmartSourcePriorityIsExplicitNotArrayOrder() {
+        // The same pair of playing candidates must resolve identically in either order.
+        let yt = snapshot(.webMusic(service: .youtubeMusic, browser: .brave), title: "YT Song", isPlaying: true)
+        let spotify = snapshot(.webMusic(service: .spotifyWeb, browser: .brave), title: "Spotify Song", isPlaying: true)
+
+        let chosenA = NowPlayingManager.resolvePreferredSnapshot(candidates: [yt, spotify], lastActiveSource: nil)
+        let chosenB = NowPlayingManager.resolvePreferredSnapshot(candidates: [spotify, yt], lastActiveSource: nil)
+
+        XCTAssertEqual(chosenA?.source, .webMusic(service: .spotifyWeb, browser: .brave))
+        XCTAssertEqual(chosenB?.source, .webMusic(service: .spotifyWeb, browser: .brave))
+        XCTAssertEqual(chosenA?.title, "Spotify Song")
+        XCTAssertEqual(chosenB?.title, "Spotify Song")
+    }
+
+    func testSmartSourcePriorityPrefersDesktopAppOverPlayingWeb() {
+        let web = snapshot(.webMusic(service: .youtubeMusic, browser: .brave), title: "Web Song", isPlaying: true)
+        let desktop = snapshot(.spotifyDesktop, title: "Desktop Song", isPlaying: true)
+
+        let chosen = NowPlayingManager.resolvePreferredSnapshot(candidates: [web, desktop], lastActiveSource: nil)
+
+        XCTAssertEqual(chosen?.source, .spotifyDesktop)
+        XCTAssertEqual(chosen?.title, "Desktop Song")
+    }
+
+    func testSmartSourcePriorityRanksWebServicesWhenAllPaused() {
+        let apple = snapshot(.webMusic(service: .appleMusicWeb, browser: .safari), title: "Apple Song", isPlaying: false)
+        let yt = snapshot(.webMusic(service: .youtubeMusic, browser: .safari), title: "YT Song", isPlaying: false)
+
+        let chosen = NowPlayingManager.resolvePreferredSnapshot(candidates: [apple, yt], lastActiveSource: nil)
+
+        XCTAssertEqual(chosen?.source, .webMusic(service: .youtubeMusic, browser: .safari))
+    }
+
+    @MainActor
+    func testTitleOnlySnapshotDoesNotFabricatePlaybackProgress() throws {
+        let manager = NowPlayingManager()
+        let titleOnly = snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "No JS Song",
+            isPlaying: true,
+            jsBridge: false
+        )
+
+        manager.applySnapshot(titleOnly)
+
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isBrowserJSHintVisible)
+        XCTAssertEqual(manager.playerPosition, 0, accuracy: 0.001)
+
+        // A Tier 1 snapshot starts the 0.5s interpolation timer; a title-only one must not,
+        // otherwise the HUD reports a position it never observed.
+        Thread.sleep(forTimeInterval: 0.8)
+        XCTAssertEqual(manager.playerPosition, 0, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testTitleOnlySnapshotKeepsObservedPositionWhenTrackUnchanged() {
+        let manager = NowPlayingManager()
+        let tier1 = snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "Same Song",
+            isPlaying: true,
+            position: 42
+        )
+        manager.applySnapshot(tier1)
+        XCTAssertEqual(manager.playerPosition, 42, accuracy: 0.001)
+
+        let tier2 = snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "Same Song",
+            isPlaying: true,
+            position: 0,
+            jsBridge: false
+        )
+        manager.applySnapshot(tier2)
+
+        // Losing the JS bridge must not rewind a position we already observed.
+        XCTAssertEqual(manager.playerPosition, 42, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testResetToIdleClearsStalePlaybackState() {
+        let manager = NowPlayingManager()
+        manager.applySnapshot(snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "Stale Song",
+            isPlaying: true,
+            position: 90
+        ))
+        XCTAssertEqual(manager.title, "Stale Song")
+
+        manager.resetToIdle()
+
+        XCTAssertFalse(manager.isPlaying)
+        XCTAssertEqual(manager.title, "")
+        XCTAssertEqual(manager.artist, "")
+        XCTAssertEqual(manager.player, "")
+        XCTAssertEqual(manager.playerPosition, 0, accuracy: 0.001)
+        XCTAssertEqual(manager.trackDuration, 0, accuracy: 0.001)
+        XCTAssertNil(manager.activeSource)
+        XCTAssertFalse(manager.isBrowserJSHintVisible)
+    }
+
+    @MainActor
+    func testSeekIsIgnoredWhenTheProbeCannotObservePosition() {
+        let manager = NowPlayingManager()
+        manager.applySnapshot(snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "No JS Song",
+            isPlaying: true,
+            position: 0,
+            duration: 200,
+            jsBridge: false
+        ))
+
+        manager.seek(to: 120)
+
+        // The click cannot land without the JS bridge, so the scrubber must not move.
+        XCTAssertEqual(manager.playerPosition, 0, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testSeekMovesTheScrubberWhenTheProbeCanObservePosition() {
+        let manager = NowPlayingManager()
+        manager.applySnapshot(snapshot(
+            .webMusic(service: .spotifyWeb, browser: .brave),
+            title: "JS Song",
+            isPlaying: true,
+            position: 10,
+            duration: 200
+        ))
+
+        manager.seek(to: 120)
+
+        XCTAssertEqual(manager.playerPosition, 120, accuracy: 0.001)
+    }
+
+    func testFetchGateDiscardsSupersededRequests() {
+        let gate = FetchGate()
+        let first = gate.begin()
+        XCTAssertTrue(gate.isCurrent(first))
+
+        let second = gate.begin()
+        XCTAssertFalse(gate.isCurrent(first))
+        XCTAssertTrue(gate.isCurrent(second))
+    }
+
+    func testProbeLineServiceTagIsReadBeforeParsing() {
+        XCTAssertEqual(
+            NowPlayingManager.serviceTag(inProbeLine: "DOM|||ytmusic|||Numb|||Linkin Park|||Meteora|||1:00|||3:00||||||playing"),
+            .youtubeMusic
+        )
+        XCTAssertEqual(
+            NowPlayingManager.serviceTag(inProbeLine: "FALLBACK|||applemusic|||Veridis Quo • Daft Punk — Apple Music"),
+            .appleMusicWeb
+        )
+        XCTAssertEqual(
+            NowPlayingManager.serviceTag(inProbeLine: "FALLBACK|||Blinding Lights • The Weeknd"),
+            .spotifyWeb
+        )
+        XCTAssertNil(NowPlayingManager.serviceTag(inProbeLine: ""))
+    }
+
     func testSupportedBrowsersAndWebMusicServicesCatalog() {
         let browsers = SpotifyWebBrowser.allCases
         XCTAssertEqual(browsers.map(\.bundleIdentifier), [
@@ -193,6 +400,12 @@ final class SpotifyWebDetectionTests: XCTestCase {
         )
         XCTAssertEqual(cleaned2.title, "Midnight City")
         XCTAssertEqual(cleaned2.artist, "M83")
+
+        // The VEVO strip must not depend on how long the artist name is.
+        let cleaned4 = NowPlayingManager.sanitizeForLyricsSearch(title: "Waterloo", artist: "ABBA VEVO")
+        XCTAssertEqual(cleaned4.artist, "ABBA")
+        let cleaned5 = NowPlayingManager.sanitizeForLyricsSearch(title: "Waterloo", artist: "ABBAVEVO")
+        XCTAssertEqual(cleaned5.artist, "ABBA")
 
         let cleaned3 = NowPlayingManager.sanitizeForLyricsSearch(
             title: "Creep (Official Lyric Video) [HD]",
