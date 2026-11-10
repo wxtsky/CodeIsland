@@ -74,3 +74,6 @@ build-dir/
 # Python bytecode from local syntax checks
 __pycache__/
 *.pyc
+
+# Local-only spec drafts (kept out of the repo on request)
+docs/spec-spotify-web-browser-detection.md
