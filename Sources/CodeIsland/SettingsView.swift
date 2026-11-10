@@ -1699,62 +1699,68 @@ private struct AppearancePage: View {
 
                 if showCompactLyrics {
                     // Preset Layout Selector
-                    Picker("Floating Lyric Style", selection: $floatingLyricPreset) {
-                        ForEach(FloatingLyricPreset.allCases) { preset in
-                            Text(preset.title).tag(preset.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    Text(FloatingLyricPreset(rawValue: floatingLyricPreset)?.description ?? "")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-
-                    // Font Typography Style
-                    Picker("Font Typography", selection: $floatingLyricFontDesign) {
-                        ForEach(FloatingLyricFontDesign.allCases) { style in
-                            Text(style.title).tag(style.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-
-                    Text("Choose font family: Modern Rounded, Monospaced code, Clean System, or Elegant Serif.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-
-                    // Text Highlight Color (macOS Accent Color Swatches Style)
-                    HStack {
-                        Text("Highlight Color")
-                        Spacer()
-                        HStack(spacing: 8) {
-                            ForEach(FloatingLyricTextColor.allCases) { col in
-                                let isSelected = (floatingLyricTextColor == col.rawValue)
-                                Button(action: {
-                                    floatingLyricTextColor = col.rawValue
-                                }) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(col.color)
-                                            .frame(width: 14, height: 14)
-                                            .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
-
-                                        if isSelected {
-                                            Circle()
-                                                .stroke(Color.white, lineWidth: 2)
-                                                .frame(width: 20, height: 20)
-                                        }
-                                    }
-                                    .frame(width: 22, height: 22)
-                                }
-                                .buttonStyle(.plain)
-                                .help(col.title)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Picker("Floating Lyric Style", selection: $floatingLyricPreset) {
+                            ForEach(FloatingLyricPreset.allCases) { preset in
+                                Text(preset.title).tag(preset.rawValue)
                             }
                         }
+                        .pickerStyle(.menu)
+
+                        Text(FloatingLyricPreset(rawValue: floatingLyricPreset)?.description ?? "")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
                     }
 
-                    Text("Illumination color and glow accent for the currently active lyric line.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                    // Font Typography Style
+                    VStack(alignment: .leading, spacing: 3) {
+                        Picker("Font Typography", selection: $floatingLyricFontDesign) {
+                            ForEach(FloatingLyricFontDesign.allCases) { style in
+                                Text(style.title).tag(style.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Text("Choose font family: Modern Rounded, Monospaced code, Clean System, or Elegant Serif.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    // Text Highlight Color (macOS Accent Color Swatches Style)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Highlight Color")
+                            Spacer()
+                            HStack(spacing: 8) {
+                                ForEach(FloatingLyricTextColor.allCases) { col in
+                                    let isSelected = (floatingLyricTextColor == col.rawValue)
+                                    Button(action: {
+                                        floatingLyricTextColor = col.rawValue
+                                    }) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(col.color)
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+
+                                            if isSelected {
+                                                Circle()
+                                                    .stroke(Color.white, lineWidth: 2)
+                                                    .frame(width: 20, height: 20)
+                                            }
+                                        }
+                                        .frame(width: 22, height: 22)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(col.title)
+                                }
+                            }
+                        }
+
+                        Text("Illumination color and glow accent for the currently active lyric line.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
 
                     // Font Size Slider (Continuous smooth track, no dots)
                     VStack(alignment: .leading, spacing: 3) {
