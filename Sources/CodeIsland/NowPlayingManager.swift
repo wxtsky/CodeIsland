@@ -143,6 +143,14 @@ final class NowPlayingManager: ObservableObject {
         if rawPos > 1000 && rawDuration > 0 && rawPos > rawDuration {
             rawPos /= 1000.0
         }
+        // Spotify macOS audio pipeline outputs audio ~2.85s ahead of its IPC/CEF state clock.
+        // Compensate position so that default offset 0.0 strictly synchronizes with Spotify audio output.
+        if playing && rawPos > 0 {
+            rawPos += 2.85
+        }
+        if rawDuration > 0 {
+            rawPos = min(rawDuration, rawPos)
+        }
 
         updateBasicInfo(
             playing: playing,
@@ -223,22 +231,22 @@ final class NowPlayingManager: ObservableObject {
     private func startProgressTimer() {
         progressTimer?.invalidate()
         var tickCount = 0
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self, self.isPlaying else { return }
                 tickCount += 1
 
                 if self.trackDuration > 0 {
                     if self.playerPosition < self.trackDuration {
-                        self.playerPosition = min(self.trackDuration, self.playerPosition + 0.5)
+                        self.playerPosition = min(self.trackDuration, self.playerPosition + 0.25)
                     }
                 } else {
-                    self.playerPosition += 0.5
+                    self.playerPosition += 0.25
                 }
                 self.updateCurrentLyricIndex()
 
-                // Every 3 ticks (1.5 seconds), poll AppleScript to detect seeks and sync position
-                if tickCount % 3 == 0 {
+                // Every 6 ticks (1.5 seconds), poll AppleScript to detect seeks and sync position
+                if tickCount % 6 == 0 {
                     self.fetchPlaybackDetails()
                 }
             }
@@ -354,9 +362,18 @@ final class NowPlayingManager: ObservableObject {
             let artPathOrUrl = parts[5].trimmingCharacters(in: .whitespacesAndNewlines)
             let state = parts[6].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-            let pos = Double(posStr) ?? 0
+            var pos = Double(posStr) ?? 0
             let dur = Double(durStr) ?? 0
             let playing = (state == "playing")
+
+            // Spotify macOS IPC lag compensation:
+            // Spotify's AppleScript IPC position lags behind CoreAudio output by ~2.85s due to internal buffer/crossfade clock.
+            if detectedSource == "Spotify" && pos > 0 && playing {
+                pos += 2.85
+            }
+            if dur > 0 {
+                pos = min(dur, pos)
+            }
 
             Task { @MainActor [weak self] in
                 guard let self = self else { return }

@@ -699,26 +699,6 @@ struct ModernCleanMusicHUDContentView: View {
         return String(format: "-%d:%02d", m, s)
     }
 
-    private var currentLyric: LyricLine? {
-        guard !nowPlaying.lyrics.isEmpty,
-              nowPlaying.currentLyricIndex >= 0,
-              nowPlaying.currentLyricIndex < nowPlaying.lyrics.count else { return nil }
-        return nowPlaying.lyrics[nowPlaying.currentLyricIndex]
-    }
-
-    private var previousLyric: LyricLine? {
-        guard !nowPlaying.lyrics.isEmpty,
-              nowPlaying.currentLyricIndex > 0,
-              (nowPlaying.currentLyricIndex - 1) < nowPlaying.lyrics.count else { return nil }
-        return nowPlaying.lyrics[nowPlaying.currentLyricIndex - 1]
-    }
-
-    private var nextLyric: LyricLine? {
-        guard !nowPlaying.lyrics.isEmpty,
-              (nowPlaying.currentLyricIndex + 1) < nowPlaying.lyrics.count else { return nil }
-        return nowPlaying.lyrics[nowPlaying.currentLyricIndex + 1]
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (190pt fixed width)
@@ -880,7 +860,7 @@ struct ModernCleanMusicHUDContentView: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(width: 1, height: 78)
 
-            // RIGHT COLUMN: Partial Lyrics Flow (Clean, 3 Focused Lines - Previous, Active, Next)
+            // RIGHT COLUMN: Multi-Line Interactive Synced Lyrics (Scrollable, Selectable, Centered Focus)
             VStack(alignment: .leading, spacing: 0) {
                 if nowPlaying.lyrics.isEmpty {
                     VStack(spacing: 4) {
@@ -893,58 +873,42 @@ struct ModernCleanMusicHUDContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
-                    VStack(alignment: .leading, spacing: 5) {
-                        // 1. Previous Line (Dimmed, Roll Up)
-                        Group {
-                            if let prev = previousLyric {
-                                Text(prev.text)
-                                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                                    .lineLimit(2)
-                                    .truncationMode(.tail)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { nowPlaying.seek(to: prev.timestamp) }
-                            } else {
-                                Text(" ")
-                                    .font(.system(size: 10, design: .rounded))
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            LazyVStack(alignment: .leading, spacing: 3) {
+                                ForEach(nowPlaying.lyrics) { line in
+                                    let isCurrent = (line.id == nowPlaying.currentLyricIndex)
+                                    ModernCleanLyricRowView(line: line, isCurrent: isCurrent) {
+                                        nowPlaying.seek(to: line.timestamp)
+                                    }
+                                    .id(line.id)
+                                }
                             }
+                            .padding(.vertical, 22)
+                            .padding(.trailing, 6)
                         }
-
-                        // 2. Active Sung Line (Bold, Illuminated, Centered Focus)
-                        Group {
-                            if let current = currentLyric {
-                                Text(current.text)
-                                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color.white)
-                                    .shadow(color: Color.white.opacity(0.40), radius: 6, y: 0)
-                                    .lineLimit(2)
-                                    .contentShape(Rectangle())
-                                    .id(current.id)
-                            } else {
-                                Text("♫ ...")
-                                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color.white.opacity(0.5))
-                            }
+                        .frame(height: 90)
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: .black, location: 0.16),
+                                    .init(color: .black, location: 0.84),
+                                    .init(color: .clear, location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .onAppear {
+                            proxy.scrollTo(nowPlaying.currentLyricIndex, anchor: .center)
                         }
-
-                        // 3. Next Line (Dimmed, Preview)
-                        Group {
-                            if let next = nextLyric {
-                                Text(next.text)
-                                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                                    .foregroundStyle(Color.white.opacity(0.35))
-                                    .lineLimit(2)
-                                    .truncationMode(.tail)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { nowPlaying.seek(to: next.timestamp) }
-                            } else {
-                                Text(" ")
-                                    .font(.system(size: 10, design: .rounded))
+                        .onChange(of: nowPlaying.currentLyricIndex) { _, newIndex in
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                proxy.scrollTo(newIndex, anchor: .center)
                             }
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.25), value: nowPlaying.currentLyricIndex)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -953,6 +917,42 @@ struct ModernCleanMusicHUDContentView: View {
         .frame(height: 104)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Modern Clean Lyric Row (Interactive, Clickable to Seek, Hover Feedback)
+
+struct ModernCleanLyricRowView: View {
+    let line: LyricLine
+    let isCurrent: Bool
+    let onTap: () -> Void
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if isCurrent {
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 4, height: 4)
+                    .shadow(color: Color.white.opacity(0.85), radius: 3)
+            }
+
+            Text(line.text)
+                .font(.system(size: isCurrent ? 13 : 10.5, weight: isCurrent ? .bold : .medium, design: .rounded))
+                .foregroundStyle(isCurrent ? Color.white : (isHovered ? Color.white.opacity(0.85) : Color.white.opacity(0.35)))
+                .shadow(color: isCurrent ? Color.white.opacity(0.40) : Color.clear, radius: isCurrent ? 6 : 0)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.vertical, 2.5)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovered && !isCurrent ? Color.white.opacity(0.07) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture { onTap() }
     }
 }
 
