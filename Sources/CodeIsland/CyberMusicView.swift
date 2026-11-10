@@ -98,46 +98,142 @@ struct CyberDiscoVisualizer: View {
     }
 }
 
+// MARK: - Modern Clean Audio Spectrum (Smooth Dynamic Island Style)
+
+struct ModernAudioSpectrumView: View {
+    var barCount: Int = 3
+    var isPlaying: Bool = true
+    var barWidth: CGFloat = 1.8
+    var maxHeight: CGFloat = 9.0
+    var color: Color = Color(red: 1.0, green: 0.65, blue: 0.45)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.04)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 1.6) {
+                ForEach(0..<barCount, id: \.self) { barIndex in
+                    let normalized: CGFloat = {
+                        guard isPlaying else { return 0.25 }
+                        let factor = Double(barIndex)
+                        let b1 = sin(time * 8.0 + factor * 2.2) * 0.42
+                        let b2 = cos(time * 12.5 + factor * 1.7) * 0.28
+                        let b3 = sin(time * 4.2 + factor * 0.9) * 0.15
+                        return max(0.25, min(1.0, CGFloat(0.55 + b1 + b2 + b3)))
+                    }()
+
+                    Capsule()
+                        .fill(color)
+                        .frame(width: barWidth, height: max(2.5, maxHeight * normalized))
+                }
+            }
+            .frame(height: maxHeight, alignment: .center)
+        }
+    }
+}
+
 // MARK: - Compact Wing Music View (Ultra-Compact for Small Notch)
 
 struct CyberMusicWingView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     init(nowPlaying: NowPlayingManager) {
         self.nowPlaying = nowPlaying
     }
 
-    var body: some View {
-        HStack(spacing: 3) {
-            // Mini Album Art
-            if let art = nowPlaying.artworkImage {
-                Image(nsImage: art)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 13, height: 13)
-                    .clipShape(RoundedRectangle(cornerRadius: 2.5))
-                    .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(Color(white: 0.3), lineWidth: 0.5))
-            } else {
-                RoundedRectangle(cornerRadius: 2.5)
-                    .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
-                    .frame(width: 13, height: 13)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 7))
-                            .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.8))
-                    )
-            }
+    private var isModernClean: Bool {
+        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+    }
 
-            // Real-Time Dancing Equalizer
-            CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.0, segmentHeight: 1.6, segmentSpacing: 0.8)
+    private var accentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
         }
-        .padding(.horizontal, 3)
-        .padding(.vertical, 1.5)
-        .background(
-            RoundedRectangle(cornerRadius: 3.5)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.11))
-                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.16, green: 0.19, blue: 0.25), lineWidth: 0.75))
-        )
+    }
+
+    var body: some View {
+        if isModernClean {
+            // MODERN CLEAN: Smooth squircle album art + Apple-style pill equalizer
+            HStack(spacing: 3.5) {
+                if let art = nowPlaying.artworkImage {
+                    Image(nsImage: art)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 13, height: 13)
+                        .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 13, height: 13)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 7, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        )
+                }
+
+                ModernAudioSpectrumView(
+                    barCount: 3,
+                    isPlaying: nowPlaying.isPlaying,
+                    barWidth: 1.8,
+                    maxHeight: 9.0,
+                    color: accentColor
+                )
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color(white: 0.10).opacity(0.88))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.18), lineWidth: 0.6)
+                    )
+            )
+        } else {
+            // RETRO CYBER: Machined pixelated dot matrix
+            HStack(spacing: 3) {
+                // Mini Album Art
+                if let art = nowPlaying.artworkImage {
+                    Image(nsImage: art)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 13, height: 13)
+                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
+                        .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(Color(white: 0.3), lineWidth: 0.5))
+                } else {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+                        .frame(width: 13, height: 13)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 7))
+                                .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.8))
+                        )
+                }
+
+                // Real-Time Dancing Equalizer
+                CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.0, segmentHeight: 1.6, segmentSpacing: 0.8)
+            }
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1.5)
+            .background(
+                RoundedRectangle(cornerRadius: 3.5)
+                    .fill(Color(red: 0.07, green: 0.08, blue: 0.11))
+                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.16, green: 0.19, blue: 0.25), lineWidth: 0.75))
+            )
+        }
     }
 }
 
@@ -146,6 +242,24 @@ struct CyberMusicWingView: View {
 struct CyberMusicMiniPeekBanner: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var onOpenFull: () -> Void
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var isModernClean: Bool {
+        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+    }
+
+    private var accentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
 
     var body: some View {
         Button(action: onOpenFull) {
@@ -156,26 +270,26 @@ struct CyberMusicMiniPeekBanner: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 26, height: 26)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(white: 0.3), lineWidth: 0.5))
-                        .shadow(color: Color.black.opacity(0.5), radius: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous).stroke(Color(white: 0.3), lineWidth: 0.5))
+                        .shadow(color: Color.black.opacity(0.4), radius: 3)
                 } else {
                     Image(systemName: "music.note")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83))
+                        .foregroundColor(isModernClean ? accentColor : Color(red: 0.0, green: 0.96, blue: 0.83))
                         .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.12)))
+                        .background(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous).fill(Color(white: 0.12)))
                 }
 
                 // Track Title & Artist
                 VStack(alignment: .leading, spacing: 1) {
                     Text(nowPlaying.title.isEmpty ? "No Track" : nowPlaying.title)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: isModernClean ? .rounded : .monospaced))
                         .foregroundStyle(Color.white)
                         .lineLimit(1)
 
                     Text(nowPlaying.artist.isEmpty ? "Now Playing" : nowPlaying.artist)
-                        .font(.system(size: 8.5, design: .monospaced))
+                        .font(.system(size: 8.5, design: isModernClean ? .default : .monospaced))
                         .foregroundStyle(Color(white: 0.65))
                         .lineLimit(1)
                 }
@@ -183,7 +297,11 @@ struct CyberMusicMiniPeekBanner: View {
                 Spacer(minLength: 4)
 
                 // Dancing Spectrum
-                CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0)
+                if isModernClean {
+                    ModernAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, maxHeight: 12.0, color: accentColor)
+                } else {
+                    CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0)
+                }
 
                 // Close button
                 Button(action: {
@@ -201,9 +319,9 @@ struct CyberMusicMiniPeekBanner: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color(red: 0.05, green: 0.06, blue: 0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1))
+                RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous)
+                    .fill(Color(red: 0.06, green: 0.07, blue: 0.09))
+                    .overlay(RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous).stroke(isModernClean ? Color.white.opacity(0.18) : Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1))
             )
             .padding(.horizontal, 6)
             .padding(.bottom, 3)

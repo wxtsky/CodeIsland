@@ -137,6 +137,20 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var modernMusicAccent: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
     @AppStorage(SettingsKey.floatingLyricVerticalGap) private var floatingLyricVerticalGap = SettingsDefaults.floatingLyricVerticalGap
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
@@ -1161,6 +1175,20 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var modernMusicAccent: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
     /// The waiting badges pulse forever; with Reduce Motion they hold still
     /// (a one-off follow-up bounce still marks a reminder).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1235,32 +1263,59 @@ private struct CompactRightWing: View {
                 if nowPlaying.isPlaying {
                     if shouldExpandRightWing {
                         // "KECIL KEDUA / THINKING EXPANDED" - Music Mode: Title ticker + cover + visualizer (Ultra-Compact)
-                        HStack(spacing: 3.5) {
-                            if let art = nowPlaying.artworkImage {
-                                Image(nsImage: art)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 12, height: 12)
-                                    .clipShape(RoundedRectangle(cornerRadius: 2.5))
+                        if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
+                            HStack(spacing: 3.5) {
+                                if let art = nowPlaying.artworkImage {
+                                    Image(nsImage: art)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 12, height: 12)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                }
+                                Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
+                                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(Color.white)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(maxWidth: 58, alignment: .leading)
+                                ModernAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.6, maxHeight: 8.5, color: modernMusicAccent)
                             }
-                            Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
-                                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 58, alignment: .leading)
-                            CyberAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.8, segmentHeight: 1.4, segmentSpacing: 0.7)
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color(white: 0.12).opacity(0.90))
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.6))
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        } else {
+                            HStack(spacing: 3.5) {
+                                if let art = nowPlaying.artworkImage {
+                                    Image(nsImage: art)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 12, height: 12)
+                                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
+                                }
+                                Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.white)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(maxWidth: 58, alignment: .leading)
+                                CyberAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.8, segmentHeight: 1.4, segmentSpacing: 0.7)
+                            }
+                            .padding(.horizontal, 3.5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3.5)
+                                    .fill(Color(white: 0.08))
+                                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                         }
-                        .padding(.horizontal, 3.5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .fill(Color(white: 0.08))
-                                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
-                        )
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else {
-                        // "KECIL AWAL" - Music Mode: Compact cover art + dancing spectrum
+                        // "KECIL AWAL" - Music Mode: Compact cover art + dancing spectrum (Modern or Cyber)
                         CyberMusicWingView(nowPlaying: nowPlaying)
                             .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     }
