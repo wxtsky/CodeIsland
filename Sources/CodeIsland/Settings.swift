@@ -117,25 +117,23 @@ public enum FloatingLyricTextColor: String, CaseIterable, Identifiable, Sendable
 }
 
 public enum MusicProgressColor: String, CaseIterable, Identifiable, Sendable {
-    case coral = "coral"
-    case green = "green"
+    case theme = "theme"
+    case white = "white"
     case cyan = "cyan"
     case pink = "pink"
-    case orange = "orange"
-    case purple = "purple"
-    case white = "white"
+    case green = "green"
+    case amber = "amber"
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
-        case .coral: return "Warm Coral"
-        case .green: return "Spotify Green"
+        case .theme: return "Match Theme"
+        case .white: return "Pure White"
         case .cyan: return "Cyber Cyan"
         case .pink: return "Neon Pink"
-        case .orange: return "Sunset Orange"
-        case .purple: return "Electric Purple"
-        case .white: return "Pure White"
+        case .green: return "Matrix Green"
+        case .amber: return "Sunset Amber"
         }
     }
 }
@@ -328,7 +326,7 @@ struct SettingsDefaults {
     static let showAgentDetails = false
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
-    static let musicHUDProgressColor = MusicProgressColor.coral.rawValue
+    static let musicHUDProgressColor = MusicProgressColor.theme.rawValue
     static let floatingLyricPreset = FloatingLyricPreset.pureText.rawValue
     static let floatingLyricFontSize: Double = 10.0
     static let floatingLyricFontDesign = FloatingLyricFontDesign.rounded.rawValue
