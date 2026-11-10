@@ -149,24 +149,26 @@ struct PlaybackSnapshot: Equatable, Sendable {
     let isJSBridgeAvailable: Bool
 }
 
-/// Serializes playback probes and lets a queued request detect that a newer one superseded it.
-/// Thread-safe because the probe queue asks "am I still current?" without hopping to the main actor.
+/// Claims the single playback-probe slot. Thread-safe because the probe queue releases it.
+/// Dropping a poll while a probe is in flight is deliberate: queueing them lets a browser stuck
+/// on a modal dialog pile up work, and discarding their results freezes the HUD.
 final class FetchGate: @unchecked Sendable {
     private let lock = NSLock()
-    private var generation: UInt64 = 0
+    private var running = false
 
-    /// Registers a new request. Every earlier ticket becomes stale.
-    func begin() -> UInt64 {
+    /// True when this caller took the slot. False when a probe is already in flight.
+    func begin() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        generation &+= 1
-        return generation
+        if running { return false }
+        running = true
+        return true
     }
 
-    func isCurrent(_ ticket: UInt64) -> Bool {
+    func finish() {
         lock.lock()
         defer { lock.unlock() }
-        return ticket == generation
+        running = false
     }
 }
 
@@ -768,41 +770,43 @@ final class NowPlayingManager: ObservableObject {
 
         return """
         set matchedLines to ""
-        tell application "\(browser.applicationName)"
-            repeat with w in windows
-                repeat with t in tabs of w
-                    try
-                        set tabUrl to URL of t
-                        set svcId to ""
-                        if tabUrl contains "open.spotify.com" then
-                            set svcId to "spotify"
-                        else if tabUrl contains "music.youtube.com" then
-                            set svcId to "ytmusic"
-                        else if tabUrl contains "music.apple.com" then
-                            set svcId to "applemusic"
-                        end if
-                        if svcId is not "" then
-                            set tabTitle to \(titleProperty)
-                            set lineOut to ""
-                            try
-                                set domRes to \(jsCall)
-                                if domRes is not missing value and domRes is not "" then
-                                    set lineOut to domRes
+        with timeout of 8 seconds
+            tell application "\(browser.applicationName)"
+                repeat with w in windows
+                    repeat with t in tabs of w
+                        try
+                            set tabUrl to URL of t
+                            set svcId to ""
+                            if tabUrl contains "open.spotify.com" then
+                                set svcId to "spotify"
+                            else if tabUrl contains "music.youtube.com" then
+                                set svcId to "ytmusic"
+                            else if tabUrl contains "music.apple.com" then
+                                set svcId to "applemusic"
+                            end if
+                            if svcId is not "" then
+                                set tabTitle to \(titleProperty)
+                                set lineOut to ""
+                                try
+                                    set domRes to \(jsCall)
+                                    if domRes is not missing value and domRes is not "" then
+                                        set lineOut to domRes
+                                    end if
+                                end try
+                                if lineOut is "" then
+                                    set lineOut to "FALLBACK|||" & svcId & "|||" & tabTitle
                                 end if
-                            end try
-                            if lineOut is "" then
-                                set lineOut to "FALLBACK|||" & svcId & "|||" & tabTitle
+                                if matchedLines is "" then
+                                    set matchedLines to lineOut
+                                else
+                                    set matchedLines to matchedLines & "\\n" & lineOut
+                                end if
                             end if
-                            if matchedLines is "" then
-                                set matchedLines to lineOut
-                            else
-                                set matchedLines to matchedLines & "\\n" & lineOut
-                            end if
-                        end if
-                    end try
+                        end try
+                    end repeat
                 end repeat
-            end repeat
-        end tell
+            end tell
+        end timeout
         return matchedLines
         """
     }
@@ -858,16 +862,15 @@ final class NowPlayingManager: ObservableObject {
 
     func fetchPlaybackDetails() {
         guard !RuntimeEnvironment.isRunningTests else { return }
+        guard fetchGate.begin() else { return }
         let detectWeb = Self.isWebMusicDetectionEnabled()
         let lastSource = self.activeSource
         let previousWebSnapshots = self.lastBrowserSnapshots
-        let ticket = fetchGate.begin()
 
         // Serial: a slow probe (a browser blocked on a modal dialog) cannot overlap the next one.
         probeQueue.async { [weak self] in
             guard let self else { return }
-            // A newer request was enqueued while this one waited; skip the expensive probing.
-            guard self.fetchGate.isCurrent(ticket) else { return }
+            defer { self.fetchGate.finish() }
             let isSpotifyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").contains { !$0.isTerminated }
             let isMusicRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").contains { !$0.isTerminated }
             let runningBrowsers: [SpotifyWebBrowser] = detectWeb
@@ -965,9 +968,6 @@ final class NowPlayingManager: ObservableObject {
                 return
             }
 
-            // Discard a result that a newer request has already superseded.
-            guard self.fetchGate.isCurrent(ticket) else { return }
-
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.lastBrowserSnapshots = updatedWebSnapshots
@@ -1008,6 +1008,9 @@ final class NowPlayingManager: ObservableObject {
     }
 
     func applySnapshot(_ chosen: PlaybackSnapshot) {
+        log.debug(
+            "apply \(chosen.source.displayBadge, privacy: .public) playing=\(chosen.isPlaying) pos=\(chosen.position) dur=\(chosen.duration) js=\(chosen.isJSBridgeAvailable)"
+        )
         let trackChanged = (self.title != chosen.title || self.artist != chosen.artist) && !chosen.title.isEmpty
 
         self.activeSource = chosen.source

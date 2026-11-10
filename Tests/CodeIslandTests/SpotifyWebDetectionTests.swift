@@ -191,14 +191,16 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertEqual(manager.playerPosition, 120, accuracy: 0.001)
     }
 
-    func testFetchGateDiscardsSupersededRequests() {
+    func testFetchGateAllowsOnlyOneProbeInFlight() {
         let gate = FetchGate()
-        let first = gate.begin()
-        XCTAssertTrue(gate.isCurrent(first))
+        XCTAssertTrue(gate.begin())
+        // Polls arriving while a probe runs are dropped rather than queued: a browser stuck on a
+        // modal dialog would otherwise pile work up, and stale results would freeze the HUD.
+        XCTAssertFalse(gate.begin())
+        XCTAssertFalse(gate.begin())
 
-        let second = gate.begin()
-        XCTAssertFalse(gate.isCurrent(first))
-        XCTAssertTrue(gate.isCurrent(second))
+        gate.finish()
+        XCTAssertTrue(gate.begin())
     }
 
     func testProbeLineServiceTagIsReadBeforeParsing() {
