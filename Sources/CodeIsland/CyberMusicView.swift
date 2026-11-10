@@ -676,7 +676,7 @@ struct CyberMusicHUDView: View {
     }
 }
 
-// MARK: - Modern Clean Dynamic Island Music HUD Theme
+// MARK: - Modern Clean Dynamic Island Music HUD Theme (Apple Music / Spotify Partial Flow)
 
 struct ModernCleanMusicHUDContentView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
@@ -699,40 +699,60 @@ struct ModernCleanMusicHUDContentView: View {
         return String(format: "-%d:%02d", m, s)
     }
 
+    private var currentLyric: LyricLine? {
+        guard !nowPlaying.lyrics.isEmpty,
+              nowPlaying.currentLyricIndex >= 0,
+              nowPlaying.currentLyricIndex < nowPlaying.lyrics.count else { return nil }
+        return nowPlaying.lyrics[nowPlaying.currentLyricIndex]
+    }
+
+    private var previousLyric: LyricLine? {
+        guard !nowPlaying.lyrics.isEmpty,
+              nowPlaying.currentLyricIndex > 0,
+              (nowPlaying.currentLyricIndex - 1) < nowPlaying.lyrics.count else { return nil }
+        return nowPlaying.lyrics[nowPlaying.currentLyricIndex - 1]
+    }
+
+    private var nextLyric: LyricLine? {
+        guard !nowPlaying.lyrics.isEmpty,
+              (nowPlaying.currentLyricIndex + 1) < nowPlaying.lyrics.count else { return nil }
+        return nowPlaying.lyrics[nowPlaying.currentLyricIndex + 1]
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (205pt fixed width)
-            VStack(alignment: .leading, spacing: 6) {
+            // LEFT COLUMN: Album Art + Track Info + Modern Scrubber + Circular Play Controls (190pt fixed width)
+            VStack(alignment: .leading, spacing: 5) {
                 // Top: Artwork & Track Info
-                HStack(spacing: 10) {
-                    // Album Cover (50x50 squircle)
+                HStack(spacing: 9) {
+                    // Album Cover (46x46 squircle)
                     ZStack {
                         if let art = nowPlaying.artworkImage {
                             Image(nsImage: art)
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: 50, height: 50)
-                                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                .frame(width: 46, height: 46)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
                                 )
-                                .shadow(color: Color.black.opacity(0.35), radius: 5, x: 0, y: 2.5)
+                                .shadow(color: Color.black.opacity(0.35), radius: 4, x: 0, y: 2)
                         } else {
-                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(LinearGradient(
                                     colors: [Color(white: 0.16), Color(white: 0.08)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ))
-                                .frame(width: 50, height: 50)
+                                .frame(width: 46, height: 46)
                                 .overlay(
                                     Image(systemName: "music.note")
-                                        .font(.system(size: 19))
+                                        .font(.system(size: 18))
                                         .foregroundColor(Color.white.opacity(0.6))
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
                                 )
                         }
@@ -742,7 +762,7 @@ struct ModernCleanMusicHUDContentView: View {
                     // Track Title, Artist, & Source
                     VStack(alignment: .leading, spacing: 2) {
                         Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.white)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -750,11 +770,11 @@ struct ModernCleanMusicHUDContentView: View {
 
                         Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
                             .font(.system(size: 11, weight: .medium, design: .default))
-                            .foregroundStyle(Color.white.opacity(0.62))
+                            .foregroundStyle(Color.white.opacity(0.65))
                             .lineLimit(1)
                             .truncationMode(.tail)
 
-                        HStack(spacing: 4) {
+                        HStack(spacing: 4.5) {
                             Circle()
                                 .fill(nowPlaying.player.lowercased().contains("apple") ? Color(red: 0.98, green: 0.20, blue: 0.35) : Color(red: 0.12, green: 0.84, blue: 0.38))
                                 .frame(width: 4.5, height: 4.5)
@@ -763,12 +783,13 @@ struct ModernCleanMusicHUDContentView: View {
                                 .font(.system(size: 9.5, weight: .medium, design: .default))
                                 .foregroundStyle(Color.white.opacity(0.68))
                         }
-                        .padding(.top, 1)
+                        .padding(.top, 0.5)
                     }
                 }
+                .frame(height: 46)
 
-                // Middle: Modern Interactive Scrubber
-                VStack(spacing: 2) {
+                // Middle: Modern Interactive Scrubber (Warm Coral/Peach Gradient)
+                VStack(spacing: 2.5) {
                     GeometryReader { geo in
                         let totalWidth = geo.size.width
                         let progressFraction: CGFloat = nowPlaying.trackDuration > 0
@@ -778,15 +799,15 @@ struct ModernCleanMusicHUDContentView: View {
                         ZStack(alignment: .leading) {
                             Capsule()
                                 .fill(Color.white.opacity(0.18))
-                                .frame(height: 3.5)
+                                .frame(height: 3)
 
                             Capsule()
                                 .fill(LinearGradient(
-                                    colors: [Color(red: 1.0, green: 0.68, blue: 0.48), Color(red: 1.0, green: 0.58, blue: 0.42)],
+                                    colors: [Color(red: 1.0, green: 0.68, blue: 0.48), Color(red: 1.0, green: 0.58, blue: 0.38)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 ))
-                                .frame(width: totalWidth * progressFraction, height: 3.5)
+                                .frame(width: totalWidth * progressFraction, height: 3)
                         }
                         .contentShape(Rectangle())
                         .gesture(
@@ -799,21 +820,21 @@ struct ModernCleanMusicHUDContentView: View {
                                 }
                         )
                     }
-                    .frame(height: 3.5)
+                    .frame(height: 3)
 
                     HStack {
                         Text(formatTime(nowPlaying.playerPosition))
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.48))
                         Spacer()
                         Text(formatRemainingTime(position: nowPlaying.playerPosition, duration: nowPlaying.trackDuration))
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.white.opacity(0.48))
                     }
                 }
 
-                // Bottom: Clean Circular Playback Controls
-                HStack(spacing: 18) {
+                // Bottom: Clean Circular Playback Controls (Zero Overflow, Plentiful Clearance)
+                HStack(spacing: 20) {
                     Spacer()
 
                     Button(action: { nowPlaying.previousTrack() }) {
@@ -831,11 +852,11 @@ struct ModernCleanMusicHUDContentView: View {
                             .frame(width: 26, height: 26)
                             .overlay(
                                 Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 10.5, weight: .bold))
+                                    .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.black)
                                     .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
                             )
-                            .shadow(color: Color.white.opacity(0.18), radius: 4, y: 1)
+                            .shadow(color: Color.white.opacity(0.22), radius: 4, y: 1)
                     }
                     .buttonStyle(.plain)
 
@@ -850,85 +871,88 @@ struct ModernCleanMusicHUDContentView: View {
 
                     Spacer()
                 }
+                .frame(height: 26)
             }
-            .frame(width: 205, alignment: .leading)
+            .frame(width: 190, alignment: .leading)
 
-            // Subtle vertical hairline separator with gradient fade
+            // Subtle vertical hairline separator
             Rectangle()
-                .fill(LinearGradient(
-                    colors: [Color.white.opacity(0.0), Color.white.opacity(0.12), Color.white.opacity(0.0)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ))
-                .frame(width: 1, height: 84)
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 1, height: 78)
 
-            // RIGHT COLUMN: Modern Streaming Lyrics (Pure Apple Music / Spotify iPad Fluid Typography)
+            // RIGHT COLUMN: Partial Lyrics Flow (Clean, 3 Focused Lines - Previous, Active, Next)
             VStack(alignment: .leading, spacing: 0) {
                 if nowPlaying.lyrics.isEmpty {
-                    VStack(spacing: 5) {
+                    VStack(spacing: 4) {
                         Image(systemName: "music.quarternote.3")
-                            .font(.system(size: 18))
+                            .font(.system(size: 16))
                             .foregroundStyle(Color.white.opacity(0.35))
                         Text(nowPlaying.lyricsLoading ? "Fetching lyrics..." : "No lyrics available")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
                             .foregroundStyle(Color.white.opacity(0.40))
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(alignment: .leading, spacing: 8) {
-                                ForEach(nowPlaying.lyrics) { line in
-                                    let isCurrent = (line.id == nowPlaying.currentLyricIndex)
-
-                                    Text(line.text)
-                                        .font(.system(
-                                            size: isCurrent ? 13 : 10.5,
-                                            weight: isCurrent ? .bold : .medium,
-                                            design: .rounded
-                                        ))
-                                        .foregroundStyle(isCurrent ? Color.white : Color.white.opacity(0.32))
-                                        .shadow(color: isCurrent ? Color.white.opacity(0.35) : Color.clear, radius: isCurrent ? 6 : 0)
-                                        .scaleEffect(isCurrent ? 1.0 : 0.98, anchor: .leading)
-                                        .animation(.easeInOut(duration: 0.25), value: isCurrent)
-                                        .lineLimit(2)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture {
-                                            nowPlaying.seek(to: line.timestamp)
-                                        }
-                                        .id(line.id)
-                                }
+                    VStack(alignment: .leading, spacing: 5) {
+                        // 1. Previous Line (Dimmed, Roll Up)
+                        Group {
+                            if let prev = previousLyric {
+                                Text(prev.text)
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                                    .lineLimit(2)
+                                    .truncationMode(.tail)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { nowPlaying.seek(to: prev.timestamp) }
+                            } else {
+                                Text(" ")
+                                    .font(.system(size: 10, design: .rounded))
                             }
-                            .padding(.vertical, 8)
-                            .padding(.trailing, 6)
                         }
-                        .mask(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: .clear, location: 0.0),
-                                    .init(color: .black, location: 0.16),
-                                    .init(color: .black, location: 0.84),
-                                    .init(color: .clear, location: 1.0)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .onAppear {
-                            proxy.scrollTo(nowPlaying.currentLyricIndex, anchor: .center)
+
+                        // 2. Active Sung Line (Bold, Illuminated, Centered Focus)
+                        Group {
+                            if let current = currentLyric {
+                                Text(current.text)
+                                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.white)
+                                    .shadow(color: Color.white.opacity(0.40), radius: 6, y: 0)
+                                    .lineLimit(2)
+                                    .contentShape(Rectangle())
+                                    .id(current.id)
+                            } else {
+                                Text("♫ ...")
+                                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.5))
+                            }
                         }
-                        .onChange(of: nowPlaying.currentLyricIndex) { _, newIndex in
-                            withAnimation(.easeInOut(duration: 0.35)) {
-                                proxy.scrollTo(newIndex, anchor: .center)
+
+                        // 3. Next Line (Dimmed, Preview)
+                        Group {
+                            if let next = nextLyric {
+                                Text(next.text)
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Color.white.opacity(0.35))
+                                    .lineLimit(2)
+                                    .truncationMode(.tail)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { nowPlaying.seek(to: next.timestamp) }
+                            } else {
+                                Text(" ")
+                                    .font(.system(size: 10, design: .rounded))
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.25), value: nowPlaying.currentLyricIndex)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.leading, 8)
         }
-        .frame(height: 98)
-        .padding(.horizontal, 10)
+        .frame(height: 104)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
 }
 
