@@ -855,10 +855,14 @@ struct ModernCleanMusicHUDContentView: View {
             }
             .frame(width: 190, alignment: .leading)
 
-            // Subtle vertical hairline separator
+            // Soft vertical separator line (subtle gradient fade)
             Rectangle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 1, height: 78)
+                .fill(LinearGradient(
+                    colors: [Color.clear, Color.white.opacity(0.12), Color.white.opacity(0.12), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .frame(width: 1, height: 74)
 
             // RIGHT COLUMN: Multi-Line Interactive Synced Lyrics (Scrollable, Selectable, Centered Focus)
             VStack(alignment: .leading, spacing: 0) {
@@ -875,7 +879,7 @@ struct ModernCleanMusicHUDContentView: View {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(alignment: .leading, spacing: 3) {
+                            LazyVStack(alignment: .leading, spacing: 4) {
                                 ForEach(nowPlaying.lyrics) { line in
                                     let isCurrent = (line.id == nowPlaying.currentLyricIndex)
                                     ModernCleanLyricRowView(line: line, isCurrent: isCurrent) {
@@ -885,7 +889,7 @@ struct ModernCleanMusicHUDContentView: View {
                                 }
                             }
                             .padding(.vertical, 22)
-                            .padding(.trailing, 6)
+                            .padding(.trailing, 8)
                         }
                         .frame(height: 90)
                         .mask(
@@ -912,7 +916,7 @@ struct ModernCleanMusicHUDContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.leading, 8)
+            .padding(.leading, 12)
         }
         .frame(height: 104)
         .padding(.horizontal, 12)
@@ -929,30 +933,19 @@ struct ModernCleanLyricRowView: View {
     @State private var isHovered: Bool = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            if isCurrent {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 4, height: 4)
-                    .shadow(color: Color.white.opacity(0.85), radius: 3)
-            }
-
-            Text(line.text)
-                .font(.system(size: isCurrent ? 13 : 10.5, weight: isCurrent ? .bold : .medium, design: .rounded))
-                .foregroundStyle(isCurrent ? Color.white : (isHovered ? Color.white.opacity(0.85) : Color.white.opacity(0.35)))
-                .shadow(color: isCurrent ? Color.white.opacity(0.40) : Color.clear, radius: isCurrent ? 6 : 0)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-        }
-        .padding(.vertical, 2.5)
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isHovered && !isCurrent ? Color.white.opacity(0.07) : Color.clear)
-        )
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .onTapGesture { onTap() }
+        Text(line.text)
+            .font(.system(size: isCurrent ? 14.5 : 11, weight: isCurrent ? .bold : .medium, design: .rounded))
+            .foregroundStyle(isCurrent ? Color.white : (isHovered ? Color.white.opacity(0.80) : Color.white.opacity(0.36)))
+            .shadow(color: isCurrent ? Color.white.opacity(0.40) : Color.clear, radius: isCurrent ? 6 : 0)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .scaleEffect(isCurrent ? 1.01 : 1.0, anchor: .leading)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.20), value: isHovered)
+            .animation(.easeInOut(duration: 0.25), value: isCurrent)
+            .onHover { isHovered = $0 }
+            .onTapGesture { onTap() }
     }
 }
 
