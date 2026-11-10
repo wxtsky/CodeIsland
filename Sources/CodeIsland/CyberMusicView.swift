@@ -1206,46 +1206,61 @@ struct RetroCyberMusicHUDContentView: View {
         HStack(alignment: .center, spacing: 10) {
             // LEFT COLUMN: Album Art, Track info, Scrubber & Controls (175pt fixed width)
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    // Album Cover (48x48)
-                    ZStack {
-                        if let art = nowPlaying.artworkImage {
-                            Image(nsImage: art)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 48, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-                                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(white: 0.25), lineWidth: 0.8))
-                                .shadow(color: Color.black.opacity(0.5), radius: 3, y: 2)
-                        } else {
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
-                                .frame(width: 48, height: 48)
-                                .overlay(Image(systemName: "music.note").font(.system(size: 18)).foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83)))
+                Button(action: { nowPlaying.activateCurrentPlayer() }) {
+                    HStack(spacing: 8) {
+                        // Album Cover (48x48)
+                        ZStack {
+                            if let art = nowPlaying.artworkImage {
+                                Image(nsImage: art)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 48, height: 48)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(white: 0.25), lineWidth: 0.8))
+                                    .shadow(color: Color.black.opacity(0.5), radius: 3, y: 2)
+                            } else {
+                                RoundedRectangle(cornerRadius: 5)
+                                    .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+                                    .frame(width: 48, height: 48)
+                                    .overlay(Image(systemName: "music.note").font(.system(size: 18)).foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83)))
+                            }
+                        }
+                        .id(nowPlaying.title + nowPlaying.artist)
+
+                        // Track Title & Artist
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(nowPlaying.player.isEmpty ? "SPOTIFY" : nowPlaying.player.uppercased())
+                                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color(red: 1.0, green: 0.16, blue: 0.53))
+                                    .lineLimit(1)
+
+                                if nowPlaying.isBrowserJSHintVisible {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 6.5))
+                                        .foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.04))
+                                        .help(nowPlaying.browserJSHintText)
+                                }
+                            }
+
+                            Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.white)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .id(nowPlaying.title)
+
+                            Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(Color(white: 0.65))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                     }
-                    .id(nowPlaying.title + nowPlaying.artist)
-
-                    // Track Title & Artist
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(nowPlaying.player.isEmpty ? "SPOTIFY" : nowPlaying.player.uppercased())
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(red: 1.0, green: 0.16, blue: 0.53))
-
-                        Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.white)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .id(nowPlaying.title)
-
-                        Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.65))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help(nowPlaying.isBrowserJSHintVisible ? nowPlaying.browserJSHintText : "Click to focus active music player or browser tab")
 
                 // Interactive Scrubber
                 VStack(spacing: 2) {

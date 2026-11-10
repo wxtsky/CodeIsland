@@ -184,6 +184,11 @@ enum SettingsKey {
     static let floatingLyricTextColor = "floatingLyricTextColor"
     static let floatingLyricVerticalGap = "floatingLyricVerticalGap"
     static let lyricSyncOffset = "lyricSyncOffset"
+    /// Despite the name, this now gates all browser web-music detection (Spotify Web, YouTube
+    /// Music, Apple Music Web) and is labelled "Detect Web Music Players in Browsers". Kept as
+    /// `detectSpotifyWebInBrowsers` on purpose: renaming it would silently reset the preference
+    /// of every existing user.
+    static let detectSpotifyWebInBrowsers = "detectSpotifyWebInBrowsers"
     static let notchHeightMode = "notchHeightMode"
     static let customNotchHeight = "customNotchHeight"
 
@@ -333,6 +338,8 @@ struct SettingsDefaults {
     static let floatingLyricTextColor = FloatingLyricTextColor.white.rawValue
     static let floatingLyricVerticalGap: Double = 2.5
     static let lyricSyncOffset = 0.0
+    /// Default for `detectSpotifyWebInBrowsers`; see the note on that key.
+    static let detectSpotifyWebInBrowsers = true
     static let notchHeightMode = NotchHeightMode.matchNotch.rawValue
     static let customNotchHeight = 37.0
 
@@ -447,6 +454,7 @@ class SettingsManager {
             SettingsKey.floatingLyricTextColor: SettingsDefaults.floatingLyricTextColor,
             SettingsKey.floatingLyricVerticalGap: SettingsDefaults.floatingLyricVerticalGap,
             SettingsKey.lyricSyncOffset: SettingsDefaults.lyricSyncOffset,
+            SettingsKey.detectSpotifyWebInBrowsers: SettingsDefaults.detectSpotifyWebInBrowsers,
             SettingsKey.notchHeightMode: SettingsDefaults.notchHeightMode,
             SettingsKey.customNotchHeight: SettingsDefaults.customNotchHeight,
             SettingsKey.soundEnabled: SettingsDefaults.soundEnabled,

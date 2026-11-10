@@ -1494,6 +1494,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.floatingLyricTextColor) private var floatingLyricTextColor = SettingsDefaults.floatingLyricTextColor
     @AppStorage(SettingsKey.floatingLyricVerticalGap) private var floatingLyricVerticalGap = SettingsDefaults.floatingLyricVerticalGap
     @AppStorage(SettingsKey.lyricSyncOffset) private var lyricSyncOffset = SettingsDefaults.lyricSyncOffset
+    @AppStorage(SettingsKey.detectSpotifyWebInBrowsers) private var detectSpotifyWebInBrowsers = SettingsDefaults.detectSpotifyWebInBrowsers
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
@@ -1749,6 +1750,13 @@ private struct AppearancePage: View {
                     }
 
                     Text("Accent color for the scrubber bar. 'Match Theme' adapts to the chosen HUD theme.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
+                    Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
