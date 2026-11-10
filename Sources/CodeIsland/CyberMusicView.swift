@@ -131,15 +131,88 @@ struct ModernAudioSpectrumView: View {
     }
 }
 
+// MARK: - Modern Marquee Scrolling Text for Compact Wing
+
+private struct ModernMarqueeTextWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ModernMarqueeText: View {
+    let text: String
+    var font: Font = .system(size: 9.5, weight: .bold, design: .rounded)
+    var color: Color = .white
+    var maxWidth: CGFloat = 72
+    @State private var textWidth: CGFloat = 0
+    @State private var startDate = Date()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.03)) { timeline in
+            let excess = max(0, textWidth - maxWidth)
+            let offset: CGFloat = {
+                guard excess > 0 else { return 0 }
+                let scrollDuration = max(2.5, Double(excess) / 22.0)
+                let pauseStart = 1.2
+                let pauseEnd = 1.2
+                let resetDuration = 1.0
+                let totalCycle = pauseStart + scrollDuration + pauseEnd + resetDuration
+
+                let time = max(0, timeline.date.timeIntervalSince(startDate))
+                let t = time.truncatingRemainder(dividingBy: totalCycle)
+
+                if t < pauseStart {
+                    return 0
+                } else if t < pauseStart + scrollDuration {
+                    let progress = (t - pauseStart) / scrollDuration
+                    let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                    return CGFloat(smooth) * excess
+                } else if t < pauseStart + scrollDuration + pauseEnd {
+                    return excess
+                } else {
+                    let progress = (t - (pauseStart + scrollDuration + pauseEnd)) / resetDuration
+                    let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                    return (1.0 - CGFloat(smooth)) * excess
+                }
+            }()
+
+            Text(text)
+                .font(font)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .fixedSize()
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ModernMarqueeTextWidthKey.self, value: geo.size.width)
+                    }
+                )
+                .offset(x: -offset)
+                .frame(width: maxWidth, alignment: .leading)
+                .clipped()
+        }
+        .onPreferenceChange(ModernMarqueeTextWidthKey.self) { width in
+            if abs(self.textWidth - width) > 1 {
+                self.textWidth = width
+            }
+        }
+        .onChange(of: text) {
+            startDate = Date()
+        }
+    }
+}
+
 // MARK: - Compact Wing Music View (Ultra-Compact for Small Notch)
 
 struct CyberMusicWingView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
+    var isHovered: Bool = false
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
-    init(nowPlaying: NowPlayingManager) {
+    init(nowPlaying: NowPlayingManager, isHovered: Bool = false) {
         self.nowPlaying = nowPlaying
+        self.isHovered = isHovered
     }
 
     private var isModernClean: Bool {
@@ -160,7 +233,7 @@ struct CyberMusicWingView: View {
 
     var body: some View {
         if isModernClean {
-            // MODERN CLEAN: Langsung album cover (lebih besar), nama lagu, dan visualizer tanpa border
+            // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
             HStack(spacing: 5) {
                 if let art = nowPlaying.artworkImage {
                     Image(nsImage: art)
@@ -179,12 +252,13 @@ struct CyberMusicWingView: View {
                         )
                 }
 
-                Text(nowPlaying.title.isEmpty ? "Music" : nowPlaying.title)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: 68, alignment: .leading)
+                if isHovered {
+                    ModernMarqueeText(
+                        text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
+                        maxWidth: 72
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
 
                 ModernAudioSpectrumView(
                     barCount: 3,

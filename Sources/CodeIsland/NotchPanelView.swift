@@ -275,7 +275,11 @@ struct NotchPanelView: View {
     /// Right wing width: sized for music cover + title + equalizer in Modern Clean, or compact in Retro Cyber
     private var compactRightWingWidth: CGFloat {
         if nowPlaying.isPlaying {
-            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 108 : (isHoveringRightWing ? 95 : 54)
+            if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
+                return (isHoveringRightWing && !shouldShowExpanded) ? 128 : 50
+            } else {
+                return (isHoveringRightWing && !shouldShowExpanded) ? 95 : 54
+            }
         }
         if isHoveringRightWing && !shouldShowExpanded {
             return 95
@@ -434,10 +438,10 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, (isHoveringRightWing && !shouldShowExpanded) ? 6 : (shouldShowExpanded ? 8 : 0))
+                            .padding(.trailing, shouldShowExpanded ? 8 : 10)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : compactRightWingWidth,
-                                alignment: shouldShowExpanded ? .trailing : (isHoveringRightWing ? .trailing : .center)
+                                alignment: .trailing
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactRightWingWidth)
                             .contentShape(Rectangle())
@@ -1269,8 +1273,8 @@ private struct CompactRightWing: View {
                 // Music Visualizer or Machined Cyber Activity Pill
                 if nowPlaying.isPlaying {
                     if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
-                        // MODERN CLEAN: Langsung album cover, nama lagu, dan visualizer tanpa border
-                        CyberMusicWingView(nowPlaying: nowPlaying)
+                        // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
+                        CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
                             .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     } else {
                         // RETRO CYBER: Machined pixel pill
