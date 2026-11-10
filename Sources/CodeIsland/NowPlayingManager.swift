@@ -12,9 +12,35 @@ struct LyricLine: Identifiable, Equatable, Sendable {
     let text: String
 }
 
-// MARK: - Supported Web Browsers & Playback Source Models
+// MARK: - Supported Web Browsers, Web Music Services & Playback Source Models
 
-enum SpotifyWebBrowser: String, CaseIterable, Equatable, Sendable {
+enum WebMusicService: String, CaseIterable, Equatable, Hashable, Sendable {
+    case spotifyWeb = "spotify"
+    case youtubeMusic = "ytmusic"
+    case appleMusicWeb = "applemusic"
+
+    var domainSubstring: String {
+        switch self {
+        case .spotifyWeb: return "open.spotify.com"
+        case .youtubeMusic: return "music.youtube.com"
+        case .appleMusicWeb: return "music.apple.com"
+        }
+    }
+
+    var badgePrefix: String {
+        switch self {
+        case .spotifyWeb: return "SPOTIFY"
+        case .youtubeMusic: return "YT MUSIC"
+        case .appleMusicWeb: return "APPLE MUSIC"
+        }
+    }
+
+    func badge(for browser: SpotifyWebBrowser) -> String {
+        "\(badgePrefix) · \(browser.shortBrowserName)"
+    }
+}
+
+enum SpotifyWebBrowser: String, CaseIterable, Equatable, Hashable, Sendable {
     case safari = "com.apple.Safari"
     case brave = "com.brave.Browser"
     case chrome = "com.google.Chrome"
@@ -33,14 +59,18 @@ enum SpotifyWebBrowser: String, CaseIterable, Equatable, Sendable {
         }
     }
 
-    var shortBadge: String {
+    var shortBrowserName: String {
         switch self {
-        case .safari: return "SPOTIFY · SAFARI"
-        case .brave: return "SPOTIFY · BRAVE"
-        case .chrome: return "SPOTIFY · CHROME"
-        case .arc: return "SPOTIFY · ARC"
-        case .edge: return "SPOTIFY · EDGE"
+        case .safari: return "SAFARI"
+        case .brave: return "BRAVE"
+        case .chrome: return "CHROME"
+        case .arc: return "ARC"
+        case .edge: return "EDGE"
         }
+    }
+
+    var shortBadge: String {
+        WebMusicService.spotifyWeb.badge(for: self)
     }
 
     var isSafari: Bool {
@@ -63,10 +93,14 @@ enum SpotifyWebBrowser: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-enum PlaybackSourceKind: Equatable, Sendable {
+enum PlaybackSourceKind: Equatable, Hashable, Sendable {
     case spotifyDesktop
     case appleMusic
-    case spotifyWeb(SpotifyWebBrowser)
+    case webMusic(service: WebMusicService, browser: SpotifyWebBrowser)
+
+    static func spotifyWeb(_ browser: SpotifyWebBrowser) -> PlaybackSourceKind {
+        .webMusic(service: .spotifyWeb, browser: browser)
+    }
 
     var displayBadge: String {
         switch self {
@@ -74,8 +108,8 @@ enum PlaybackSourceKind: Equatable, Sendable {
             return "Spotify"
         case .appleMusic:
             return "Music"
-        case .spotifyWeb(let browser):
-            return browser.shortBadge
+        case .webMusic(let service, let browser):
+            return service.badge(for: browser)
         }
     }
 }
@@ -92,8 +126,7 @@ struct PlaybackSnapshot: Equatable, Sendable {
     let isJSBridgeAvailable: Bool
 }
 
-/// Observes currently playing tracks from Apple Music, Spotify Desktop, and Spotify Web in macOS browsers.
-/// Event-driven for native apps with adaptive lightweight polling for web browsers.
+/// Observes currently playing tracks from Apple Music, Spotify Desktop, and Web Music Players (Spotify Web, YouTube Music, Apple Music Web) across macOS browsers.
 @MainActor
 final class NowPlayingManager: ObservableObject {
     static let shared = NowPlayingManager()
@@ -102,7 +135,7 @@ final class NowPlayingManager: ObservableObject {
     @Published var title: String = ""
     @Published var artist: String = ""
     @Published var album: String = ""
-    @Published var player: String = "" // "Spotify", "Music", or "SPOTIFY · BRAVE", etc.
+    @Published var player: String = "" // "Spotify", "Music", "SPOTIFY · BRAVE", "YT MUSIC · CHROME", etc.
     @Published var artworkURL: String = ""
     @Published var artworkImage: NSImage?
     @Published var playerPosition: Double = 0
@@ -285,7 +318,6 @@ final class NowPlayingManager: ObservableObject {
             self.updateCurrentLyricIndex()
         }
 
-        // Clamp: position can never exceed duration
         if self.trackDuration > 0 && self.playerPosition > self.trackDuration {
             self.playerPosition = 0.0
             self.updateCurrentLyricIndex()
@@ -390,7 +422,41 @@ final class NowPlayingManager: ObservableObject {
         }
     }
 
-    // MARK: - Pure Parsing & Priority Helpers
+    // MARK: - Pure Parsing, Sanitization & Priority Helpers
+
+    nonisolated static func sanitizeForLyricsSearch(title: String, artist: String) -> (title: String, artist: String) {
+        var cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var cleanArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let noisePatterns = [
+            #"\s*\(\s*(?:official\s+(?:music\s+)?video|official\s+audio|official\s+lyric\s+video|official\s+visualizer|lyric\s+video|lyrics?|audio|video|visualizer|hd|4k|hq|remastered[^)]*)\s*\)"#,
+            #"\s*\[\s*(?:official\s+(?:music\s+)?video|official\s+audio|official\s+lyric\s+video|official\s+visualizer|lyric\s+video|lyrics?|audio|video|visualizer|hd|4k|hq|remastered[^\]]*)\s*\]"#
+        ]
+
+        for pattern in noisePatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
+                let range = NSRange(cleanTitle.startIndex..<cleanTitle.endIndex, in: cleanTitle)
+                cleanTitle = regex.stringByReplacingMatches(in: cleanTitle, options: [], range: range, withTemplate: "")
+            }
+        }
+        cleanTitle = cleanTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let topicRegex = try? NSRegularExpression(pattern: #"\s*-\s*topic$"#, options: [.caseInsensitive]) {
+            let range = NSRange(cleanArtist.startIndex..<cleanArtist.endIndex, in: cleanArtist)
+            cleanArtist = topicRegex.stringByReplacingMatches(in: cleanArtist, options: [], range: range, withTemplate: "")
+        }
+        if cleanArtist.count > 4,
+           let vevoRegex = try? NSRegularExpression(pattern: #"vevo$"#, options: [.caseInsensitive]) {
+            let range = NSRange(cleanArtist.startIndex..<cleanArtist.endIndex, in: cleanArtist)
+            cleanArtist = vevoRegex.stringByReplacingMatches(in: cleanArtist, options: [], range: range, withTemplate: "")
+        }
+        cleanArtist = cleanArtist.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return (
+            title: cleanTitle.isEmpty ? title : cleanTitle,
+            artist: cleanArtist.isEmpty ? artist : cleanArtist
+        )
+    }
 
     nonisolated static func parseTimecode(_ raw: String) -> Double? {
         let trimmed = raw.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -419,29 +485,44 @@ final class NowPlayingManager: ObservableObject {
         return nil
     }
 
-    nonisolated static func parseSpotifyTabTitle(_ rawTitle: String) -> (title: String, artist: String)? {
-        let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    nonisolated static func parseWebTabTitle(_ rawTitle: String, service: WebMusicService = .spotifyWeb) -> (title: String, artist: String)? {
+        var trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        if trimmed.hasPrefix("▶") {
+            trimmed = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+
         let lower = trimmed.lowercased()
-        if lower == "spotify" || lower.hasPrefix("spotify – web player") || lower.hasPrefix("spotify - web player") || lower.hasPrefix("spotify — web player") {
+        if lower == "spotify" || lower.hasPrefix("spotify – web player") || lower.hasPrefix("spotify - web player") || lower.hasPrefix("spotify — web player") ||
+           lower == "youtube music" || lower == "apple music" || lower.hasPrefix("apple music - web player") || lower.hasPrefix("apple music – web player") {
             return nil
         }
 
-        let separators = [" • ", " · "]
+        let suffixes = [
+            " - YouTube Music", " – YouTube Music", " | YouTube Music",
+            " - Apple Music", " – Apple Music", " — Apple Music", " | Apple Music",
+            " - Spotify", " – Spotify", " | Spotify"
+        ]
+        for suffix in suffixes {
+            if trimmed.lowercased().hasSuffix(suffix.lowercased()) {
+                trimmed = String(trimmed.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        let separators = [" • ", " · ", " - ", " – ", " — "]
         for sep in separators {
             if let range = trimmed.range(of: sep) {
                 let track = String(trimmed[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-                var artistPart = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-                for suffix in [" - Spotify", " – Spotify", " | Spotify"] {
-                    if artistPart.lowercased().hasSuffix(suffix.lowercased()) {
-                        artistPart = String(artistPart.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
-                }
+                let artistPart = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !track.isEmpty {
                     return (track, artistPart)
                 }
             }
+        }
+
+        if service == .youtubeMusic && !trimmed.isEmpty {
+            return (trimmed, "")
         }
         return nil
     }
@@ -457,14 +538,26 @@ final class NowPlayingManager: ObservableObject {
         let parts = trimmed.components(separatedBy: "|||")
         guard let mode = parts.first else { return nil }
 
-        if mode == "DOM", parts.count >= 8 {
-            let title = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            let artist = parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
-            let album = parts[3].trimmingCharacters(in: .whitespacesAndNewlines)
-            let posRaw = parts[4].trimmingCharacters(in: .whitespacesAndNewlines)
-            let durRaw = parts[5].trimmingCharacters(in: .whitespacesAndNewlines)
-            let artUrl = parts[6].trimmingCharacters(in: .whitespacesAndNewlines)
-            let state = parts[7].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if mode == "DOM" {
+            let service: WebMusicService
+            let offset: Int
+            if parts.count >= 9, let matchedService = WebMusicService(rawValue: parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
+                service = matchedService
+                offset = 2
+            } else if parts.count >= 8 {
+                service = .spotifyWeb
+                offset = 1
+            } else {
+                return nil
+            }
+
+            let title = parts[offset].trimmingCharacters(in: .whitespacesAndNewlines)
+            let artist = parts[offset + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+            let album = parts[offset + 2].trimmingCharacters(in: .whitespacesAndNewlines)
+            let posRaw = parts[offset + 3].trimmingCharacters(in: .whitespacesAndNewlines)
+            let durRaw = parts[offset + 4].trimmingCharacters(in: .whitespacesAndNewlines)
+            let artUrl = parts[offset + 5].trimmingCharacters(in: .whitespacesAndNewlines)
+            let state = parts[offset + 6].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
             guard !title.isEmpty else { return nil }
 
@@ -485,12 +578,24 @@ final class NowPlayingManager: ObservableObject {
                 duration: duration,
                 artworkURLOrPath: artUrl,
                 isPlaying: state == "playing",
-                source: .spotifyWeb(browser),
+                source: .webMusic(service: service, browser: browser),
                 isJSBridgeAvailable: true
             )
-        } else if mode == "FALLBACK", parts.count >= 2 {
-            let tabTitle = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            if let parsed = parseSpotifyTabTitle(tabTitle) {
+        } else if mode == "FALLBACK" {
+            let service: WebMusicService
+            let tabTitle: String
+            if parts.count >= 3, let matchedService = WebMusicService(rawValue: parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) {
+                service = matchedService
+                tabTitle = parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if parts.count >= 2 {
+                service = .spotifyWeb
+                tabTitle = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                return nil
+            }
+
+            let sourceKind = PlaybackSourceKind.webMusic(service: service, browser: browser)
+            if let parsed = parseWebTabTitle(tabTitle, service: service) {
                 let sameTrack = (previousSnapshot?.title == parsed.title && previousSnapshot?.artist == parsed.artist)
                 return PlaybackSnapshot(
                     title: parsed.title,
@@ -500,10 +605,10 @@ final class NowPlayingManager: ObservableObject {
                     duration: sameTrack ? (previousSnapshot?.duration ?? 0.0) : 0.0,
                     artworkURLOrPath: sameTrack ? (previousSnapshot?.artworkURLOrPath ?? "") : "",
                     isPlaying: true,
-                    source: .spotifyWeb(browser),
+                    source: sourceKind,
                     isJSBridgeAvailable: false
                 )
-            } else if let prev = previousSnapshot, prev.source == .spotifyWeb(browser), !prev.title.isEmpty {
+            } else if let prev = previousSnapshot, prev.source == sourceKind, !prev.title.isEmpty {
                 return PlaybackSnapshot(
                     title: prev.title,
                     artist: prev.artist,
@@ -512,7 +617,7 @@ final class NowPlayingManager: ObservableObject {
                     duration: prev.duration,
                     artworkURLOrPath: prev.artworkURLOrPath,
                     isPlaying: false,
-                    source: .spotifyWeb(browser),
+                    source: sourceKind,
                     isJSBridgeAvailable: false
                 )
             }
@@ -542,18 +647,47 @@ final class NowPlayingManager: ObservableObject {
         return valid.first
     }
 
-    // MARK: - AppleScript Builders
+    // MARK: - AppleScript Builders (Multi-Service Web Bridge)
 
-    nonisolated private static let spotifyDOMProbeJS: String =
+    nonisolated private static let webMusicDOMProbeJS: String =
         "(function(){try{" +
+        "var host=location.hostname||'';" +
         "var ms=navigator.mediaSession&&navigator.mediaSession.metadata;" +
+        "var art='';" +
+        "if(ms&&ms.artwork&&ms.artwork.length>0){art=ms.artwork[ms.artwork.length-1].src||'';}" +
+        "if(host.indexOf('music.youtube.com')!==-1){" +
+        "var tEl=document.querySelector('.title.ytmusic-player-bar');" +
+        "var byEl=document.querySelector('.byline.ytmusic-player-bar');" +
+        "var title=(ms&&ms.title?ms.title:'')||(tEl&&tEl.textContent?tEl.textContent.trim():'');" +
+        "var artist=(ms&&ms.artist?ms.artist:'');" +
+        "var album=(ms&&ms.album?ms.album:'');" +
+        "if(!artist&&byEl&&byEl.textContent){var bp=byEl.textContent.split('•');artist=(bp[0]||'').trim();if(!album&&bp.length>1){album=(bp[1]||'').trim();}}" +
+        "if(!art){var yImg=document.querySelector('.image.ytmusic-player-bar');if(yImg&&yImg.src){art=yImg.src;}}" +
+        "var v=document.querySelector('video');" +
+        "var pos=v&&!isNaN(v.currentTime)?String(v.currentTime):'0';" +
+        "var dur=v&&!isNaN(v.duration)&&isFinite(v.duration)?String(v.duration):'0';" +
+        "var playing=v?(!v.paused&&!v.ended&&v.currentTime>0):(navigator.mediaSession&&navigator.mediaSession.playbackState==='playing');" +
+        "return 'DOM|||ytmusic|||'+title+'|||'+artist+'|||'+album+'|||'+pos+'|||'+dur+'|||'+art+'|||'+(playing?'playing':'paused');" +
+        "}" +
+        "if(host.indexOf('music.apple.com')!==-1){" +
+        "var mk=(typeof MusicKit!=='undefined'&&MusicKit.getInstance)?MusicKit.getInstance():null;" +
+        "var aud=document.querySelector('audio');" +
+        "var pEl=document.querySelector('.lcd-meta__primary,[class*=lcd-meta__primary]');" +
+        "var sEl=document.querySelector('.lcd-meta__secondary,[class*=lcd-meta__secondary]');" +
+        "var title=(ms&&ms.title?ms.title:'')||(pEl&&pEl.textContent?pEl.textContent.trim():'');" +
+        "var artist=(ms&&ms.artist?ms.artist:'')||(sEl&&sEl.textContent?sEl.textContent.split('—')[0].trim():'');" +
+        "var album=(ms&&ms.album?ms.album:'');" +
+        "var pos='0';var dur='0';" +
+        "if(mk&&typeof mk.currentPlaybackTime==='number'){pos=String(mk.currentPlaybackTime);dur=String(mk.currentPlaybackDuration||0);}" +
+        "else if(aud&&!isNaN(aud.currentTime)){pos=String(aud.currentTime);dur=String(aud.duration||0);}" +
+        "var playing=(mk&&mk.isPlaying===true)||(aud&&!aud.paused)||(navigator.mediaSession&&navigator.mediaSession.playbackState==='playing');" +
+        "return 'DOM|||applemusic|||'+title+'|||'+artist+'|||'+album+'|||'+pos+'|||'+dur+'|||'+art+'|||'+(playing?'playing':'paused');" +
+        "}" +
         "var tEl=document.querySelector('[data-testid=context-item-info-title]');" +
         "var aEl=document.querySelector('[data-testid=context-item-info-subtitles]');" +
         "var title=(tEl&&tEl.textContent?tEl.textContent.trim():'')||(ms&&ms.title?ms.title:'');" +
         "var artist=(aEl&&aEl.textContent?aEl.textContent.trim():'')||(ms&&ms.artist?ms.artist:'');" +
         "var album=(ms&&ms.album?ms.album:'');" +
-        "var art='';" +
-        "if(ms&&ms.artwork&&ms.artwork.length>0){art=ms.artwork[ms.artwork.length-1].src||'';}" +
         "if(!art){var img=document.querySelector('[data-testid=cover-art-image]');if(img&&img.src){art=img.src;}}" +
         "var posEl=document.querySelector('[data-testid=playback-position]');" +
         "var durEl=document.querySelector('[data-testid=playback-duration]');" +
@@ -572,93 +706,80 @@ final class NowPlayingManager: ObservableObject {
         "artist=parts.slice(1).join('•').replace(/- Spotify.*$/i,'').trim();" +
         "}" +
         "var pState=isPlaying?'playing':'paused';" +
-        "return 'DOM|||'+title+'|||'+artist+'|||'+album+'|||'+pos+'|||'+dur+'|||'+art+'|||'+pState;" +
-        "}catch(e){return 'FALLBACK|||'+document.title;}})()"
+        "return 'DOM|||spotify|||'+title+'|||'+artist+'|||'+album+'|||'+pos+'|||'+dur+'|||'+art+'|||'+pState;" +
+        "}catch(e){return 'FALLBACK|||spotify|||'+document.title;}})()"
 
     nonisolated static func buildBrowserProbeScript(for browser: SpotifyWebBrowser) -> String {
-        if browser.isSafari {
-            return """
-            tell application "\(browser.applicationName)"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            set tabUrl to URL of t
-                            if tabUrl contains "open.spotify.com" then
-                                set tabTitle to name of t
-                                try
-                                    set domRes to do JavaScript "\(spotifyDOMProbeJS)" in t
-                                    if domRes is not missing value and domRes is not "" then
-                                        return domRes
-                                    end if
-                                end try
-                                return "FALLBACK|||" & tabTitle
+        let titleProperty = browser.isSafari ? "name of t" : "title of t"
+        let jsCall = browser.isSafari
+            ? "do JavaScript \"\(webMusicDOMProbeJS)\" in t"
+            : "execute t javascript \"\(webMusicDOMProbeJS)\""
+
+        return """
+        set matchedLines to ""
+        tell application "\(browser.applicationName)"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    try
+                        set tabUrl to URL of t
+                        set svcId to ""
+                        if tabUrl contains "open.spotify.com" then
+                            set svcId to "spotify"
+                        else if tabUrl contains "music.youtube.com" then
+                            set svcId to "ytmusic"
+                        else if tabUrl contains "music.apple.com" then
+                            set svcId to "applemusic"
+                        end if
+                        if svcId is not "" then
+                            set tabTitle to \(titleProperty)
+                            set lineOut to ""
+                            try
+                                set domRes to \(jsCall)
+                                if domRes is not missing value and domRes is not "" then
+                                    set lineOut to domRes
+                                end if
+                            end try
+                            if lineOut is "" then
+                                set lineOut to "FALLBACK|||" & svcId & "|||" & tabTitle
                             end if
-                        end try
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-        } else {
-            return """
-            tell application "\(browser.applicationName)"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            set tabUrl to URL of t
-                            if tabUrl contains "open.spotify.com" then
-                                set tabTitle to title of t
-                                try
-                                    set domRes to execute t javascript "\(spotifyDOMProbeJS)"
-                                    if domRes is not missing value and domRes is not "" then
-                                        return domRes
-                                    end if
-                                end try
-                                return "FALLBACK|||" & tabTitle
+                            if matchedLines is "" then
+                                set matchedLines to lineOut
+                            else
+                                set matchedLines to matchedLines & "\\n" & lineOut
                             end if
-                        end try
-                    end repeat
+                        end if
+                    end try
                 end repeat
-            end tell
-            return ""
-            """
-        }
+            end repeat
+        end tell
+        return matchedLines
+        """
     }
 
-    nonisolated static func buildBrowserActionScript(for browser: SpotifyWebBrowser, jsExpression: String) -> String {
-        if browser.isSafari {
-            return """
-            tell application "\(browser.applicationName)"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            if (URL of t) contains "open.spotify.com" then
-                                do JavaScript "\(jsExpression)" in t
-                                return "ok"
-                            end if
-                        end try
-                    end repeat
+    nonisolated static func buildBrowserActionScript(
+        for browser: SpotifyWebBrowser,
+        service: WebMusicService,
+        jsExpression: String
+    ) -> String {
+        let jsCall = browser.isSafari
+            ? "do JavaScript \"\(jsExpression)\" in t"
+            : "execute t javascript \"\(jsExpression)\""
+
+        return """
+        tell application "\(browser.applicationName)"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    try
+                        if (URL of t) contains "\(service.domainSubstring)" then
+                            \(jsCall)
+                            return "ok"
+                        end if
+                    end try
                 end repeat
-            end tell
-            return ""
-            """
-        } else {
-            return """
-            tell application "\(browser.applicationName)"
-                repeat with w in windows
-                    repeat with t in tabs of w
-                        try
-                            if (URL of t) contains "open.spotify.com" then
-                                execute t javascript "\(jsExpression)"
-                                return "ok"
-                            end if
-                        end try
-                    end repeat
-                end repeat
-            end tell
-            return ""
-            """
-        }
+            end repeat
+        end tell
+        return ""
+        """
     }
 
     // MARK: - Fetching Playback Details
@@ -707,7 +828,7 @@ final class NowPlayingManager: ObservableObject {
                 }
             }
 
-            // 2. Apple Music
+            // 2. Apple Music Desktop
             if isMusicRunning {
                 let musicScript = """
                 tell application "Music"
@@ -739,17 +860,21 @@ final class NowPlayingManager: ObservableObject {
                 }
             }
 
-            // 3. Running Web Browsers (open.spotify.com)
+            // 3. Running Web Browsers (open.spotify.com, music.youtube.com, music.apple.com)
             for browser in runningBrowsers {
                 let probeScript = Self.buildBrowserProbeScript(for: browser)
-                if let rawOutput = Self.runAppleScript(probeScript),
-                   let snapshot = Self.parseBrowserScriptOutput(
-                       rawOutput,
-                       browser: browser,
-                       previousSnapshot: previousWebSnapshots[browser]
-                   ) {
-                    updatedWebSnapshots[browser] = snapshot
-                    candidates.append(snapshot)
+                if let rawOutput = Self.runAppleScript(probeScript) {
+                    let lines = rawOutput.components(separatedBy: .newlines)
+                    for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                        if let snapshot = Self.parseBrowserScriptOutput(
+                            line,
+                            browser: browser,
+                            previousSnapshot: previousWebSnapshots[browser]
+                        ) {
+                            updatedWebSnapshots[browser] = snapshot
+                            candidates.append(snapshot)
+                        }
+                    }
                 }
             }
 
@@ -802,7 +927,7 @@ final class NowPlayingManager: ObservableObject {
         self.activeSource = chosen.source
         self.player = chosen.source.displayBadge
 
-        if case .spotifyWeb(let browser) = chosen.source, !chosen.isJSBridgeAvailable {
+        if case .webMusic(_, let browser) = chosen.source, !chosen.isJSBridgeAvailable {
             self.isBrowserJSHintVisible = true
             self.browserJSHintText = browser.jsPermissionHint
         } else {
@@ -884,13 +1009,14 @@ final class NowPlayingManager: ObservableObject {
     // MARK: - Lyrics Engine
 
     func fetchLyrics(title: String, artist: String) {
-        let key = "\(title):::\(artist)"
-        guard key != lastFetchedLyricsKey && !title.isEmpty else { return }
+        let sanitized = Self.sanitizeForLyricsSearch(title: title, artist: artist)
+        let key = "\(sanitized.title):::\(sanitized.artist)"
+        guard key != lastFetchedLyricsKey && !sanitized.title.isEmpty else { return }
         lastFetchedLyricsKey = key
         lyricsLoading = true
 
-        guard let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+        guard let encodedTitle = sanitized.title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedArtist = sanitized.artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
             lyricsLoading = false
             return
         }
@@ -983,8 +1109,9 @@ final class NowPlayingManager: ObservableObject {
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music").first?.activate()
         case .spotifyDesktop, .none:
             NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").first?.activate()
-        case .spotifyWeb(let browser):
+        case .webMusic(let service, let browser):
             NSRunningApplication.runningApplications(withBundleIdentifier: browser.bundleIdentifier).first?.activate()
+            let domain = service.domainSubstring
             let focusScript: String
             if browser.isSafari {
                 focusScript = """
@@ -993,7 +1120,7 @@ final class NowPlayingManager: ObservableObject {
                     repeat with w in windows
                         repeat with t in tabs of w
                             try
-                                if (URL of t) contains "open.spotify.com" then
+                                if (URL of t) contains "\(domain)" then
                                     set current tab of w to t
                                     set index of w to 1
                                     return
@@ -1011,7 +1138,7 @@ final class NowPlayingManager: ObservableObject {
                         set tabIdx to 1
                         repeat with t in tabs of w
                             try
-                                if (URL of t) contains "open.spotify.com" then
+                                if (URL of t) contains "\(domain)" then
                                     set active tab index of w to tabIdx
                                     set index of w to 1
                                     return
@@ -1030,9 +1157,17 @@ final class NowPlayingManager: ObservableObject {
     }
 
     func togglePlayPause() {
-        if case .spotifyWeb(let browser) = activeSource {
-            let js = "(function(){var b=document.querySelector('[data-testid=control-button-playpause]');if(b){b.click();}})()"
-            let script = Self.buildBrowserActionScript(for: browser, jsExpression: js)
+        if case .webMusic(let service, let browser) = activeSource {
+            let js: String
+            switch service {
+            case .spotifyWeb:
+                js = "(function(){var b=document.querySelector('[data-testid=control-button-playpause]');if(b){b.click();}})()"
+            case .youtubeMusic:
+                js = "(function(){var b=document.querySelector('#play-pause-button');if(b){b.click();}else{var v=document.querySelector('video');if(v){v.paused?v.play():v.pause();}}})()"
+            case .appleMusicWeb:
+                js = "(function(){var mk=(typeof MusicKit!=='undefined'&&MusicKit.getInstance)?MusicKit.getInstance():null;if(mk){mk.isPlaying?mk.pause():mk.play();}else{var b=document.querySelector('.playback-play__pause,.playback-play__play,[aria-label=Pause],[aria-label=Play]');if(b){b.click();}}})()"
+            }
+            let script = Self.buildBrowserActionScript(for: browser, service: service, jsExpression: js)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.runAppleScript(script)
             }
@@ -1047,9 +1182,17 @@ final class NowPlayingManager: ObservableObject {
     }
 
     func nextTrack() {
-        if case .spotifyWeb(let browser) = activeSource {
-            let js = "(function(){var b=document.querySelector('[data-testid=control-button-skip-forward]');if(b){b.click();}})()"
-            let script = Self.buildBrowserActionScript(for: browser, jsExpression: js)
+        if case .webMusic(let service, let browser) = activeSource {
+            let js: String
+            switch service {
+            case .spotifyWeb:
+                js = "(function(){var b=document.querySelector('[data-testid=control-button-skip-forward]');if(b){b.click();}})()"
+            case .youtubeMusic:
+                js = "(function(){var b=document.querySelector('.next-button');if(b){b.click();}})()"
+            case .appleMusicWeb:
+                js = "(function(){var mk=(typeof MusicKit!=='undefined'&&MusicKit.getInstance)?MusicKit.getInstance():null;if(mk&&mk.skipToNextItem){mk.skipToNextItem();}else{var b=document.querySelector('[aria-label=Next]');if(b){b.click();}}})()"
+            }
+            let script = Self.buildBrowserActionScript(for: browser, service: service, jsExpression: js)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.runAppleScript(script)
             }
@@ -1065,9 +1208,17 @@ final class NowPlayingManager: ObservableObject {
     }
 
     func previousTrack() {
-        if case .spotifyWeb(let browser) = activeSource {
-            let js = "(function(){var b=document.querySelector('[data-testid=control-button-skip-back]');if(b){b.click();}})()"
-            let script = Self.buildBrowserActionScript(for: browser, jsExpression: js)
+        if case .webMusic(let service, let browser) = activeSource {
+            let js: String
+            switch service {
+            case .spotifyWeb:
+                js = "(function(){var b=document.querySelector('[data-testid=control-button-skip-back]');if(b){b.click();}})()"
+            case .youtubeMusic:
+                js = "(function(){var b=document.querySelector('.previous-button');if(b){b.click();}})()"
+            case .appleMusicWeb:
+                js = "(function(){var mk=(typeof MusicKit!=='undefined'&&MusicKit.getInstance)?MusicKit.getInstance():null;if(mk&&mk.skipToPreviousItem){mk.skipToPreviousItem();}else{var b=document.querySelector('[aria-label=Previous]');if(b){b.click();}}})()"
+            }
+            let script = Self.buildBrowserActionScript(for: browser, service: service, jsExpression: js)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.runAppleScript(script)
             }
@@ -1083,14 +1234,28 @@ final class NowPlayingManager: ObservableObject {
     }
 
     func seek(to position: Double) {
-        if case .spotifyWeb(let browser) = activeSource {
+        if case .webMusic(let service, let browser) = activeSource {
             guard trackDuration > 0 else { return }
             let fraction = min(1.0, max(0.0, position / trackDuration))
-            let js = String(
-                format: "(function(){var bar=document.querySelector('[data-testid=playback-progressbar]')||document.querySelector('[data-testid=progress-bar]');if(bar){var r=bar.getBoundingClientRect();var x=r.left+r.width*%.6f;var y=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(ev){bar.dispatchEvent(new MouseEvent(ev,{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y}));});}})()",
-                fraction
-            )
-            let script = Self.buildBrowserActionScript(for: browser, jsExpression: js)
+            let js: String
+            switch service {
+            case .spotifyWeb:
+                js = String(
+                    format: "(function(){var bar=document.querySelector('[data-testid=playback-progressbar]')||document.querySelector('[data-testid=progress-bar]');if(bar){var r=bar.getBoundingClientRect();var x=r.left+r.width*%.6f;var y=r.top+r.height/2;['mousedown','mouseup','click'].forEach(function(ev){bar.dispatchEvent(new MouseEvent(ev,{bubbles:true,cancelable:true,view:window,clientX:x,clientY:y}));});}})()",
+                    fraction
+                )
+            case .youtubeMusic:
+                js = String(
+                    format: "(function(){var v=document.querySelector('video');if(v){v.currentTime=%.2f;}})()",
+                    position
+                )
+            case .appleMusicWeb:
+                js = String(
+                    format: "(function(){var mk=(typeof MusicKit!=='undefined'&&MusicKit.getInstance)?MusicKit.getInstance():null;if(mk&&mk.seekToTime){mk.seekToTime(%.2f);}else{var a=document.querySelector('audio');if(a){a.currentTime=%.2f;}}})()",
+                    position, position
+                )
+            }
+            let script = Self.buildBrowserActionScript(for: browser, service: service, jsExpression: js)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = Self.runAppleScript(script)
             }

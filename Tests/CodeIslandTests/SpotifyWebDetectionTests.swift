@@ -10,7 +10,7 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertTrue(UserDefaults.standard.bool(forKey: SettingsKey.detectSpotifyWebInBrowsers))
     }
 
-    func testSupportedBrowsersCatalog() {
+    func testSupportedBrowsersAndWebMusicServicesCatalog() {
         let browsers = SpotifyWebBrowser.allCases
         XCTAssertEqual(browsers.map(\.bundleIdentifier), [
             "com.apple.Safari",
@@ -21,9 +21,10 @@ final class SpotifyWebDetectionTests: XCTestCase {
         ])
         XCTAssertEqual(SpotifyWebBrowser.brave.shortBadge, "SPOTIFY · BRAVE")
         XCTAssertEqual(SpotifyWebBrowser.safari.shortBadge, "SPOTIFY · SAFARI")
-        XCTAssertEqual(SpotifyWebBrowser.chrome.shortBadge, "SPOTIFY · CHROME")
-        XCTAssertEqual(SpotifyWebBrowser.arc.shortBadge, "SPOTIFY · ARC")
-        XCTAssertEqual(SpotifyWebBrowser.edge.shortBadge, "SPOTIFY · EDGE")
+        XCTAssertEqual(WebMusicService.spotifyWeb.badge(for: .brave), "SPOTIFY · BRAVE")
+        XCTAssertEqual(WebMusicService.youtubeMusic.badge(for: .brave), "YT MUSIC · BRAVE")
+        XCTAssertEqual(WebMusicService.appleMusicWeb.badge(for: .safari), "APPLE MUSIC · SAFARI")
+
         for browser in browsers {
             XCTAssertFalse(browser.jsPermissionHint.isEmpty)
         }
@@ -39,8 +40,8 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertNil(NowPlayingManager.parseTimecode(""))
     }
 
-    func testTier1DOMOutputParsing() {
-        let raw = "DOM|||Midnight City|||M83|||Hurry Up, We're Dreaming|||1:15|||4:03|||https://i.scdn.co/image/abc123|||playing"
+    func testTier1DOMOutputParsingSpotifyWeb() {
+        let raw = "DOM|||spotify|||Midnight City|||M83|||Hurry Up, We're Dreaming|||1:15|||4:03|||https://i.scdn.co/image/abc123|||playing"
         let snapshot = NowPlayingManager.parseBrowserScriptOutput(
             raw,
             browser: .brave,
@@ -55,13 +56,51 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertEqual(snapshot?.duration, 243.0)
         XCTAssertEqual(snapshot?.artworkURLOrPath, "https://i.scdn.co/image/abc123")
         XCTAssertEqual(snapshot?.isPlaying, true)
-        XCTAssertEqual(snapshot?.source, .spotifyWeb(.brave))
+        XCTAssertEqual(snapshot?.source, .webMusic(service: .spotifyWeb, browser: .brave))
+        XCTAssertEqual(snapshot?.source.displayBadge, "SPOTIFY · BRAVE")
         XCTAssertEqual(snapshot?.isJSBridgeAvailable, true)
     }
 
+    func testTier1DOMOutputParsingYouTubeMusic() {
+        let raw = "DOM|||ytmusic|||Get Lucky (Official Audio)|||Daft Punk - Topic|||Random Access Memories|||64.25|||248.5|||https://lh3.googleusercontent.com/art123|||playing"
+        let snapshot = NowPlayingManager.parseBrowserScriptOutput(
+            raw,
+            browser: .chrome,
+            previousSnapshot: nil
+        )
+
+        XCTAssertNotNil(snapshot)
+        XCTAssertEqual(snapshot?.title, "Get Lucky (Official Audio)")
+        XCTAssertEqual(snapshot?.artist, "Daft Punk - Topic")
+        XCTAssertEqual(snapshot?.album, "Random Access Memories")
+        XCTAssertEqual(snapshot?.position, 64.25)
+        XCTAssertEqual(snapshot?.duration, 248.5)
+        XCTAssertEqual(snapshot?.isPlaying, true)
+        XCTAssertEqual(snapshot?.source, .webMusic(service: .youtubeMusic, browser: .chrome))
+        XCTAssertEqual(snapshot?.source.displayBadge, "YT MUSIC · CHROME")
+        XCTAssertEqual(snapshot?.isJSBridgeAvailable, true)
+    }
+
+    func testTier1DOMOutputParsingAppleMusicWeb() {
+        let raw = "DOM|||applemusic|||Severance Main Titles|||Theodore Shapiro|||Severance (Apple TV+ Original Series Soundtrack)|||0:45|||1:38|||https://is1-ssl.mzstatic.com/image/thumb/art.jpg|||playing"
+        let snapshot = NowPlayingManager.parseBrowserScriptOutput(
+            raw,
+            browser: .safari,
+            previousSnapshot: nil
+        )
+
+        XCTAssertNotNil(snapshot)
+        XCTAssertEqual(snapshot?.title, "Severance Main Titles")
+        XCTAssertEqual(snapshot?.artist, "Theodore Shapiro")
+        XCTAssertEqual(snapshot?.position, 45.0)
+        XCTAssertEqual(snapshot?.duration, 98.0)
+        XCTAssertEqual(snapshot?.isPlaying, true)
+        XCTAssertEqual(snapshot?.source, .webMusic(service: .appleMusicWeb, browser: .safari))
+        XCTAssertEqual(snapshot?.source.displayBadge, "APPLE MUSIC · SAFARI")
+    }
+
     func testTier1DOMRemainingDurationCalculation() {
-        // When Spotify Web displays remaining time (e.g. "-2:00" at position "1:30"), total duration is 3:30 (210s)
-        let raw = "DOM|||Starboy|||The Weeknd|||Starboy|||1:30|||-2:00|||https://i.scdn.co/image/xyz|||playing"
+        let raw = "DOM|||spotify|||Starboy|||The Weeknd|||Starboy|||1:30|||-2:00|||https://i.scdn.co/image/xyz|||playing"
         let snapshot = NowPlayingManager.parseBrowserScriptOutput(
             raw,
             browser: .safari,
@@ -74,20 +113,41 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertEqual(snapshot?.source, .spotifyWeb(.safari))
     }
 
-    func testTier2FallbackTabTitleParsingWhenPlaying() {
-        let raw = "FALLBACK|||Blinding Lights • The Weeknd"
-        let snapshot = NowPlayingManager.parseBrowserScriptOutput(
-            raw,
+    func testTier2FallbackTabTitleParsingAcrossServices() {
+        // Spotify Web fallback
+        let spotifyRaw = "FALLBACK|||spotify|||Blinding Lights • The Weeknd"
+        let spotifySnap = NowPlayingManager.parseBrowserScriptOutput(
+            spotifyRaw,
             browser: .chrome,
             previousSnapshot: nil
         )
+        XCTAssertEqual(spotifySnap?.title, "Blinding Lights")
+        XCTAssertEqual(spotifySnap?.artist, "The Weeknd")
+        XCTAssertEqual(spotifySnap?.source, .webMusic(service: .spotifyWeb, browser: .chrome))
+        XCTAssertEqual(spotifySnap?.isJSBridgeAvailable, false)
 
-        XCTAssertNotNil(snapshot)
-        XCTAssertEqual(snapshot?.title, "Blinding Lights")
-        XCTAssertEqual(snapshot?.artist, "The Weeknd")
-        XCTAssertEqual(snapshot?.isPlaying, true)
-        XCTAssertEqual(snapshot?.isJSBridgeAvailable, false)
-        XCTAssertEqual(snapshot?.source, .spotifyWeb(.chrome))
+        // YouTube Music fallback
+        let ytRaw = "FALLBACK|||ytmusic|||Numb • Linkin Park - YouTube Music"
+        let ytSnap = NowPlayingManager.parseBrowserScriptOutput(
+            ytRaw,
+            browser: .brave,
+            previousSnapshot: nil
+        )
+        XCTAssertEqual(ytSnap?.title, "Numb")
+        XCTAssertEqual(ytSnap?.artist, "Linkin Park")
+        XCTAssertEqual(ytSnap?.source, .webMusic(service: .youtubeMusic, browser: .brave))
+        XCTAssertEqual(ytSnap?.isJSBridgeAvailable, false)
+
+        // Apple Music Web fallback
+        let amRaw = "FALLBACK|||applemusic|||Veridis Quo • Daft Punk — Apple Music"
+        let amSnap = NowPlayingManager.parseBrowserScriptOutput(
+            amRaw,
+            browser: .safari,
+            previousSnapshot: nil
+        )
+        XCTAssertEqual(amSnap?.title, "Veridis Quo")
+        XCTAssertEqual(amSnap?.artist, "Daft Punk")
+        XCTAssertEqual(amSnap?.source, .webMusic(service: .appleMusicWeb, browser: .safari))
     }
 
     func testTier2FallbackRetainsPreviousTrackAsPausedWhenTabTitleRevertsToGenericSpotify() {
@@ -103,7 +163,7 @@ final class SpotifyWebDetectionTests: XCTestCase {
             isJSBridgeAvailable: false
         )
 
-        let raw = "FALLBACK|||Spotify – Web Player: Music for everyone"
+        let raw = "FALLBACK|||spotify|||Spotify – Web Player: Music for everyone"
         let snapshot = NowPlayingManager.parseBrowserScriptOutput(
             raw,
             browser: .chrome,
@@ -119,6 +179,29 @@ final class SpotifyWebDetectionTests: XCTestCase {
         XCTAssertEqual(snapshot?.isJSBridgeAvailable, false)
     }
 
+    func testLyricsMetadataSanitizerRemovesYouTubeNoise() {
+        let cleaned1 = NowPlayingManager.sanitizeForLyricsSearch(
+            title: "Blinding Lights (Official Music Video)",
+            artist: "The Weeknd - Topic"
+        )
+        XCTAssertEqual(cleaned1.title, "Blinding Lights")
+        XCTAssertEqual(cleaned1.artist, "The Weeknd")
+
+        let cleaned2 = NowPlayingManager.sanitizeForLyricsSearch(
+            title: "Midnight City [Official Audio]",
+            artist: "M83VEVO"
+        )
+        XCTAssertEqual(cleaned2.title, "Midnight City")
+        XCTAssertEqual(cleaned2.artist, "M83")
+
+        let cleaned3 = NowPlayingManager.sanitizeForLyricsSearch(
+            title: "Creep (Official Lyric Video) [HD]",
+            artist: "Radiohead"
+        )
+        XCTAssertEqual(cleaned3.title, "Creep")
+        XCTAssertEqual(cleaned3.artist, "Radiohead")
+    }
+
     func testSmartSourcePriorityPrefersActivelyPlayingWebOverPausedDesktop() {
         let pausedDesktop = PlaybackSnapshot(
             title: "Old Desktop Song",
@@ -131,25 +214,25 @@ final class SpotifyWebDetectionTests: XCTestCase {
             source: .spotifyDesktop,
             isJSBridgeAvailable: true
         )
-        let playingWeb = PlaybackSnapshot(
-            title: "Active Browser Song",
-            artist: "Browser Artist",
+        let playingYTMusic = PlaybackSnapshot(
+            title: "Active YT Music Song",
+            artist: "YT Artist",
             album: "Album B",
             position: 14.0,
             duration: 195.0,
-            artworkURLOrPath: "https://i.scdn.co/image/web",
+            artworkURLOrPath: "https://lh3.googleusercontent.com/yt",
             isPlaying: true,
-            source: .spotifyWeb(.brave),
+            source: .webMusic(service: .youtubeMusic, browser: .brave),
             isJSBridgeAvailable: true
         )
 
         let chosen = NowPlayingManager.resolvePreferredSnapshot(
-            candidates: [pausedDesktop, playingWeb],
+            candidates: [pausedDesktop, playingYTMusic],
             lastActiveSource: .spotifyDesktop
         )
 
-        XCTAssertEqual(chosen?.source, .spotifyWeb(.brave))
-        XCTAssertEqual(chosen?.title, "Active Browser Song")
+        XCTAssertEqual(chosen?.source, .webMusic(service: .youtubeMusic, browser: .brave))
+        XCTAssertEqual(chosen?.title, "Active YT Music Song")
         XCTAssertEqual(chosen?.isPlaying, true)
     }
 

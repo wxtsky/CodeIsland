@@ -1692,8 +1692,8 @@ private struct AppearancePage: View {
 
             Section("Music & Synced Lyrics") {
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Detect Spotify Web in Browsers", isOn: $detectSpotifyWebInBrowsers)
-                    Text("Automatically detect open.spotify.com playback in Safari, Brave, Chrome, Arc, and Edge. For exact lyric sync and controls, enable 'Allow JavaScript from Apple Events' in your browser's Developer menu.")
+                    Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
+                    Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
