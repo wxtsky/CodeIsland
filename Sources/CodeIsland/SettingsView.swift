@@ -1784,7 +1784,6 @@ private struct AppearancePage: View {
                                 .foregroundStyle(.tertiary)
                         }
                     }
-                    .padding(.leading, 12)
                 }
 
                 // Timing Offset (applies to both Notch HUD and Floating Lyrics)
@@ -1813,13 +1812,15 @@ private struct AppearancePage: View {
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
 
-                        Slider(value: $lyricSyncOffset, in: -3.0...3.0, step: 0.05) {
-                            Text("Lyric Timing Offset")
-                        } minimumValueLabel: {
-                            Text("-3s").font(.system(size: 9))
-                        } maximumValueLabel: {
-                            Text("+3s").font(.system(size: 9))
-                        }
+                        Text("-3s")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+
+                        Slider(value: $lyricSyncOffset, in: -3.0...3.0, step: 0.05)
+
+                        Text("+3s")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
 
                         Button("+0.25s") {
                             lyricSyncOffset = min(3.0, lyricSyncOffset + 0.25)
