@@ -974,30 +974,21 @@ struct ModernCleanMusicHUDContentView: View {
 
                 // 2. STACK BESIDE IMAGE (Title di atas, Scrubber di tengah, Tombol aksi di bawah terpusat horizontal)
                 VStack(alignment: .leading, spacing: 0) {
-                    // Di atas: Title song & Artist
+                    // Di atas: Title song (Marquee scrolling jika panjang) & Artist
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white)
+                        ModernMarqueeText(
+                            text: nowPlaying.title.isEmpty ? "No track" : nowPlaying.title,
+                            font: .system(size: 13.5, weight: .bold, design: .rounded),
+                            color: .white,
+                            maxWidth: 140
+                        )
+                        .id(nowPlaying.title)
+
+                        Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.72))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .id(nowPlaying.title)
-
-                        HStack(spacing: 5) {
-                            Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
-                                .font(.system(size: 11, weight: .medium, design: .default))
-                                .foregroundStyle(Color.white.opacity(0.70))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-
-                            Circle()
-                                .fill(nowPlaying.player.lowercased().contains("apple") ? Color(red: 0.98, green: 0.20, blue: 0.35) : Color(red: 0.12, green: 0.84, blue: 0.38))
-                                .frame(width: 4, height: 4)
-
-                            Text(nowPlaying.player.isEmpty ? "Spotify" : (nowPlaying.player.lowercased().contains("spotify") ? "Spotify" : "Apple Music"))
-                                .font(.system(size: 9, weight: .medium, design: .default))
-                                .foregroundStyle(Color.white.opacity(0.65))
-                        }
                     }
 
                     Spacer(minLength: 2)

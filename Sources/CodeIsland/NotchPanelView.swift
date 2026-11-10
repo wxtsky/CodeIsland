@@ -310,7 +310,10 @@ struct NotchPanelView: View {
             }
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
-        if showIdleIndicator { return idleHovered ? nw + compactWingWidth * 2 + 80 : nw + compactWingWidth * 2 }
+        if showIdleIndicator {
+            let wing = idleHovered ? 106 : compactWingWidth
+            return nw + wing * 2
+        }
         if !isActive { return nw }
         if sys.showChargingBanner && !appState.surface.isExpanded {
             return min(320, maxPanelWidth)
@@ -1922,12 +1925,8 @@ private struct IdleIndicatorBar: View {
     @StateObject private var quit = QuitConfirmation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var leftWingWidth: CGFloat {
-        hovered ? (compactWingWidth + 12) : compactWingWidth
-    }
-
-    private var rightWingWidth: CGFloat {
-        hovered ? (compactWingWidth + 68) : compactWingWidth
+    private var wingWidth: CGFloat {
+        hovered ? 106 : compactWingWidth
     }
 
     var body: some View {
@@ -1936,10 +1935,10 @@ private struct IdleIndicatorBar: View {
             HStack {
                 MascotView(source: defaultSource, status: .idle, size: mascotSize)
                     .opacity(hovered ? 0.9 : 0.6)
-                    .padding(.leading, hovered ? 12 : 5)
+                    .padding(.leading, hovered ? 8 : 5)
                 Spacer(minLength: 0)
             }
-            .frame(width: leftWingWidth, alignment: .leading)
+            .frame(width: wingWidth, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
             .help("Click to expand tabs (Agents / Workspace / Music)")
@@ -1954,22 +1953,14 @@ private struct IdleIndicatorBar: View {
             HStack {
                 Spacer(minLength: 0)
                 if hovered {
-                    HStack(spacing: 6) {
-                        if !quit.isArmed {
-                            NotchIconButton(icon: "chevron.down", tooltip: "Expand to Tabs (Agents / Workspace / Music)") {
-                                onExpand?()
-                            }
+                    HStack(spacing: 4) {
+                        NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
+                            soundEnabled.toggle()
                         }
-
-                        HStack(spacing: 4) {
-                            NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
-                                soundEnabled.toggle()
-                            }
-                            NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                                SettingsWindowController.shared.show()
-                            }
-                            QuitConfirmButton(confirmation: quit)
+                        NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
+                            SettingsWindowController.shared.show()
                         }
+                        QuitConfirmButton(confirmation: quit)
                     }
                     .padding(.trailing, 8)
                     .transition(.opacity)
@@ -1981,7 +1972,7 @@ private struct IdleIndicatorBar: View {
                         .transition(.opacity)
                 }
             }
-            .frame(width: rightWingWidth, alignment: .trailing)
+            .frame(width: wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
         }
