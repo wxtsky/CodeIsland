@@ -144,53 +144,57 @@ struct ModernMarqueeText: View {
     let text: String
     var font: Font = .system(size: 9.5, weight: .bold, design: .rounded)
     var color: Color = .white
-    var maxWidth: CGFloat = 72
+    var maxWidth: CGFloat? = nil
     @State private var textWidth: CGFloat = 0
     @State private var startDate = Date()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.03)) { timeline in
-            let excess = max(0, textWidth - maxWidth)
-            let offset: CGFloat = {
-                guard excess > 0 else { return 0 }
-                let scrollDuration = max(2.5, Double(excess) / 22.0)
-                let pauseStart = 1.2
-                let pauseEnd = 1.2
-                let resetDuration = 1.0
-                let totalCycle = pauseStart + scrollDuration + pauseEnd + resetDuration
+        GeometryReader { geo in
+            let containerWidth = maxWidth ?? geo.size.width
+            let excess = max(0, textWidth - containerWidth)
+            TimelineView(.animation(minimumInterval: 0.03)) { timeline in
+                let offset: CGFloat = {
+                    guard excess > 0 else { return 0 }
+                    let scrollDuration = max(2.5, Double(excess) / 22.0)
+                    let pauseStart = 1.2
+                    let pauseEnd = 1.2
+                    let resetDuration = 1.0
+                    let totalCycle = pauseStart + scrollDuration + pauseEnd + resetDuration
 
-                let time = max(0, timeline.date.timeIntervalSince(startDate))
-                let t = time.truncatingRemainder(dividingBy: totalCycle)
+                    let time = max(0, timeline.date.timeIntervalSince(startDate))
+                    let t = time.truncatingRemainder(dividingBy: totalCycle)
 
-                if t < pauseStart {
-                    return 0
-                } else if t < pauseStart + scrollDuration {
-                    let progress = (t - pauseStart) / scrollDuration
-                    let smooth = (1.0 - cos(progress * .pi)) / 2.0
-                    return CGFloat(smooth) * excess
-                } else if t < pauseStart + scrollDuration + pauseEnd {
-                    return excess
-                } else {
-                    let progress = (t - (pauseStart + scrollDuration + pauseEnd)) / resetDuration
-                    let smooth = (1.0 - cos(progress * .pi)) / 2.0
-                    return (1.0 - CGFloat(smooth)) * excess
-                }
-            }()
-
-            Text(text)
-                .font(font)
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .fixedSize()
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: ModernMarqueeTextWidthKey.self, value: geo.size.width)
+                    if t < pauseStart {
+                        return 0
+                    } else if t < pauseStart + scrollDuration {
+                        let progress = (t - pauseStart) / scrollDuration
+                        let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                        return CGFloat(smooth) * excess
+                    } else if t < pauseStart + scrollDuration + pauseEnd {
+                        return excess
+                    } else {
+                        let progress = (t - (pauseStart + scrollDuration + pauseEnd)) / resetDuration
+                        let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                        return (1.0 - CGFloat(smooth)) * excess
                     }
-                )
-                .offset(x: -offset)
-                .frame(width: maxWidth, alignment: .leading)
-                .clipped()
+                }()
+
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .background(
+                        GeometryReader { textGeo in
+                            Color.clear.preference(key: ModernMarqueeTextWidthKey.self, value: textGeo.size.width)
+                        }
+                    )
+                    .offset(x: -offset)
+                    .frame(width: containerWidth, alignment: .leading)
+                    .clipped()
+            }
         }
+        .frame(width: maxWidth)
         .onPreferenceChange(ModernMarqueeTextWidthKey.self) { width in
             if abs(self.textWidth - width) > 1 {
                 self.textWidth = width
@@ -979,9 +983,10 @@ struct ModernCleanMusicHUDContentView: View {
                         ModernMarqueeText(
                             text: nowPlaying.title.isEmpty ? "No track" : nowPlaying.title,
                             font: .system(size: 13.5, weight: .bold, design: .rounded),
-                            color: .white,
-                            maxWidth: 140
+                            color: .white
                         )
+                        .frame(height: 18)
+                        .padding(.trailing, 10)
                         .id(nowPlaying.title)
 
                         Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
@@ -989,6 +994,7 @@ struct ModernCleanMusicHUDContentView: View {
                             .foregroundStyle(Color.white.opacity(0.72))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            .padding(.trailing, 10)
                     }
 
                     Spacer(minLength: 2)
