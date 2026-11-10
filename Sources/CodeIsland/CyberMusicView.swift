@@ -160,47 +160,42 @@ struct CyberMusicWingView: View {
 
     var body: some View {
         if isModernClean {
-            // MODERN CLEAN: Smooth squircle album art + Apple-style pill equalizer
-            HStack(spacing: 3.5) {
+            // MODERN CLEAN: Langsung album cover (lebih besar), nama lagu, dan visualizer tanpa border
+            HStack(spacing: 5) {
                 if let art = nowPlaying.artworkImage {
                     Image(nsImage: art)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 13, height: 13)
-                        .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                                .stroke(Color.white.opacity(0.18), lineWidth: 0.5)
-                        )
+                        .frame(width: 17, height: 17)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                 } else {
-                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
                         .fill(Color.white.opacity(0.12))
-                        .frame(width: 13, height: 13)
+                        .frame(width: 17, height: 17)
                         .overlay(
                             Image(systemName: "music.note")
-                                .font(.system(size: 7, weight: .semibold))
+                                .font(.system(size: 8, weight: .semibold))
                                 .foregroundStyle(Color.white.opacity(0.85))
                         )
                 }
 
+                Text(nowPlaying.title.isEmpty ? "Music" : nowPlaying.title)
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 68, alignment: .leading)
+
                 ModernAudioSpectrumView(
                     barCount: 3,
                     isPlaying: nowPlaying.isPlaying,
-                    barWidth: 1.8,
-                    maxHeight: 9.0,
+                    barWidth: 2.0,
+                    maxHeight: 11.0,
                     color: accentColor
                 )
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(Color(white: 0.10).opacity(0.88))
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.18), lineWidth: 0.6)
-                    )
-            )
+            .padding(.horizontal, 2)
+            .padding(.vertical, 1)
         } else {
             // RETRO CYBER: Machined pixelated dot matrix
             HStack(spacing: 3) {

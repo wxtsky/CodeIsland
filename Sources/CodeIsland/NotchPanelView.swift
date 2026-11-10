@@ -264,16 +264,23 @@ struct NotchPanelView: View {
         return false
     }
 
-    /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
-    private var symmetricWingWidth: CGFloat {
+    /// Left wing width: expands when agent is thinking or running tools
+    private var compactLeftWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
             return 115
+        }
+        return 48
+    }
+
+    /// Right wing width: sized for music cover + title + equalizer in Modern Clean, or compact in Retro Cyber
+    private var compactRightWingWidth: CGFloat {
+        if nowPlaying.isPlaying {
+            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 108 : (isHoveringRightWing ? 95 : 54)
         }
         if isHoveringRightWing && !shouldShowExpanded {
             return 95
         }
-        // Ultra-compact idle notch (truly narrow, hugs physical cutout with comfortable insets)
-        return nowPlaying.isPlaying ? 54 : 48
+        return 48
     }
 
     /// Notch cutout reserved in the center of the expanded header.
@@ -317,9 +324,8 @@ struct NotchPanelView: View {
         if nowPlaying.showToast && !appState.surface.isExpanded {
             return min(330, maxPanelWidth)
         }
-        let wing = symmetricWingWidth
         let clearance: CGFloat = 0
-        return nw + (wing * 2) + clearance
+        return nw + compactLeftWingWidth + compactRightWingWidth + clearance
     }
 
     /// Room the collapsed right wing lacks to clear the notch; 0 whenever it fits.
@@ -394,10 +400,10 @@ struct NotchPanelView: View {
                         )
                             .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
                             .frame(
-                                width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
+                                width: shouldShowExpanded ? expandedWingWidth : compactLeftWingWidth,
                                 alignment: shouldShowExpanded ? .leading : (isThinking ? .leading : .center)
                             )
-                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactLeftWingWidth)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 guard !shouldShowExpanded else { return }
@@ -428,12 +434,12 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, ((isThinking || isHoveringRightWing) && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
+                            .padding(.trailing, (isHoveringRightWing && !shouldShowExpanded) ? 6 : (shouldShowExpanded ? 8 : 0))
                             .frame(
-                                width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: shouldShowExpanded ? .trailing : ((isThinking || isHoveringRightWing) ? .trailing : .center)
+                                width: shouldShowExpanded ? expandedWingWidth : compactRightWingWidth,
+                                alignment: shouldShowExpanded ? .trailing : (isHoveringRightWing ? .trailing : .center)
                             )
-                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
+                            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactRightWingWidth)
                             .contentShape(Rectangle())
                             .onHover { hovering in
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
@@ -623,7 +629,8 @@ struct NotchPanelView: View {
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: shouldShowExpanded)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: nowPlaying.showToast)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isThinking)
-            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
+            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactLeftWingWidth)
+            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: compactRightWingWidth)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: nowPlaying.isPlaying)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: expandedTab)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: workspaceManager.isExpandedDetail)
@@ -1237,7 +1244,7 @@ private struct CompactRightWing: View {
         return false
     }
     private var shouldExpandRightWing: Bool {
-        isHovered || isThinking
+        isHovered
     }
 
     var body: some View {
@@ -1259,36 +1266,15 @@ private struct CompactRightWing: View {
                 }
                 .padding(.horizontal, 4)
             } else {
-                // Cyberpunk Music Visualizer or Machined Cyber Activity Pill
+                // Music Visualizer or Machined Cyber Activity Pill
                 if nowPlaying.isPlaying {
-                    if shouldExpandRightWing {
-                        // "KECIL KEDUA / THINKING EXPANDED" - Music Mode: Title ticker + cover + visualizer (Ultra-Compact)
-                        if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
-                            HStack(spacing: 3.5) {
-                                if let art = nowPlaying.artworkImage {
-                                    Image(nsImage: art)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 12, height: 12)
-                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                                }
-                                Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
-                                    .font(.system(size: 8, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(Color.white)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .frame(maxWidth: 58, alignment: .leading)
-                                ModernAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.6, maxHeight: 8.5, color: modernMusicAccent)
-                            }
-                            .padding(.horizontal, 4.5)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule()
-                                    .fill(Color(white: 0.12).opacity(0.90))
-                                    .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 0.6))
-                            )
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        } else {
+                    if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
+                        // MODERN CLEAN: Langsung album cover, nama lagu, dan visualizer tanpa border
+                        CyberMusicWingView(nowPlaying: nowPlaying)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    } else {
+                        // RETRO CYBER: Machined pixel pill
+                        if shouldExpandRightWing {
                             HStack(spacing: 3.5) {
                                 if let art = nowPlaying.artworkImage {
                                     Image(nsImage: art)
@@ -1313,11 +1299,11 @@ private struct CompactRightWing: View {
                                     .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        } else {
+                            // "KECIL AWAL" - Retro Cyber
+                            CyberMusicWingView(nowPlaying: nowPlaying)
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
                         }
-                    } else {
-                        // "KECIL AWAL" - Music Mode: Compact cover art + dancing spectrum (Modern or Cyber)
-                        CyberMusicWingView(nowPlaying: nowPlaying)
-                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     }
                 } else {
                     // AGENT / STANDBY MODE:
