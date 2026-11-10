@@ -1687,99 +1687,135 @@ private struct AppearancePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+            }
+
+            Section("Music & Synced Lyrics") {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Show Synced Lyrics Below Notch", isOn: $showCompactLyrics)
                     Text("Display a floating lyric ticker directly beneath the notch cutout during playback.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+
                 if showCompactLyrics {
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Preset Layout Selector
-                        Picker("Floating Lyric Style", selection: $floatingLyricPreset) {
-                            ForEach(FloatingLyricPreset.allCases) { preset in
-                                Text(preset.title).tag(preset.rawValue)
-                            }
+                    // Preset Layout Selector
+                    Picker("Floating Lyric Style", selection: $floatingLyricPreset) {
+                        ForEach(FloatingLyricPreset.allCases) { preset in
+                            Text(preset.title).tag(preset.rawValue)
                         }
-                        .pickerStyle(.menu)
+                    }
+                    .pickerStyle(.menu)
 
-                        Text(FloatingLyricPreset(rawValue: floatingLyricPreset)?.description ?? "")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                    Text(FloatingLyricPreset(rawValue: floatingLyricPreset)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
 
-                        // Font Typography Style
-                        Picker("Font Typography", selection: $floatingLyricFontDesign) {
-                            ForEach(FloatingLyricFontDesign.allCases) { style in
-                                Text(style.title).tag(style.rawValue)
-                            }
+                    // Font Typography Style
+                    Picker("Font Typography", selection: $floatingLyricFontDesign) {
+                        ForEach(FloatingLyricFontDesign.allCases) { style in
+                            Text(style.title).tag(style.rawValue)
                         }
-                        .pickerStyle(.menu)
+                    }
+                    .pickerStyle(.menu)
 
-                        Text("Choose font family: Modern Rounded, Monospaced code, Clean System, or Elegant Serif.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                    Text("Choose font family: Modern Rounded, Monospaced code, Clean System, or Elegant Serif.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
 
-                        // Text Highlight Color
-                        Picker("Highlight Color", selection: $floatingLyricTextColor) {
+                    // Text Highlight Color (macOS Accent Color Swatches Style)
+                    HStack {
+                        Text("Highlight Color")
+                        Spacer()
+                        HStack(spacing: 8) {
                             ForEach(FloatingLyricTextColor.allCases) { col in
-                                Text(col.title).tag(col.rawValue)
+                                let isSelected = (floatingLyricTextColor == col.rawValue)
+                                Button(action: {
+                                    floatingLyricTextColor = col.rawValue
+                                }) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(col.color)
+                                            .frame(width: 14, height: 14)
+                                            .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+
+                                        if isSelected {
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 2)
+                                                .frame(width: 20, height: 20)
+                                        }
+                                    }
+                                    .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .help(col.title)
                             }
                         }
-                        .pickerStyle(.menu)
+                    }
 
-                        Text("Illumination color and glow accent for the currently active lyric line.")
+                    Text("Illumination color and glow accent for the currently active lyric line.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+
+                    // Font Size Slider (Continuous smooth track, no dots)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Lyric Font Size")
+                            Spacer()
+                            Text(String(format: "%.1f pt", floatingLyricFontSize))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 8) {
+                            Text("8pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Slider(
+                                value: Binding(
+                                    get: { floatingLyricFontSize },
+                                    set: { floatingLyricFontSize = (round($0 * 2) / 2) }
+                                ),
+                                in: 8.0...14.0
+                            )
+                            Text("14pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("Scale text size of the floating lyric line below the notch.")
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
+                    }
 
-                        // Font Size Slider
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("Lyric Font Size")
-                                Spacer()
-                                Text(String(format: "%.1f pt", floatingLyricFontSize))
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            HStack(spacing: 8) {
-                                Text("8pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                Slider(value: $floatingLyricFontSize, in: 8.0...14.0, step: 0.5)
-                                Text("14pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text("Scale text size of the floating lyric line below the notch.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
+                    // Vertical Gap (Continuous smooth track, no dots)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Distance from Notch")
+                            Spacer()
+                            Text(String(format: "%.1f pt (~%.2f cm)", floatingLyricVerticalGap, floatingLyricVerticalGap * 0.035))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.secondary)
                         }
-
-                        // Vertical Gap (Distance from Notch)
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text("Distance from Notch")
-                                Spacer()
-                                Text(String(format: "%.1f pt (~%.2f cm)", floatingLyricVerticalGap, floatingLyricVerticalGap * 0.035))
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            HStack(spacing: 8) {
-                                Text("0pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                Slider(value: $floatingLyricVerticalGap, in: 0.0...12.0, step: 0.5)
-                                Text("12pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text("Adjust the vertical clearance between the physical Mac notch and the floating lyrics bar.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
+                        HStack(spacing: 8) {
+                            Text("0pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Slider(
+                                value: Binding(
+                                    get: { floatingLyricVerticalGap },
+                                    set: { floatingLyricVerticalGap = (round($0 * 2) / 2) }
+                                ),
+                                in: 0.0...12.0
+                            )
+                            Text("12pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.secondary)
                         }
+                        Text("Adjust the vertical clearance between the physical Mac notch and the floating lyrics bar.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
                     }
                 }
 
-                // Timing Offset (applies to both Notch HUD and Floating Lyrics)
+                // Timing Offset (Continuous smooth track, no barcode dots)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text("Lyric Timing Offset")
@@ -1816,7 +1852,13 @@ private struct AppearancePage: View {
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(.secondary)
 
-                        Slider(value: $lyricSyncOffset, in: -3.0...3.0, step: 0.05)
+                        Slider(
+                            value: Binding(
+                                get: { lyricSyncOffset },
+                                set: { lyricSyncOffset = (round($0 * 20) / 20) }
+                            ),
+                            in: -3.0...3.0
+                        )
 
                         Text("+3s")
                             .font(.system(size: 9, design: .monospaced))
@@ -1827,6 +1869,9 @@ private struct AppearancePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
+            }
+
+            Section("Usage & Quota") {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle(l10n["show_usage_stats"], isOn: $showUsageStats)
                     Text(l10n["show_usage_stats_desc"])

@@ -84,11 +84,11 @@ public enum FloatingLyricTextColor: String, CaseIterable, Identifiable, Sendable
 
     public var title: String {
         switch self {
-        case .white: return "Pure White (Default)"
-        case .cyan: return "Cyber Cyan (#00F5D4)"
-        case .pink: return "Neon Pink (#FF2987)"
-        case .green: return "Matrix Green (#00E676)"
-        case .amber: return "Sunset Amber (#FF9E00)"
+        case .white: return "Pure White"
+        case .cyan: return "Cyber Cyan"
+        case .pink: return "Neon Pink"
+        case .green: return "Matrix Green"
+        case .amber: return "Sunset Amber"
         }
     }
 }
