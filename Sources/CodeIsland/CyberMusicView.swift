@@ -785,7 +785,7 @@ struct ModernCleanMusicHUDContentView: View {
                 }
                 .id(nowPlaying.title + nowPlaying.artist)
 
-                // 2. STACK BESIDE IMAGE (Title on top, Action Buttons in middle, Scrubber on bottom)
+                // 2. STACK BESIDE IMAGE (Title di atas, Scrubber di tengah, Tombol aksi di bawah terpusat horizontal)
                 VStack(alignment: .leading, spacing: 0) {
                     // Di atas: Title song & Artist
                     VStack(alignment: .leading, spacing: 2) {
@@ -815,49 +815,7 @@ struct ModernCleanMusicHUDContentView: View {
 
                     Spacer(minLength: 2)
 
-                    // Di tengah: Tombol aksi (⏮, ▶/⏸, ⏭) berada di tengah antara title dan progress bar
-                    HStack(spacing: 20) {
-                        Spacer()
-
-                        Button(action: { nowPlaying.previousTrack() }) {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: { nowPlaying.togglePlayPause() }) {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 26, height: 26)
-                                .overlay(
-                                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Color.black)
-                                        .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
-                                )
-                                .shadow(color: Color.white.opacity(0.22), radius: 3, y: 1)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: { nowPlaying.nextTrack() }) {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.85))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Spacer()
-                    }
-                    .frame(height: 26)
-
-                    Spacer(minLength: 2)
-
-                    // Di bawah: Scrubber Bar & Durasi
+                    // Di tengah: Scrubber Bar & Durasi
                     VStack(spacing: 2) {
                         GeometryReader { geo in
                             let totalWidth = geo.size.width
@@ -897,6 +855,48 @@ struct ModernCleanMusicHUDContentView: View {
                                 .foregroundStyle(Color.white.opacity(0.48))
                         }
                     }
+
+                    Spacer(minLength: 2)
+
+                    // Di bawah: Tombol aksi (⏮, ▶/⏸, ⏭) terpusat horizontal di tengah-tengah (kanan-kiri)
+                    HStack(spacing: 20) {
+                        Spacer()
+
+                        Button(action: { nowPlaying.previousTrack() }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.togglePlayPause() }) {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 26, height: 26)
+                                .overlay(
+                                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color.black)
+                                        .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
+                                )
+                                .shadow(color: Color.white.opacity(0.22), radius: 3, y: 1)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.nextTrack() }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+                    }
+                    .frame(height: 26)
                 }
                 .frame(height: 86)
                 .frame(maxWidth: .infinity, alignment: .leading)
