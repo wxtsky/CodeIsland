@@ -1487,6 +1487,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
     @AppStorage(SettingsKey.floatingLyricFontDesign) private var floatingLyricFontDesign = SettingsDefaults.floatingLyricFontDesign
@@ -1703,6 +1704,32 @@ private struct AppearancePage: View {
                     Text(MusicHUDTheme(rawValue: musicHUDTheme)?.description ?? "")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
+                }
+
+                // Progress Bar Accent Color
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Progress Bar Accent")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Choose the gradient accent color for the music scrubber bar in the Notch HUD.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+
+                    HStack(spacing: 8) {
+                        ForEach(MusicProgressColor.allCases) { option in
+                            Circle()
+                                .fill(option.color)
+                                .frame(width: 18, height: 18)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white, lineWidth: musicHUDProgressColor == option.rawValue ? 2 : 0)
+                                )
+                                .shadow(color: option.color.opacity(musicHUDProgressColor == option.rawValue ? 0.6 : 0), radius: 3)
+                                .onTapGesture {
+                                    musicHUDProgressColor = option.rawValue
+                                }
+                        }
+                    }
+                    .padding(.top, 2)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {

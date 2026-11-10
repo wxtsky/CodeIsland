@@ -116,6 +116,30 @@ public enum FloatingLyricTextColor: String, CaseIterable, Identifiable, Sendable
     }
 }
 
+public enum MusicProgressColor: String, CaseIterable, Identifiable, Sendable {
+    case coral = "coral"
+    case green = "green"
+    case cyan = "cyan"
+    case pink = "pink"
+    case orange = "orange"
+    case purple = "purple"
+    case white = "white"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .coral: return "Warm Coral"
+        case .green: return "Spotify Green"
+        case .cyan: return "Cyber Cyan"
+        case .pink: return "Neon Pink"
+        case .orange: return "Sunset Orange"
+        case .purple: return "Electric Purple"
+        case .white: return "Pure White"
+        }
+    }
+}
+
 enum SettingsKey {
     // Language
     static let appLanguage = "appLanguage"                 // "system", "en", "zh", "zh-Hant", "de", "ja", "ko", "tr"
@@ -155,6 +179,7 @@ enum SettingsKey {
     static let showAgentDetails = "showAgentDetails"
     static let showCompactLyrics = "showCompactLyrics"
     static let musicHUDTheme = "musicHUDTheme"
+    static let musicHUDProgressColor = "musicHUDProgressColor"
     static let floatingLyricPreset = "floatingLyricPreset"
     static let floatingLyricFontSize = "floatingLyricFontSize"
     static let floatingLyricFontDesign = "floatingLyricFontDesign"
@@ -303,6 +328,7 @@ struct SettingsDefaults {
     static let showAgentDetails = false
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+    static let musicHUDProgressColor = MusicProgressColor.coral.rawValue
     static let floatingLyricPreset = FloatingLyricPreset.pureText.rawValue
     static let floatingLyricFontSize: Double = 10.0
     static let floatingLyricFontDesign = FloatingLyricFontDesign.rounded.rawValue
@@ -416,6 +442,7 @@ class SettingsManager {
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.showCompactLyrics: SettingsDefaults.showCompactLyrics,
             SettingsKey.musicHUDTheme: SettingsDefaults.musicHUDTheme,
+            SettingsKey.musicHUDProgressColor: SettingsDefaults.musicHUDProgressColor,
             SettingsKey.floatingLyricPreset: SettingsDefaults.floatingLyricPreset,
             SettingsKey.floatingLyricFontSize: SettingsDefaults.floatingLyricFontSize,
             SettingsKey.floatingLyricFontDesign: SettingsDefaults.floatingLyricFontDesign,
