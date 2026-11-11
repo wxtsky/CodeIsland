@@ -48,7 +48,7 @@ graph TD
 ---
 
 ### Ticket 2: Feature Gating, Settings UI & Offline Location Pipeline
-- **Status:** Open
+- **Status:** Done
 - **Blocked by:** Ticket 1
 - **Scope:**
   - Add `SettingsPage.prayer` to `Settings.swift` with default `prayerEnabled = false`.

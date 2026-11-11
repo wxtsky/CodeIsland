@@ -12,6 +12,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case mascots
     case sound
     case shortcuts
+    case prayer
     case remote
     case hooks
     case buddy
@@ -27,6 +28,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
         case .shortcuts: return "command.circle.fill"
+        case .prayer: return "moon.stars.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
         case .buddy: return "dot.radiowaves.left.and.right"
@@ -42,6 +44,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return .pink
         case .sound: return .green
         case .shortcuts: return .indigo
+        case .prayer: return .teal
         case .remote: return .mint
         case .hooks: return .purple
         case .buddy: return .red
@@ -57,7 +60,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.prayer, .remote, .hooks, .buddy, .about]),
 ]
 
 // MARK: - Main View
@@ -101,6 +104,7 @@ struct SettingsView: View {
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
                 case .shortcuts: ShortcutsPage()
+                case .prayer: PrayerSettingsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage(appState: appState)
                 case .buddy: BuddyPage()
@@ -3617,5 +3621,137 @@ private struct ShortcutRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Prayer Settings Page
+
+private struct PrayerSettingsPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var locationService = PrayerLocationService.shared
+
+    @AppStorage(SettingsKey.prayerEnabled) private var prayerEnabled = SettingsDefaults.prayerEnabled
+    @AppStorage(SettingsKey.prayerCalculationMethod) private var calculationMethod = SettingsDefaults.prayerCalculationMethod
+    @AppStorage(SettingsKey.prayerHijriCalendarSource) private var hijriSource = SettingsDefaults.prayerHijriCalendarSource
+    @AppStorage(SettingsKey.prayerHijriDayOffset) private var hijriDayOffset = SettingsDefaults.prayerHijriDayOffset
+    @AppStorage(SettingsKey.prayerLocationMode) private var locationMode = SettingsDefaults.prayerLocationMode
+    @AppStorage(SettingsKey.prayerManualCityId) private var manualCityId = SettingsDefaults.prayerManualCityId
+    @AppStorage(SettingsKey.prayerAlertBeforeMinutes) private var alertBeforeMinutes = SettingsDefaults.prayerAlertBeforeMinutes
+    @AppStorage(SettingsKey.prayerSoundEnabled) private var soundEnabled = SettingsDefaults.prayerSoundEnabled
+    @AppStorage(SettingsKey.prayerSystemNotificationEnabled) private var systemNotificationEnabled = SettingsDefaults.prayerSystemNotificationEnabled
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Aktifkan Waktu Salat & Jam Diorama", isOn: $prayerEnabled)
+                    .font(.headline)
+                Text("Menampilkan waktu salat dan diorama langit di notch bar. Tetap offline dan hemat energi.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if prayerEnabled {
+                Section(header: Text("Metode Perhitungan (Hisab)")) {
+                    Picker("Metode", selection: $calculationMethod) {
+                        Text("Kemenag RI (Subuh -20°, Ihtiyati +2m)").tag("kemenag")
+                        Text("Nahdlatul Ulama / LF PBNU (Subuh -20°, Dip Elevasi)").tag("nuLFPBNU")
+                        Text("Muhammadiyah / MTT (Subuh -18°, Hisab Hakiki)").tag("muhammadiyah")
+                    }
+                    .pickerStyle(.menu)
+
+                    methodDescription
+                }
+
+                Section(header: Text("Kalender Hijriah")) {
+                    Picker("Kriteria Kalender", selection: $hijriSource) {
+                        Text("KHGT (Kalender Hijriah Global Tunggal)").tag("khgt")
+                        Text("Takwim Standar Indonesia (Neo-MABIMS)").tag("neoMABIMS")
+                    }
+                    .pickerStyle(.menu)
+
+                    Stepper(value: $hijriDayOffset, in: -2...2) {
+                        HStack {
+                            Text("Koreksi Hari Manual:")
+                            Spacer()
+                            Text(hijriDayOffset == 0 ? "0 hari" : (hijriDayOffset > 0 ? "+\(hijriDayOffset) hari" : "\(hijriDayOffset) hari"))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Gunakan koreksi manual jika pengumuman Sidang Isbat atau Ikhbar Rukyatul Hilal berbeda 1 hari dari hisab.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section(header: Text("Lokasi Perangkat")) {
+                    Picker("Mode Penentuan Lokasi", selection: $locationMode) {
+                        Text("Otomatis (CoreLocation ~1km)").tag("automatic")
+                        Text("Manual (Pilih Kota)").tag("manual")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: locationMode) { _ in
+                        locationService.requestCurrentLocation(force: true)
+                    }
+
+                    if locationMode == "manual" {
+                        Picker("Kota Rujukan", selection: $manualCityId) {
+                            ForEach(OfflineCityDatabase.allCities) { city in
+                                Text("\(city.name) (\(city.provinceOrCountry))").tag(city.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: manualCityId) { newId in
+                            locationService.setManualCity(id: newId)
+                        }
+                    }
+
+                    HStack {
+                        Image(systemName: "location.fill")
+                            .foregroundStyle(.tint)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Kota Aktif: \(locationService.activeCity.name)")
+                                .font(.system(size: 13, weight: .medium))
+                            Text(String(format: "Koordinat: %.2f°, %.2f° (%@)",
+                                        locationService.activeCity.coordinates.latitude,
+                                        locationService.activeCity.coordinates.longitude,
+                                        locationService.activeCity.provinceOrCountry))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("Pengingat Waktu")) {
+                    Picker("Peringatan Sebelum Masuk", selection: $alertBeforeMinutes) {
+                        Text("Mati").tag(0)
+                        Text("5 Menit Sebelumnya").tag(5)
+                        Text("10 Menit Sebelumnya").tag(10)
+                        Text("15 Menit Sebelumnya").tag(15)
+                    }
+                    .pickerStyle(.menu)
+
+                    Toggle("Bunyikan Nada Lembut (Chime)", isOn: $soundEnabled)
+                    Toggle("Kirim Notifikasi Sistem macOS", isOn: $systemNotificationEnabled)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var methodDescription: some View {
+        switch calculationMethod {
+        case "muhammadiyah":
+            Text("Majelis Tarjih & Tajdid Muhammadiyah menetapkan sudut Subuh -18° berdasarkan hisab hakiki tanpa ihtiyati tambahan.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case "nuLFPBNU":
+            Text("Lembaga Falakiyah PBNU menggunakan sudut Subuh -20° dengan koreksi dip ketinggian tempat dan pembulatan ke atas (ceil).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        default:
+            Text("Kementerian Agama RI menggunakan sudut Subuh -20°, Isya -18°, istiwa +2m, serta pengaman waktu (ihtiyati) +2 menit.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }

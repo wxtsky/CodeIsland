@@ -228,6 +228,17 @@ enum SettingsKey {
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
     static let completionNotificationStyle = "completionNotificationStyle"
 
+    // Prayer & Living Diorama Clock
+    static let prayerEnabled = "prayerEnabled"
+    static let prayerCalculationMethod = "prayerCalculationMethod"
+    static let prayerHijriCalendarSource = "prayerHijriCalendarSource"
+    static let prayerHijriDayOffset = "prayerHijriDayOffset"
+    static let prayerLocationMode = "prayerLocationMode"
+    static let prayerManualCityId = "prayerManualCityId"
+    static let prayerAlertBeforeMinutes = "prayerAlertBeforeMinutes"
+    static let prayerSoundEnabled = "prayerSoundEnabled"
+    static let prayerSystemNotificationEnabled = "prayerSystemNotificationEnabled"
+
     // Shortcuts (per-action: shortcut_{action}_enabled, shortcut_{action}_keyCode, shortcut_{action}_modifiers)
     static func shortcutEnabled(_ action: String) -> String { "shortcut_\(action)_enabled" }
     static func shortcutKeyCode(_ action: String) -> String { "shortcut_\(action)_keyCode" }
@@ -409,6 +420,17 @@ struct SettingsDefaults {
     static let pushAwayIdleMinutes = 5
     static let pushSummaryLength = PushMessageFormatter.defaultSummaryLimit
     static let pushChannels = ""
+
+    // Prayer & Living Diorama Clock
+    static let prayerEnabled = false
+    static let prayerCalculationMethod = "kemenag"
+    static let prayerHijriCalendarSource = "neoMABIMS"
+    static let prayerHijriDayOffset = 0
+    static let prayerLocationMode = "automatic"
+    static let prayerManualCityId = "jakarta"
+    static let prayerAlertBeforeMinutes = 10
+    static let prayerSoundEnabled = false
+    static let prayerSystemNotificationEnabled = false
 }
 
 @MainActor
@@ -505,6 +527,15 @@ class SettingsManager {
             SettingsKey.pushAwayIdleMinutes: SettingsDefaults.pushAwayIdleMinutes,
             SettingsKey.pushSummaryLength: SettingsDefaults.pushSummaryLength,
             SettingsKey.pushChannels: SettingsDefaults.pushChannels,
+            SettingsKey.prayerEnabled: SettingsDefaults.prayerEnabled,
+            SettingsKey.prayerCalculationMethod: SettingsDefaults.prayerCalculationMethod,
+            SettingsKey.prayerHijriCalendarSource: SettingsDefaults.prayerHijriCalendarSource,
+            SettingsKey.prayerHijriDayOffset: SettingsDefaults.prayerHijriDayOffset,
+            SettingsKey.prayerLocationMode: SettingsDefaults.prayerLocationMode,
+            SettingsKey.prayerManualCityId: SettingsDefaults.prayerManualCityId,
+            SettingsKey.prayerAlertBeforeMinutes: SettingsDefaults.prayerAlertBeforeMinutes,
+            SettingsKey.prayerSoundEnabled: SettingsDefaults.prayerSoundEnabled,
+            SettingsKey.prayerSystemNotificationEnabled: SettingsDefaults.prayerSystemNotificationEnabled,
         ])
     }
 
