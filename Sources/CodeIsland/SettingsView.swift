@@ -1502,6 +1502,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
+    @AppStorage(SettingsKey.notchScrollVolumeControl) private var notchScrollVolumeControl = SettingsDefaults.notchScrollVolumeControl
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1757,6 +1758,13 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
                     Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Scroll on Notch for Volume Control", isOn: $notchScrollVolumeControl)
+                    Text("Adjust macOS system volume by scrolling with trackpad or mouse wheel over the notch.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
