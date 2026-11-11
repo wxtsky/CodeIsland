@@ -77,6 +77,9 @@ public final class PrayerTimeManager: ObservableObject {
     @Published public private(set) var currentSecondsString: String = "12:00:00"
     @Published public private(set) var hijriDateString: String = ""
     @Published public private(set) var solarProgress: Double = 0.5
+    @Published public var showMiniPeekBanner: Bool = false
+    @Published public private(set) var miniPeekBannerTitle: String = ""
+    @Published public private(set) var miniPeekBannerSubtitle: String = ""
 
     public var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: SettingsKey.prayerEnabled)
@@ -93,6 +96,9 @@ public final class PrayerTimeManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var lastCalculatedDay: YearMonthDay?
     private let locationService = PrayerLocationService.shared
+    private var triggeredAlerts = Set<String>()
+    private var pendingBanner: (title: String, subtitle: String)? = nil
+    private var bannerDismissTask: Task<Void, Never>? = nil
 
     private init() {
         setupSubscriptions()
@@ -233,5 +239,116 @@ public final class PrayerTimeManager: ObservableObject {
             let diff = next.date.timeIntervalSince(now)
             self.minutesUntilNextPrayer = Int(ceil(diff / 60.0))
         }
+    }
+
+    // MARK: - Mini Peek Toast Banner & Agent Suppression
+
+    public func dismissMiniPeekBanner() {
+        showMiniPeekBanner = false
+        bannerDismissTask?.cancel()
+        bannerDismissTask = nil
+    }
+
+    private func scheduleBannerAutoDismiss() {
+        bannerDismissTask?.cancel()
+        bannerDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            if !Task.isCancelled {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    self.showMiniPeekBanner = false
+                }
+            }
+        }
+    }
+
+    /// Evaluates if banner should pop up, deferring if an agent approval or question dialog is currently visible.
+    func evaluateBannerTriggers(appState: AppState?) {
+        guard isEnabled, let next = upcomingPrayer else { return }
+
+        let alertBeforeMinutes = UserDefaults.standard.integer(forKey: SettingsKey.prayerAlertBeforeMinutes)
+        let diffMins = minutesUntilNextPrayer
+
+        // Trigger 1: Approaching prayer (e.g. T-10m)
+        if alertBeforeMinutes > 0 && diffMins == alertBeforeMinutes {
+            let key = "\(next.prayer.rawValue)-\(alertBeforeMinutes)"
+            if !triggeredAlerts.contains(key) {
+                triggeredAlerts.insert(key)
+                let title = "\(alertBeforeMinutes) Menit Menuju \(next.prayer.displayName)"
+                let subtitle = "\(currentTimeString) · \(locationService.activeCity.name)"
+                enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
+            }
+        }
+
+        // Trigger 2: Prayer entry (T-0m)
+        if diffMins == 0 {
+            let key = "\(next.prayer.rawValue)-0"
+            if !triggeredAlerts.contains(key) {
+                triggeredAlerts.insert(key)
+                let title = "Waktu \(next.prayer.displayName) Telah Masuk"
+                let subtitle = "\(currentTimeString) · \(locationService.activeCity.name)"
+                enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
+            }
+        }
+
+        // Check if pending banner can now be presented (after agent approval finishes)
+        if pendingBanner != nil {
+            checkAndFlushPendingBanner(appState: appState)
+        }
+    }
+
+    func isAgentBusy(appState: AppState?) -> Bool {
+        guard let state = appState else { return false }
+        if state.status == .waitingApproval || state.status == .waitingQuestion {
+            return true
+        }
+        if case .approvalCard = state.surface {
+            return true
+        }
+        return false
+    }
+
+    private func enqueueOrPresentBanner(title: String, subtitle: String, appState: AppState?) {
+        if isAgentBusy(appState: appState) {
+            // Agent-Aware Suppression: hold in queue
+            pendingBanner = (title, subtitle)
+        } else {
+            presentBanner(title: title, subtitle: subtitle)
+        }
+    }
+
+    func checkAndFlushPendingBanner(appState: AppState?) {
+        guard let pending = pendingBanner else { return }
+        if !isAgentBusy(appState: appState) {
+            pendingBanner = nil
+            presentBanner(title: pending.title, subtitle: pending.subtitle)
+        }
+    }
+
+    func queueBannerForTesting(title: String, subtitle: String, appState: AppState?) {
+        enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
+    }
+
+    private func presentBanner(title: String, subtitle: String) {
+        miniPeekBannerTitle = title
+        miniPeekBannerSubtitle = subtitle
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showMiniPeekBanner = true
+        }
+        scheduleBannerAutoDismiss()
+        playChimeIfConfigured()
+    }
+
+    private func playChimeIfConfigured() {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.prayerSoundEnabled) else { return }
+        if UserDefaults.standard.bool(forKey: SettingsKey.quietHoursEnabled) {
+            let start = UserDefaults.standard.integer(forKey: SettingsKey.quietHoursStart)
+            let end = UserDefaults.standard.integer(forKey: SettingsKey.quietHoursEnd)
+            let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
+            let mins = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+            if SoundManager.isInQuietHours(minutesSinceMidnight: mins, start: start, end: end) {
+                return
+            }
+        }
+        NSSound(named: "Glass")?.play()
     }
 }

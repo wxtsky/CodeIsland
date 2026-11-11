@@ -91,7 +91,7 @@ graph TD
 ---
 
 ### Ticket 4: Prayer Mini Peek Toast Banner & Agent-Aware Suppression
-- **Status:** Open
+- **Status:** Done
 - **Blocked by:** Ticket 3
 - **Scope:**
   - Mini Peek Toast banner under notch for ~6 seconds at $T-10\text{m}$ (customizable) and upon prayer arrival ($T-0\text{m}$).

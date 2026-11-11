@@ -156,6 +156,7 @@ struct NotchPanelView: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
     @ObservedObject private var sys = SystemMonitorManager.shared
+    @ObservedObject private var prayerManager = PrayerTimeManager.shared
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
@@ -191,6 +192,7 @@ struct NotchPanelView: View {
     private var shouldShowExpanded: Bool {
         if appState.surface.isExpanded { return true }
         if nowPlaying.showToast && !showCompactLyrics { return showBar }
+        if prayerManager.showMiniPeekBanner { return showBar }
         return false
     }
     /// Prehover acknowledgement is only rendered on the collapsed active bar —
@@ -214,7 +216,7 @@ struct NotchPanelView: View {
     }
 
     private var isToastOnly: Bool {
-        nowPlaying.showToast && !appState.surface.isExpanded
+        (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded
     }
     private var currentTopExt: CGFloat {
         (shouldShowExpanded && !isToastOnly) ? 14 : 0
@@ -320,7 +322,7 @@ struct NotchPanelView: View {
             return min(320, maxPanelWidth)
         }
         // Mini peek banner width: sleek ~330pt when toast is showing while collapsed
-        if nowPlaying.showToast && !appState.surface.isExpanded {
+        if (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded {
             return min(330, maxPanelWidth)
         }
         let wing = symmetricWingWidth
@@ -517,6 +519,18 @@ struct NotchPanelView: View {
                                 insertion: .move(edge: .top).combined(with: .opacity),
                                 removal: .move(edge: .top).combined(with: .opacity)
                             ))
+                    } else if prayerManager.showMiniPeekBanner && !appState.surface.isExpanded {
+                        // PRAYER MINI PEEK BANNER: Buka tipis saat T-10m & saat masuk waktu salat
+                        PrayerMiniPeekBannerView(manager: prayerManager) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                expandedTab = .prayer
+                                appState.surface = .sessionList
+                            }
+                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .move(edge: .top).combined(with: .opacity)
+                        ))
                     } else if nowPlaying.showToast && !appState.surface.isExpanded {
                         // MINI PEEK BANNER: Buka tipis-tipis saat lagu berganti / play
                         CyberMusicMiniPeekBanner(nowPlaying: nowPlaying) {
@@ -630,6 +644,7 @@ struct NotchPanelView: View {
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: panelWidth)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: shouldShowExpanded)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: nowPlaying.showToast)
+            .animation(.spring(response: 0.40, dampingFraction: 0.84), value: prayerManager.showMiniPeekBanner)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isThinking)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: nowPlaying.isPlaying)
@@ -712,6 +727,13 @@ struct NotchPanelView: View {
             }
             .onChange(of: appState.status) { _, newStatus in
                 handleStatusChange(newStatus)
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
+            }
+            .onChange(of: appState.surface) { _, _ in
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
+            }
+            .onChange(of: prayerManager.currentSecondsString) { _, _ in
+                prayerManager.evaluateBannerTriggers(appState: appState)
             }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
