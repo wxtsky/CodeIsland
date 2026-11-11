@@ -609,10 +609,10 @@ struct NotchPanelView: View {
                             // Priority 2: General expanded surface respects expandedTab (Music, Workspace, or Agent SessionList)
                             if expandedTab == .music {
                                 CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                                    .transition(.blurFade.combined(with: .move(edge: .top)))
                             } else if expandedTab == .workspace {
                                 CyberWorkspaceView(manager: workspaceManager, appState: appState)
-                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                                    .transition(.blurFade.combined(with: .move(edge: .top)))
                             } else {
                                 SessionListView(appState: appState, onlySessionId: nil)
                                     .transition(.blurFade.combined(with: .move(edge: .top)))
@@ -1801,7 +1801,7 @@ private struct RightWingPixelTabs: View {
             Button {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                 workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
                     expandedTab = isWorkspaceSelected ? .agents : .workspace
                 }
             } label: {
@@ -1826,7 +1826,7 @@ private struct RightWingPixelTabs: View {
             // MUSIC TAB
             let isMusicSelected = expandedTab == .music
             Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
                     expandedTab = isMusicSelected ? .agents : .music
                 }
             } label: {
