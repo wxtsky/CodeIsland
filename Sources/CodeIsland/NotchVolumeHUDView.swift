@@ -3,6 +3,15 @@ import AppKit
 
 struct NotchVolumeHUDView: View {
     @ObservedObject var volumeManager: SystemVolumeManager = .shared
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var activeProgressColor: Color {
+        (MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme).color
+    }
+
+    private var activeProgressGradient: LinearGradient {
+        (MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme).gradient
+    }
 
     private var speakerIconName: String {
         if volumeManager.isMuted {
@@ -24,7 +33,7 @@ struct NotchVolumeHUDView: View {
         } else if volumeManager.volume <= 0.001 {
             return Color.white.opacity(0.5)
         } else {
-            return Color(red: 0.0, green: 0.96, blue: 0.83)
+            return activeProgressColor
         }
     }
 
@@ -39,13 +48,13 @@ struct NotchVolumeHUDView: View {
     var body: some View {
         Button(action: { volumeManager.toggleMute() }) {
             HStack(spacing: 8) {
-                // Speaker icon
+                // Dynamic speaker icon
                 Image(systemName: speakerIconName)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(speakerIconColor)
                     .frame(width: 14)
 
-                // Volume Bar
+                // Theme-aligned volume progress bar
                 GeometryReader { geo in
                     let totalWidth = geo.size.width
                     let fillWidth = volumeManager.isMuted ? 0 : totalWidth * CGFloat(volumeManager.volume)
@@ -56,19 +65,13 @@ struct NotchVolumeHUDView: View {
                             .frame(height: 4)
 
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 0.0, green: 0.75, blue: 0.95)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .fill(activeProgressGradient)
                             .frame(width: max(0, min(totalWidth, fillWidth)), height: 4)
                     }
                 }
                 .frame(width: 95, height: 4)
 
-                // Percentage text
+                // Volume percentage readout
                 Text(percentageText)
                     .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.white.opacity(0.9))

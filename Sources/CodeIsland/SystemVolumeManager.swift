@@ -145,23 +145,31 @@ final class SystemVolumeManager: ObservableObject {
         // Only handle predominant vertical scroll
         guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) else { return false }
 
-        let delta: Float
-        if event.hasPreciseScrollingDeltas {
-            delta = Float(event.scrollingDeltaY) * 0.003
-        } else {
-            delta = event.deltaY > 0 ? 0.04 : -0.04
-        }
+        let rawDelta: Float = event.hasPreciseScrollingDeltas
+            ? Float(event.scrollingDeltaY) * 0.003
+            : (event.deltaY > 0 ? 0.04 : -0.04)
+
+        // Invert delta when natural scrolling is active so scroll up increases volume
+        let delta = event.isDirectionInvertedFromDevice ? -rawDelta : rawDelta
         guard abs(delta) > 0.0001 else { return false }
 
         let previousVolume = self.volume
         let targetVolume = max(0.0, min(1.0, previousVolume + delta))
         setVolume(targetVolume)
 
-        // Haptic feedback on boundary or progress
-        if (targetVolume == 0.0 && previousVolume > 0.0) || (targetVolume == 1.0 && previousVolume < 1.0) {
-            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
-        } else {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+        // Subtle haptic ticks: discrete 5% steps and distinct edge boundary click
+        let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
+        if hapticOn {
+            let reachedBoundary = (targetVolume == 0.0 && previousVolume > 0.0) || (targetVolume == 1.0 && previousVolume < 1.0)
+            if reachedBoundary {
+                NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
+            } else {
+                let prevStep = Int(previousVolume * 20)
+                let currStep = Int(targetVolume * 20)
+                if prevStep != currStep {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                }
+            }
         }
         return true
     }
