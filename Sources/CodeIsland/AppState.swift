@@ -1288,6 +1288,13 @@ final class AppState {
     }
 
     private func showCompletion(_ sessionId: String) {
+        // When the island is already expanded (e.g. user is viewing music HUD or workspace in the big notch),
+        // always show completion immediately so it doesn't get suppressed by terminal frontmost checks!
+        if surface.isExpanded {
+            doShowCompletion(sessionId)
+            return
+        }
+
         // Fast path: terminal not even frontmost — show immediately
         guard shouldSuppressAppLevel(for: sessionId) else {
             doShowCompletion(sessionId)
