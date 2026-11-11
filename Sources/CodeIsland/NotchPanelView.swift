@@ -114,6 +114,7 @@ enum ExpandedContentTab: String, CaseIterable {
     case agents
     case workspace
     case music
+    case prayer
 }
 
 struct NotchPanelView: View {
@@ -492,7 +493,9 @@ struct NotchPanelView: View {
                         hovered: idleHovered,
                         onExpand: {
                             withAnimation(NotchAnimation.open) {
-                                if nowPlaying.isPlaying {
+                                if PrayerTimeManager.shared.isEnabled {
+                                    expandedTab = .prayer
+                                } else if nowPlaying.isPlaying {
                                     expandedTab = .music
                                 }
                                 appState.surface = .sessionList
@@ -1264,8 +1267,15 @@ private struct CompactRightWing: View {
                 }
                 .padding(.horizontal, 4)
             } else {
-                // Music Visualizer or Machined Cyber Activity Pill
-                if nowPlaying.isPlaying {
+                let prayerManager = PrayerTimeManager.shared
+                if prayerManager.isPrayerPrioritized {
+                    // SMART PRIORITY: Prayer countdown takes active priority at T <= 15m
+                    PrayerCompactWingView(isHovered: shouldExpandRightWing) {
+                        expandedTab = .prayer
+                        appState.surface = .sessionList
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else if nowPlaying.isPlaying {
                     CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
@@ -1761,11 +1771,12 @@ private struct RightWingPixelTabs: View {
     }
 
     private var useShortLabels: Bool {
-        availableWidth < 225
+        availableWidth < (PrayerTimeManager.shared.isEnabled ? 265 : 225)
     }
 
     var body: some View {
         let layout = SessionGroupingTabsLayout.self
+        let prayerManager = PrayerTimeManager.shared
         HStack(spacing: layout.spacing) {
             // WORKSPACE TAB
             let isWorkspaceSelected = expandedTab == .workspace
@@ -1818,13 +1829,42 @@ private struct RightWingPixelTabs: View {
             .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             .accessibilityLabel("Music")
             .accessibilityAddTraits(isMusicSelected ? .isSelected : [])
+
+            // PRAYER TAB (SLT)
+            if prayerManager.isEnabled {
+                let isPrayerSelected = expandedTab == .prayer
+                let activePrayerColor = prayerManager.currentPhase.accentColor
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                        expandedTab = isPrayerSelected ? .agents : .prayer
+                    }
+                } label: {
+                    PixelText(
+                        text: useShortLabels ? "SLT" : "SALAT",
+                        color: isPrayerSelected ? activePrayerColor
+                            : (hoveredTab == "prayer" ? .white.opacity(0.9) : Self.inactiveColor),
+                        pixelSize: layout.pixelSize
+                    )
+                    .padding(.horizontal, layout.horizontalPadding)
+                    .frame(height: layout.stripHeight)
+                    .background(Rectangle().fill(isPrayerSelected ? .white.opacity(0.1) : .clear))
+                    .frame(height: layout.hitHeight)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hoveredTab = $0 ? "prayer" : (hoveredTab == "prayer" ? nil : hoveredTab) }
+                .help("Jadwal Salat & Diorama Langit")
+                .accessibilityLabel("Salat")
+                .accessibilityAddTraits(isPrayerSelected ? .isSelected : [])
+            }
         }
         .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
         .overlay(
             Rectangle()
                 .stroke(
                     expandedTab == .workspace ? Self.activeWorkspaceColor.opacity(0.4)
-                        : (expandedTab == .music ? activeMusicColor.opacity(0.4) : .white.opacity(0.1)),
+                        : (expandedTab == .music ? activeMusicColor.opacity(0.4)
+                        : (expandedTab == .prayer ? prayerManager.currentPhase.accentColor.opacity(0.4) : .white.opacity(0.1))),
                     lineWidth: 1
                 )
                 .frame(height: layout.stripHeight)
@@ -1921,9 +1961,13 @@ private struct IdleIndicatorBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand?() }
 
-            // Right Wing: sleek, ultra-compact expand indicator (Option 1)
-            HStack {
+            // Right Wing: sleek, ultra-compact expand indicator & living clock
+            let prayerManager = PrayerTimeManager.shared
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
+                if prayerManager.isEnabled {
+                    PrayerCompactWingView(isHovered: hovered, onExpand: onExpand)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: hovered ? 8 : 7.5, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(hovered ? 0.9 : 0.45))
@@ -1934,12 +1978,12 @@ private struct IdleIndicatorBar: View {
                     )
                     .padding(.trailing, 8)
             }
-            .frame(width: wingWidth, alignment: .trailing)
+            .frame(width: prayerManager.isEnabled ? max(wingWidth, 126) : wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
-            .help("Click to expand tabs (Agents / Workspace / Music)")
+            .help(prayerManager.isEnabled ? "Waktu Salat & Jam (Klik untuk Buka Tab SLT)" : "Click to expand tabs (Agents / Workspace / Music)")
         }
-        .frame(height: notchHeight)
+        .frame(height: max(notchHeight, 38))
         .animation(NotchAnimation.micro, value: hovered)
     }
 }

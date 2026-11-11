@@ -70,7 +70,7 @@ graph TD
 ---
 
 ### Ticket 3: Compact Pill Living Clock & Smart Priority Coordination
-- **Status:** Open
+- **Status:** Done
 - **Blocked by:** Ticket 1, Ticket 2
 - **Scope:**
   - Build `PrayerTimeManager` maintaining today's schedule, current phase (Pagi, Siang, Sore, Malam), upcoming prayer, and countdown.
