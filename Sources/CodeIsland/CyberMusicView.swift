@@ -1364,7 +1364,7 @@ struct RetroCyberMusicHUDContentView: View {
                             HStack(spacing: 4) {
                                 Text(nowPlaying.player.isEmpty ? "SPOTIFY" : nowPlaying.player.uppercased())
                                     .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 1.0, green: 0.16, blue: 0.53))
+                                    .foregroundStyle(activeProgressColor)
                                     .lineLimit(1)
 
                                 if nowPlaying.isBrowserJSHintVisible {

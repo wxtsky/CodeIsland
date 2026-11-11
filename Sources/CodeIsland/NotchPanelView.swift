@@ -1741,12 +1741,24 @@ private struct RightWingPixelTabs: View {
     @ObservedObject var workspaceManager: WorkspaceMonitorManager
     var availableWidth: CGFloat = 240
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hoveredTab: String?
 
     static let activeWorkspaceColor = Color(red: 0.0, green: 0.90, blue: 0.46)
-    static let activeMusicColor = Color(red: 1.0, green: 0.16, blue: 0.53)
     static let inactiveColor = Color.white.opacity(0.62)
+
+    private var activeMusicColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
 
     private var useShortLabels: Bool {
         availableWidth < 225
@@ -1791,8 +1803,8 @@ private struct RightWingPixelTabs: View {
             } label: {
                 PixelText(
                     text: useShortLabels ? "MUS" : "MUSIC",
-                    color: isMusicSelected ? Self.activeMusicColor
-                        : (nowPlaying.isPlaying ? Self.activeMusicColor.opacity(0.85) : (hoveredTab == "music" ? .white.opacity(0.9) : Self.inactiveColor)),
+                    color: isMusicSelected ? activeMusicColor
+                        : (nowPlaying.isPlaying ? activeMusicColor.opacity(0.85) : (hoveredTab == "music" ? .white.opacity(0.9) : Self.inactiveColor)),
                     pixelSize: layout.pixelSize
                 )
                 .padding(.horizontal, layout.horizontalPadding)
@@ -1812,7 +1824,7 @@ private struct RightWingPixelTabs: View {
             Rectangle()
                 .stroke(
                     expandedTab == .workspace ? Self.activeWorkspaceColor.opacity(0.4)
-                        : (expandedTab == .music ? Self.activeMusicColor.opacity(0.4) : .white.opacity(0.1)),
+                        : (expandedTab == .music ? activeMusicColor.opacity(0.4) : .white.opacity(0.1)),
                     lineWidth: 1
                 )
                 .frame(height: layout.stripHeight)
