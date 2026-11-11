@@ -147,6 +147,8 @@
 
 **知道它跑在哪：** 运行在 **tmux**、**zellij**、**Herdr** 或 **T3 Code** 里的会话，终端徽标旁会多一个标签，点击跳转会直达对应的面板或线程。
 
+**用 kitty 的话：** 要跳到会话所在的标签页，需要 kitty 的远程控制 socket：在 `kitty.conf` 里加上 `allow_remote_control socket-only` 和 `listen_on unix:$TMPDIR/kitty-{kitty_pid}`，然后重启 kitty。没加时点击只会把 kitty 窗口提到前台——GUI 程序自己没有可供 kitty 控制的终端。
+
 **审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、OpenCode、MiMo Code / Xiaomi MiMo、Pi / Oh My Pi、DeepSeek Harness 等；MiniMax Code CLI 限 mcode 允许 hook 等待的 10 秒内。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
 
 <details>

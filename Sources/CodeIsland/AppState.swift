@@ -3388,6 +3388,7 @@ final class AppState {
             snapshot.itermSessionId = p.itermSessionId
             snapshot.ttyPath = p.ttyPath
             snapshot.kittyWindowId = p.kittyWindowId
+            snapshot.kittyListenOn = p.kittyListenOn
             snapshot.tmuxPane = p.tmuxPane
             snapshot.tmuxClientTty = p.tmuxClientTty
             snapshot.tmuxEnv = p.tmuxEnv
@@ -4523,6 +4524,7 @@ final class AppState {
                 child.itermSessionId = child.itermSessionId ?? parent.session.itermSessionId
                 child.ttyPath = child.ttyPath ?? parent.session.ttyPath
                 child.kittyWindowId = child.kittyWindowId ?? parent.session.kittyWindowId
+                child.kittyListenOn = child.kittyListenOn ?? parent.session.kittyListenOn
                 child.tmuxPane = child.tmuxPane ?? parent.session.tmuxPane
                 child.tmuxClientTty = child.tmuxClientTty ?? parent.session.tmuxClientTty
                 child.tmuxEnv = child.tmuxEnv ?? parent.session.tmuxEnv
@@ -4628,6 +4630,7 @@ final class AppState {
                 child.itermSessionId = child.itermSessionId ?? parent.session.itermSessionId
                 child.ttyPath = child.ttyPath ?? parent.session.ttyPath
                 child.kittyWindowId = child.kittyWindowId ?? parent.session.kittyWindowId
+                child.kittyListenOn = child.kittyListenOn ?? parent.session.kittyListenOn
                 child.tmuxPane = child.tmuxPane ?? parent.session.tmuxPane
                 child.tmuxClientTty = child.tmuxClientTty ?? parent.session.tmuxClientTty
                 child.tmuxEnv = child.tmuxEnv ?? parent.session.tmuxEnv

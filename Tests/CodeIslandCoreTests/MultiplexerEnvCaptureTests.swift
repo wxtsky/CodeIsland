@@ -108,6 +108,75 @@ final class MultiplexerEnvCaptureTests: XCTestCase {
         XCTAssertEqual(sessions["sess-kaku"]?.termBundleId, "fun.tw93.kaku")
     }
 
+    // MARK: - kitty
+
+    func testSessionStartCapturesKittyWindowAndSocket() {
+        // kitty is reachable from outside only through its remote-control socket
+        // (KITTY_LISTEN_ON): `kitten @` without `--to` wants a controlling tty,
+        // which a GUI app does not have. The window id picks the tab, the socket
+        // picks the instance, so both have to survive to the snapshot.
+        let event = makeEvent([
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-kitty",
+            "_kitty_window": "4",
+            "_kitty_listen_on": "unix:/var/folders/xy/T/kitty-9001",
+        ])
+
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-kitty"]?.kittyWindowId, "4")
+        XCTAssertEqual(sessions["sess-kitty"]?.kittyListenOn, "unix:/var/folders/xy/T/kitty-9001")
+    }
+
+    func testNonSessionStartEventStillCapturesKittySocket() {
+        let event = makeEvent([
+            "hook_event_name": "PostToolUse",
+            "session_id": "sess-kitty-2",
+            "_kitty_listen_on": "unix:/tmp/kitty-7",
+        ])
+
+        var sessions: [String: SessionSnapshot] = ["sess-kitty-2": SessionSnapshot()]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-kitty-2"]?.kittyListenOn, "unix:/tmp/kitty-7")
+    }
+
+    func testKittySocketCapturedFromEnvSubObject() {
+        // Direct-plugin payload shape: the plugin forwards KITTY_LISTEN_ON inside `_env`.
+        let event = makeEvent([
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-kitty-env",
+            "_env": [
+                "KITTY_WINDOW_ID": "6",
+                "KITTY_LISTEN_ON": "unix:/tmp/kitty-env",
+            ],
+        ])
+
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-kitty-env"]?.kittyWindowId, "6")
+        XCTAssertEqual(sessions["sess-kitty-env"]?.kittyListenOn, "unix:/tmp/kitty-env")
+    }
+
+    func testEmptyKittyListenOnIsNotStored() {
+        // kitty sets KITTY_LISTEN_ON only when listen_on is configured; an empty
+        // value must not become an address `kitten @ --to` would fail to dial.
+        let event = makeEvent([
+            "hook_event_name": "SessionStart",
+            "session_id": "sess-kitty-empty",
+            "_kitty_window": "3",
+            "_kitty_listen_on": "",
+        ])
+
+        var sessions: [String: SessionSnapshot] = [:]
+        _ = reduceEvent(sessions: &sessions, event: event, maxHistory: 100)
+
+        XCTAssertEqual(sessions["sess-kitty-empty"]?.kittyWindowId, "3")
+        XCTAssertNil(sessions["sess-kitty-empty"]?.kittyListenOn)
+    }
+
     // MARK: - Superset (#213)
 
     func testSessionStartCapturesSupersetWorkspaceAndPane() {

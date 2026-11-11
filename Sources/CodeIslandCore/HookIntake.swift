@@ -149,6 +149,9 @@ public struct HookIntake {
         "GROK_SESSION_ID", "GROK_HOOK_EVENT", "GROK_WORKSPACE_ROOT", "GROK_HOME",
         "HERMES_HOME",
         "TERM_PROGRAM", "__CFBundleIdentifier", "ITERM_SESSION_ID", "KITTY_WINDOW_ID",
+        // kitty's remote-control socket: the only address a process outside
+        // kitty can drive one instance at. See TerminalActivator.activateKitty.
+        "KITTY_LISTEN_ON",
         "TMUX", "TMUX_PANE",
         "CMUX_SURFACE_ID", "CMUX_WORKSPACE_ID",
         "ZELLIJ", "ZELLIJ_PANE_ID", "ZELLIJ_SESSION_NAME",
@@ -557,6 +560,13 @@ public struct HookIntake {
         // Kitty window
         if let kitty = env["KITTY_WINDOW_ID"], !kitty.isEmpty {
             json["_kitty_window"] = kitty
+        }
+        // kitty's remote-control socket (KITTY_LISTEN_ON), set only when the user
+        // enabled listen_on. `kitten @` without `--to` needs a controlling tty,
+        // which a GUI app does not have, so without this address the jump can
+        // only raise the app instead of switching to the session's tab.
+        if let listenOn = env["KITTY_LISTEN_ON"], !listenOn.isEmpty {
+            json["_kitty_listen_on"] = listenOn
         }
 
         // tmux detection — deep info collection

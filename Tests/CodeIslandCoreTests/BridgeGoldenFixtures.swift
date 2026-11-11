@@ -559,6 +559,7 @@ enum BridgeGoldenFixtures {
                 "__CFBundleIdentifier": "com.github.wez.wezterm",
                 "ITERM_SESSION_ID": "no-colon-guid",
                 "KITTY_WINDOW_ID": "3",
+                "KITTY_LISTEN_ON": "unix:/tmp/kitty-77",
                 "CMUX_SURFACE_ID": "surface-1",
                 "CMUX_WORKSPACE_ID": "workspace-1",
                 "ZELLIJ": "0",
@@ -589,6 +590,7 @@ enum BridgeGoldenFixtures {
                 "SUPERSET_PANE_ID": "sp-1",
                 "SUPERSET_TERMINAL_ID": "st-2",
                 "KITTY_WINDOW_ID": "",
+                "KITTY_LISTEN_ON": "",
             ],
             stdin: #"{"session_id":"term-2","hook_event_name":"Stop"}"#,
             ancestors: [claudeNative]
