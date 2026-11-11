@@ -2,6 +2,59 @@ import SwiftUI
 import CodeIslandCore
 import AppKit
 
+// MARK: - Retro Spectrum Dynamic Palette (Color Theme as Base, Harmonious Gradient on Top)
+
+struct RetroSpectrumPalette: Equatable {
+    var base: Color
+    var mid: Color
+    var peak: Color
+
+    static func forThemeKey(_ key: String) -> RetroSpectrumPalette {
+        let pc = MusicProgressColor(rawValue: key) ?? .theme
+        return forProgressColor(pc)
+    }
+
+    static func forProgressColor(_ pc: MusicProgressColor) -> RetroSpectrumPalette {
+        switch pc {
+        case .pink:
+            // Base = Neon Pink/Merah, Mid = Warm Sunset Orange, Peak = Electric Yellow
+            return RetroSpectrumPalette(
+                base: Color(red: 1.0, green: 0.16, blue: 0.53),
+                mid: Color(red: 1.0, green: 0.58, blue: 0.12),
+                peak: Color(red: 1.0, green: 0.88, blue: 0.20)
+            )
+        case .amber:
+            // Base = Sunset Amber, Mid = Neon Coral, Peak = Hot Magenta
+            return RetroSpectrumPalette(
+                base: Color(red: 1.0, green: 0.72, blue: 0.20),
+                mid: Color(red: 1.0, green: 0.38, blue: 0.28),
+                peak: Color(red: 1.0, green: 0.16, blue: 0.53)
+            )
+        case .green:
+            // Base = Matrix Green, Mid = Neon Lime, Peak = Electric Cyan
+            return RetroSpectrumPalette(
+                base: Color(red: 0.12, green: 0.84, blue: 0.38),
+                mid: Color(red: 0.76, green: 0.94, blue: 0.16),
+                peak: Color(red: 0.0, green: 0.96, blue: 0.83)
+            )
+        case .white:
+            // Base = Pure White, Mid = Ice Aqua, Peak = Electric Cyan
+            return RetroSpectrumPalette(
+                base: .white,
+                mid: Color(red: 0.55, green: 0.92, blue: 1.0),
+                peak: Color(red: 0.0, green: 0.96, blue: 0.83)
+            )
+        case .cyan, .theme:
+            // Base = Electric Cyan, Mid = Neon Amber, Peak = Neon Pink
+            return RetroSpectrumPalette(
+                base: Color(red: 0.0, green: 0.96, blue: 0.83),
+                mid: Color(red: 0.96, green: 0.62, blue: 0.04),
+                peak: Color(red: 1.0, green: 0.16, blue: 0.53)
+            )
+        }
+    }
+}
+
 // MARK: - Guaranteed 60fps Dancing Audio Spectrum (TimelineView)
 
 struct CyberAudioSpectrumView: View {
@@ -10,20 +63,33 @@ struct CyberAudioSpectrumView: View {
     var barWidth: CGFloat = 2.6
     var segmentHeight: CGFloat = 1.8
     var segmentSpacing: CGFloat = 1.0
+    var palette: RetroSpectrumPalette? = nil
     var accentColor: Color? = nil
+
+    private var activePalette: RetroSpectrumPalette {
+        if let palette { return palette }
+        if let accent = accentColor {
+            return RetroSpectrumPalette(
+                base: accent,
+                mid: Color(red: 0.96, green: 0.62, blue: 0.04),
+                peak: Color(red: 1.0, green: 0.88, blue: 0.20)
+            )
+        }
+        return RetroSpectrumPalette.forProgressColor(.cyan)
+    }
 
     private func segmentColor(level: Int, isActive: Bool) -> Color {
         guard isActive else {
             return Color(red: 0.12, green: 0.14, blue: 0.18)
         }
-        let peakColor = accentColor ?? Color(red: 1.0, green: 0.16, blue: 0.53)
+        let pal = activePalette
         switch level {
         case 0, 1:
-            return Color(red: 0.0, green: 0.96, blue: 0.83) // Electric Cyan (Base tetap di bawah)
+            return pal.base // Base mengikuti Color Theme yang dipilih di bawah
         case 2:
-            return Color(red: 0.96, green: 0.62, blue: 0.04) // Neon Amber
+            return pal.mid  // Transisi gradient harmonis di tengah
         default:
-            return peakColor // Peak / Ujung berubah warna mengikuti accent
+            return pal.peak // Ujung puncak visualizer di atas
         }
     }
 
@@ -61,10 +127,23 @@ struct CyberDiscoVisualizer: View {
     var isPlaying: Bool = true
     var barCount: Int = 6
     var maxHeight: CGFloat = 18
+    var palette: RetroSpectrumPalette? = nil
     var accentColor: Color? = nil
 
+    private var activePalette: RetroSpectrumPalette {
+        if let palette { return palette }
+        if let accent = accentColor {
+            return RetroSpectrumPalette(
+                base: accent,
+                mid: Color(red: 0.96, green: 0.62, blue: 0.04),
+                peak: Color(red: 1.0, green: 0.88, blue: 0.20)
+            )
+        }
+        return RetroSpectrumPalette.forProgressColor(.cyan)
+    }
+
     var body: some View {
-        let peakColor = accentColor ?? Color(red: 1.0, green: 0.16, blue: 0.53)
+        let pal = activePalette
         TimelineView(.animation(minimumInterval: 0.04)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 2.0) {
@@ -77,7 +156,7 @@ struct CyberDiscoVisualizer: View {
 
                     VStack(spacing: 1.2) {
                         Rectangle()
-                            .fill(peakColor)
+                            .fill(pal.peak)
                             .frame(width: 2.5, height: 1.5)
                             .opacity(isPlaying && wave > 0.6 ? 1 : 0.2)
 
@@ -85,9 +164,9 @@ struct CyberDiscoVisualizer: View {
                             .fill(
                                 LinearGradient(
                                     colors: [
-                                        Color(red: 0.0, green: 0.96, blue: 0.83),
-                                        Color(red: 0.96, green: 0.62, blue: 0.04),
-                                        peakColor
+                                        pal.base, // Base bawah: warna Color Theme
+                                        pal.mid,  // Tengah: gradien harmonis
+                                        pal.peak  // Atas: peak tip
                                     ],
                                     startPoint: .bottom,
                                     endPoint: .top
@@ -316,14 +395,14 @@ struct CyberMusicWingView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
-                // Equalizer: Pixel dancing spectrum using active theme accent
+                // Equalizer: Pixel dancing spectrum using active theme accent as base
                 CyberAudioSpectrumView(
                     barCount: isHovered ? 3 : 4,
                     isPlaying: nowPlaying.isPlaying,
                     barWidth: 2.0,
                     segmentHeight: 1.6,
                     segmentSpacing: 0.8,
-                    accentColor: accentColor
+                    palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
                 )
             }
             .padding(.horizontal, 2)
@@ -395,7 +474,7 @@ struct CyberMusicMiniPeekBanner: View {
                 if isModernClean {
                     ModernAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, maxHeight: 12.0, color: accentColor)
                 } else {
-                    CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0)
+                    CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0, palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor))
                 }
 
                 // Close button
@@ -447,6 +526,7 @@ struct SubNotchFloatingLyricCapsuleView: View {
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
     @AppStorage(SettingsKey.floatingLyricFontDesign) private var floatingLyricFontDesign = SettingsDefaults.floatingLyricFontDesign
     @AppStorage(SettingsKey.floatingLyricTextColor) private var floatingLyricTextColor = SettingsDefaults.floatingLyricTextColor
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @State private var isHovered = false
     @State private var capsuleWidth: CGFloat = 180
 
@@ -580,7 +660,8 @@ struct SubNotchFloatingLyricCapsuleView: View {
                     isPlaying: nowPlaying.isPlaying,
                     barWidth: 1.8,
                     segmentHeight: 1.4,
-                    segmentSpacing: 0.6
+                    segmentSpacing: 0.6,
+                    palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
                 )
                 .shadow(color: Color.black.opacity(0.8), radius: 2)
                 .frame(width: 14)
@@ -615,7 +696,8 @@ struct SubNotchFloatingLyricCapsuleView: View {
                     isPlaying: nowPlaying.isPlaying,
                     barWidth: 1.8,
                     segmentHeight: 1.4,
-                    segmentSpacing: 0.6
+                    segmentSpacing: 0.6,
+                    palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
                 )
                 .frame(width: 14)
             }
@@ -650,7 +732,8 @@ struct SubNotchFloatingLyricCapsuleView: View {
                     isPlaying: nowPlaying.isPlaying,
                     barWidth: 1.8,
                     segmentHeight: 1.4,
-                    segmentSpacing: 0.6
+                    segmentSpacing: 0.6,
+                    palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
                 )
                 .frame(width: 14)
             }
@@ -689,7 +772,8 @@ struct SubNotchFloatingLyricCapsuleView: View {
                     isPlaying: nowPlaying.isPlaying,
                     barWidth: 1.8,
                     segmentHeight: 1.4,
-                    segmentSpacing: 0.6
+                    segmentSpacing: 0.6,
+                    palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
                 )
                 .frame(width: 14)
 
@@ -1383,8 +1467,13 @@ struct RetroCyberMusicHUDContentView: View {
 
                     Spacer()
 
-                    // Retro Disco Visualizer (compact 6 bars)
-                    CyberDiscoVisualizer(isPlaying: nowPlaying.isPlaying, barCount: 6, maxHeight: 16, accentColor: activeProgressColor)
+                    // Retro Disco Visualizer (compact 6 bars, Color Theme base with vibrant gradient)
+                    CyberDiscoVisualizer(
+                        isPlaying: nowPlaying.isPlaying,
+                        barCount: 6,
+                        maxHeight: 16,
+                        palette: RetroSpectrumPalette.forThemeKey(musicHUDProgressColor)
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
