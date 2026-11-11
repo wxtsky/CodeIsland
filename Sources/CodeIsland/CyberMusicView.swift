@@ -10,14 +10,16 @@ struct CyberAudioSpectrumView: View {
     var barWidth: CGFloat = 2.6
     var segmentHeight: CGFloat = 1.8
     var segmentSpacing: CGFloat = 1.0
+    var accentColor: Color? = nil
 
     private func segmentColor(level: Int, isActive: Bool) -> Color {
         guard isActive else {
             return Color(red: 0.12, green: 0.14, blue: 0.18)
         }
+        let base = accentColor ?? Color(red: 0.0, green: 0.96, blue: 0.83)
         switch level {
         case 0, 1:
-            return Color(red: 0.0, green: 0.96, blue: 0.83) // Electric Cyan
+            return base
         case 2:
             return Color(red: 0.96, green: 0.62, blue: 0.04) // Neon Amber
         default:
@@ -276,37 +278,51 @@ struct CyberMusicWingView: View {
             .padding(.horizontal, 2)
             .padding(.vertical, 1)
         } else {
-            // RETRO CYBER: Machined pixelated dot matrix
-            HStack(spacing: 3) {
-                // Mini Album Art
+            // RETRO CYBER: Seamless Frameless, Sharp 17x17 Album Art, Marquee Monospaced Title saat hover, Dancing Spectrum
+            HStack(alignment: .center, spacing: 5) {
+                // Album Art (17x17, crisp rounded corner, no outer bounding pill)
                 if let art = nowPlaying.artworkImage {
                     Image(nsImage: art)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 13, height: 13)
-                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
-                        .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(Color(white: 0.3), lineWidth: 0.5))
+                        .frame(width: 17, height: 17)
+                        .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 3.5, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.5))
                 } else {
-                    RoundedRectangle(cornerRadius: 2.5)
+                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                         .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
-                        .frame(width: 13, height: 13)
+                        .frame(width: 17, height: 17)
                         .overlay(
                             Image(systemName: "music.note")
-                                .font(.system(size: 7))
-                                .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.8))
+                                .font(.system(size: 8))
+                                .foregroundStyle(accentColor.opacity(0.85))
                         )
                 }
 
-                // Real-Time Dancing Equalizer
-                CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.0, segmentHeight: 1.6, segmentSpacing: 0.8)
+                // Title: Marquee scrolling text in retro monospace font (vertically centered, never truncated)
+                if isHovered {
+                    ModernMarqueeText(
+                        text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
+                        font: .system(size: 8.5, weight: .bold, design: .monospaced),
+                        color: .white,
+                        maxWidth: 58
+                    )
+                    .frame(height: 17)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+
+                // Equalizer: Pixel dancing spectrum using active theme accent
+                CyberAudioSpectrumView(
+                    barCount: isHovered ? 3 : 4,
+                    isPlaying: nowPlaying.isPlaying,
+                    barWidth: 2.0,
+                    segmentHeight: 1.6,
+                    segmentSpacing: 0.8,
+                    accentColor: accentColor
+                )
             }
-            .padding(.horizontal, 3)
-            .padding(.vertical, 1.5)
-            .background(
-                RoundedRectangle(cornerRadius: 3.5)
-                    .fill(Color(red: 0.07, green: 0.08, blue: 0.11))
-                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.16, green: 0.19, blue: 0.25), lineWidth: 0.75))
-            )
+            .padding(.horizontal, 2)
+            .padding(.vertical, 1)
         }
     }
 }

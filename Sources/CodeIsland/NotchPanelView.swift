@@ -270,10 +270,10 @@ struct NotchPanelView: View {
             return 118
         }
         if isHoveringRightWing && !shouldShowExpanded {
-            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 128 : 95
+            return 128
         }
         if nowPlaying.isPlaying {
-            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 52 : 54
+            return 52
         }
         return 48
     }
@@ -1266,43 +1266,8 @@ private struct CompactRightWing: View {
             } else {
                 // Music Visualizer or Machined Cyber Activity Pill
                 if nowPlaying.isPlaying {
-                    if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
-                        // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
-                        CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
-                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                    } else {
-                        // RETRO CYBER: Machined pixel pill
-                        if shouldExpandRightWing {
-                            HStack(spacing: 3.5) {
-                                if let art = nowPlaying.artworkImage {
-                                    Image(nsImage: art)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 12, height: 12)
-                                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
-                                }
-                                Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.white)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .frame(maxWidth: 58, alignment: .leading)
-                                CyberAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.8, segmentHeight: 1.4, segmentSpacing: 0.7)
-                            }
-                            .padding(.horizontal, 3.5)
-                            .padding(.vertical, 1.5)
-                            .background(
-                                RoundedRectangle(cornerRadius: 3.5)
-                                    .fill(Color(white: 0.08))
-                                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
-                            )
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        } else {
-                            // "KECIL AWAL" - Retro Cyber
-                            CyberMusicWingView(nowPlaying: nowPlaying)
-                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                        }
-                    }
+                    CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
                     // AGENT / STANDBY MODE:
                     if shouldExpandRightWing {
