@@ -1288,6 +1288,12 @@ final class AppState {
     }
 
     private func showCompletion(_ sessionId: String) {
+        // Show completion immediately if island is already expanded
+        if surface.isExpanded {
+            doShowCompletion(sessionId)
+            return
+        }
+
         // Fast path: terminal not even frontmost — show immediately
         guard shouldSuppressAppLevel(for: sessionId) else {
             doShowCompletion(sessionId)
