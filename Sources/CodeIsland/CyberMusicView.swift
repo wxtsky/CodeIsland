@@ -149,6 +149,7 @@ struct ModernMarqueeText: View {
     var font: Font = .system(size: 9.5, weight: .bold, design: .rounded)
     var color: Color = .white
     var maxWidth: CGFloat? = nil
+    var centerShortText: Bool = false
     @State private var textWidth: CGFloat = 0
     @State private var startDate = Date()
 
@@ -194,7 +195,7 @@ struct ModernMarqueeText: View {
                         }
                     )
                     .offset(x: -offset)
-                    .frame(width: containerWidth, height: geo.size.height, alignment: excess > 0 ? .leading : .center)
+                    .frame(width: containerWidth, height: geo.size.height, alignment: (centerShortText && excess == 0) ? .center : .leading)
                     .clipped()
             }
         }
@@ -263,7 +264,8 @@ struct CyberMusicWingView: View {
                 if isHovered {
                     ModernMarqueeText(
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
-                        maxWidth: 64
+                        maxWidth: 64,
+                        centerShortText: true
                     )
                     .frame(height: 17)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -307,7 +309,8 @@ struct CyberMusicWingView: View {
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
                         font: .system(size: 8.5, weight: .bold, design: .monospaced),
                         color: .white,
-                        maxWidth: 64
+                        maxWidth: 64,
+                        centerShortText: true
                     )
                     .frame(height: 17)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
