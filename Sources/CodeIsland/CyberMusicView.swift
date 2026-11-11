@@ -226,7 +226,7 @@ struct CyberMusicWingView: View {
     private var accentColor: Color {
         let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
         switch pc {
-        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .theme: return isModernClean ? Color(red: 1.0, green: 0.65, blue: 0.45) : Color(red: 0.0, green: 0.96, blue: 0.83)
         case .white: return .white
         case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
         case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
@@ -325,7 +325,7 @@ struct CyberMusicMiniPeekBanner: View {
     private var accentColor: Color {
         let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
         switch pc {
-        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .theme: return isModernClean ? Color(red: 1.0, green: 0.65, blue: 0.45) : Color(red: 0.0, green: 0.96, blue: 0.83)
         case .white: return .white
         case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
         case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
@@ -1183,15 +1183,41 @@ struct ModernCleanLyricRowView: View {
     }
 }
 
-// MARK: - Retro Cyber Pixel Music HUD Theme (Preserved Classic)
+// MARK: - Retro Cyber Pixel Music HUD Theme (Preserved Classic - Seamless Frameless)
 
 struct RetroCyberMusicHUDContentView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     init(nowPlaying: NowPlayingManager, appState: AppState) {
         self.nowPlaying = nowPlaying
         self.appState = appState
+    }
+
+    private var activeProgressColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 0.0, green: 0.96, blue: 0.83) // Iconic Cyber Cyan by default
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
+
+    private var activeProgressGradient: LinearGradient {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme:
+            return LinearGradient(
+                colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 0.0, green: 0.75, blue: 0.95)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        default:
+            return pc.gradient
+        }
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -1203,8 +1229,8 @@ struct RetroCyberMusicHUDContentView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            // LEFT COLUMN: Album Art, Track info, Scrubber & Controls (175pt fixed width)
+        HStack(alignment: .center, spacing: 14) {
+            // LEFT COLUMN: Album Art, Track info, Scrubber & Controls (185pt fixed width)
             VStack(alignment: .leading, spacing: 5) {
                 Button(action: { nowPlaying.activateCurrentPlayer() }) {
                     HStack(spacing: 8) {
@@ -1215,14 +1241,14 @@ struct RetroCyberMusicHUDContentView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 48, height: 48)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(white: 0.25), lineWidth: 0.8))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.8))
                                     .shadow(color: Color.black.opacity(0.5), radius: 3, y: 2)
                             } else {
-                                RoundedRectangle(cornerRadius: 5)
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
                                     .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
                                     .frame(width: 48, height: 48)
-                                    .overlay(Image(systemName: "music.note").font(.system(size: 18)).foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83)))
+                                    .overlay(Image(systemName: "music.note").font(.system(size: 18)).foregroundColor(activeProgressColor))
                             }
                         }
                         .id(nowPlaying.title + nowPlaying.artist)
@@ -1243,12 +1269,13 @@ struct RetroCyberMusicHUDContentView: View {
                                 }
                             }
 
-                            Text(nowPlaying.title.isEmpty ? "No track" : nowPlaying.title)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .id(nowPlaying.title)
+                            ModernMarqueeText(
+                                text: nowPlaying.title.isEmpty ? "No track" : nowPlaying.title,
+                                font: .system(size: 11, weight: .bold, design: .monospaced),
+                                color: .white
+                            )
+                            .frame(height: 15)
+                            .id(nowPlaying.title)
 
                             Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
                                 .font(.system(size: 9, design: .monospaced))
@@ -1272,11 +1299,11 @@ struct RetroCyberMusicHUDContentView: View {
 
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(red: 0.14, green: 0.16, blue: 0.22))
+                                .fill(Color.white.opacity(0.14))
                                 .frame(height: 3)
 
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(red: 0.0, green: 0.96, blue: 0.83))
+                                .fill(activeProgressGradient)
                                 .frame(width: totalWidth * progressFraction, height: 3)
                         }
                         .contentShape(Rectangle())
@@ -1310,16 +1337,16 @@ struct RetroCyberMusicHUDContentView: View {
                             .font(.system(size: 8.5, weight: .bold))
                             .foregroundStyle(Color(white: 0.85))
                             .frame(width: 20, height: 20)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color(white: 0.11)))
+                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.10)))
                     }
                     .buttonStyle(.plain)
 
                     Button(action: { nowPlaying.togglePlayPause() }) {
                         Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 9.5, weight: .bold))
-                            .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                            .foregroundStyle(activeProgressColor)
                             .frame(width: 22, height: 20)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.05, green: 0.14, blue: 0.14)))
+                            .background(RoundedRectangle(cornerRadius: 3).fill(activeProgressColor.opacity(0.18)))
                     }
                     .buttonStyle(.plain)
 
@@ -1328,7 +1355,7 @@ struct RetroCyberMusicHUDContentView: View {
                             .font(.system(size: 8.5, weight: .bold))
                             .foregroundStyle(Color(white: 0.85))
                             .frame(width: 20, height: 20)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color(white: 0.11)))
+                            .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.10)))
                     }
                     .buttonStyle(.plain)
 
@@ -1340,17 +1367,17 @@ struct RetroCyberMusicHUDContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Divider Rule (fixed height, never expands!)
+            // Divider Rule (subtle vertical line, blends cleanly with dark backdrop)
             Rectangle()
-                .fill(Color(red: 0.16, green: 0.19, blue: 0.24))
-                .frame(width: 1, height: 92)
+                .fill(Color.white.opacity(0.12))
+                .frame(width: 1, height: 90)
 
             // RIGHT COLUMN: Synced Real-Time Lyrics View (clean, full-height lyrics only)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text("LYRICS")
                         .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
+                        .foregroundStyle(activeProgressColor)
 
                     Spacer()
 
@@ -1365,7 +1392,7 @@ struct RetroCyberMusicHUDContentView: View {
                     VStack(spacing: 4) {
                         Image(systemName: "waveform")
                             .font(.system(size: 16))
-                            .foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.6))
+                            .foregroundColor(activeProgressColor.opacity(0.6))
                         Text(nowPlaying.lyricsLoading ? "Fetching lyrics..." : "No lyrics found")
                             .font(.system(size: 8.5, design: .monospaced))
                             .foregroundStyle(Color(white: 0.45))
@@ -1386,14 +1413,14 @@ struct RetroCyberMusicHUDContentView: View {
                                     HStack(spacing: 4) {
                                         if isCurrent {
                                             Circle()
-                                                .fill(Color(red: 0.0, green: 0.96, blue: 0.83))
-                                                .frame(width: 3, height: 3)
+                                                .fill(activeProgressColor)
+                                                .frame(width: 3.5, height: 3.5)
                                         }
                                         KaraokeLyricLineView(
                                             text: line.text,
                                             isCurrent: isCurrent,
                                             currentFraction: fraction,
-                                            primaryColor: Color(red: 0.0, green: 0.96, blue: 0.83),
+                                            primaryColor: activeProgressColor,
                                             fontSize: isCurrent ? 9.5 : 8.0
                                         )
                                         .lineLimit(2)
@@ -1427,19 +1454,9 @@ struct RetroCyberMusicHUDContentView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .frame(height: 98)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color(red: 0.05, green: 0.06, blue: 0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
+        .frame(height: 104)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
     }
 }
 
