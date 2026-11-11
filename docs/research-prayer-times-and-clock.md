@@ -1,7 +1,7 @@
 # Riset: Waktu Salat, Kalender Hijriah, dan Jam Bertema Diorama
 
 > Tanggal riset: 2026-11-10
-> HEAD saat riset: `9d66439` (branch `feat/#3-spotify-web-browser-detection`)
+> HEAD saat riset: `70b46a0` (main, setelah PR #7 merged). Riset awal di `9d66439`, disesuaikan 2026-11-10.
 > Referensi pembanding: add-on **Prayer times** milik [Oyenya Studio](https://studio.oyenza.com/) (deskripsi resmi add-on, 0.2.1–0.2.28)
 > **Prinsip**: setiap angka di dokumen ini punya sumber. Yang tidak bisa diverifikasi ditandai **UNVERIFIED**.
 > Dokumen ini bahan keputusan, bukan spec. Spec menyusul setelah peta wayfinder selesai.
@@ -40,11 +40,13 @@ Geometri pill saat istirahat ada di `Sources/CodeIsland/NotchPanelView.swift`:
 
 | Bagian | Struct | Isi sekarang |
 |---|---|---|
-| Sayap kiri | `IdleIndicatorBar` (`:1874`) | maskot + status |
-| **Tengah** | `Spacer(minLength: hasNotch ? notchW : 0)` (`:1912`) | **kosong** — hanya area notch |
-| Sayap kanan | `IdleIndicatorBar` (`:1874`) | titik status / tombol |
+| Sayap kiri | `IdleIndicatorBar` (`:1890`) | maskot + nama agent |
+| **Tengah** | `Spacer(minLength: hasNotch ? notchW : 0)` (`:1919`) | **kosong** — hanya area notch |
+| Sayap kanan | `IdleIndicatorBar` (`:1890`) | chevron bawah (petunjuk expand) |
 
 Artinya **slot tengah pill kosong dan sudah berukuran notch**. Itu tempat alami untuk jam. Di mesin pengembang ini `hasNotch == false` (`ScreenDetector.screenHasNotch()`), jadi lebarnya `nil` dan jam harus punya lebar eksplisit sendiri.
+
+Sejak PR #7 (`feat/#6-retro-hud-frameless-dynamic-color`) sayap kiri dan kanan memakai satu `wingWidth` bersama (`hovered ? compactWingWidth + 6 : compactWingWidth`), dan sayap kanan menyusut jadi satu chevron. Artinya ruang yang tersedia untuk jam **tidak lagi berubah saat hover** seperti sebelumnya.
 
 Konsekuensi desain: jam di tengah berarti ia berbagi ruang dengan notch hardware pada MacBook yang punya notch. Oyenya menyelesaikannya dengan menaruh hitung mundur *di samping* kamera (bukan di bawahnya). Ini batasan nyata, bukan detail kosmetik.
 
@@ -88,6 +90,21 @@ Alternatif yang ditolak:
 - **Lottie** — dependency baru untuk hal yang sudah bisa dilakukan `Canvas`.
 
 **UNVERIFIED**: apakah Oyenya memakai sprite sheet atau prosedural. Tidak relevan untuk keputusan kita, tapi jangan mengklaim kita meniru implementasinya.
+
+### 3.3 Bentrok dengan sistem tema yang baru ada
+
+PR #7 menambahkan sistem tema untuk HUD musik di `Sources/CodeIsland/Settings.swift`:
+
+| Enum | Nilai | Arti |
+|---|---|---|
+| `MusicHUDTheme` | `modernClean`, `retroCyber` | dua bahasa visual: pulau modern vs terminal pixel |
+| `FloatingLyricPreset` | `pureText`, `capsule`, `frostedGlass`, `neonHud`, `seamlessGlass` | bentuk pill |
+| `MusicProgressColor` | `theme`, `white`, `cyan`, `pink`, `green` | warna aksen |
+| `FloatingLyricFontDesign` | `rounded`, `monospaced`, `system` | tipografi |
+
+Ini penting karena **diorama referensi itu pixel-art**, dan repo sekarang sudah punya dua bahasa visual yang eksplisit. Kalau diorama selalu pixel, ia akan bertabrakan dengan pengguna `modernClean`; kalau diorama punya dua varian, biayanya dua kali lipat.
+
+Keputusan yang harus diambil (lihat tiket 01): apakah diorama mengikuti `MusicHUDTheme`, punya tema sendiri, atau hanya muncul pada `retroCyber`.
 
 ---
 
@@ -316,7 +333,9 @@ Meniru itu berarti kalah, karena mereka sudah 28 versi di depan. Yang **tidak** 
 - Deskripsi add-on Prayer times 0.2.1–0.2.28 (sumber klaim akurasi 98,2%, arsitektur add-on, adzan CC BY-SA 4.0)
 
 **Internal repo**
-- Slot tengah pill: `Sources/CodeIsland/NotchPanelView.swift:1874` (`IdleIndicatorBar`), `:1912` (`Spacer`)
+- Slot tengah pill: `Sources/CodeIsland/NotchPanelView.swift:1890` (`IdleIndicatorBar`), `:1919` (`Spacer`)
+- Sistem tema (PR #7): `Sources/CodeIsland/Settings.swift:20` (`MusicHUDTheme`), `:43` (`FloatingLyricPreset`), `:119` (`MusicProgressColor`)
+- Pemilih tema di Settings: `Sources/CodeIsland/SettingsView.swift:1696`
 - Preseden pixel-art prosedural: `Sources/CodeIsland/PixelCharacterView.swift` (`ClawdView`, `Canvas` + `TimelineView`)
 - Tab: `Sources/CodeIsland/NotchPanelView.swift:113` (`ExpandedContentTab`)
 - Settings: `Sources/CodeIsland/Settings.swift` (`SettingsKey`, `SettingsDefaults`)
