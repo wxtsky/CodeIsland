@@ -840,6 +840,9 @@ public struct SessionSnapshot: Sendable {
         "cn.trae.app": "Trae CN",
         "com.qoder.ide": "Qoder IDE",
         "com.qoder.app": "Qoder",
+        // Qoder 国行 desktop is a separate install (`Qoder CN.app`) with its
+        // own bundle id; its hooks live under ~/.qoder-cn.
+        "com.qodercn.app": "Qoder CN",
         "com.factory.app": "Factory",
         "com.tencent.codebuddy": "CodeBuddy",
         "com.tencent.codebuddy.cn": "CodyBuddyCN",
@@ -867,6 +870,9 @@ public struct SessionSnapshot: Sendable {
         "com.qoder.ide": "qoder",
         // Qoder App is separate from the IDE, but shares its ~/.qoder hooks.
         "com.qoder.app": "qoder",
+        // Qoder CN desktop hooks share the `qoder-cli` source with the
+        // `qoderclicn` CLI (#289), matching their ~/.qoder-cn config root.
+        "com.qodercn.app": "qoder-cli",
         "com.factory.app": "droid",
         "com.tencent.codebuddy": "codebuddy",
         "com.tencent.codebuddy.cn": "codybuddycn",
