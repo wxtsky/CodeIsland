@@ -1022,6 +1022,7 @@ struct ModernCleanMusicHUDContentView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+    @State private var dragPosition: Double?
 
     private var activeProgressGradient: LinearGradient {
         (MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme).gradient
@@ -1109,8 +1110,9 @@ struct ModernCleanMusicHUDContentView: View {
                     VStack(spacing: 2) {
                         GeometryReader { geo in
                             let totalWidth = geo.size.width
+                            let effectivePosition = dragPosition ?? nowPlaying.playerPosition
                             let progressFraction: CGFloat = nowPlaying.trackDuration > 0
-                                ? min(1.0, max(0.0, CGFloat(nowPlaying.playerPosition / nowPlaying.trackDuration)))
+                                ? min(1.0, max(0.0, CGFloat(effectivePosition / nowPlaying.trackDuration)))
                                 : 0.0
 
                             ZStack(alignment: .leading) {
@@ -1125,10 +1127,19 @@ struct ModernCleanMusicHUDContentView: View {
                             .contentShape(Rectangle())
                             .gesture(
                                 DragGesture(minimumDistance: 0)
-                                    .onEnded { value in
+                                    .onChanged { value in
                                         guard nowPlaying.trackDuration > 0 else { return }
                                         let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
+                                        dragPosition = Double(fraction) * nowPlaying.trackDuration
+                                    }
+                                    .onEnded { value in
+                                        guard nowPlaying.trackDuration > 0 else {
+                                            dragPosition = nil
+                                            return
+                                        }
+                                        let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
                                         let targetTime = Double(fraction) * nowPlaying.trackDuration
+                                        dragPosition = nil
                                         nowPlaying.seek(to: targetTime)
                                     }
                             )
@@ -1136,11 +1147,12 @@ struct ModernCleanMusicHUDContentView: View {
                         .frame(height: 3)
 
                         HStack {
-                            Text(formatTime(nowPlaying.playerPosition))
+                            let effectivePosition = dragPosition ?? nowPlaying.playerPosition
+                            Text(formatTime(effectivePosition))
                                 .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.white.opacity(0.48))
                             Spacer()
-                            Text(formatRemainingTime(position: nowPlaying.playerPosition, duration: nowPlaying.trackDuration))
+                            Text(formatRemainingTime(position: effectivePosition, duration: nowPlaying.trackDuration))
                                 .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.white.opacity(0.48))
                         }
@@ -1295,6 +1307,7 @@ struct RetroCyberMusicHUDContentView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+    @State private var dragPosition: Double?
 
     init(nowPlaying: NowPlayingManager, appState: AppState) {
         self.nowPlaying = nowPlaying
@@ -1399,8 +1412,9 @@ struct RetroCyberMusicHUDContentView: View {
                 VStack(spacing: 2) {
                     GeometryReader { geo in
                         let totalWidth = geo.size.width
+                        let effectivePosition = dragPosition ?? nowPlaying.playerPosition
                         let progressFraction: CGFloat = nowPlaying.trackDuration > 0
-                            ? min(1.0, max(0.0, CGFloat(nowPlaying.playerPosition / nowPlaying.trackDuration)))
+                            ? min(1.0, max(0.0, CGFloat(effectivePosition / nowPlaying.trackDuration)))
                             : 0.0
 
                         ZStack(alignment: .leading) {
@@ -1415,10 +1429,19 @@ struct RetroCyberMusicHUDContentView: View {
                         .contentShape(Rectangle())
                         .gesture(
                             DragGesture(minimumDistance: 0)
-                                .onEnded { value in
+                                .onChanged { value in
                                     guard nowPlaying.trackDuration > 0 else { return }
                                     let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
+                                    dragPosition = Double(fraction) * nowPlaying.trackDuration
+                                }
+                                .onEnded { value in
+                                    guard nowPlaying.trackDuration > 0 else {
+                                        dragPosition = nil
+                                        return
+                                    }
+                                    let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
                                     let targetTime = Double(fraction) * nowPlaying.trackDuration
+                                    dragPosition = nil
                                     nowPlaying.seek(to: targetTime)
                                 }
                         )
@@ -1426,7 +1449,8 @@ struct RetroCyberMusicHUDContentView: View {
                     .frame(height: 4)
 
                     HStack {
-                        Text(formatTime(nowPlaying.playerPosition))
+                        let effectivePosition = dragPosition ?? nowPlaying.playerPosition
+                        Text(formatTime(effectivePosition))
                             .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color(white: 0.45))
                         Spacer()
@@ -1513,13 +1537,14 @@ struct RetroCyberMusicHUDContentView: View {
                     ScrollViewReader { proxy in
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(alignment: .leading, spacing: 3.5) {
+                                let currentLine = nowPlaying.lyrics.first(where: { $0.id == nowPlaying.currentLyricIndex })
+                                let nextLine = nowPlaying.lyrics.first(where: { $0.id == (nowPlaying.currentLyricIndex + 1) })
+                                let duration = max(1.0, (nextLine?.timestamp ?? ((currentLine?.timestamp ?? 0) + 3.8)) - (currentLine?.timestamp ?? 0))
+                                let elapsed = max(0.0, nowPlaying.playerPosition - (currentLine?.timestamp ?? 0))
+                                let currentFraction = min(1.0, elapsed / duration)
+
                                 ForEach(nowPlaying.lyrics) { line in
                                     let isCurrent = (line.id == nowPlaying.currentLyricIndex)
-                                    let currentLine = nowPlaying.lyrics.first(where: { $0.id == nowPlaying.currentLyricIndex })
-                                    let nextLine = nowPlaying.lyrics.first(where: { $0.id == (nowPlaying.currentLyricIndex + 1) })
-                                    let duration = max(1.0, (nextLine?.timestamp ?? ((currentLine?.timestamp ?? 0) + 3.8)) - (currentLine?.timestamp ?? 0))
-                                    let elapsed = max(0.0, nowPlaying.playerPosition - (currentLine?.timestamp ?? 0))
-                                    let fraction = min(1.0, elapsed / duration)
 
                                     HStack(spacing: 4) {
                                         if isCurrent {
@@ -1530,7 +1555,7 @@ struct RetroCyberMusicHUDContentView: View {
                                         KaraokeLyricLineView(
                                             text: line.text,
                                             isCurrent: isCurrent,
-                                            currentFraction: fraction,
+                                            currentFraction: isCurrent ? currentFraction : 0.0,
                                             primaryColor: activeProgressColor,
                                             fontSize: isCurrent ? 9.5 : 8.0
                                         )
