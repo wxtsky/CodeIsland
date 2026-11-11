@@ -17,6 +17,29 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
+    case modernClean = "modernClean"
+    case retroCyber = "retroCyber"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .modernClean: return "Modern Clean (Island)"
+        case .retroCyber: return "Retro Cyber (Pixel)"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .modernClean:
+            return "Modern Dynamic Island aesthetic with squircle artwork, circular playback controls, and seamless lyrics."
+        case .retroCyber:
+            return "Classic cyberpunk terminal look with monospaced typography, retro buttons, and disco visualizer."
+        }
+    }
+}
+
 public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
     case pureText = "pureText"
     case capsule = "capsule"
@@ -93,6 +116,28 @@ public enum FloatingLyricTextColor: String, CaseIterable, Identifiable, Sendable
     }
 }
 
+public enum MusicProgressColor: String, CaseIterable, Identifiable, Sendable {
+    case theme = "theme"
+    case white = "white"
+    case cyan = "cyan"
+    case pink = "pink"
+    case green = "green"
+    case amber = "amber"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .theme: return "Match Theme"
+        case .white: return "Pure White"
+        case .cyan: return "Cyber Cyan"
+        case .pink: return "Neon Pink"
+        case .green: return "Matrix Green"
+        case .amber: return "Sunset Amber"
+        }
+    }
+}
+
 enum SettingsKey {
     // Language
     static let appLanguage = "appLanguage"                 // "system", "en", "zh", "zh-Hant", "de", "ja", "ko", "tr"
@@ -131,6 +176,8 @@ enum SettingsKey {
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
     static let showCompactLyrics = "showCompactLyrics"
+    static let musicHUDTheme = "musicHUDTheme"
+    static let musicHUDProgressColor = "musicHUDProgressColor"
     static let floatingLyricPreset = "floatingLyricPreset"
     static let floatingLyricFontSize = "floatingLyricFontSize"
     static let floatingLyricFontDesign = "floatingLyricFontDesign"
@@ -283,6 +330,8 @@ struct SettingsDefaults {
     static let aiMessageLines = 1
     static let showAgentDetails = false
     static let showCompactLyrics = true
+    static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+    static let musicHUDProgressColor = MusicProgressColor.theme.rawValue
     static let floatingLyricPreset = FloatingLyricPreset.pureText.rawValue
     static let floatingLyricFontSize: Double = 10.0
     static let floatingLyricFontDesign = FloatingLyricFontDesign.rounded.rawValue
@@ -397,6 +446,8 @@ class SettingsManager {
             SettingsKey.aiMessageLines: SettingsDefaults.aiMessageLines,
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.showCompactLyrics: SettingsDefaults.showCompactLyrics,
+            SettingsKey.musicHUDTheme: SettingsDefaults.musicHUDTheme,
+            SettingsKey.musicHUDProgressColor: SettingsDefaults.musicHUDProgressColor,
             SettingsKey.floatingLyricPreset: SettingsDefaults.floatingLyricPreset,
             SettingsKey.floatingLyricFontSize: SettingsDefaults.floatingLyricFontSize,
             SettingsKey.floatingLyricFontDesign: SettingsDefaults.floatingLyricFontDesign,

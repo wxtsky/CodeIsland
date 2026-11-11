@@ -137,6 +137,20 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var modernMusicAccent: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
     @AppStorage(SettingsKey.floatingLyricVerticalGap) private var floatingLyricVerticalGap = SettingsDefaults.floatingLyricVerticalGap
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
@@ -253,13 +267,15 @@ struct NotchPanelView: View {
     /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
     private var symmetricWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
-            return 115
+            return 118
         }
         if isHoveringRightWing && !shouldShowExpanded {
-            return 95
+            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 128 : 95
         }
-        // Ultra-compact idle notch (truly narrow, hugs physical cutout with comfortable insets)
-        return nowPlaying.isPlaying ? 54 : 48
+        if nowPlaying.isPlaying {
+            return (musicHUDTheme == MusicHUDTheme.modernClean.rawValue) ? 52 : 54
+        }
+        return 48
     }
 
     /// Notch cutout reserved in the center of the expanded header.
@@ -294,7 +310,10 @@ struct NotchPanelView: View {
             }
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
-        if showIdleIndicator { return idleHovered ? nw + compactWingWidth * 2 + 80 : nw + compactWingWidth * 2 }
+        if showIdleIndicator {
+            let wing = idleHovered ? (compactWingWidth + 6) : compactWingWidth
+            return nw + wing * 2
+        }
         if !isActive { return nw }
         if sys.showChargingBanner && !appState.surface.isExpanded {
             return min(320, maxPanelWidth)
@@ -305,7 +324,7 @@ struct NotchPanelView: View {
         }
         let wing = symmetricWingWidth
         let clearance: CGFloat = 0
-        return nw + (wing * 2) + clearance
+        return nw + wing * 2 + clearance
     }
 
     /// Room the collapsed right wing lacks to clear the notch; 0 whenever it fits.
@@ -414,10 +433,10 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, ((isThinking || isHoveringRightWing) && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
+                            .padding(.trailing, (isThinking || isHoveringRightWing || shouldShowExpanded) ? 8 : 0)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: shouldShowExpanded ? .trailing : ((isThinking || isHoveringRightWing) ? .trailing : .center)
+                                alignment: (isThinking || isHoveringRightWing || shouldShowExpanded) ? .trailing : .center
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
@@ -1161,6 +1180,20 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var modernMusicAccent: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
     /// The waiting badges pulse forever; with Reduce Motion they hold still
     /// (a one-off follow-up bounce still marks a reminder).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1231,38 +1264,44 @@ private struct CompactRightWing: View {
                 }
                 .padding(.horizontal, 4)
             } else {
-                // Cyberpunk Music Visualizer or Machined Cyber Activity Pill
+                // Music Visualizer or Machined Cyber Activity Pill
                 if nowPlaying.isPlaying {
-                    if shouldExpandRightWing {
-                        // "KECIL KEDUA / THINKING EXPANDED" - Music Mode: Title ticker + cover + visualizer (Ultra-Compact)
-                        HStack(spacing: 3.5) {
-                            if let art = nowPlaying.artworkImage {
-                                Image(nsImage: art)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 12, height: 12)
-                                    .clipShape(RoundedRectangle(cornerRadius: 2.5))
-                            }
-                            Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
-                                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(maxWidth: 58, alignment: .leading)
-                            CyberAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.8, segmentHeight: 1.4, segmentSpacing: 0.7)
-                        }
-                        .padding(.horizontal, 3.5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .fill(Color(white: 0.08))
-                                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
-                        )
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    } else {
-                        // "KECIL AWAL" - Music Mode: Compact cover art + dancing spectrum
-                        CyberMusicWingView(nowPlaying: nowPlaying)
+                    if musicHUDTheme == MusicHUDTheme.modernClean.rawValue {
+                        // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
+                        CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
                             .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    } else {
+                        // RETRO CYBER: Machined pixel pill
+                        if shouldExpandRightWing {
+                            HStack(spacing: 3.5) {
+                                if let art = nowPlaying.artworkImage {
+                                    Image(nsImage: art)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 12, height: 12)
+                                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
+                                }
+                                Text(nowPlaying.title.isEmpty ? "Playing" : nowPlaying.title)
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.white)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(maxWidth: 58, alignment: .leading)
+                                CyberAudioSpectrumView(barCount: 3, isPlaying: true, barWidth: 1.8, segmentHeight: 1.4, segmentSpacing: 0.7)
+                            }
+                            .padding(.horizontal, 3.5)
+                            .padding(.vertical, 1.5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3.5)
+                                    .fill(Color(white: 0.08))
+                                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 1.0, green: 0.16, blue: 0.53).opacity(0.4), lineWidth: 0.6))
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        } else {
+                            // "KECIL AWAL" - Retro Cyber
+                            CyberMusicWingView(nowPlaying: nowPlaying)
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        }
                     }
                 } else {
                     // AGENT / STANDBY MODE:
@@ -1879,19 +1918,10 @@ private struct IdleIndicatorBar: View {
     let hasNotch: Bool
     let hovered: Bool
     var onExpand: (() -> Void)? = nil
-    @ObservedObject private var l10n = L10n.shared
-    @ObservedObject private var nowPlaying = NowPlayingManager.shared
-    @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
-    @StateObject private var quit = QuitConfirmation()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var leftWingWidth: CGFloat {
-        hovered ? (compactWingWidth + 12) : compactWingWidth
-    }
-
-    private var rightWingWidth: CGFloat {
-        hovered ? (compactWingWidth + 68) : compactWingWidth
+    private var wingWidth: CGFloat {
+        hovered ? (compactWingWidth + 6) : compactWingWidth
     }
 
     var body: some View {
@@ -1899,11 +1929,11 @@ private struct IdleIndicatorBar: View {
             // Left Wing: mascot with precise positioning
             HStack {
                 MascotView(source: defaultSource, status: .idle, size: mascotSize)
-                    .opacity(hovered ? 0.9 : 0.6)
-                    .padding(.leading, hovered ? 12 : 5)
+                    .opacity(hovered ? 0.95 : 0.65)
+                    .padding(.leading, hovered ? 7 : 5)
                 Spacer(minLength: 0)
             }
-            .frame(width: leftWingWidth, alignment: .leading)
+            .frame(width: wingWidth, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
             .help("Click to expand tabs (Agents / Workspace / Music)")
@@ -1914,44 +1944,26 @@ private struct IdleIndicatorBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand?() }
 
-            // Right Wing: expanded buttons or subtle balanced status dot
+            // Right Wing: sleek, ultra-compact expand indicator (Option 1)
             HStack {
                 Spacer(minLength: 0)
-                if hovered {
-                    HStack(spacing: 6) {
-                        if !quit.isArmed {
-                            NotchIconButton(icon: "chevron.down", tooltip: "Expand to Tabs (Agents / Workspace / Music)") {
-                                onExpand?()
-                            }
-                        }
-
-                        HStack(spacing: 4) {
-                            NotchIconButton(icon: soundEnabled ? "speaker.wave.2" : "speaker.slash", tooltip: soundEnabled ? l10n["mute"] : l10n["enable_sound_tooltip"]) {
-                                soundEnabled.toggle()
-                            }
-                            NotchIconButton(icon: "gearshape", tooltip: l10n["settings"]) {
-                                SettingsWindowController.shared.show()
-                            }
-                            QuitConfirmButton(confirmation: quit)
-                        }
-                    }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: hovered ? 8 : 7.5, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(hovered ? 0.9 : 0.45))
+                    .frame(width: 18, height: 18)
+                    .background(
+                        Circle()
+                            .fill(Color.white.opacity(hovered ? 0.12 : 0))
+                    )
                     .padding(.trailing, 8)
-                    .transition(.opacity)
-                } else {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.45))
-                        .padding(.trailing, 8)
-                        .transition(.opacity)
-                }
             }
-            .frame(width: rightWingWidth, alignment: .trailing)
+            .frame(width: wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
+            .help("Click to expand tabs (Agents / Workspace / Music)")
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
-        .animation(reduceMotion ? nil : NotchAnimation.micro, value: quit.isArmed)
     }
 }
 

@@ -98,46 +98,215 @@ struct CyberDiscoVisualizer: View {
     }
 }
 
+// MARK: - Modern Clean Audio Spectrum (Smooth Dynamic Island Style)
+
+struct ModernAudioSpectrumView: View {
+    var barCount: Int = 3
+    var isPlaying: Bool = true
+    var barWidth: CGFloat = 1.8
+    var maxHeight: CGFloat = 9.0
+    var color: Color = Color(red: 1.0, green: 0.65, blue: 0.45)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.04)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 1.6) {
+                ForEach(0..<barCount, id: \.self) { barIndex in
+                    let normalized: CGFloat = {
+                        guard isPlaying else { return 0.25 }
+                        let factor = Double(barIndex)
+                        let b1 = sin(time * 8.0 + factor * 2.2) * 0.42
+                        let b2 = cos(time * 12.5 + factor * 1.7) * 0.28
+                        let b3 = sin(time * 4.2 + factor * 0.9) * 0.15
+                        return max(0.25, min(1.0, CGFloat(0.55 + b1 + b2 + b3)))
+                    }()
+
+                    Capsule()
+                        .fill(color)
+                        .frame(width: barWidth, height: max(2.5, maxHeight * normalized))
+                }
+            }
+            .frame(height: maxHeight, alignment: .center)
+        }
+    }
+}
+
+// MARK: - Modern Marquee Scrolling Text for Compact Wing
+
+private struct ModernMarqueeTextWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ModernMarqueeText: View {
+    let text: String
+    var font: Font = .system(size: 9.5, weight: .bold, design: .rounded)
+    var color: Color = .white
+    var maxWidth: CGFloat? = nil
+    @State private var textWidth: CGFloat = 0
+    @State private var startDate = Date()
+
+    var body: some View {
+        GeometryReader { geo in
+            let containerWidth = maxWidth ?? geo.size.width
+            let excess = max(0, textWidth - containerWidth)
+            TimelineView(.animation(minimumInterval: 0.03)) { timeline in
+                let offset: CGFloat = {
+                    guard excess > 0 else { return 0 }
+                    let scrollDuration = max(2.5, Double(excess) / 22.0)
+                    let pauseStart = 1.2
+                    let pauseEnd = 1.2
+                    let resetDuration = 1.0
+                    let totalCycle = pauseStart + scrollDuration + pauseEnd + resetDuration
+
+                    let time = max(0, timeline.date.timeIntervalSince(startDate))
+                    let t = time.truncatingRemainder(dividingBy: totalCycle)
+
+                    if t < pauseStart {
+                        return 0
+                    } else if t < pauseStart + scrollDuration {
+                        let progress = (t - pauseStart) / scrollDuration
+                        let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                        return CGFloat(smooth) * excess
+                    } else if t < pauseStart + scrollDuration + pauseEnd {
+                        return excess
+                    } else {
+                        let progress = (t - (pauseStart + scrollDuration + pauseEnd)) / resetDuration
+                        let smooth = (1.0 - cos(progress * .pi)) / 2.0
+                        return (1.0 - CGFloat(smooth)) * excess
+                    }
+                }()
+
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .background(
+                        GeometryReader { textGeo in
+                            Color.clear.preference(key: ModernMarqueeTextWidthKey.self, value: textGeo.size.width)
+                        }
+                    )
+                    .offset(x: -offset)
+                    .frame(width: containerWidth, alignment: .leading)
+                    .clipped()
+            }
+        }
+        .frame(width: maxWidth)
+        .onPreferenceChange(ModernMarqueeTextWidthKey.self) { width in
+            if abs(self.textWidth - width) > 1 {
+                self.textWidth = width
+            }
+        }
+        .onChange(of: text) {
+            startDate = Date()
+        }
+    }
+}
+
 // MARK: - Compact Wing Music View (Ultra-Compact for Small Notch)
 
 struct CyberMusicWingView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
+    var isHovered: Bool = false
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
-    init(nowPlaying: NowPlayingManager) {
+    init(nowPlaying: NowPlayingManager, isHovered: Bool = false) {
         self.nowPlaying = nowPlaying
+        self.isHovered = isHovered
+    }
+
+    private var isModernClean: Bool {
+        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+    }
+
+    private var accentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
     }
 
     var body: some View {
-        HStack(spacing: 3) {
-            // Mini Album Art
-            if let art = nowPlaying.artworkImage {
-                Image(nsImage: art)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 13, height: 13)
-                    .clipShape(RoundedRectangle(cornerRadius: 2.5))
-                    .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(Color(white: 0.3), lineWidth: 0.5))
-            } else {
-                RoundedRectangle(cornerRadius: 2.5)
-                    .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
-                    .frame(width: 13, height: 13)
-                    .overlay(
-                        Image(systemName: "music.note")
-                            .font(.system(size: 7))
-                            .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.8))
-                    )
-            }
+        if isModernClean {
+            // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
+            HStack(spacing: 5) {
+                if let art = nowPlaying.artworkImage {
+                    Image(nsImage: art)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 17, height: 17)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                } else {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 17, height: 17)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        )
+                }
 
-            // Real-Time Dancing Equalizer
-            CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.0, segmentHeight: 1.6, segmentSpacing: 0.8)
+                if isHovered {
+                    ModernMarqueeText(
+                        text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
+                        maxWidth: 60
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+
+                ModernAudioSpectrumView(
+                    barCount: 3,
+                    isPlaying: nowPlaying.isPlaying,
+                    barWidth: 2.0,
+                    maxHeight: 11.0,
+                    color: accentColor
+                )
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, 1)
+        } else {
+            // RETRO CYBER: Machined pixelated dot matrix
+            HStack(spacing: 3) {
+                // Mini Album Art
+                if let art = nowPlaying.artworkImage {
+                    Image(nsImage: art)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 13, height: 13)
+                        .clipShape(RoundedRectangle(cornerRadius: 2.5))
+                        .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(Color(white: 0.3), lineWidth: 0.5))
+                } else {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+                        .frame(width: 13, height: 13)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .font(.system(size: 7))
+                                .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.8))
+                        )
+                }
+
+                // Real-Time Dancing Equalizer
+                CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.0, segmentHeight: 1.6, segmentSpacing: 0.8)
+            }
+            .padding(.horizontal, 3)
+            .padding(.vertical, 1.5)
+            .background(
+                RoundedRectangle(cornerRadius: 3.5)
+                    .fill(Color(red: 0.07, green: 0.08, blue: 0.11))
+                    .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.16, green: 0.19, blue: 0.25), lineWidth: 0.75))
+            )
         }
-        .padding(.horizontal, 3)
-        .padding(.vertical, 1.5)
-        .background(
-            RoundedRectangle(cornerRadius: 3.5)
-                .fill(Color(red: 0.07, green: 0.08, blue: 0.11))
-                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.16, green: 0.19, blue: 0.25), lineWidth: 0.75))
-        )
     }
 }
 
@@ -146,6 +315,24 @@ struct CyberMusicWingView: View {
 struct CyberMusicMiniPeekBanner: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var onOpenFull: () -> Void
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var isModernClean: Bool {
+        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+    }
+
+    private var accentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
 
     var body: some View {
         Button(action: onOpenFull) {
@@ -156,26 +343,26 @@ struct CyberMusicMiniPeekBanner: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 26, height: 26)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(white: 0.3), lineWidth: 0.5))
-                        .shadow(color: Color.black.opacity(0.5), radius: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous).stroke(Color(white: 0.3), lineWidth: 0.5))
+                        .shadow(color: Color.black.opacity(0.4), radius: 3)
                 } else {
                     Image(systemName: "music.note")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(Color(red: 0.0, green: 0.96, blue: 0.83))
+                        .foregroundColor(isModernClean ? accentColor : Color(red: 0.0, green: 0.96, blue: 0.83))
                         .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.12)))
+                        .background(RoundedRectangle(cornerRadius: isModernClean ? 6 : 4, style: .continuous).fill(Color(white: 0.12)))
                 }
 
                 // Track Title & Artist
                 VStack(alignment: .leading, spacing: 1) {
                     Text(nowPlaying.title.isEmpty ? "No Track" : nowPlaying.title)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: isModernClean ? .rounded : .monospaced))
                         .foregroundStyle(Color.white)
                         .lineLimit(1)
 
                     Text(nowPlaying.artist.isEmpty ? "Now Playing" : nowPlaying.artist)
-                        .font(.system(size: 8.5, design: .monospaced))
+                        .font(.system(size: 8.5, design: isModernClean ? .default : .monospaced))
                         .foregroundStyle(Color(white: 0.65))
                         .lineLimit(1)
                 }
@@ -183,7 +370,11 @@ struct CyberMusicMiniPeekBanner: View {
                 Spacer(minLength: 4)
 
                 // Dancing Spectrum
-                CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0)
+                if isModernClean {
+                    ModernAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, maxHeight: 12.0, color: accentColor)
+                } else {
+                    CyberAudioSpectrumView(barCount: 4, isPlaying: nowPlaying.isPlaying, barWidth: 2.2, segmentHeight: 1.8, segmentSpacing: 1.0)
+                }
 
                 // Close button
                 Button(action: {
@@ -201,9 +392,9 @@ struct CyberMusicMiniPeekBanner: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color(red: 0.05, green: 0.06, blue: 0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1))
+                RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous)
+                    .fill(Color(red: 0.06, green: 0.07, blue: 0.09))
+                    .overlay(RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous).stroke(isModernClean ? Color.white.opacity(0.18) : Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1))
             )
             .padding(.horizontal, 6)
             .padding(.bottom, 3)
@@ -655,6 +846,346 @@ struct KaraokeLyricLineView: View {
 // MARK: - Redesigned High-Taste Compact Music HUD View with Synced Lyrics
 
 struct CyberMusicHUDView: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+    var appState: AppState
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+
+    init(nowPlaying: NowPlayingManager, appState: AppState) {
+        self.nowPlaying = nowPlaying
+        self.appState = appState
+    }
+
+    var body: some View {
+        Group {
+            if musicHUDTheme == MusicHUDTheme.retroCyber.rawValue {
+                RetroCyberMusicHUDContentView(nowPlaying: nowPlaying, appState: appState)
+            } else {
+                ModernCleanMusicHUDContentView(nowPlaying: nowPlaying, appState: appState)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: musicHUDTheme)
+    }
+}
+
+// MARK: - Modern Clean Dynamic Island Music HUD Theme (Apple Music / Spotify Partial Flow)
+
+extension MusicProgressColor {
+    var color: Color {
+        switch self {
+        case .theme: return Color(red: 1.0, green: 0.65, blue: 0.45)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
+
+    var gradient: LinearGradient {
+        switch self {
+        case .theme, .amber:
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.68, blue: 0.48), Color(red: 1.0, green: 0.58, blue: 0.38)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        case .white:
+            return LinearGradient(
+                colors: [Color.white, Color(white: 0.85)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        case .cyan:
+            return LinearGradient(
+                colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 0.0, green: 0.75, blue: 0.95)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        case .pink:
+            return LinearGradient(
+                colors: [Color(red: 1.0, green: 0.25, blue: 0.60), Color(red: 0.95, green: 0.10, blue: 0.45)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        case .green:
+            return LinearGradient(
+                colors: [Color(red: 0.15, green: 0.88, blue: 0.42), Color(red: 0.08, green: 0.72, blue: 0.30)],
+                startPoint: .leading, endPoint: .trailing
+            )
+        }
+    }
+}
+
+struct ModernCleanMusicHUDContentView: View {
+    @ObservedObject var nowPlaying: NowPlayingManager
+    var appState: AppState
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+
+    private var activeProgressGradient: LinearGradient {
+        (MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme).gradient
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        guard !seconds.isNaN && !seconds.isInfinite && seconds > 0 else { return "0:00" }
+        let total = Int(seconds)
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
+    }
+
+    private func formatRemainingTime(position: Double, duration: Double) -> String {
+        guard duration > 0 else { return "-0:00" }
+        let remaining = max(0.0, duration - position)
+        let total = Int(remaining)
+        let m = total / 60
+        let s = total % 60
+        return String(format: "-%d:%02d", m, s)
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            // LEFT BLOCK: Full Image on Left + Info & Controls Stack Beside It (250pt fixed width)
+            HStack(alignment: .center, spacing: 12) {
+                // 1. FULL ALBUM IMAGE (86x86 squircle - spans full vertical height)
+                ZStack {
+                    if let art = nowPlaying.artworkImage {
+                        Image(nsImage: art)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 86, height: 86)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
+                            )
+                            .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
+                    } else {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [Color(white: 0.16), Color(white: 0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                            .frame(width: 86, height: 86)
+                            .overlay(
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 26))
+                                    .foregroundColor(Color.white.opacity(0.6))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 0.8)
+                            )
+                    }
+                }
+                .id(nowPlaying.title + nowPlaying.artist)
+
+                // 2. STACK BESIDE IMAGE (Title di atas, Scrubber di tengah, Tombol aksi di bawah terpusat horizontal)
+                VStack(alignment: .leading, spacing: 0) {
+                    // Di atas: Title song (Marquee scrolling jika panjang) & Artist
+                    VStack(alignment: .leading, spacing: 2) {
+                        ModernMarqueeText(
+                            text: nowPlaying.title.isEmpty ? "No track" : nowPlaying.title,
+                            font: .system(size: 13.5, weight: .bold, design: .rounded),
+                            color: .white
+                        )
+                        .frame(height: 18)
+                        .padding(.trailing, 10)
+                        .id(nowPlaying.title)
+
+                        Text(nowPlaying.artist.isEmpty ? "Idle" : nowPlaying.artist)
+                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.72))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .padding(.trailing, 10)
+                    }
+
+                    Spacer(minLength: 2)
+
+                    // Di tengah: Scrubber Bar & Durasi (diberi padding kanan agar tidak mepet border)
+                    VStack(spacing: 2) {
+                        GeometryReader { geo in
+                            let totalWidth = geo.size.width
+                            let progressFraction: CGFloat = nowPlaying.trackDuration > 0
+                                ? min(1.0, max(0.0, CGFloat(nowPlaying.playerPosition / nowPlaying.trackDuration)))
+                                : 0.0
+
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.18))
+                                    .frame(height: 3)
+
+                                Capsule()
+                                    .fill(activeProgressGradient)
+                                    .frame(width: totalWidth * progressFraction, height: 3)
+                            }
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onEnded { value in
+                                        guard nowPlaying.trackDuration > 0 else { return }
+                                        let fraction = min(1.0, max(0.0, value.location.x / totalWidth))
+                                        let targetTime = Double(fraction) * nowPlaying.trackDuration
+                                        nowPlaying.seek(to: targetTime)
+                                    }
+                            )
+                        }
+                        .frame(height: 3)
+
+                        HStack {
+                            Text(formatTime(nowPlaying.playerPosition))
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.48))
+                            Spacer()
+                            Text(formatRemainingTime(position: nowPlaying.playerPosition, duration: nowPlaying.trackDuration))
+                                .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.48))
+                        }
+                    }
+                    .padding(.trailing, 10)
+
+                    Spacer(minLength: 2)
+
+                    // Di bawah: Tombol aksi (⏮, ▶/⏸, ⏭) terpusat horizontal di tengah-tengah (kanan-kiri)
+                    HStack(spacing: 20) {
+                        Spacer()
+
+                        Button(action: { nowPlaying.previousTrack() }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.togglePlayPause() }) {
+                            Circle()
+                                .fill(Color.white)
+                                .frame(width: 26, height: 26)
+                                .overlay(
+                                    Image(systemName: nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color.black)
+                                        .offset(x: nowPlaying.isPlaying ? 0 : 0.8)
+                                )
+                                .shadow(color: Color.white.opacity(0.22), radius: 3, y: 1)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: { nowPlaying.nextTrack() }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+                    }
+                    .frame(height: 26)
+                }
+                .frame(height: 86)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 6)
+            }
+            .frame(width: 250, alignment: .leading)
+
+            // Soft vertical separator line (subtle gradient fade)
+            Rectangle()
+                .fill(LinearGradient(
+                    colors: [Color.clear, Color.white.opacity(0.12), Color.white.opacity(0.12), Color.clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .frame(width: 1, height: 74)
+
+            // RIGHT COLUMN: Multi-Line Interactive Synced Lyrics (Scrollable, Selectable, Centered Focus)
+            VStack(alignment: .leading, spacing: 0) {
+                if nowPlaying.lyrics.isEmpty {
+                    VStack(spacing: 4) {
+                        Image(systemName: "music.quarternote.3")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.white.opacity(0.35))
+                        Text(nowPlaying.lyricsLoading ? "Fetching lyrics..." : "No lyrics available")
+                            .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color.white.opacity(0.40))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            LazyVStack(alignment: .leading, spacing: 4) {
+                                ForEach(nowPlaying.lyrics) { line in
+                                    let isCurrent = (line.id == nowPlaying.currentLyricIndex)
+                                    ModernCleanLyricRowView(line: line, isCurrent: isCurrent) {
+                                        nowPlaying.seek(to: line.timestamp)
+                                    }
+                                    .id(line.id)
+                                }
+                            }
+                            .padding(.vertical, 22)
+                            .padding(.trailing, 8)
+                        }
+                        .frame(height: 90)
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: .black, location: 0.16),
+                                    .init(color: .black, location: 0.84),
+                                    .init(color: .clear, location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .onAppear {
+                            proxy.scrollTo(nowPlaying.currentLyricIndex, anchor: .center)
+                        }
+                        .onChange(of: nowPlaying.currentLyricIndex) { _, newIndex in
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                proxy.scrollTo(newIndex, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.leading, 12)
+        }
+        .frame(height: 106)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Modern Clean Lyric Row (Interactive, Clickable to Seek, Hover Feedback)
+
+struct ModernCleanLyricRowView: View {
+    let line: LyricLine
+    let isCurrent: Bool
+    let onTap: () -> Void
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Text(line.text)
+            .font(.system(size: isCurrent ? 14.5 : 11, weight: isCurrent ? .bold : .medium, design: .rounded))
+            .foregroundStyle(isCurrent ? Color.white : (isHovered ? Color.white.opacity(0.80) : Color.white.opacity(0.36)))
+            .shadow(color: isCurrent ? Color.white.opacity(0.40) : Color.clear, radius: isCurrent ? 6 : 0)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .scaleEffect(isCurrent ? 1.01 : 1.0, anchor: .leading)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.20), value: isHovered)
+            .animation(.easeInOut(duration: 0.25), value: isCurrent)
+            .onHover { isHovered = $0 }
+            .onTapGesture { onTap() }
+    }
+}
+
+// MARK: - Retro Cyber Pixel Music HUD Theme (Preserved Classic)
+
+struct RetroCyberMusicHUDContentView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
 

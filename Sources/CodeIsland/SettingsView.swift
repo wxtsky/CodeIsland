@@ -1486,6 +1486,8 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showModelLabel) private var showModelLabel = SettingsDefaults.showModelLabel
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
+    @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
     @AppStorage(SettingsKey.floatingLyricFontDesign) private var floatingLyricFontDesign = SettingsDefaults.floatingLyricFontDesign
@@ -1691,6 +1693,67 @@ private struct AppearancePage: View {
             }
 
             Section("Music & Synced Lyrics") {
+                // Music HUD Theme Selector (Modern Clean Island vs Retro Cyber Pixel)
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Music HUD Theme", selection: $musicHUDTheme) {
+                        ForEach(MusicHUDTheme.allCases) { theme in
+                            Text(theme.title).tag(theme.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text(MusicHUDTheme(rawValue: musicHUDTheme)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Progress Bar Color (Consistent right-aligned palette style)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("Progress Bar Color")
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ForEach(MusicProgressColor.allCases) { col in
+                                let isSelected = (musicHUDProgressColor == col.rawValue)
+                                Button(action: {
+                                    musicHUDProgressColor = col.rawValue
+                                }) {
+                                    ZStack {
+                                        if col == .theme {
+                                            Circle()
+                                                .fill(LinearGradient(
+                                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 1.0, green: 0.65, blue: 0.45)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ))
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        } else {
+                                            Circle()
+                                                .fill(col.color)
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        }
+
+                                        if isSelected {
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 2)
+                                                .frame(width: 20, height: 20)
+                                        }
+                                    }
+                                    .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .help(col.title)
+                            }
+                        }
+                    }
+
+                    Text("Accent color for the scrubber bar. 'Match Theme' adapts to the chosen HUD theme.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
                     Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
