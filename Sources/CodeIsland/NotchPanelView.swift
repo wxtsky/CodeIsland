@@ -527,97 +527,99 @@ struct NotchPanelView: View {
                             removal: .move(edge: .top).combined(with: .opacity)
                         ))
                     } else {
-                        if expandedTab == .music {
-                        CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
-                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    } else if expandedTab == .workspace {
-                        CyberWorkspaceView(manager: workspaceManager, appState: appState)
-                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    } else {
+                        // High-priority cards always take precedence over secondary tabs
                         switch appState.surface {
-                    case .approvalCard(let sid):
-                        // Card is addressed by session — render that session's
-                        // request, not whatever is at the head of the queue. (#308)
-                        if let pending = appState.pendingPermission(forSession: sid) {
+                        case .approvalCard(let sid):
+                            // Card is addressed by session — render that session's
+                            // request, not whatever is at the head of the queue. (#308)
+                            if let pending = appState.pendingPermission(forSession: sid) {
+                                let session = appState.sessions[sid]
+                                ApprovalBar(
+                                    tool: pending.event.toolName ?? "Unknown",
+                                    toolInput: pending.event.toolInput,
+                                    queuePosition: appState.permissionQueuePosition(forSession: sid),
+                                    queueTotal: appState.permissionQueue.count,
+                                    session: session,
+                                    sessionId: sid,
+                                    appState: appState,
+                                    alwaysScope: ApprovalAlwaysScope(for: pending.event),
+                                    onAllow: { appState.approvePermission(always: false, expectedSessionId: sid) },
+                                    onAlwaysAllow: { appState.approvePermission(always: true, expectedSessionId: sid) },
+                                    onDeny: { appState.denyPermission(expectedSessionId: sid) },
+                                    onDismiss: { appState.dismissPermissionPrompt(expectedSessionId: sid) }
+                                )
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            }
+                        case .questionCard(let sid):
                             let session = appState.sessions[sid]
-                            ApprovalBar(
-                                tool: pending.event.toolName ?? "Unknown",
-                                toolInput: pending.event.toolInput,
-                                queuePosition: appState.permissionQueuePosition(forSession: sid),
-                                queueTotal: appState.permissionQueue.count,
-                                session: session,
-                                sessionId: sid,
-                                appState: appState,
-                                alwaysScope: ApprovalAlwaysScope(for: pending.event),
-                                onAllow: { appState.approvePermission(always: false, expectedSessionId: sid) },
-                                onAlwaysAllow: { appState.approvePermission(always: true, expectedSessionId: sid) },
-                                onDeny: { appState.denyPermission(expectedSessionId: sid) },
-                                onDismiss: { appState.dismissPermissionPrompt(expectedSessionId: sid) }
-                            )
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            if let q = appState.pendingQuestion(forSession: sid) {
+                                QuestionBar(
+                                    question: q.question.question,
+                                    options: q.question.options,
+                                    descriptions: q.question.descriptions,
+                                    allQuestions: q.askUserQuestionState?.items ?? [],
+                                    requestId: q.id,
+                                    sessionSource: session?.source,
+                                    sessionContext: session?.cwd,
+                                    session: session,
+                                    sessionId: sid,
+                                    appState: appState,
+                                    queuePosition: appState.questionQueuePosition(forSession: sid),
+                                    queueTotal: appState.questionQueue.count,
+                                    onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
+                                    onAnswerMulti: { appState.answerQuestionMulti($0, expectedSessionId: sid) },
+                                    onSkip: { appState.skipQuestion(expectedSessionId: sid) },
+                                    onDismiss: { appState.dismissQuestion(expectedSessionId: sid) }
+                                )
+                                // One view per request. Answering a card promotes the
+                                // next session's request into this same slot, and
+                                // without a new identity SwiftUI hands it the previous
+                                // card's @State — answers, selection and typed text
+                                // included. (#333)
+                                .id(q.id)
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            } else if let preview = appState.previewQuestionPayload {
+                                QuestionBar(
+                                    question: preview.question,
+                                    options: preview.options,
+                                    descriptions: preview.descriptions,
+                                    allQuestions: [],
+                                    requestId: nil,
+                                    sessionSource: session?.source,
+                                    sessionContext: session?.cwd,
+                                    session: session,
+                                    sessionId: sid,
+                                    appState: appState,
+                                    queuePosition: 1,
+                                    queueTotal: 1,
+                                    onAnswer: { _ in },
+                                    onAnswerMulti: { _ in },
+                                    onSkip: { },
+                                    onDismiss: { }
+                                )
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                            }
+                        case .completionCard:
+                            SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
+                                .transition(.blurFade.combined(with: .move(edge: .top)))
+                        case .quickPrompt:
+                            CyberQuickPromptView(appState: appState)
+                                .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        case .sessionList:
+                            // Priority 2: General expanded surface respects expandedTab (Music, Workspace, or Agent SessionList)
+                            if expandedTab == .music {
+                                CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                            } else if expandedTab == .workspace {
+                                CyberWorkspaceView(manager: workspaceManager, appState: appState)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                            } else {
+                                SessionListView(appState: appState, onlySessionId: nil)
+                                    .transition(.blurFade.combined(with: .move(edge: .top)))
+                            }
+                        case .collapsed:
+                            EmptyView()
                         }
-                    case .questionCard(let sid):
-                        let session = appState.sessions[sid]
-                        if let q = appState.pendingQuestion(forSession: sid) {
-                            QuestionBar(
-                                question: q.question.question,
-                                options: q.question.options,
-                                descriptions: q.question.descriptions,
-                                allQuestions: q.askUserQuestionState?.items ?? [],
-                                requestId: q.id,
-                                sessionSource: session?.source,
-                                sessionContext: session?.cwd,
-                                session: session,
-                                sessionId: sid,
-                                appState: appState,
-                                queuePosition: appState.questionQueuePosition(forSession: sid),
-                                queueTotal: appState.questionQueue.count,
-                                onAnswer: { appState.answerQuestion($0, expectedSessionId: sid) },
-                                onAnswerMulti: { appState.answerQuestionMulti($0, expectedSessionId: sid) },
-                                onSkip: { appState.skipQuestion(expectedSessionId: sid) },
-                                onDismiss: { appState.dismissQuestion(expectedSessionId: sid) }
-                            )
-                            // One view per request. Answering a card promotes the
-                            // next session's request into this same slot, and
-                            // without a new identity SwiftUI hands it the previous
-                            // card's @State — answers, selection and typed text
-                            // included. (#333)
-                            .id(q.id)
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
-                        } else if let preview = appState.previewQuestionPayload {
-                            QuestionBar(
-                                question: preview.question,
-                                options: preview.options,
-                                descriptions: preview.descriptions,
-                                allQuestions: [],
-                                requestId: nil,
-                                sessionSource: session?.source,
-                                sessionContext: session?.cwd,
-                                session: session,
-                                sessionId: sid,
-                                appState: appState,
-                                queuePosition: 1,
-                                queueTotal: 1,
-                                onAnswer: { _ in },
-                                onAnswerMulti: { _ in },
-                                onSkip: { },
-                                onDismiss: { }
-                            )
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
-                        }
-                    case .completionCard:
-                        SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .quickPrompt:
-                        CyberQuickPromptView(appState: appState)
-                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
-                    case .sessionList:
-                        SessionListView(appState: appState, onlySessionId: nil)
-                            .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .collapsed:
-                        EmptyView()
-                    }
-                    }
                     }
                 }
             }
@@ -850,6 +852,33 @@ struct NotchPanelView: View {
                     hoverPhase = .collapsed
                 } else if newSurface.isExpanded && hoverPhase != .expanded {
                     hoverPhase = .expanded
+                }
+
+                // Switch expanded tab to .agents when attention or completion is required
+                switch newSurface {
+                case .completionCard, .approvalCard, .questionCard:
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        expandedTab = .agents
+                    }
+                default:
+                    break
+                }
+            }
+            .onChange(of: appState.status) { oldStatus, newStatus in
+                // Switch to .agents if task completes while viewing music
+                if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
+                    if expandedTab == .music {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                            expandedTab = .agents
+                        }
+                    }
+                }
+            }
+            .onChange(of: appState.justCompletedSessionId) { _, completedId in
+                if completedId != nil && expandedTab == .music {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        expandedTab = .agents
+                    }
                 }
             }
             // Outside onHover on purpose: the hover region moves with the bar.
