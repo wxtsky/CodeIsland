@@ -311,6 +311,9 @@ struct NotchPanelView: View {
             if expandedTab == .workspace && workspaceManager.isExpandedDetail {
                 return min(max(baseWidth, 720), maxPanelWidth)
             }
+            if expandedTab == .prayer {
+                return min(max(baseWidth, 720), maxPanelWidth)
+            }
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
         if showIdleIndicator {

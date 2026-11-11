@@ -13,14 +13,16 @@ public struct DioramaSkyPalette {
     }
 
     private static let keys: [(h: Double, top: RGB, bottom: RGB)] = [
-        (0.0,  RGB(r: 0.03, g: 0.04, b: 0.14), RGB(r: 0.08, g: 0.10, b: 0.25)),
-        (5.0,  RGB(r: 0.16, g: 0.20, b: 0.42), RGB(r: 0.95, g: 0.55, b: 0.40)),
+        (0.0,  RGB(r: 0.07, g: 0.07, b: 0.18), RGB(r: 0.16, g: 0.13, b: 0.28)),
+        (4.5,  RGB(r: 0.08, g: 0.08, b: 0.22), RGB(r: 0.22, g: 0.16, b: 0.34)),
+        (5.5,  RGB(r: 0.16, g: 0.20, b: 0.42), RGB(r: 0.95, g: 0.55, b: 0.40)),
         (7.5,  RGB(r: 0.45, g: 0.72, b: 0.95), RGB(r: 0.98, g: 0.85, b: 0.62)),
         (12.0, RGB(r: 0.30, g: 0.62, b: 0.98), RGB(r: 0.62, g: 0.84, b: 1.00)),
         (16.0, RGB(r: 0.40, g: 0.55, b: 0.85), RGB(r: 1.00, g: 0.78, b: 0.45)),
         (18.3, RGB(r: 0.30, g: 0.22, b: 0.45), RGB(r: 1.00, g: 0.42, b: 0.22)),
-        (19.6, RGB(r: 0.07, g: 0.08, b: 0.22), RGB(r: 0.28, g: 0.20, b: 0.38)),
-        (24.0, RGB(r: 0.03, g: 0.04, b: 0.14), RGB(r: 0.08, g: 0.10, b: 0.25)),
+        (19.6, RGB(r: 0.11, g: 0.10, b: 0.26), RGB(r: 0.26, g: 0.18, b: 0.38)),
+        (21.5, RGB(r: 0.09, g: 0.09, b: 0.22), RGB(r: 0.20, g: 0.16, b: 0.32)),
+        (24.0, RGB(r: 0.07, g: 0.07, b: 0.18), RGB(r: 0.16, g: 0.13, b: 0.28)),
     ]
 
     public static func colors(_ hour: Double) -> (Color, Color) {
@@ -54,9 +56,26 @@ public struct DioramaSkyView: View {
     public var skyline: Bool = true
     public var skylineHeight: CGFloat = 0.12
 
-    private static let stars: [(Double, Double)] = [
-        (0.08, 0.15), (0.17, 0.40), (0.26, 0.12), (0.35, 0.30), (0.46, 0.10), (0.55, 0.38),
-        (0.64, 0.18), (0.73, 0.08), (0.82, 0.34), (0.91, 0.16), (0.96, 0.42), (0.40, 0.22),
+    private struct Star {
+        let x: Double
+        let y: Double
+        let isCross: Bool
+        let brightness: Double
+    }
+
+    private static let stars: [Star] = [
+        Star(x: 0.08, y: 0.16, isCross: false, brightness: 0.8),
+        Star(x: 0.16, y: 0.38, isCross: false, brightness: 0.75),
+        Star(x: 0.23, y: 0.12, isCross: true,  brightness: 0.95),
+        Star(x: 0.32, y: 0.26, isCross: false, brightness: 0.7),
+        Star(x: 0.43, y: 0.10, isCross: false, brightness: 0.85),
+        Star(x: 0.48, y: 0.34, isCross: true,  brightness: 0.90),
+        Star(x: 0.58, y: 0.16, isCross: false, brightness: 0.75),
+        Star(x: 0.67, y: 0.30, isCross: false, brightness: 0.8),
+        Star(x: 0.74, y: 0.08, isCross: true,  brightness: 0.95),
+        Star(x: 0.82, y: 0.24, isCross: false, brightness: 0.8),
+        Star(x: 0.90, y: 0.14, isCross: false, brightness: 0.7),
+        Star(x: 0.95, y: 0.32, isCross: false, brightness: 0.85),
     ]
     private static let buildings: [Double] = [0.20, 0.30, 0.24, 0.38, 0.22, 0.32, 0.18, 0.28, 0.36, 0.21, 0.30, 0.16]
 
@@ -90,10 +109,18 @@ public struct DioramaSkyView: View {
 
             let night = DioramaSkyPalette.nightFactor(hour)
             if night > 0.05 {
-                for (sx, sy) in Self.stars {
-                    let r: CGFloat = pixel ? 2 : 1.1
-                    let rect = CGRect(x: snap(sx * size.width), y: snap(sy * size.height * 0.8), width: r, height: r)
-                    ctx.fill(Path(rect), with: .color(.white.opacity(0.85 * night)))
+                for star in Self.stars {
+                    let cx = snap(star.x * size.width)
+                    let cy = snap(star.y * size.height * 0.75)
+                    let a = night * star.brightness
+                    if star.isCross {
+                        ctx.fill(Path(CGRect(x: cx - 1, y: cy - 1, width: 2, height: 2)), with: .color(.white.opacity(a)))
+                        ctx.fill(Path(CGRect(x: cx - 2, y: cy, width: 5, height: 1)), with: .color(.white.opacity(a * 0.75)))
+                        ctx.fill(Path(CGRect(x: cx, y: cy - 2, width: 1, height: 5)), with: .color(.white.opacity(a * 0.75)))
+                    } else {
+                        let r: CGFloat = pixel ? 2 : 1.3
+                        ctx.fill(Path(CGRect(x: cx, y: cy, width: r, height: r)), with: .color(.white.opacity(a)))
+                    }
                 }
             }
 
@@ -101,10 +128,10 @@ public struct DioramaSkyView: View {
             let sunrise = sunriseHour
             let sunset = sunsetHour
             let nextSunrise = sunrise + 24.0
-            let horizonY = size.height * (skyline ? 0.82 : 1.0)
-            let archH = horizonY * 0.78
+            let horizonY = size.height * (skyline ? 0.80 : 1.0)
+            let archH = horizonY * 0.75
             func arcPoint(_ p: Double) -> CGPoint {
-                CGPoint(x: size.width * (0.10 + 0.80 * p), y: horizonY - archH * sin(.pi * p))
+                CGPoint(x: size.width * (0.08 + 0.84 * p), y: horizonY - archH * sin(.pi * p))
             }
             let h = hour
             if h >= sunrise && h <= sunset {
@@ -115,40 +142,42 @@ public struct DioramaSkyView: View {
                 if pixel {
                     ctx.fill(Path(CGRect(x: snap(c.x - r), y: snap(c.y - r), width: snap(r * 2), height: snap(r * 2))), with: .color(col))
                 } else {
-                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - r * 1.9, y: c.y - r * 1.9, width: r * 3.8, height: r * 3.8)), with: .color(col.opacity(0.22)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - r * 1.8, y: c.y - r * 1.8, width: r * 3.6, height: r * 3.6)), with: .color(col.opacity(0.20)))
                     ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)), with: .color(col))
                 }
             } else {
                 let hh = h < sunrise ? h + 24.0 : h
                 let p = max(0, min(1, (hh - sunset) / max(0.1, nextSunrise - sunset)))
                 let c = arcPoint(p)
-                let r = min(size.width, size.height) * 0.06
-                let f = Double(hijriDay) / 29.5
-                let dx = (f < 0.5 ? -1.0 : 1.0) * 2.0 * Double(r) * sin(f * .pi)
-                if pixel {
-                    ctx.fill(Path(CGRect(x: snap(c.x - r), y: snap(c.y - r), width: snap(r * 2), height: snap(r * 2))), with: .color(Color(red: 0.95, green: 0.95, blue: 0.85)))
-                    ctx.fill(Path(CGRect(x: snap(c.x - r + CGFloat(dx)), y: snap(c.y - r), width: snap(r * 2), height: snap(r * 2))), with: .color(top))
-                } else {
-                    let moon = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-                    ctx.fill(moon, with: .color(Color(red: 0.95, green: 0.95, blue: 0.85)))
+                let r = min(size.width, size.height) * 0.08
+                let phaseRatio = Double(max(1, min(30, hijriDay))) / 29.5
+                let illuminated = 0.5 * (1.0 - cos(2.0 * .pi * phaseRatio))
+
+                let moonRect = CGRect(x: snap(c.x - r), y: snap(c.y - r), width: snap(r * 2), height: snap(r * 2))
+                let moonPath = Path(ellipseIn: moonRect)
+                ctx.fill(moonPath, with: .color(Color(red: 0.96, green: 0.96, blue: 0.92)))
+
+                if illuminated < 0.92 {
                     ctx.drawLayer { layer in
-                        layer.clip(to: moon)
-                        layer.fill(Path(ellipseIn: CGRect(x: c.x - r + CGFloat(dx), y: c.y - r, width: r * 2, height: r * 2)), with: .color(top))
+                        layer.clip(to: moonPath)
+                        let cutoutR = r * 1.02
+                        let shift = (phaseRatio < 0.5 ? 1.0 : -1.0) * Double(r) * (0.28 + illuminated * 1.9)
+                        let cutoutRect = CGRect(x: c.x - cutoutR + CGFloat(shift), y: c.y - cutoutR, width: cutoutR * 2, height: cutoutR * 2)
+                        layer.fill(Path(ellipseIn: cutoutRect), with: .color(top))
                     }
                 }
             }
 
             // Clouds (drift with the hour = cheap parallax), fade at night.
-            let cloudA = 1.0 - night * 0.85
-            for (i, base) in [0.2, 0.62].enumerated() {
-                let x = (base * size.width + CGFloat(hour) * (i == 0 ? 6 : 3)).truncatingRemainder(dividingBy: size.width + 60) - 30
-                let y = size.height * (i == 0 ? 0.22 : 0.38)
-                if pixel {
-                    ctx.fill(Path(CGRect(x: snap(x), y: snap(y), width: 28, height: 4)), with: .color(.white.opacity(0.5 * cloudA)))
-                    ctx.fill(Path(CGRect(x: snap(x + 4), y: snap(y - 4), width: 16, height: 4)), with: .color(.white.opacity(0.5 * cloudA)))
-                } else {
-                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 34, height: 9)), with: .color(.white.opacity(0.45 * cloudA)))
-                }
+            let cloudColor = night > 0.3
+                ? Color(red: 0.08, green: 0.07, blue: 0.16).opacity(0.40)
+                : Color.white.opacity(0.35 * (1.0 - night))
+
+            for (baseX, baseY, cw, ch) in [(0.44, 0.22, 48.0, 10.0), (0.68, 0.30, 56.0, 11.0)] {
+                let cx = (baseX * size.width + CGFloat(hour) * 3).truncatingRemainder(dividingBy: size.width + 80) - 40
+                let cy = baseY * size.height
+                let rect = CGRect(x: snap(cx), y: snap(cy), width: snap(cw), height: snap(ch))
+                ctx.fill(Path(roundedRect: rect, cornerRadius: ch / 2), with: .color(cloudColor))
             }
 
             // Skyline + windows
@@ -156,18 +185,18 @@ public struct DioramaSkyView: View {
                 let n = Self.buildings.count
                 let w = size.width / CGFloat(n)
                 let lit = DioramaSkyPalette.windowsLit(hour)
-                let baseSkylineY = size.height * 0.92
+                let baseSkylineY = size.height * 0.96
                 for (i, bh) in Self.buildings.enumerated() {
                     let bHeight = snap(size.height * skylineHeight * CGFloat(bh) / 0.38)
                     let rect = CGRect(x: snap(CGFloat(i) * w), y: baseSkylineY - bHeight, width: snap(w) + 0.5, height: bHeight + size.height * 0.15)
-                    ctx.fill(Path(rect), with: .color(Color(red: 0.05, green: 0.06, blue: 0.10)))
+                    ctx.fill(Path(rect), with: .color(Color(red: 0.07, green: 0.06, blue: 0.13)))
                     if lit {
                         var wy = rect.minY + 4
-                        while wy < baseSkylineY - 2 {
-                            let wx = rect.minX + w * 0.28
-                            ctx.fill(Path(CGRect(x: snap(wx), y: snap(wy), width: pixel ? 4 : 2.2, height: pixel ? 4 : 2.2)),
-                                     with: .color(Color(red: 1.0, green: 0.85, blue: 0.45).opacity(0.9)))
-                            wy += pixel ? 8 : 6.5
+                        while wy < baseSkylineY - 4 {
+                            let wx = rect.minX + w * 0.32
+                            ctx.fill(Path(CGRect(x: snap(wx), y: snap(wy), width: pixel ? 3 : 2.2, height: pixel ? 3 : 2.2)),
+                                     with: .color(Color(red: 1.0, green: 0.85, blue: 0.45).opacity(0.85)))
+                            wy += pixel ? 7 : 6.5
                         }
                     }
                 }
