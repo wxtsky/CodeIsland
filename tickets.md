@@ -108,7 +108,7 @@ graph TD
 ---
 
 ### Ticket 5: Expanded Tab SLT with Living Diorama Canvas & Schedule Cards
-- **Status:** Open
+- **Status:** Done
 - **Blocked by:** Ticket 3
 - **Scope:**
   - Add `.prayer` tab to `ExpandedContentTab` & `RightWingPixelTabs` (`SALAT` / `SLT`).

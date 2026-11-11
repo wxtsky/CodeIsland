@@ -550,6 +550,9 @@ struct NotchPanelView: View {
                     } else if expandedTab == .workspace {
                         CyberWorkspaceView(manager: workspaceManager, appState: appState)
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    } else if expandedTab == .prayer {
+                        PrayerExpandedCardView(manager: prayerManager)
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     } else {
                         switch appState.surface {
                     case .approvalCard(let sid):

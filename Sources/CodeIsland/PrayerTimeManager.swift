@@ -76,6 +76,9 @@ public final class PrayerTimeManager: ObservableObject {
     @Published public private(set) var currentTimeString: String = "12:00"
     @Published public private(set) var currentSecondsString: String = "12:00:00"
     @Published public private(set) var hijriDateString: String = ""
+    @Published public private(set) var hijriDay: Int = 1
+    @Published public private(set) var gregorianDateString: String = ""
+    @Published public private(set) var currentFractionalHour: Double = 12.0
     @Published public private(set) var solarProgress: Double = 0.5
     @Published public var showMiniPeekBanner: Bool = false
     @Published public private(set) var miniPeekBannerTitle: String = ""
@@ -91,6 +94,22 @@ public final class PrayerTimeManager: ObservableObject {
         let timeRemaining = next.date.timeIntervalSince(Date())
         // Active when within 15 mins before prayer, or up to 5 mins after prayer entry
         return timeRemaining <= 15 * 60 && timeRemaining >= -5 * 60
+    }
+
+    public var formattedCountdown: String {
+        let m = minutesUntilNextPrayer
+        return m >= 60 ? "\(m / 60)j \(m % 60)m" : "\(m)m"
+    }
+
+    public var cityName: String {
+        locationService.activeCity.name
+    }
+
+    public func formattedPrayerTime(_ date: Date) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = locationService.activeCity.timeZone
+        let comps = cal.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", comps.hour ?? 0, comps.minute ?? 0)
     }
 
     private var cancellables = Set<AnyCancellable>()
@@ -186,6 +205,7 @@ public final class PrayerTimeManager: ObservableObject {
         let offset = UserDefaults.standard.integer(forKey: SettingsKey.prayerHijriDayOffset)
         let hijriDate = HijriCalendarCalculator.calculate(day: todayYMD, source: hijriSource, manualOffsetDays: offset)
         self.hijriDateString = hijriDate.formattedString
+        self.hijriDay = hijriDate.day
 
         self.lastCalculatedDay = todayYMD
     }
@@ -208,9 +228,16 @@ public final class PrayerTimeManager: ObservableObject {
         self.currentTimeString = String(format: "%02d:%02d", h, m)
         self.currentSecondsString = String(format: "%02d:%02d:%02d", h, m, s)
 
-        // Solar 24h progress [0..1]
+        // Solar 24h progress [0..1] and fractional hour [0..24)
         let totalSeconds = Double(h * 3600 + m * 60 + s)
         self.solarProgress = totalSeconds / 86400.0
+        self.currentFractionalHour = totalSeconds / 3600.0
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.timeZone = tz
+        df.dateFormat = "EEEE d MMM"
+        self.gregorianDateString = df.string(from: now)
 
         // Auto-recalculate if midnight rolled over
         let todayYMD = YearMonthDay(year: comps.year ?? 2026, month: comps.month ?? 1, day: comps.day ?? 1)
