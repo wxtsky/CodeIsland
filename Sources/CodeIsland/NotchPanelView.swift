@@ -893,9 +893,9 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.status) { oldStatus, newStatus in
-                // Switch to .agents if task completes while viewing music
+                // Switch to .agents if task completes while viewing music or prayer
                 if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
-                    if expandedTab == .music {
+                    if expandedTab == .music || expandedTab == .prayer {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             expandedTab = .agents
                         }
@@ -903,7 +903,7 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.justCompletedSessionId) { _, completedId in
-                if completedId != nil && expandedTab == .music {
+                if completedId != nil && (expandedTab == .music || expandedTab == .prayer) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
@@ -1889,7 +1889,7 @@ private struct RightWingPixelTabs: View {
                 let isPrayerSelected = expandedTab == .prayer
                 let activePrayerColor = prayerManager.currentPhase.accentColor
                 Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = isPrayerSelected ? .agents : .prayer
                     }
                 } label: {
