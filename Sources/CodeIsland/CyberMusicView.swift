@@ -194,7 +194,7 @@ struct ModernMarqueeText: View {
                         }
                     )
                     .offset(x: -offset)
-                    .frame(width: containerWidth, height: geo.size.height, alignment: .leading)
+                    .frame(width: containerWidth, height: geo.size.height, alignment: excess > 0 ? .leading : .center)
                     .clipped()
             }
         }
@@ -263,7 +263,7 @@ struct CyberMusicWingView: View {
                 if isHovered {
                     ModernMarqueeText(
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
-                        maxWidth: 60
+                        maxWidth: 64
                     )
                     .frame(height: 17)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -307,7 +307,7 @@ struct CyberMusicWingView: View {
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
                         font: .system(size: 8.5, weight: .bold, design: .monospaced),
                         color: .white,
-                        maxWidth: 58
+                        maxWidth: 64
                     )
                     .frame(height: 17)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
