@@ -132,7 +132,7 @@ graph TD
 ---
 
 ### Ticket 6: Prototype Cleanup & End-to-End Integration Verification
-- **Status:** Open
+- **Status:** Done
 - **Blocked by:** Ticket 4, Ticket 5
 - **Scope:**
   - Delete prototype file `Sources/CodeIsland/PrayerPrototype.swift`.
