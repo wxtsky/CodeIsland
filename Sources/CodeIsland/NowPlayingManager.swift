@@ -1408,7 +1408,9 @@ final class NowPlayingManager: ObservableObject {
         } else {
             let app = (activeSource == .appleMusic || player == "Music") ? "Music" : "Spotify"
             let script = "tell application \"\(app)\" to set player position to \(position)"
-            _ = Self.runAppleScript(script)
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = Self.runAppleScript(script)
+            }
             self.playerPosition = position
             updateCurrentLyricIndex()
         }

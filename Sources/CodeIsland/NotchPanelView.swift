@@ -865,9 +865,9 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.status) { oldStatus, newStatus in
-                // Switch to .agents if task completes while viewing music
+                // Switch to .agents if task completes while viewing secondary tabs
                 if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
-                    if expandedTab == .music {
+                    if expandedTab == .music || expandedTab == .workspace {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             expandedTab = .agents
                         }
@@ -875,7 +875,7 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.justCompletedSessionId) { _, completedId in
-                if completedId != nil && expandedTab == .music {
+                if completedId != nil && (expandedTab == .music || expandedTab == .workspace) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
