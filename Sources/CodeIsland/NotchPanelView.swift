@@ -527,8 +527,7 @@ struct NotchPanelView: View {
                             removal: .move(edge: .top).combined(with: .opacity)
                         ))
                     } else {
-                        // High-priority cards (Approval, Question, Completion, QuickPrompt)
-                        // ALWAYS take precedence over secondary tabs (Music/Workspace)!
+                        // High-priority cards always take precedence over secondary tabs
                         switch appState.surface {
                         case .approvalCard(let sid):
                             // Card is addressed by session — render that session's
@@ -855,8 +854,7 @@ struct NotchPanelView: View {
                     hoverPhase = .expanded
                 }
 
-                // Whenever an AI finishes a turn (completionCard) or needs attention (approval/question):
-                // Automatically switch expanded tab to .agents so both header and below-notch view show the agent!
+                // Switch expanded tab to .agents when attention or completion is required
                 switch newSurface {
                 case .completionCard, .approvalCard, .questionCard:
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -867,8 +865,7 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.status) { oldStatus, newStatus in
-                // If AI completes its task (transitioning from processing/running to idle)
-                // while the notch is open on the music tab, automatically switch to .agents!
+                // Switch to .agents if task completes while viewing music
                 if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
                     if expandedTab == .music {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
