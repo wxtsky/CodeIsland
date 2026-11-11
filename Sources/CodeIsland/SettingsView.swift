@@ -1707,10 +1707,10 @@ private struct AppearancePage: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Progress Bar Color (Consistent right-aligned palette style)
+                // Color Theme (Consistent right-aligned palette style)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text("Progress Bar Color")
+                        Text("Color Theme")
                         Spacer()
                         HStack(spacing: 8) {
                             ForEach(MusicProgressColor.allCases) { col in
@@ -1749,7 +1749,7 @@ private struct AppearancePage: View {
                         }
                     }
 
-                    Text("Accent color for the scrubber bar. 'Match Theme' adapts to the chosen HUD theme.")
+                    Text("Accent color theme for progress bar, playback controls, and retro visualizer. 'Match Theme' adapts to the chosen HUD theme.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -1800,7 +1800,7 @@ private struct AppearancePage: View {
                     // Text Highlight Color (macOS Accent Color Swatches Style)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text("Highlight Color")
+                            Text("Lyric Highlight Color (Below Notch)")
                             Spacer()
                             HStack(spacing: 8) {
                                 ForEach(FloatingLyricTextColor.allCases) { col in
@@ -1828,7 +1828,7 @@ private struct AppearancePage: View {
                             }
                         }
 
-                        Text("Illumination color and glow accent for the currently active lyric line.")
+                        Text("Illumination color and glow accent for the floating synced lyrics displayed directly beneath the notch.")
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                     }
