@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import UserNotifications
 import CodeIslandCore
 
 // MARK: - Navigation Model
@@ -3639,6 +3640,7 @@ private struct PrayerSettingsPage: View {
     @AppStorage(SettingsKey.prayerAlertBeforeMinutes) private var alertBeforeMinutes = SettingsDefaults.prayerAlertBeforeMinutes
     @AppStorage(SettingsKey.prayerSoundEnabled) private var soundEnabled = SettingsDefaults.prayerSoundEnabled
     @AppStorage(SettingsKey.prayerSystemNotificationEnabled) private var systemNotificationEnabled = SettingsDefaults.prayerSystemNotificationEnabled
+    @AppStorage(SettingsKey.prayerUsePreciseLocation) private var usePreciseLocation = SettingsDefaults.prayerUsePreciseLocation
 
     var body: some View {
         Form {
@@ -3684,35 +3686,76 @@ private struct PrayerSettingsPage: View {
 
                 Section(header: Text("Lokasi Perangkat")) {
                     Picker("Mode Penentuan Lokasi", selection: $locationMode) {
-                        Text("Otomatis (CoreLocation ~1km)").tag("automatic")
+                        Text("Otomatis (CoreLocation)").tag("automatic")
                         Text("Manual (Pilih Kota)").tag("manual")
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: locationMode) { _ in
+                    .onChange(of: locationMode) { _, _ in
                         locationService.requestCurrentLocation(force: true)
                     }
 
-                    if locationMode == "manual" {
+                    if locationMode == "automatic" {
+                        Toggle("Gunakan Koordinat & Elevasi Presisi", isOn: $usePreciseLocation)
+                            .font(.system(size: 12))
+                        Text("Menggunakan koordinat GPS/Wi-Fi dan ketinggian aktual perangkat untuk akurasi hisab astronomis hingga tingkat menit lokal.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            switch locationService.authorizationStatus {
+                            case .authorizedAlways, .authorized:
+                                Label("Izin Lokasi: Aktif", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.caption)
+                            case .notDetermined:
+                                Button("Minta Izin Lokasi") {
+                                    locationService.requestAuthorization()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            case .denied, .restricted:
+                                Label("Izin Ditolak (Buka System Settings > Privacy)", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                            @unknown default:
+                                EmptyView()
+                            }
+
+                            Spacer()
+
+                            Button {
+                                locationService.requestCurrentLocation(force: true)
+                            } label: {
+                                Label("Perbarui Lokasi", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
                         Picker("Kota Rujukan", selection: $manualCityId) {
                             ForEach(OfflineCityDatabase.allCities) { city in
-                                Text("\(city.name) (\(city.provinceOrCountry))").tag(city.id)
+                                Text("\(city.name) (\(city.provinceOrCountry)) - \(Int(city.elevationMeters))m").tag(city.id)
                             }
                         }
                         .pickerStyle(.menu)
-                        .onChange(of: manualCityId) { newId in
+                        .onChange(of: manualCityId) { _, newId in
                             locationService.setManualCity(id: newId)
                         }
                     }
 
-                    HStack {
+                    HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "location.fill")
                             .foregroundStyle(.tint)
+                            .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Kota Aktif: \(locationService.activeCity.name)")
+                            Text("Wilayah: \(locationService.displayName)")
                                 .font(.system(size: 13, weight: .medium))
-                            Text(String(format: "Koordinat: %.2f°, %.2f° (%@)",
-                                        locationService.activeCity.coordinates.latitude,
-                                        locationService.activeCity.coordinates.longitude,
+                            let coords = locationService.effectiveCoordinates
+                            let elev = locationService.effectiveElevation
+                            Text(String(format: "Koordinat: %.4f°, %.4f° · Elevasi: %.0fm mdpl (%@)",
+                                        coords.latitude,
+                                        coords.longitude,
+                                        elev,
                                         locationService.activeCity.provinceOrCountry))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
@@ -3731,6 +3774,17 @@ private struct PrayerSettingsPage: View {
 
                     Toggle("Bunyikan Nada Lembut (Chime)", isOn: $soundEnabled)
                     Toggle("Kirim Notifikasi Sistem macOS", isOn: $systemNotificationEnabled)
+                        .onChange(of: systemNotificationEnabled) { _, isEnabled in
+                            if isEnabled {
+                                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                                    if !granted {
+                                        Task { @MainActor in
+                                            systemNotificationEnabled = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
                 }
             }
         }

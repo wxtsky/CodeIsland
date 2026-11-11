@@ -48,6 +48,8 @@ public struct DioramaSkyPalette {
 public struct DioramaSkyView: View {
     public let hour: Double
     public let hijriDay: Int
+    public var sunriseHour: Double = 5.75
+    public var sunsetHour: Double = 18.3
     public var pixel: Bool = false
     public var skyline: Bool = true
     public var skylineHeight: CGFloat = 0.12
@@ -58,9 +60,19 @@ public struct DioramaSkyView: View {
     ]
     private static let buildings: [Double] = [0.20, 0.30, 0.24, 0.38, 0.22, 0.32, 0.18, 0.28, 0.36, 0.21, 0.30, 0.16]
 
-    public init(hour: Double, hijriDay: Int, pixel: Bool = false, skyline: Bool = true, skylineHeight: CGFloat = 0.12) {
+    public init(
+        hour: Double,
+        hijriDay: Int,
+        sunriseHour: Double = 5.75,
+        sunsetHour: Double = 18.3,
+        pixel: Bool = false,
+        skyline: Bool = true,
+        skylineHeight: CGFloat = 0.12
+    ) {
         self.hour = hour
         self.hijriDay = hijriDay
+        self.sunriseHour = sunriseHour
+        self.sunsetHour = sunsetHour
         self.pixel = pixel
         self.skyline = skyline
         self.skylineHeight = skylineHeight
@@ -85,18 +97,21 @@ public struct DioramaSkyView: View {
                 }
             }
 
-            // Sun: 5.75 → 18.3. Moon: 18.3 → 29.75 (5.75 next day).
+            // Dynamic celestial arc: Sunrise -> Sunset (Sun), Sunset -> Next Sunrise (Moon)
+            let sunrise = sunriseHour
+            let sunset = sunsetHour
+            let nextSunrise = sunrise + 24.0
             let horizonY = size.height * (skyline ? 0.82 : 1.0)
             let archH = horizonY * 0.78
             func arcPoint(_ p: Double) -> CGPoint {
                 CGPoint(x: size.width * (0.10 + 0.80 * p), y: horizonY - archH * sin(.pi * p))
             }
             let h = hour
-            if h >= 5.75 && h <= 18.3 {
-                let p = (h - 5.75) / (18.3 - 5.75)
+            if h >= sunrise && h <= sunset {
+                let p = (h - sunrise) / max(0.1, sunset - sunrise)
                 let c = arcPoint(p)
                 let r = min(size.width, size.height) * 0.07
-                let col = (h >= 15.5 && h < 18.3) ? Color(red: 1.0, green: 0.62, blue: 0.25) : Color(red: 1.0, green: 0.93, blue: 0.6)
+                let col = (h >= (sunset - 2.8) && h < sunset) ? Color(red: 1.0, green: 0.62, blue: 0.25) : Color(red: 1.0, green: 0.93, blue: 0.6)
                 if pixel {
                     ctx.fill(Path(CGRect(x: snap(c.x - r), y: snap(c.y - r), width: snap(r * 2), height: snap(r * 2))), with: .color(col))
                 } else {
@@ -104,8 +119,8 @@ public struct DioramaSkyView: View {
                     ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)), with: .color(col))
                 }
             } else {
-                let hh = h < 5.75 ? h + 24 : h
-                let p = max(0, min(1, (hh - 18.3) / (29.75 - 18.3)))
+                let hh = h < sunrise ? h + 24.0 : h
+                let p = max(0, min(1, (hh - sunset) / max(0.1, nextSunrise - sunset)))
                 let c = arcPoint(p)
                 let r = min(size.width, size.height) * 0.06
                 let f = Double(hijriDay) / 29.5

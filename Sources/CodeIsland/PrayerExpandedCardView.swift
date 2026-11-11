@@ -20,6 +20,8 @@ public struct PrayerExpandedCardView: View {
                 DioramaSkyView(
                     hour: manager.currentFractionalHour,
                     hijriDay: manager.hijriDay,
+                    sunriseHour: manager.sunriseHour,
+                    sunsetHour: manager.sunsetHour,
                     skyline: true,
                     skylineHeight: 0.12
                 )

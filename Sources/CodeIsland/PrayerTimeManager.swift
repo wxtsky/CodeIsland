@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+@preconcurrency import UserNotifications
 import CodeIslandCore
 
 public enum DayPhase: String, CaseIterable, Sendable {
@@ -84,6 +85,8 @@ public final class PrayerTimeManager: ObservableObject {
     @Published public private(set) var miniPeekBannerTitle: String = ""
     @Published public private(set) var miniPeekBannerSubtitle: String = ""
 
+    weak var appState: AppState?
+
     public var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: SettingsKey.prayerEnabled)
     }
@@ -102,7 +105,23 @@ public final class PrayerTimeManager: ObservableObject {
     }
 
     public var cityName: String {
-        locationService.activeCity.name
+        locationService.displayName
+    }
+
+    public var sunriseHour: Double {
+        guard let s = todaySchedule else { return 5.75 }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = locationService.activeCity.timeZone
+        let c = cal.dateComponents([.hour, .minute, .second], from: s.terbit)
+        return Double(c.hour ?? 5) + Double(c.minute ?? 45) / 60.0 + Double(c.second ?? 0) / 3600.0
+    }
+
+    public var sunsetHour: Double {
+        guard let s = todaySchedule else { return 18.3 }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = locationService.activeCity.timeZone
+        let c = cal.dateComponents([.hour, .minute, .second], from: s.maghrib)
+        return Double(c.hour ?? 18) + Double(c.minute ?? 18) / 60.0 + Double(c.second ?? 0) / 3600.0
     }
 
     public func formattedPrayerTime(_ date: Date) -> String {
@@ -113,24 +132,24 @@ public final class PrayerTimeManager: ObservableObject {
     }
 
     private var cancellables = Set<AnyCancellable>()
+    private var timerCancellable: AnyCancellable?
     private var lastCalculatedDay: YearMonthDay?
     private let locationService = PrayerLocationService.shared
     private var triggeredAlerts = Set<String>()
     private var pendingBanner: (title: String, subtitle: String)? = nil
     private var bannerDismissTask: Task<Void, Never>? = nil
 
+    private let gregorianDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "EEEE d MMM"
+        return df
+    }()
+    private var cachedGregorianDay: Int = -1
+
     private init() {
         setupSubscriptions()
-        recalculateSchedule(force: true)
-        tick()
-
-        // 1-second timer to advance clock & countdown smoothly
-        Timer.publish(every: 1.0, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.tick()
-            }
-            .store(in: &cancellables)
+        updateTimerState()
     }
 
     public func forceRecalculate() {
@@ -138,13 +157,21 @@ public final class PrayerTimeManager: ObservableObject {
         tick()
     }
 
-    // MARK: - Subscriptions & Refresh
+    // MARK: - Subscriptions & Lifecycle
 
     private func setupSubscriptions() {
         // Recalculate when city/coordinates change
         locationService.$activeCity
             .sink { [weak self] _ in
                 self?.recalculateSchedule(force: true)
+                self?.tick()
+            }
+            .store(in: &cancellables)
+
+        locationService.$preciseCoordinates
+            .sink { [weak self] _ in
+                self?.recalculateSchedule(force: true)
+                self?.tick()
             }
             .store(in: &cancellables)
 
@@ -152,10 +179,30 @@ public final class PrayerTimeManager: ObservableObject {
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
             .sink { [weak self] _ in
-                self?.recalculateSchedule(force: false)
-                self?.tick()
+                self?.updateTimerState()
             }
             .store(in: &cancellables)
+    }
+
+    private func updateTimerState() {
+        if isEnabled {
+            if timerCancellable == nil {
+                timerCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { [weak self] _ in
+                        self?.tick()
+                    }
+            }
+            recalculateSchedule(force: false)
+            tick()
+        } else {
+            timerCancellable?.cancel()
+            timerCancellable = nil
+            todaySchedule = nil
+            tomorrowSubuh = nil
+            upcomingPrayer = nil
+            dismissMiniPeekBanner()
+        }
     }
 
     // MARK: - Daily Recalculation (Zero-allocation per second)
@@ -163,8 +210,9 @@ public final class PrayerTimeManager: ObservableObject {
     private func recalculateSchedule(force: Bool) {
         guard isEnabled else { return }
 
-        let city = locationService.activeCity
-        let tz = city.timeZone
+        let coords = locationService.effectiveCoordinates
+        let elevation = locationService.effectiveElevation
+        let tz = locationService.activeCity.timeZone
         let todayYMD = YearMonthDay(date: Date(), timeZone: tz)
 
         if !force && lastCalculatedDay == todayYMD && todaySchedule != nil {
@@ -174,11 +222,11 @@ public final class PrayerTimeManager: ObservableObject {
         let methodRaw = UserDefaults.standard.string(forKey: SettingsKey.prayerCalculationMethod) ?? SettingsDefaults.prayerCalculationMethod
         let method = PrayerCalculationMethod(rawValue: methodRaw) ?? .kemenag
 
-        // 1. Calculate today's schedule
+        // 1. Calculate today's schedule with user's effective coordinates & elevation
         let schedule = PrayerTimeCalculator.calculate(
             day: todayYMD,
-            coordinates: city.coordinates,
-            elevationMeters: 10,
+            coordinates: coords,
+            elevationMeters: elevation,
             method: method,
             timeZone: tz
         )
@@ -191,8 +239,8 @@ public final class PrayerTimeManager: ObservableObject {
             let tomorrowYMD = YearMonthDay(date: tomorrowDate, timeZone: tz)
             let tomorrowSchedule = PrayerTimeCalculator.calculate(
                 day: tomorrowYMD,
-                coordinates: city.coordinates,
-                elevationMeters: 10,
+                coordinates: coords,
+                elevationMeters: elevation,
                 method: method,
                 timeZone: tz
             )
@@ -213,9 +261,10 @@ public final class PrayerTimeManager: ObservableObject {
     // MARK: - Per-Second Tick
 
     private func tick() {
+        guard isEnabled else { return }
+
         let now = Date()
-        let city = locationService.activeCity
-        let tz = city.timeZone
+        let tz = locationService.activeCity.timeZone
 
         // Update formatted time
         var cal = Calendar(identifier: .gregorian)
@@ -233,11 +282,13 @@ public final class PrayerTimeManager: ObservableObject {
         self.solarProgress = totalSeconds / 86400.0
         self.currentFractionalHour = totalSeconds / 3600.0
 
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "id_ID")
-        df.timeZone = tz
-        df.dateFormat = "EEEE d MMM"
-        self.gregorianDateString = df.string(from: now)
+        // Cached DateFormatter: formatted string only recalculated when calendar day changes
+        let day = comps.day ?? 0
+        if cachedGregorianDay != day {
+            cachedGregorianDay = day
+            gregorianDateFormatter.timeZone = tz
+            self.gregorianDateString = gregorianDateFormatter.string(from: now)
+        }
 
         // Auto-recalculate if midnight rolled over
         let todayYMD = YearMonthDay(year: comps.year ?? 2026, month: comps.month ?? 1, day: comps.day ?? 1)
@@ -266,6 +317,9 @@ public final class PrayerTimeManager: ObservableObject {
             let diff = next.date.timeIntervalSince(now)
             self.minutesUntilNextPrayer = Int(ceil(diff / 60.0))
         }
+
+        // Evaluate mini peek banners directly in tick loop
+        evaluateBannerTriggers(appState: self.appState)
     }
 
     // MARK: - Mini Peek Toast Banner & Agent Suppression
@@ -301,7 +355,7 @@ public final class PrayerTimeManager: ObservableObject {
             if !triggeredAlerts.contains(key) {
                 triggeredAlerts.insert(key)
                 let title = "\(alertBeforeMinutes) Menit Menuju \(next.prayer.displayName)"
-                let subtitle = "\(currentTimeString) · \(locationService.activeCity.name)"
+                let subtitle = "\(currentTimeString) · \(locationService.displayName)"
                 enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
             }
         }
@@ -312,7 +366,7 @@ public final class PrayerTimeManager: ObservableObject {
             if !triggeredAlerts.contains(key) {
                 triggeredAlerts.insert(key)
                 let title = "Waktu \(next.prayer.displayName) Telah Masuk"
-                let subtitle = "\(currentTimeString) · \(locationService.activeCity.name)"
+                let subtitle = "\(currentTimeString) · \(locationService.displayName)"
                 enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
             }
         }
@@ -363,6 +417,7 @@ public final class PrayerTimeManager: ObservableObject {
         }
         scheduleBannerAutoDismiss()
         playChimeIfConfigured()
+        sendSystemNotificationIfConfigured(title: title, subtitle: subtitle)
     }
 
     private func playChimeIfConfigured() {
@@ -377,5 +432,32 @@ public final class PrayerTimeManager: ObservableObject {
             }
         }
         NSSound(named: "Glass")?.play()
+    }
+
+    private func sendSystemNotificationIfConfigured(title: String, subtitle: String) {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.prayerSystemNotificationEnabled) else { return }
+
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = subtitle
+            if UserDefaults.standard.bool(forKey: SettingsKey.prayerSoundEnabled) {
+                content.sound = .default
+            }
+
+            let request = UNNotificationRequest(
+                identifier: "prayer-\(UUID().uuidString)",
+                content: content,
+                trigger: nil
+            )
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("Failed to deliver prayer notification: \(error)")
+                }
+            }
+        }
     }
 }

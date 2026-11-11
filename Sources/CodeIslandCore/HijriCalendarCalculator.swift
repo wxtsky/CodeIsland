@@ -78,7 +78,7 @@ public enum HijriCalendarCalculator {
         source: HijriCalendarSource,
         manualOffsetDays: Int = 0
     ) -> HijriDate {
-        let targetJD = julianDay(year: day.year, month: day.month, day: Double(day.day)) + Double(manualOffsetDays)
+        let targetJD = JulianDayCalculator.julianDay(year: day.year, month: day.month, day: Double(day.day)) + Double(manualOffsetDays)
 
         // 1. Check tabular table (1447 H - 1451 H)
         let table = (source == .khgt) ? khgtBoundaries : neoMABIMSBoundaries
@@ -116,7 +116,7 @@ public enum HijriCalendarCalculator {
     }
 
     private static func makeBoundary(hYear: Int, hMonth: Int, gYear: Int, gMonth: Int, gDay: Int) -> MonthBoundary {
-        let jd = julianDay(year: gYear, month: gMonth, day: Double(gDay))
+        let jd = JulianDayCalculator.julianDay(year: gYear, month: gMonth, day: Double(gDay))
         return MonthBoundary(year: hYear, month: hMonth, jd: jd)
     }
 
@@ -283,17 +283,5 @@ public enum HijriCalendarCalculator {
         if dayOfHijriMonth > 30 { dayOfHijriMonth = 30 }
 
         return HijriDate(day: dayOfHijriMonth, month: hMonth, year: hYear)
-    }
-
-    private static func julianDay(year: Int, month: Int, day: Double) -> Double {
-        var y = year
-        var m = month
-        if m <= 2 {
-            y -= 1
-            m += 12
-        }
-        let a = floor(Double(y) / 100.0)
-        let b = 2.0 - a + floor(a / 4.0)
-        return floor(365.25 * Double(y + 4716)) + floor(30.6001 * Double(m + 1)) + day + b - 1524.5
     }
 }

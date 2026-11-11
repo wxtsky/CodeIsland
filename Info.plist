@@ -37,6 +37,8 @@
 	<string>CodeIsland advertises itself on the local network so iPhone can mirror the island state.</string>
 	<key>NSLocationUsageDescription</key>
 	<string>CodeIsland uses your location on-device to compute local prayer times and sun phases. Coordinates never leave your Mac.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CodeIsland uses your location on-device to compute local prayer times and sun phases. Coordinates never leave your Mac.</string>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>

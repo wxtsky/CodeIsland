@@ -57,7 +57,7 @@ final class PrayerTimeCalculatorTests: XCTestCase {
         assertDiffAtMostOneMinute(schedule.imsak, "04:17", prayer: "Imsak")
         assertDiffAtMostOneMinute(schedule.subuh, "04:27", prayer: "Subuh")
         assertDiffAtMostOneMinute(schedule.terbit, "05:45", prayer: "Terbit")
-        assertDiffAtMostOneMinute(schedule.dzuhur, "05:45".isEmpty ? "12:05" : "12:05", prayer: "Dzuhur")
+        assertDiffAtMostOneMinute(schedule.dzuhur, "12:05", prayer: "Dzuhur")
         assertDiffAtMostOneMinute(schedule.ashar, "15:30", prayer: "Ashar")
         assertDiffAtMostOneMinute(schedule.maghrib, "18:18", prayer: "Maghrib")
         assertDiffAtMostOneMinute(schedule.isya, "19:33", prayer: "Isya")
@@ -144,5 +144,17 @@ final class PrayerTimeCalculatorTests: XCTestCase {
         let nextTomorrow = schedule.nextFardhPrayer(at: afterIsya, tomorrowSubuh: tomorrowSubuh)
         XCTAssertEqual(nextTomorrow?.prayer, .subuh)
         XCTAssertEqual(nextTomorrow?.date, tomorrowSubuh)
+    }
+
+    // MARK: - Julian Day & Astronomical Utilities
+
+    func testJulianDayCalculationMatchesKnownAstronomicalEpochs() {
+        // Meeus Example 7.a: 1987 January 27 at 0h UT = JD 2446822.5
+        let jd1987 = JulianDayCalculator.julianDay(year: 1987, month: 1, day: 27.0)
+        XCTAssertEqual(jd1987, 2446822.5, accuracy: 0.001)
+
+        // Standard J2000.0 epoch: 2000 January 1 at 12h UT = JD 2451545.0
+        let jd2000 = JulianDayCalculator.julianDay(year: 2000, month: 1, day: 1.5)
+        XCTAssertEqual(jd2000, 2451545.0, accuracy: 0.001)
     }
 }

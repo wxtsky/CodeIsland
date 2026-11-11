@@ -3,17 +3,50 @@ import CoreLocation
 import AppKit
 import CodeIslandCore
 
-/// On-device, privacy-preserving location service for prayer time calculations.
-/// Coordinates never leave the Mac and are rounded to 2 decimal places (~1.1 km).
+/// Native on-device macOS location service for prayer time hisab and sunrise/sunset calculations.
+/// Supports both coarse privacy-preserving matching and high-precision coordinates with CLGeocoder reverse geocoding.
 @MainActor
 public final class PrayerLocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
     public static let shared = PrayerLocationService()
 
     @Published public private(set) var activeCity: OfflineCity
+    @Published public private(set) var preciseCoordinates: Coordinates?
+    @Published public private(set) var preciseElevation: Double?
+    @Published public private(set) var resolvedNativeCityName: String?
     @Published public private(set) var authorizationStatus: CLAuthorizationStatus
 
     private let locationManager = CLLocationManager()
     private var lastFetchTimestamp: Date?
+
+    public var usePreciseLocation: Bool {
+        UserDefaults.standard.bool(forKey: SettingsKey.prayerUsePreciseLocation)
+    }
+
+    /// Effective coordinates for astronomical calculations.
+    /// Returns exact device coordinates when precise location is enabled and available; otherwise fallback to matched city coordinates.
+    public var effectiveCoordinates: Coordinates {
+        if usePreciseLocation, let coords = preciseCoordinates {
+            return coords
+        }
+        return activeCity.coordinates
+    }
+
+    /// Effective elevation in meters.
+    /// Returns device altitude if available (> 0) and precise location is on; otherwise uses the city catalog elevation.
+    public var effectiveElevation: Double {
+        if usePreciseLocation, let elev = preciseElevation, elev > 0 {
+            return elev
+        }
+        return activeCity.elevationMeters
+    }
+
+    /// Display city name for diorama and widget subtitles.
+    public var displayName: String {
+        if let native = resolvedNativeCityName, !native.isEmpty {
+            return native
+        }
+        return activeCity.name
+    }
 
     private override init() {
         self.activeCity = OfflineCityDatabase.defaultCity
@@ -21,19 +54,27 @@ public final class PrayerLocationService: NSObject, ObservableObject, CLLocation
         super.init()
 
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+        locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
 
         restoreLastSavedCity()
         setupWakeNotification()
     }
 
-    /// Triggers a single coarse location update if automatic mode is active.
+    /// Triggers location permission request from the user.
+    public func requestAuthorization() {
+        locationManager.requestWhenInUseAuthorization()
+    }
+
+    /// Triggers a location update if automatic mode is active.
     public func requestCurrentLocation(force: Bool = false) {
         let mode = UserDefaults.standard.string(forKey: SettingsKey.prayerLocationMode) ?? SettingsDefaults.prayerLocationMode
         if mode == "manual" {
             let manualId = UserDefaults.standard.string(forKey: SettingsKey.prayerManualCityId) ?? SettingsDefaults.prayerManualCityId
             if let city = OfflineCityDatabase.city(byId: manualId) {
                 self.activeCity = city
+                self.preciseCoordinates = nil
+                self.preciseElevation = nil
+                self.resolvedNativeCityName = city.name
             }
             return
         }
@@ -50,7 +91,7 @@ public final class PrayerLocationService: NSObject, ObservableObject, CLLocation
             lastFetchTimestamp = Date()
             locationManager.requestLocation()
         default:
-            // Denied or restricted: silently fallback to last saved or default city
+            // Denied or restricted: fallback to last saved or default city
             break
         }
     }
@@ -58,9 +99,13 @@ public final class PrayerLocationService: NSObject, ObservableObject, CLLocation
     public func setManualCity(id: String) {
         if let city = OfflineCityDatabase.city(byId: id) {
             self.activeCity = city
-            UserDefaults.standard.set(city.coordinates.latitude, forKey: "prayerLastLatitude")
-            UserDefaults.standard.set(city.coordinates.longitude, forKey: "prayerLastLongitude")
-            UserDefaults.standard.set(city.name, forKey: "prayerResolvedCityName")
+            self.preciseCoordinates = nil
+            self.preciseElevation = nil
+            self.resolvedNativeCityName = city.name
+            UserDefaults.standard.set(city.coordinates.latitude, forKey: SettingsKey.prayerLastLatitude)
+            UserDefaults.standard.set(city.coordinates.longitude, forKey: SettingsKey.prayerLastLongitude)
+            UserDefaults.standard.set(city.elevationMeters, forKey: SettingsKey.prayerLastAltitude)
+            UserDefaults.standard.set(city.name, forKey: SettingsKey.prayerResolvedCityName)
         }
     }
 
@@ -79,33 +124,65 @@ public final class PrayerLocationService: NSObject, ObservableObject, CLLocation
     nonisolated public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
 
-        // Round to 2 decimal places (~1.1 km) for strict privacy preservation
-        let roundedLat = (location.coordinate.latitude * 100.0).rounded() / 100.0
-        let roundedLon = (location.coordinate.longitude * 100.0).rounded() / 100.0
-        let coords = Coordinates(latitude: roundedLat, longitude: roundedLon)
-
-        let matched = OfflineCityDatabase.closestCity(to: coords)
+        let lat = location.coordinate.latitude
+        let lon = location.coordinate.longitude
+        let altitude = location.verticalAccuracy >= 0 ? location.altitude : nil
+        let exactCoords = Coordinates(latitude: lat, longitude: lon)
+        let matched = OfflineCityDatabase.closestCity(to: exactCoords)
 
         Task { @MainActor in
             self.activeCity = matched
-            UserDefaults.standard.set(roundedLat, forKey: "prayerLastLatitude")
-            UserDefaults.standard.set(roundedLon, forKey: "prayerLastLongitude")
-            UserDefaults.standard.set(matched.name, forKey: "prayerResolvedCityName")
+            self.preciseCoordinates = exactCoords
+            self.preciseElevation = altitude.map { max(0, $0) }
+
+            UserDefaults.standard.set(lat, forKey: SettingsKey.prayerLastLatitude)
+            UserDefaults.standard.set(lon, forKey: SettingsKey.prayerLastLongitude)
+            if let alt = altitude {
+                UserDefaults.standard.set(alt, forKey: SettingsKey.prayerLastAltitude)
+            }
+
+            // Native reverse geocoding via CLGeocoder
+            let geocoder = CLGeocoder()
+            geocoder.reverseGeocodeLocation(location) { placemarks, error in
+                guard let placemark = placemarks?.first, error == nil else {
+                    Task { @MainActor in
+                        self.resolvedNativeCityName = matched.name
+                        UserDefaults.standard.set(matched.name, forKey: SettingsKey.prayerResolvedCityName)
+                    }
+                    return
+                }
+
+                let cityName = placemark.locality ?? placemark.subAdministrativeArea ?? placemark.administrativeArea ?? matched.name
+                Task { @MainActor in
+                    self.resolvedNativeCityName = cityName
+                    UserDefaults.standard.set(cityName, forKey: SettingsKey.prayerResolvedCityName)
+                }
+            }
         }
     }
 
     nonisolated public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Silent failure; fallback remains active
+        // Silent failure; offline database fallback remains active
     }
 
     // MARK: - Private Helpers
 
     private func restoreLastSavedCity() {
-        let lat = UserDefaults.standard.double(forKey: "prayerLastLatitude")
-        let lon = UserDefaults.standard.double(forKey: "prayerLastLongitude")
+        let lat = UserDefaults.standard.double(forKey: SettingsKey.prayerLastLatitude)
+        let lon = UserDefaults.standard.double(forKey: SettingsKey.prayerLastLongitude)
+        let alt = UserDefaults.standard.double(forKey: SettingsKey.prayerLastAltitude)
+        let savedName = UserDefaults.standard.string(forKey: SettingsKey.prayerResolvedCityName)
+
         if lat != 0.0 && lon != 0.0 {
             let coords = Coordinates(latitude: lat, longitude: lon)
             self.activeCity = OfflineCityDatabase.closestCity(to: coords)
+            self.preciseCoordinates = coords
+            if alt > 0 {
+                self.preciseElevation = alt
+            }
+            if let savedName = savedName, !savedName.isEmpty {
+                self.resolvedNativeCityName = savedName
+            }
         }
     }
 

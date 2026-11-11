@@ -35,4 +35,26 @@ final class OfflineCityDatabaseTests: XCTestCase {
         let nonExistent = OfflineCityDatabase.city(byId: "atlantis")
         XCTAssertNil(nonExistent)
     }
+
+    func testCityElevationsAndLongitudeTimezoneFallback() {
+        // High elevation cities should reflect their actual elevation
+        let bdg = OfflineCityDatabase.city(byId: "bandung")
+        XCTAssertEqual(bdg?.elevationMeters, 708)
+
+        let bkt = OfflineCityDatabase.city(byId: "bukittinggi")
+        XCTAssertEqual(bkt?.elevationMeters, 930)
+
+        // Timezone fallback test without identifier:
+        // Longitude 106° (WIB) -> GMT+7
+        let wibCity = OfflineCity(id: "c1", name: "WIB City", provinceOrCountry: "ID", coordinates: Coordinates(latitude: -6.0, longitude: 106.0), timeZoneIdentifier: "invalid_tz")
+        XCTAssertEqual(wibCity.timeZone.secondsFromGMT(), 7 * 3600)
+
+        // Longitude 119° (WITA) -> GMT+8
+        let witaCity = OfflineCity(id: "c2", name: "WITA City", provinceOrCountry: "ID", coordinates: Coordinates(latitude: -5.0, longitude: 119.0), timeZoneIdentifier: "invalid_tz")
+        XCTAssertEqual(witaCity.timeZone.secondsFromGMT(), 8 * 3600)
+
+        // Longitude 140° (WIT) -> GMT+9
+        let witCity = OfflineCity(id: "c3", name: "WIT City", provinceOrCountry: "ID", coordinates: Coordinates(latitude: -2.0, longitude: 140.0), timeZoneIdentifier: "invalid_tz")
+        XCTAssertEqual(witCity.timeZone.secondsFromGMT(), 9 * 3600)
+    }
 }

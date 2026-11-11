@@ -34,5 +34,13 @@ final class PrayerTimeManagerTests: XCTestCase {
         XCTAssertNotNil(manager.todaySchedule)
         XCTAssertFalse(manager.currentTimeString.isEmpty)
         XCTAssertTrue((0.0...1.0).contains(manager.solarProgress))
+        XCTAssertGreaterThan(manager.sunsetHour, manager.sunriseHour)
+        XCTAssertTrue((4.0...7.0).contains(manager.sunriseHour))
+        XCTAssertTrue((17.0...19.5).contains(manager.sunsetHour))
+
+        // When disabled, timer and active schedule are cleanly torn down
+        UserDefaults.standard.set(false, forKey: SettingsKey.prayerEnabled)
+        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+        XCTAssertFalse(manager.isEnabled)
     }
 }

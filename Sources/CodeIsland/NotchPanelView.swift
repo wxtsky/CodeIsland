@@ -703,7 +703,10 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onAppear { displayedToolStatus = showToolStatus }
+            .onAppear {
+                displayedToolStatus = showToolStatus
+                prayerManager.appState = appState
+            }
             .onChange(of: nowPlaying.title) { _, newTitle in
                 if !newTitle.isEmpty && nowPlaying.isPlaying {
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -736,9 +739,6 @@ struct NotchPanelView: View {
             }
             .onChange(of: appState.surface) { _, _ in
                 prayerManager.checkAndFlushPendingBanner(appState: appState)
-            }
-            .onChange(of: prayerManager.currentSecondsString) { _, _ in
-                prayerManager.evaluateBannerTriggers(appState: appState)
             }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
@@ -1991,6 +1991,8 @@ private struct IdleIndicatorBar: View {
     var onExpand: (() -> Void)? = nil
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
+    private static let idlePrayerWingMinWidth: CGFloat = 126
+
     private var wingWidth: CGFloat {
         hovered ? (compactWingWidth + 6) : compactWingWidth
     }
@@ -2032,12 +2034,12 @@ private struct IdleIndicatorBar: View {
                     )
                     .padding(.trailing, 8)
             }
-            .frame(width: prayerManager.isEnabled ? max(wingWidth, 126) : wingWidth, alignment: .trailing)
+            .frame(width: prayerManager.isEnabled ? max(wingWidth, Self.idlePrayerWingMinWidth) : wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
             .help(prayerManager.isEnabled ? "Waktu Salat & Jam (Klik untuk Buka Tab SLT)" : "Click to expand tabs (Agents / Workspace / Music)")
         }
-        .frame(height: max(notchHeight, 38))
+        .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
     }
 }

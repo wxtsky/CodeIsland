@@ -62,10 +62,9 @@ public struct DailyPrayerSchedule: Equatable, Sendable {
         ]
     }
 
-    /// Finds the upcoming prayer milestone relative to the reference date.
-    /// If all today's prayers have passed and tomorrowSubuh is provided, returns tomorrow's Subuh.
-    public func nextPrayer(at date: Date, tomorrowSubuh: Date? = nil) -> (prayer: PrayerType, date: Date)? {
-        let sequence: [(prayer: PrayerType, date: Date)] = [
+    /// All 8 daily prayer milestones in chronological order.
+    public var allMilestones: [(prayer: PrayerType, date: Date)] {
+        [
             (.imsak, imsak),
             (.subuh, subuh),
             (.terbit, terbit),
@@ -75,28 +74,25 @@ public struct DailyPrayerSchedule: Equatable, Sendable {
             (.maghrib, maghrib),
             (.isya, isya)
         ]
-        for item in sequence {
-            if item.date > date {
-                return item
-            }
-        }
-        if let tomorrowSubuh = tomorrowSubuh {
-            return (.subuh, tomorrowSubuh)
-        }
-        return nil
+    }
+
+    private func nextMilestone(
+        in items: [(prayer: PrayerType, date: Date)],
+        after date: Date,
+        tomorrowSubuh: Date?
+    ) -> (prayer: PrayerType, date: Date)? {
+        items.first(where: { $0.date > date }) ?? tomorrowSubuh.map { (.subuh, $0) }
+    }
+
+    /// Finds the upcoming prayer milestone relative to the reference date.
+    /// If all today's prayers have passed and tomorrowSubuh is provided, returns tomorrow's Subuh.
+    public func nextPrayer(at date: Date, tomorrowSubuh: Date? = nil) -> (prayer: PrayerType, date: Date)? {
+        nextMilestone(in: allMilestones, after: date, tomorrowSubuh: tomorrowSubuh)
     }
 
     /// Finds the upcoming obligatory (fardh) prayer.
     public func nextFardhPrayer(at date: Date, tomorrowSubuh: Date? = nil) -> (prayer: PrayerType, date: Date)? {
-        for item in fivePrayers {
-            if item.date > date {
-                return item
-            }
-        }
-        if let tomorrowSubuh = tomorrowSubuh {
-            return (.subuh, tomorrowSubuh)
-        }
-        return nil
+        nextMilestone(in: fivePrayers, after: date, tomorrowSubuh: tomorrowSubuh)
     }
 
     /// Identifies the active prayer period based on the last arrived fardh prayer.

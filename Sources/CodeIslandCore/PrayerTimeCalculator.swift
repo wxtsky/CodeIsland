@@ -18,7 +18,7 @@ public enum PrayerTimeCalculator {
         let tzHours = Double(timeZone.secondsFromGMT()) / 3600.0
 
         // 1. Julian Day at 12h UT
-        let jd = julianDay(year: day.year, month: day.month, day: Double(day.day))
+        let jd = JulianDayCalculator.julianDay(year: day.year, month: day.month, day: Double(day.day))
         let t = (jd - 2451545.0) / 36525.0
 
         // 2. Solar coordinates (Meeus Astronomical Algorithms)
@@ -79,7 +79,7 @@ public enum PrayerTimeCalculator {
             sunriseAlt = -1.0 // Standard Indonesian Falak baseline (-60' accounting for semidiameter, refraction, and nominal dip)
             sunriseAdjustMins = -2.0 - kemenagElevationMinutes(elevationMeters) // -2m ihtiyati & elevation
         case .nuLFPBNU:
-            let dip = 0.02933 * sqrt(max(0, elevationMeters))
+            let dip = apparentDip(elevationMeters: elevationMeters)
             sunriseAlt = -0.8333 - dip
             sunriseAdjustMins = 0
         case .muhammadiyah:
@@ -119,7 +119,7 @@ public enum PrayerTimeCalculator {
             sunsetAlt = -1.0
             sunsetAdjustMins = 2.0 + kemenagElevationMinutes(elevationMeters) // +2m ihtiyati & elevation
         case .nuLFPBNU:
-            let dip = 0.02933 * sqrt(max(0, elevationMeters))
+            let dip = apparentDip(elevationMeters: elevationMeters)
             sunsetAlt = -0.8333 - dip
             sunsetAdjustMins = 0
         case .muhammadiyah:
@@ -183,16 +183,8 @@ public enum PrayerTimeCalculator {
         return d
     }
 
-    private static func julianDay(year: Int, month: Int, day: Double) -> Double {
-        var y = year
-        var m = month
-        if m <= 2 {
-            y -= 1
-            m += 12
-        }
-        let a = floor(Double(y) / 100.0)
-        let b = 2.0 - a + floor(a / 4.0)
-        return floor(365.25 * Double(y + 4716)) + floor(30.6001 * Double(m + 1)) + day + b - 1524.5
+    private static func apparentDip(elevationMeters: Double) -> Double {
+        0.02933 * sqrt(max(0, elevationMeters))
     }
 
     private static func kemenagElevationMinutes(_ elevationMeters: Double) -> Double {

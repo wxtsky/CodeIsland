@@ -238,6 +238,11 @@ enum SettingsKey {
     static let prayerAlertBeforeMinutes = "prayerAlertBeforeMinutes"
     static let prayerSoundEnabled = "prayerSoundEnabled"
     static let prayerSystemNotificationEnabled = "prayerSystemNotificationEnabled"
+    static let prayerLastLatitude = "prayerLastLatitude"
+    static let prayerLastLongitude = "prayerLastLongitude"
+    static let prayerLastAltitude = "prayerLastAltitude"
+    static let prayerResolvedCityName = "prayerResolvedCityName"
+    static let prayerUsePreciseLocation = "prayerUsePreciseLocation"
 
     // Shortcuts (per-action: shortcut_{action}_enabled, shortcut_{action}_keyCode, shortcut_{action}_modifiers)
     static func shortcutEnabled(_ action: String) -> String { "shortcut_\(action)_enabled" }
@@ -431,6 +436,11 @@ struct SettingsDefaults {
     static let prayerAlertBeforeMinutes = 10
     static let prayerSoundEnabled = false
     static let prayerSystemNotificationEnabled = false
+    static let prayerLastLatitude: Double = 0.0
+    static let prayerLastLongitude: Double = 0.0
+    static let prayerLastAltitude: Double = 0.0
+    static let prayerResolvedCityName = ""
+    static let prayerUsePreciseLocation = true
 }
 
 @MainActor
@@ -536,6 +546,11 @@ class SettingsManager {
             SettingsKey.prayerAlertBeforeMinutes: SettingsDefaults.prayerAlertBeforeMinutes,
             SettingsKey.prayerSoundEnabled: SettingsDefaults.prayerSoundEnabled,
             SettingsKey.prayerSystemNotificationEnabled: SettingsDefaults.prayerSystemNotificationEnabled,
+            SettingsKey.prayerLastLatitude: SettingsDefaults.prayerLastLatitude,
+            SettingsKey.prayerLastLongitude: SettingsDefaults.prayerLastLongitude,
+            SettingsKey.prayerLastAltitude: SettingsDefaults.prayerLastAltitude,
+            SettingsKey.prayerResolvedCityName: SettingsDefaults.prayerResolvedCityName,
+            SettingsKey.prayerUsePreciseLocation: SettingsDefaults.prayerUsePreciseLocation,
         ])
     }
 
