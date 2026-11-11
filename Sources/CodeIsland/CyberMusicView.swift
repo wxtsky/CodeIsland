@@ -16,14 +16,14 @@ struct CyberAudioSpectrumView: View {
         guard isActive else {
             return Color(red: 0.12, green: 0.14, blue: 0.18)
         }
-        let base = accentColor ?? Color(red: 0.0, green: 0.96, blue: 0.83)
+        let peakColor = accentColor ?? Color(red: 1.0, green: 0.16, blue: 0.53)
         switch level {
         case 0, 1:
-            return base
+            return Color(red: 0.0, green: 0.96, blue: 0.83) // Electric Cyan (Base tetap di bawah)
         case 2:
             return Color(red: 0.96, green: 0.62, blue: 0.04) // Neon Amber
         default:
-            return Color(red: 1.0, green: 0.16, blue: 0.53) // Peak Magenta
+            return peakColor // Peak / Ujung berubah warna mengikuti accent
         }
     }
 
@@ -61,8 +61,10 @@ struct CyberDiscoVisualizer: View {
     var isPlaying: Bool = true
     var barCount: Int = 6
     var maxHeight: CGFloat = 18
+    var accentColor: Color? = nil
 
     var body: some View {
+        let peakColor = accentColor ?? Color(red: 1.0, green: 0.16, blue: 0.53)
         TimelineView(.animation(minimumInterval: 0.04)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 2.0) {
@@ -75,7 +77,7 @@ struct CyberDiscoVisualizer: View {
 
                     VStack(spacing: 1.2) {
                         Rectangle()
-                            .fill(Color(red: 1.0, green: 0.16, blue: 0.53))
+                            .fill(peakColor)
                             .frame(width: 2.5, height: 1.5)
                             .opacity(isPlaying && wave > 0.6 ? 1 : 0.2)
 
@@ -85,7 +87,7 @@ struct CyberDiscoVisualizer: View {
                                     colors: [
                                         Color(red: 0.0, green: 0.96, blue: 0.83),
                                         Color(red: 0.96, green: 0.62, blue: 0.04),
-                                        Color(red: 1.0, green: 0.16, blue: 0.53)
+                                        peakColor
                                     ],
                                     startPoint: .bottom,
                                     endPoint: .top
@@ -1379,7 +1381,7 @@ struct RetroCyberMusicHUDContentView: View {
                     Spacer()
 
                     // Retro Disco Visualizer (compact 6 bars)
-                    CyberDiscoVisualizer(isPlaying: nowPlaying.isPlaying, barCount: 6, maxHeight: 16)
+                    CyberDiscoVisualizer(isPlaying: nowPlaying.isPlaying, barCount: 6, maxHeight: 16, accentColor: activeProgressColor)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
