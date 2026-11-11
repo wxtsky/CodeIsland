@@ -80,3 +80,4 @@ docs/spec-spotify-web-browser-detection.md
 
 # Local wayfinder map + tickets (never committed)
 .scratch/
+.codegraph/
