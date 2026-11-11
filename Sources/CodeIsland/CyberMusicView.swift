@@ -190,7 +190,7 @@ struct ModernMarqueeText: View {
                         }
                     )
                     .offset(x: -offset)
-                    .frame(width: containerWidth, alignment: .leading)
+                    .frame(width: containerWidth, height: geo.size.height, alignment: .leading)
                     .clipped()
             }
         }
@@ -238,7 +238,7 @@ struct CyberMusicWingView: View {
     var body: some View {
         if isModernClean {
             // MODERN CLEAN: Langsung album cover, marquee title (saat di-hover), dan visualizer tanpa border
-            HStack(spacing: 5) {
+            HStack(alignment: .center, spacing: 5) {
                 if let art = nowPlaying.artworkImage {
                     Image(nsImage: art)
                         .resizable()
@@ -261,6 +261,7 @@ struct CyberMusicWingView: View {
                         text: nowPlaying.title.isEmpty ? "Music" : nowPlaying.title,
                         maxWidth: 60
                     )
+                    .frame(height: 17)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
 
