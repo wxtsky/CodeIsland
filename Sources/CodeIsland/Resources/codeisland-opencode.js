@@ -461,7 +461,7 @@ export function createV2Runtime({ base, send, ask, replyPermission, replyForm, c
 /// launcher's child and keeps the full set.
 const APP_LEVEL_ENV_KEYS = ["TERM_PROGRAM", "__CFBundleIdentifier"];
 const TAB_LEVEL_ENV_KEYS = [
-  "ITERM_SESSION_ID", "TERM_SESSION_ID", "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID",
+  "ITERM_SESSION_ID", "TERM_SESSION_ID", "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON",
   "HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_BIN_PATH",
 ];
 const TAB_LEVEL_ENV_PREFIXES = ["ZELLIJ", "CMUX_", "WEZTERM_", "SUPERSET_", "ORCA_"];
@@ -583,7 +583,7 @@ export default {
     // Terminal environment collection
     const ENV_KEYS = [
       "TERM_PROGRAM", "ITERM_SESSION_ID", "TERM_SESSION_ID",
-      "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID", "__CFBundleIdentifier",
+      "TMUX", "TMUX_PANE", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON", "__CFBundleIdentifier",
       "HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_BIN_PATH",
     ];
 
@@ -960,7 +960,7 @@ export default {
       },
       "shell.env": async (input, output) => {
         for (const v of ["TERM_PROGRAM","ITERM_SESSION_ID","TERM_SESSION_ID",
-          "TMUX","TMUX_PANE","KITTY_WINDOW_ID","__CFBundleIdentifier"]) {
+          "TMUX","TMUX_PANE","KITTY_WINDOW_ID","KITTY_LISTEN_ON","__CFBundleIdentifier"]) {
           if (process.env[v]) output.env["_CI_" + v] = process.env[v];
         }
       },

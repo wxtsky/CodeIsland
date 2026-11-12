@@ -144,6 +144,11 @@ public struct SessionSnapshot: Sendable {
     public var itermSessionId: String?  // iTerm2 session ID for direct activation
     public var ttyPath: String?         // /dev/ttys00X
     public var kittyWindowId: String?   // Kitty window ID for precise focus
+    /// kitty's remote-control socket (`KITTY_LISTEN_ON`). kitty creates it only
+    /// when the user set both `allow_remote_control` and `listen_on`; from
+    /// outside kitty it is the one address `kitten @ --to` can reach, and it is
+    /// per instance, so it cannot be guessed from the window id.
+    public var kittyListenOn: String?
     public var tmuxPane: String?        // tmux pane identifier (%0, %1, etc.)
     public var tmuxClientTty: String?   // tmux client TTY for real terminal detection
     public var tmuxEnv: String?         // raw TMUX env var (socket info for non-default tmux server)
@@ -1622,6 +1627,7 @@ private func applyHookEvent(
         if let ses = event.rawJSON["_iterm_session"] as? String, !ses.isEmpty { sessions[sessionId]?.itermSessionId = ses }
         if let tty = event.rawJSON["_tty"] as? String, !tty.isEmpty { sessions[sessionId]?.ttyPath = tty }
         if let kitty = event.rawJSON["_kitty_window"] as? String, !kitty.isEmpty { sessions[sessionId]?.kittyWindowId = kitty }
+        if let listenOn = event.rawJSON["_kitty_listen_on"] as? String, !listenOn.isEmpty { sessions[sessionId]?.kittyListenOn = listenOn }
         if let pane = event.rawJSON["_tmux_pane"] as? String, !pane.isEmpty { sessions[sessionId]?.tmuxPane = pane }
         if let tmuxTty = event.rawJSON["_tmux_client_tty"] as? String, !tmuxTty.isEmpty { sessions[sessionId]?.tmuxClientTty = tmuxTty }
         if let tmux = event.rawJSON["_tmux"] as? String, !tmux.isEmpty { sessions[sessionId]?.tmuxEnv = tmux }
@@ -1805,6 +1811,10 @@ private func applyEnvMetadata(into sessions: inout [String: SessionSnapshot], se
     if sessions[sessionId]?.kittyWindowId == nil,
        let kitty = env["KITTY_WINDOW_ID"], !kitty.isEmpty {
         sessions[sessionId]?.kittyWindowId = kitty
+    }
+    if sessions[sessionId]?.kittyListenOn == nil,
+       let listenOn = env["KITTY_LISTEN_ON"], !listenOn.isEmpty {
+        sessions[sessionId]?.kittyListenOn = listenOn
     }
     if sessions[sessionId]?.tmuxEnv == nil,
        let tmux = env["TMUX"], !tmux.isEmpty {
@@ -2102,6 +2112,9 @@ public func extractMetadata(into sessions: inout [String: SessionSnapshot], sess
     // Extended terminal info (from native bridge binary)
     if let kitty = event.rawJSON["_kitty_window"] as? String, !kitty.isEmpty {
         sessions[sessionId]?.kittyWindowId = kitty
+    }
+    if let listenOn = event.rawJSON["_kitty_listen_on"] as? String, !listenOn.isEmpty {
+        sessions[sessionId]?.kittyListenOn = listenOn
     }
     if let pane = event.rawJSON["_tmux_pane"] as? String, !pane.isEmpty {
         sessions[sessionId]?.tmuxPane = pane

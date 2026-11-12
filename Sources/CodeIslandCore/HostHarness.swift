@@ -383,6 +383,13 @@ public enum ProcArgsParser {
             guard case .string = next() else { return nil }
         }
 
+        // A process that rewrites its argv (Node sets its own title: pi is
+        // "pi", not the node invocation) leaves the old argv bytes behind as
+        // NUL padding between argv and the environment. The environment has no
+        // empty entries, so the gap is not one: skip it instead of reading it
+        // as "the kernel withheld the block".
+        while offset < buffer.count, buffer[offset] == 0 { offset += 1 }
+
         var environment: [String: String] = [:]
         var entryCount = 0
         scan: while true {

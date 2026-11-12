@@ -29,6 +29,7 @@ final class PiAgentEventFlowTests: XCTestCase {
                 "TMUX": "/tmp/tmux-501/default,111,0",
                 "TMUX_PANE": "%42",
                 "KITTY_WINDOW_ID": "kitty-7",
+                "KITTY_LISTEN_ON": "unix:/tmp/kitty-9001",
                 "CMUX_SURFACE_ID": "surface-123",
                 "CMUX_WORKSPACE_ID": "workspace-456",
                 "ZELLIJ_PANE_ID": "17",
@@ -48,6 +49,7 @@ final class PiAgentEventFlowTests: XCTestCase {
         XCTAssertEqual(session.tmuxEnv, "/tmp/tmux-501/default,111,0")
         XCTAssertEqual(session.tmuxPane, "%42")
         XCTAssertEqual(session.kittyWindowId, "kitty-7")
+        XCTAssertEqual(session.kittyListenOn, "unix:/tmp/kitty-9001")
         XCTAssertEqual(session.cmuxSurfaceId, "surface-123")
         XCTAssertEqual(session.cmuxWorkspaceId, "workspace-456")
         XCTAssertEqual(session.zellijPaneId, "17")

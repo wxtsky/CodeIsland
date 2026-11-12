@@ -374,7 +374,7 @@ struct TerminalActivator {
         }
 
         if lower.contains("kitty") {
-            activateKitty(windowId: session.kittyWindowId, cwd: session.cwd, source: session.source)
+            activateKitty(session: session)
             return
         }
 
@@ -1015,27 +1015,79 @@ struct TerminalActivator {
         }
     }
 
-    // MARK: - kitty (CLI: kitten @ focus-window/focus-tab)
+    // MARK: - kitty (CLI: kitten @ --to <listen_on> focus-window/focus-tab)
 
-    private static func activateKitty(windowId: String?, cwd: String?, source: String = "claude") {
+    /// The `--to` address for a session's kitty instance.
+    ///
+    /// `kitten @` finds its kitty through `--to`, then `KITTY_LISTEN_ON`, then
+    /// — with neither — the *controlling terminal* of the process running it.
+    /// CodeIsland is a GUI app: it has no tty and, launched from Finder, no
+    /// `KITTY_LISTEN_ON` either, so every command used to die with "open
+    /// /dev/tty: device not configured" and the click fell back to raising the
+    /// app. The socket address is also per instance, so the session's own env
+    /// (captured by the hook) names the right one when several kitty instances
+    /// are open. Requires the user's kitty.conf to set `listen_on` (and
+    /// `allow_remote_control`); kitty creates no socket otherwise.
+    static func kittyRemoteControlAddress(for session: SessionSnapshot) -> String? {
+        func trimmed(_ value: String?) -> String? {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }
+        if let own = trimmed(session.kittyListenOn) { return own }
+        // The hook only carries the address when the agent's side knows the
+        // key: a pi extension loaded before it existed keeps sending its old
+        // list, and a card restored from an older build never had it. The CLI
+        // process's own environment still names the kitty instance it runs in,
+        // so read it there. That read needs no hook, no extension reload, and
+        // no particular order of app, kitty and CLI start.
+        if !session.isRemote,
+           let pid = session.cliPid, pid > 1,
+           ProcessTable.isLiveProcess(ProcessIdentity(pid: pid, startTime: session.cliStartTime)),
+           let fromCLI = trimmed(ProcessTable.environment(for: pid, keys: ["KITTY_LISTEN_ON"])?["KITTY_LISTEN_ON"]) {
+            return fromCLI
+        }
+        // A CodeIsland started from inside a socket-enabled kitty inherits it.
+        return trimmed(ProcessInfo.processInfo.environment["KITTY_LISTEN_ON"])
+    }
+
+    private static func activateKitty(session: SessionSnapshot) {
+        // Raise first: even a failed match should leave the user in kitty.
         bringToFront("kitty")
         guard let bin = findBinary("kitten") else { return }
-
-        // Prefer window ID for precise switching
-        if let windowId = windowId, !windowId.isEmpty {
-            DispatchQueue.global(qos: .userInitiated).async {
-                _ = runProcess(bin, args: ["@", "focus-window", "--match", "id:\(windowId)"])
-            }
-            return
-        }
-
-        // Fallback to CWD matching, then title with source keyword
-        guard let cwd = cwd, !cwd.isEmpty else { return }
+        // Resolving the address may read another process's environment, and
+        // kitten blocks until kitty answers: both belong off the main thread.
         DispatchQueue.global(qos: .userInitiated).async {
-            if runProcess(bin, args: ["@", "focus-tab", "--match", "cwd:\(cwd)"]) == nil {
-                _ = runProcess(bin, args: ["@", "focus-tab", "--match", "title:\(source)"])
+            guard let address = kittyRemoteControlAddress(for: session) else { return }
+            let to = ["@", "--to", address]
+
+            // Prefer window ID for precise switching. focus-window also selects the
+            // tab holding that window and raises its OS window, and the id is the
+            // session's KITTY_WINDOW_ID, which is what `--match id:` compares.
+            if let windowId = session.kittyWindowId?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !windowId.isEmpty {
+                _ = runProcess(bin, args: to + ["focus-window", "--match", "id:\(windowId)"])
+                return
+            }
+
+            // Fallback to CWD matching, then title with source keyword
+            guard let cwd = session.cwd, !cwd.isEmpty else { return }
+            let source = session.source
+            if runProcess(bin, args: to + ["focus-tab", "--match", "cwd:\(kittyMatchLiteral(cwd))"]) == nil {
+                _ = runProcess(bin, args: to + ["focus-tab", "--match", "title:\(kittyMatchLiteral(source))"])
             }
         }
+    }
+
+    /// kitty's match expressions are regular expressions, so a folder name with
+    /// a `+`, `(` or `$` in it would match the wrong tab or nothing at all.
+    private static func kittyMatchLiteral(_ text: String) -> String {
+        var escaped = ""
+        for character in text {
+            if "\\^$.[]|()?*+{}".contains(character) { escaped.append("\\") }
+            escaped.append(character)
+        }
+        return escaped
     }
 
     // MARK: - Orca (CLI: orca terminal switch)

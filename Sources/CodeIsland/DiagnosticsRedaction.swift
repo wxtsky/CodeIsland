@@ -194,7 +194,7 @@ enum DiagnosticsRedaction {
     /// multiplexer routing, times.
     private static let sessionStructureKeys: Set<String> = [
         "sessionId", "cwd", "source", "model", "sessionTitleSource", "providerSessionId",
-        "termApp", "itermSessionId", "ttyPath", "kittyWindowId", "tmuxPane", "tmuxClientTty", "tmuxEnv",
+        "termApp", "itermSessionId", "ttyPath", "kittyWindowId", "kittyListenOn", "tmuxPane", "tmuxClientTty", "tmuxEnv",
         "termBundleId", "cmuxSurfaceId", "cmuxWorkspaceId", "zellijPaneId", "zellijSessionName",
         "weztermPaneId", "herdrPaneId", "herdrSocketPath", "herdrBinaryPath", "cliPid", "cliStartTime",
         "startTime", "lastActivity", "transcriptPath", "closedSubagentIds", "reasoningEffort",

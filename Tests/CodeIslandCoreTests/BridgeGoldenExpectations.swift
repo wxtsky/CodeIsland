@@ -380,7 +380,7 @@ enum BridgeGoldenExpectations {
             status: 0
         ),
         #"terminal-env-everything"#: .init(
-            forwarded: #"{"_claude_desktop_session":"local_x","_cmux_surface_id":"surface-1","_cmux_workspace_id":"workspace-1","_herdr_bin_path":"/opt/herdr/bin/herdr","_herdr_pane_id":"p-1","_herdr_socket_path":"/tmp/herdr.sock","_iterm_session":"no-colon-guid","_kitty_window":"3","_orca_terminal_handle":"orca-1","_orca_worktree_id":"wt-1","_ppid":"$PID0","_source":"codex","_superset_pane_id":"st-1","_superset_workspace_id":"sw-1","_term_app":"WezTerm","_term_bundle":"com.github.wez.wezterm","_wezterm_pane":"12","_zellij":"0","_zellij_pane_id":"5","_zellij_session_name":"main","cwd":"/Users/golden/project","hook_event_name":"Stop","session_id":"term-1"}"#,
+            forwarded: #"{"_claude_desktop_session":"local_x","_cmux_surface_id":"surface-1","_cmux_workspace_id":"workspace-1","_herdr_bin_path":"/opt/herdr/bin/herdr","_herdr_pane_id":"p-1","_herdr_socket_path":"/tmp/herdr.sock","_iterm_session":"no-colon-guid","_kitty_listen_on":"unix:/tmp/kitty-77","_kitty_window":"3","_orca_terminal_handle":"orca-1","_orca_worktree_id":"wt-1","_ppid":"$PID0","_source":"codex","_superset_pane_id":"st-1","_superset_workspace_id":"sw-1","_term_app":"WezTerm","_term_bundle":"com.github.wez.wezterm","_wezterm_pane":"12","_zellij":"0","_zellij_pane_id":"5","_zellij_session_name":"main","cwd":"/Users/golden/project","hook_event_name":"Stop","session_id":"term-1"}"#,
             stdout: #""#,
             status: 0
         ),

@@ -15,6 +15,10 @@ struct PersistedSession: Codable {
     let itermSessionId: String?
     let ttyPath: String?
     let kittyWindowId: String?
+    /// kitty's remote-control socket (`KITTY_LISTEN_ON`). Kept so a restored
+    /// card can still switch to its tab: kitty is addressable from outside only
+    /// through that socket, and the address does not survive without it.
+    var kittyListenOn: String? = nil
     let tmuxPane: String?
     let tmuxClientTty: String?
     let tmuxEnv: String?
@@ -134,6 +138,7 @@ enum SessionPersistence {
                 itermSessionId: s.itermSessionId,
                 ttyPath: s.ttyPath,
                 kittyWindowId: s.kittyWindowId,
+                kittyListenOn: s.kittyListenOn,
                 tmuxPane: s.tmuxPane,
                 tmuxClientTty: s.tmuxClientTty,
                 tmuxEnv: s.tmuxEnv,

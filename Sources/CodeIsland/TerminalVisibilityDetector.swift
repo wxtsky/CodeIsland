@@ -17,7 +17,7 @@ import CodeIslandCore
 /// - WezTerm: CLI pane query by TTY/CWD
 /// - Kaku: same shape as WezTerm (it's a fork)
 /// - Zellij: active pane id via `zellij action list-panes --json`
-/// - kitty: CLI window query by ID/CWD
+/// - kitty: CLI window query by ID, over the instance's remote-control socket
 /// - tmux: active pane match
 /// - Others: falls back to app-level only
 struct TerminalVisibilityDetector {
@@ -482,10 +482,15 @@ struct TerminalVisibilityDetector {
 
     // MARK: - kitty
 
-    /// Check if kitty's focused window matches by window ID or CWD.
+    /// Check if kitty's focused window matches by window ID.
+    ///
+    /// Needs the instance's `listen_on` socket (`--to`): without it the CLI has
+    /// no tty to talk through and answers nothing, which used to make every
+    /// kitty tab look invisible.
     private static func isKittyWindowActive(_ session: SessionSnapshot) -> Bool {
-        guard let bin = findBinary("kitten") else { return false }
-        guard let json = runProcess(bin, args: ["@", "ls"]),
+        guard let bin = findBinary("kitten"),
+              let address = TerminalActivator.kittyRemoteControlAddress(for: session) else { return false }
+        guard let json = runProcess(bin, args: ["@", "--to", address, "ls"]),
               let osTabs = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return false }
 
         // Find the focused window across all OS windows
