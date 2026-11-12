@@ -12,6 +12,13 @@ public struct GitFileChange: Identifiable, Equatable, Sendable {
     public let status: String // "M", "A", "D", "??", "R"
     public let isStaged: Bool
 
+    public init(path: String, filename: String, status: String, isStaged: Bool) {
+        self.path = path
+        self.filename = filename
+        self.status = status
+        self.isStaged = isStaged
+    }
+
     public var statusLabel: String {
         switch status {
         case "M": return "MODIFIED"
@@ -50,11 +57,6 @@ public struct GitCommitItem: Identifiable, Equatable, Sendable {
     }
 }
 
-public enum WorkspaceDetailTab: String, CaseIterable, Sendable {
-    case diff = "GIT DIFF"
-    case graph = "GIT GRAPH"
-}
-
 // MARK: - Workspace Monitor Manager
 
 @MainActor
@@ -71,17 +73,13 @@ public final class WorkspaceMonitorManager: ObservableObject {
     @Published public var deletions: Int = 0
     @Published public var changedFiles: [GitFileChange] = []
     @Published public var recentCommits: [GitCommitItem] = []
-    @Published public var selectedFilePath: String? = nil
-    @Published public var selectedFileDiff: String = ""
-    @Published public var isDiffLoading: Bool = false
     @Published public var isExpandedDetail: Bool = false
-    @Published public var detailTab: WorkspaceDetailTab = .diff
     @Published public var isRefreshing: Bool = false
     @Published public var proposedCommitMessage: String = ""
     @Published public var isCommitting: Bool = false
     @Published public var commitStatusMessage: String? = nil
-
     @Published public var isUserPinned: Bool = UserDefaults.standard.bool(forKey: "workspaceIsUserPinned")
+
     private var lastRefreshTime: Date = .distantPast
     private var refreshTask: Task<Void, Never>? = nil
 
@@ -112,7 +110,7 @@ public final class WorkspaceMonitorManager: ObservableObject {
         }
     }
 
-    /// Ultra-fast, zero-lag workspace resolution (strictly 0ms in-memory priority, zero main-thread blocking)
+    /// Ultra-fast, zero-leak workspace resolution directly from active agent sessions and memory
     func resolveAndRefreshWorkspace(appState: AppState) {
         // If user pinned a workspace, always respect it
         if isUserPinned && !currentCwd.isEmpty && FileManager.default.fileExists(atPath: currentCwd) {
@@ -151,74 +149,6 @@ public final class WorkspaceMonitorManager: ObservableObject {
             updateCwdIfNeeded(saved)
             return
         }
-
-        // 5. Asynchronous fallback only: detect terminal in background without blocking UI
-        Task.detached(priority: .background) {
-            if let detected = Self.detectFrontmostTerminalCwdAsync(), !detected.isEmpty,
-               FileManager.default.fileExists(atPath: detected) {
-                await MainActor.run {
-                    self.updateCwdIfNeeded(detected)
-                }
-            }
-        }
-    }
-
-    nonisolated private static func detectFrontmostTerminalCwdAsync() -> String? {
-        // Method A: Check active tab tty in Terminal.app, then resolve shell process cwd
-        let termTtyScript = """
-        tell application "System Events"
-            if exists (process "Terminal") then
-                tell application "Terminal"
-                    try
-                        return tty of selected tab of front window
-                    end try
-                end tell
-            end if
-        end tell
-        return ""
-        """
-        if let ttyFull = AppleScriptRunner.osascript.evaluate(termTtyScript, 1.2)?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !ttyFull.isEmpty {
-            let ttyName = ttyFull.replacingOccurrences(of: "/dev/", with: "").replacingOccurrences(of: "tty", with: "")
-            let psData = ProcessRunner.run(path: "/bin/ps", args: ["-t", ttyName, "-o", "pid="], timeout: 1.0)
-            if let psText = psData.flatMap({ String(data: $0, encoding: .utf8) }) {
-                let pids = psText.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-                for pidStr in pids.reversed() {
-                    if let lsofData = ProcessRunner.run(path: "/usr/sbin/lsof", args: ["-a", "-p", pidStr, "-d", "cwd", "-Fn"], timeout: 1.0),
-                       let lsofText = String(data: lsofData, encoding: .utf8) {
-                        for line in lsofText.components(separatedBy: "\n") {
-                            if line.hasPrefix("n/") {
-                                let candidate = String(line.dropFirst(1)).trimmingCharacters(in: .whitespacesAndNewlines)
-                                if FileManager.default.fileExists(atPath: candidate) && candidate != "/" {
-                                    return candidate
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Method B: iTerm2
-        let itermScript = """
-        tell application "System Events"
-            if exists (process "iTerm2") or exists (process "iTerm") then
-                tell application "iTerm"
-                    try
-                        return variable named "user.currentDir" of current session of current window
-                    end try
-                end tell
-            end if
-        end tell
-        return ""
-        """
-        if let itermDir = AppleScriptRunner.osascript.evaluate(itermScript, 1.2)?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !itermDir.isEmpty,
-           FileManager.default.fileExists(atPath: itermDir) {
-            return itermDir
-        }
-
-        return nil
     }
 
     public func chooseWorkspaceFolder() {
@@ -249,14 +179,17 @@ public final class WorkspaceMonitorManager: ObservableObject {
     public func refresh(force: Bool = false) {
         guard !currentCwd.isEmpty else { return }
         let now = Date()
-        if !force && now.timeIntervalSince(lastRefreshTime) < 2.0 {
+        if !force && now.timeIntervalSince(lastRefreshTime) < 1.5 {
             return
         }
         lastRefreshTime = now
 
         refreshTask?.cancel()
-        refreshTask = Task.detached(priority: .userInitiated) { [cwd = currentCwd] in
-            await MainActor.run { self.isRefreshing = true }
+        refreshTask = Task.detached(priority: .userInitiated) { [weak self, cwd = currentCwd] in
+            guard let self else { return }
+            await MainActor.run { [weak self] in
+                self?.isRefreshing = true
+            }
 
             let gitBinary = "/usr/bin/git"
             let fm = FileManager.default
@@ -267,10 +200,11 @@ public final class WorkspaceMonitorManager: ObservableObject {
 
             if !hasGit {
                 // Check git rev-parse inside
-                let revData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "rev-parse", "--is-inside-work-tree"], timeout: 3)
+                let revData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "rev-parse", "--is-inside-work-tree"], timeout: 2.5)
                 let inside = revData.flatMap { String(data: $0, encoding: .utf8) }?.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
                 guard inside else {
-                    await MainActor.run {
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
                         self.isGitRepo = false
                         self.isRefreshing = false
                     }
@@ -278,13 +212,13 @@ public final class WorkspaceMonitorManager: ObservableObject {
                 }
             }
 
-            // 2. Fetch branch & remote tracking (ahead/behind)
+            // 2. Fetch branch & remote tracking (ahead/behind) & changed files
             var branchName = "main"
             var ahead = 0
             var behind = 0
             var files: [GitFileChange] = []
 
-            if let statusData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "status", "--porcelain=v1", "-b"], timeout: 4),
+            if let statusData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "status", "--porcelain=v1", "-b"], timeout: 3.5),
                let statusText = String(data: statusData, encoding: .utf8) {
                 let lines = statusText.components(separatedBy: "\n")
                 for line in lines {
@@ -325,9 +259,8 @@ public final class WorkspaceMonitorManager: ObservableObject {
             // 3. Fetch diff shortstat (insertions & deletions)
             var ins = 0
             var del = 0
-            if let diffData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "diff", "--shortstat"], timeout: 4),
+            if let diffData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "diff", "--shortstat"], timeout: 3.0),
                let diffText = String(data: diffData, encoding: .utf8) {
-                // " 3 files changed, 45 insertions(+), 12 deletions(-)"
                 if let insIdx = diffText.range(of: "insertion") {
                     let sub = diffText[..<insIdx.lowerBound].trimmingCharacters(in: .whitespaces)
                     let numStr = sub.components(separatedBy: ",").last?.components(separatedBy: " ").filter({ !$0.isEmpty }).last ?? ""
@@ -340,9 +273,9 @@ public final class WorkspaceMonitorManager: ObservableObject {
                 }
             }
 
-            // 4. Fetch recent commits (last 15 for git graph)
+            // 4. Fetch recent commits (last 12 for git graph)
             var commits: [GitCommitItem] = []
-            if let logData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "log", "-n", "15", "--pretty=format:%h|||%s|||%an|||%ar|||%d"], timeout: 4),
+            if let logData = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "log", "-n", "12", "--pretty=format:%h|||%s|||%an|||%ar|||%d"], timeout: 3.5),
                let logText = String(data: logData, encoding: .utf8) {
                 let lines = logText.components(separatedBy: "\n")
                 for line in lines where !line.isEmpty {
@@ -367,7 +300,8 @@ public final class WorkspaceMonitorManager: ObservableObject {
             let finalFiles = files
             let finalCommits = commits
 
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 self.isGitRepo = true
                 self.branch = finalBranch
                 self.aheadCount = finalAhead
@@ -377,46 +311,6 @@ public final class WorkspaceMonitorManager: ObservableObject {
                 self.changedFiles = finalFiles
                 self.recentCommits = finalCommits
                 self.isRefreshing = false
-
-                // If a file was selected, refresh its diff
-                if let sel = self.selectedFilePath {
-                    self.fetchDiff(for: sel)
-                } else if let first = finalFiles.first {
-                    self.fetchDiff(for: first.path)
-                }
-            }
-        }
-    }
-
-    public func fetchDiff(for filePath: String) {
-        self.selectedFilePath = filePath
-        self.isDiffLoading = true
-        let cwd = self.currentCwd
-
-        Task.detached(priority: .userInitiated) {
-            let gitBinary = "/usr/bin/git"
-            var diffOutput = ""
-
-            if let data = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "diff", "--", filePath], timeout: 5),
-               let txt = String(data: data, encoding: .utf8), !txt.isEmpty {
-                diffOutput = txt
-            } else if let data = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "diff", "--cached", "--", filePath], timeout: 5),
-                      let txt = String(data: data, encoding: .utf8), !txt.isEmpty {
-                diffOutput = txt
-            } else {
-                // Untracked or binary: show preview
-                let fullPath = cwd + "/" + filePath
-                if let content = try? String(contentsOfFile: fullPath, encoding: .utf8) {
-                    diffOutput = content.components(separatedBy: "\n").prefix(50).joined(separator: "\n")
-                } else {
-                    diffOutput = "Binary file or no diff output available."
-                }
-            }
-
-            let finalDiff = diffOutput
-            await MainActor.run {
-                self.selectedFileDiff = finalDiff
-                self.isDiffLoading = false
             }
         }
     }
@@ -447,11 +341,11 @@ public final class WorkspaceMonitorManager: ObservableObject {
         } else if statuses.contains("A") || statuses.contains("??") {
             type = "feat"
         } else {
-            type = "feat"
+            type = "refactor"
         }
 
         // Detect primary scope
-        var scope = "core"
+        var scope = "workspace"
         if paths.contains(where: { $0.contains("Music") || $0.contains("Lyric") }) {
             scope = "music"
         } else if paths.contains(where: { $0.contains("Workspace") || $0.contains("Git") }) {
@@ -464,7 +358,7 @@ public final class WorkspaceMonitorManager: ObservableObject {
             scope = "settings"
         } else if let first = paths.first {
             let base = (first as NSString).lastPathComponent.components(separatedBy: ".").first ?? "core"
-            scope = base.prefix(12).lowercased()
+            scope = String(base.prefix(12).lowercased())
         }
 
         // Summary subject
@@ -485,7 +379,8 @@ public final class WorkspaceMonitorManager: ObservableObject {
         commitStatusMessage = "Staging & committing..."
         let cwd = currentCwd
 
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
             let gitBinary = "/usr/bin/git"
             // 1. git add -A
             _ = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "add", "-A"], timeout: 6)
@@ -495,21 +390,22 @@ public final class WorkspaceMonitorManager: ObservableObject {
 
             // 3. Optional push
             if push {
-                await MainActor.run {
-                    self.commitStatusMessage = "Pushing to remote..."
+                await MainActor.run { [weak self] in
+                    self?.commitStatusMessage = "Pushing to remote..."
                 }
                 _ = ProcessRunner.run(path: gitBinary, args: ["-C", cwd, "push"], timeout: 15)
             }
 
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 self.isCommitting = false
-                self.commitStatusMessage = "Committed successfully!"
+                self.commitStatusMessage = push ? "Committed & pushed!" : "Committed successfully!"
                 self.proposedCommitMessage = ""
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                 self.refresh(force: true)
 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    self.commitStatusMessage = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                    self?.commitStatusMessage = nil
                 }
             }
         }

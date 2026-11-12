@@ -24,11 +24,7 @@ final class StatusItemController: NSObject {
     }
 
     private func syncVisibility() {
-        if SettingsManager.shared.hideWhenNoSession {
-            showStatusItem()
-        } else {
-            hideStatusItem()
-        }
+        showStatusItem()
     }
 
     private func showStatusItem() {

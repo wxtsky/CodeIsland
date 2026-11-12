@@ -206,12 +206,14 @@ final class NowPlayingManager: ObservableObject {
     init() {
         setupObservers()
         guard !RuntimeEnvironment.isRunningTests else { return }
-        requestAutomationPermissionIfNeeded()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.requestAutomationPermissionIfNeeded()
+        }
         fetchPlaybackDetails()
         startIdleDiscoveryTimer()
     }
 
-    func requestAutomationPermissionIfNeeded() {
+    nonisolated func requestAutomationPermissionIfNeeded() {
         guard !RuntimeEnvironment.isRunningTests else { return }
         let targets = ["com.spotify.client", "com.apple.Music"]
         for target in targets {

@@ -175,7 +175,7 @@ struct NotchPanelView: View {
     /// Measured width of the collapsed right wing (0 until first laid out).
     @State private var rightWingWidth: CGFloat = 0
     @State private var isHoveringRightWing = false
-    @State private var expandedTab: ExpandedContentTab = .agents
+    @State private var expandedTab: ExpandedContentTab = ProcessInfo.processInfo.arguments.contains("workspace") ? .workspace : .agents
 
     private var isActive: Bool { !appState.sessions.isEmpty || nowPlaying.isPlaying }
     /// First launch / no-session state should still render a visible marker so the app

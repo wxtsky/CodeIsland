@@ -2,875 +2,558 @@ import SwiftUI
 import AppKit
 import CodeIslandCore
 
-// MARK: - Mini Git Graph Node & Line
+// MARK: - Color Tokens (Tasteful Monochromatic & Refined Accents)
 
-struct GitGraphNodeView: View {
+private enum WorkspacePalette {
+    static let base = Color(red: 0.055, green: 0.065, blue: 0.08)       // #0E1014 deep zinc
+    static let surface = Color.white.opacity(0.035)                      // Subtle card fill
+    static let border = Color.white.opacity(0.07)                        // Hairline border
+    static let borderSubtle = Color.white.opacity(0.05)
+    
+    // Text Hierarchy
+    static let textPrimary = Color.white.opacity(0.92)
+    static let textSecondary = Color.white.opacity(0.60)
+    static let textMuted = Color.white.opacity(0.38)
+    
+    // Precise Intentional Accents (No AI neon slop)
+    static let sage = Color(red: 0.22, green: 0.78, blue: 0.52)         // Clean state / HEAD indicator
+    static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // Modified / Uncommitted
+    static let blueSubtle = Color(red: 0.35, green: 0.65, blue: 0.95)   // Secondary info
+}
+
+// MARK: - Minimalist Git Graph Item View
+
+struct MinimalistGitGraphItemView: View {
     let commit: GitCommitItem
     let isLatest: Bool
     let isLast: Bool
+    @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            // Visual Git Graph spine
+        HStack(alignment: .top, spacing: 10) {
+            // Visual Git Spine & Clean Node Dot
             VStack(spacing: 0) {
                 ZStack {
-                    Circle()
-                        .fill(isLatest ? Color(red: 0.0, green: 0.90, blue: 0.46) : Color(white: 0.35))
-                        .frame(width: 5.5, height: 5.5)
-                        .shadow(color: isLatest ? Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.8) : Color.clear, radius: 2)
-
                     if isLatest {
                         Circle()
-                            .stroke(Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.4), lineWidth: 1.5)
+                            .stroke(Color.white.opacity(0.75), lineWidth: 1.5)
                             .frame(width: 9, height: 9)
+
+                        Circle()
+                            .fill(WorkspacePalette.sage)
+                            .frame(width: 4, height: 4)
+                    } else {
+                        Circle()
+                            .fill(Color.white.opacity(0.28))
+                            .frame(width: 5, height: 5)
                     }
                 }
-                .frame(width: 10, height: 10)
+                .frame(width: 12, height: 12)
 
                 if !isLast {
                     Rectangle()
-                        .fill(Color(white: 0.22))
-                        .frame(width: 1.2, height: 14)
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 1, height: 22)
                 }
             }
-            .frame(width: 10)
+            .frame(width: 12)
 
-            // Commit SHA, message, and time
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
+            // Commit Details
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    // Commit Hash Badge
                     Text(commit.hash)
-                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(isLatest ? Color.white.opacity(0.90) : WorkspacePalette.textSecondary)
+                        .padding(.horizontal, 4.5)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.white.opacity(0.06))
+                        )
 
-                    Text(commit.timeAgo)
-                        .font(.system(size: 6.5, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.45))
+                    // Branch Ref Tag (e.g. HEAD -> branch)
+                    if !commit.refs.isEmpty {
+                        Text(commit.refs)
+                            .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.80))
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(Color.white.opacity(0.08))
+                                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+                            )
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text(commit.author)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(WorkspacePalette.textSecondary)
+
+                    Text("• \(commit.timeAgo)")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(WorkspacePalette.textMuted)
                 }
 
                 Text(commit.message)
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .font(.system(size: 11.5, weight: isLatest ? .medium : .regular, design: .monospaced))
+                    .foregroundStyle(isLatest ? WorkspacePalette.textPrimary : WorkspacePalette.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-    }
-}
-
-// MARK: - Segmented Cyber Diff Bar
-
-struct CyberDiffBarView: View {
-    let insertions: Int
-    let deletions: Int
-
-    var body: some View {
-        let total = max(1, insertions + deletions)
-        let insFraction = CGFloat(insertions) / CGFloat(total)
-        let delFraction = CGFloat(deletions) / CGFloat(total)
-
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text("+\(insertions)")
-                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-
-                Text("-\(deletions)")
-                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 1.0, green: 0.16, blue: 0.53))
-
-                Spacer()
-
-                Text("\(insertions + deletions) lines")
-                    .font(.system(size: 7, design: .monospaced))
-                    .foregroundStyle(Color(white: 0.45))
-            }
-
-            GeometryReader { geo in
-                let w = geo.size.width
-                HStack(spacing: 1.5) {
-                    if insertions > 0 {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color(red: 0.0, green: 0.90, blue: 0.46))
-                            .frame(width: max(3, w * insFraction - 1), height: 3.5)
-                    }
-                    if deletions > 0 {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color(red: 1.0, green: 0.16, blue: 0.53))
-                            .frame(width: max(3, w * delFraction - 1), height: 3.5)
-                    }
-                    if insertions == 0 && deletions == 0 {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color(white: 0.15))
-                            .frame(height: 3.5)
-                    }
-                }
-            }
-            .frame(height: 3.5)
-        }
-    }
-}
-
-// MARK: - Coding Agent Usage & Quota HUD Card (Universal for all Agents)
-
-struct CyberAgentQuotaHUD: View {
-    var appState: AppState
-
-    private var activeSessions: [SessionSnapshot] {
-        Array(appState.sessions.values)
-    }
-
-    private var primarySession: SessionSnapshot? {
-        let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
-        guard let sid else { return nil }
-        return appState.sessions[sid]
-    }
-
-    private var claudeQuota: ClaudeQuotaSnapshot? {
-        appState.claudeQuota.snapshot
-    }
-
-    private var todayUsage: ClaudeUsageTotals? {
-        appState.claudeUsage?.today
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // Row 1: Agent Header & Active Model
-            HStack(spacing: 3) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 7.5, weight: .bold))
-                    .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
-
-                let sourceName = (primarySession?.mascotSource.isEmpty == false ? primarySession!.mascotSource : (appState.primarySource.isEmpty ? "AGENT" : appState.primarySource)).uppercased()
-                Text(sourceName)
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.white)
-
-                if let model = primarySession?.model, !model.isEmpty {
-                    Text("• \(model)")
-                        .font(.system(size: 7, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.6))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                Spacer(minLength: 0)
-
-                // Session Status Dot
-                HStack(spacing: 2.5) {
-                    Circle()
-                        .fill(appState.status == .processing || appState.status == .running ? Color(red: 0.0, green: 0.96, blue: 0.83) : Color(red: 0.0, green: 0.90, blue: 0.46))
-                        .frame(width: 3.5, height: 3.5)
-                    Text(appState.status == .processing || appState.status == .running ? "BUSY" : "READY")
-                        .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.75))
-                }
-                .padding(.horizontal, 3.5)
-                .padding(.vertical, 1)
-                .background(RoundedRectangle(cornerRadius: 2).fill(Color(white: 0.12)))
-            }
-
-            // Row 2: Rate Limit / Quota Window (if available)
-            if let quota = claudeQuota, let primaryLimit = quota.ordered.first {
-                let remainingPct = max(0, 100 - Int(primaryLimit.percent))
-                let color = remainingPct > 35 ? Color(red: 0.0, green: 0.90, blue: 0.46) : (remainingPct > 15 ? Color(red: 0.96, green: 0.62, blue: 0.04) : Color(red: 1.0, green: 0.16, blue: 0.53))
-                let windowName = primaryLimit.kind == .session ? "5H SESSION" : (primaryLimit.kind == .weeklyAll ? "WEEKLY" : (primaryLimit.scopeLabel?.uppercased() ?? "PLAN"))
-
-                VStack(alignment: .leading, spacing: 1.5) {
-                    HStack {
-                        Text("\(windowName):")
-                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.5))
-
-                        Text("\(remainingPct)% SISA")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(color)
-
-                        Spacer()
-
-                        if let resetsAt = primaryLimit.resetsAt {
-                            let diff = max(0, Int(resetsAt.timeIntervalSinceNow))
-                            let h = diff / 3600
-                            let m = (diff % 3600) / 60
-                            Text("reset \(h)j \(m)m")
-                                .font(.system(size: 6.5, design: .monospaced))
-                                .foregroundStyle(Color(white: 0.45))
-                        }
-                    }
-
-                    // Cyber Progress bar
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color(white: 0.14))
-                                .frame(height: 2.5)
-
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(color)
-                                .frame(width: max(2, geo.size.width * CGFloat(remainingPct) / 100.0), height: 2.5)
-                        }
-                    }
-                    .frame(height: 2.5)
-                }
-            }
-
-            // Row 3: Token In/Out Breakdown or Tool Operations
-            if let usage = todayUsage, (usage.inputTokens + usage.outputTokens) > 0 {
-                let inFormatted = ClaudeUsageScanner.formatTokens(usage.inputTokens + usage.cacheCreationTokens)
-                let outFormatted = ClaudeUsageScanner.formatTokens(usage.outputTokens)
-                HStack(spacing: 3) {
-                    Text("TOKENS:")
-                        .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.5))
-                    Text("\(inFormatted) IN • \(outFormatted) OUT")
-                        .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
-                    Spacer()
-                }
-            } else if let session = primarySession, session.totalToolCallCount > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 6))
-                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                    Text("\(session.totalToolCallCount) tool operations executed")
-                        .font(.system(size: 6.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.7))
-                    Spacer()
-                }
-            } else if claudeQuota == nil {
-                // Clean Connected Status
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 6.5))
-                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                    Text("AGENT READY & MONITORED")
-                        .font(.system(size: 6.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.65))
-                    Spacer()
-                }
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3.5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 3.5)
-                .fill(Color(white: 0.08))
-                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(white: 0.14), lineWidth: 0.6))
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isHovered ? WorkspacePalette.surface : Color.clear)
         )
+        .onHover { isHovered = $0 }
+        .help("\(commit.hash) • \(commit.author)\n\(commit.message)")
     }
 }
 
-// MARK: - Compact Workspace HUD View (Fixed Height 98pt)
+// MARK: - Active Agent Context Pill
 
-struct CyberWorkspaceHUDView: View {
-    @ObservedObject var manager: WorkspaceMonitorManager
+struct CyberActiveAgentPill: View {
     var appState: AppState
+    let cwd: String
 
-    private var activeSessionsInWorkspace: [(id: String, session: SessionSnapshot)] {
-        let cwd = manager.currentCwd
-        guard !cwd.isEmpty else { return [] }
-        return appState.sessions.filter { $0.value.cwd == cwd }.map { (id: $0.key, session: $0.value) }
+    private var activeSession: SessionSnapshot? {
+        guard !cwd.isEmpty else { return nil }
+        return appState.sessions.values.first { $0.cwd == cwd }
     }
 
     var body: some View {
-        if !manager.isGitRepo {
-            VStack(spacing: 5) {
-                Image(systemName: "folder.badge.questionmark")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.8))
-
-                Text("NO GIT REPOSITORY DETECTED")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.white)
-
-                Text(manager.currentCwd.isEmpty ? "No folder currently active in workspace" : manager.currentCwd)
-                    .font(.system(size: 7.5, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.horizontal, 16)
-
-                Button(action: {
-                    manager.chooseWorkspaceFolder()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder.fill")
-                            .font(.system(size: 8))
-                        Text("SELECT WORKSPACE FOLDER")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3.5)
-                    .background(RoundedRectangle(cornerRadius: 3.5).fill(Color(red: 0.0, green: 0.90, blue: 0.46)))
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92)
-            .padding(.horizontal, 8)
-        } else {
-            HStack(alignment: .top, spacing: 8) {
-                // COLUMN 1: Git Status & Diff Summary (Width ~150pt)
-                VStack(alignment: .leading, spacing: 4) {
-                    // Header & Branch Pill
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 7.5, weight: .bold))
-                            .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-
-                        Text(manager.branch.isEmpty ? "main" : manager.branch)
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.white)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-
-                        Button(action: { manager.chooseWorkspaceFolder() }) {
-                            Image(systemName: "folder")
-                                .font(.system(size: 7))
-                                .foregroundStyle(Color.white.opacity(0.4))
-                        }
-                        .buttonStyle(.plain)
-                        .help("Switch Workspace Directory")
-
-                        Spacer()
-
-                        // Ahead / Behind badges
-                        if manager.aheadCount > 0 || manager.behindCount > 0 {
-                            HStack(spacing: 2) {
-                                if manager.aheadCount > 0 {
-                                    Text("↑\(manager.aheadCount)")
-                                        .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                                }
-                                if manager.behindCount > 0 {
-                                    Text("↓\(manager.behindCount)")
-                                        .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color(red: 0.96, green: 0.62, blue: 0.04))
-                                }
-                            }
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 2.5).fill(Color(white: 0.12)))
-                        }
-                    }
-
-                // Changed Files Counter
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(manager.changedFiles.isEmpty ? Color(white: 0.3) : Color(red: 0.96, green: 0.62, blue: 0.04))
-                        .frame(width: 4, height: 4)
-
-                    Text(manager.changedFiles.isEmpty ? "Clean Working Tree" : "\(manager.changedFiles.count) files modified")
-                        .font(.system(size: 8, weight: .medium, design: .monospaced))
-                        .foregroundStyle(manager.changedFiles.isEmpty ? Color(white: 0.5) : Color.white.opacity(0.85))
-                        .lineLimit(1)
-                }
-
-                // Diff Bar
-                CyberDiffBarView(insertions: manager.insertions, deletions: manager.deletions)
-
-                Spacer(minLength: 0)
-
-                // Head commit reference (clean, lightweight)
-                if let latest = manager.recentCommits.first {
-                    HStack(spacing: 3) {
-                        Image(systemName: "circle.circle")
-                            .font(.system(size: 6.5))
-                            .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                        Text("\(latest.hash) • \(latest.timeAgo)")
-                            .font(.system(size: 6.5, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.5))
-                            .lineLimit(1)
-                    }
-                }
-            }
-            .frame(width: 140)
-
-            // Vertical Divider
-            Rectangle()
-                .fill(Color(red: 0.16, green: 0.19, blue: 0.24))
-                .frame(width: 1, height: 86)
-
-            // COLUMN 2: Mini Git Graph / Recent Commits (Width ~155pt)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text("RECENT COMMITS")
-                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-
-                    Spacer()
-
-                    if manager.isRefreshing {
-                        ProgressView()
-                            .scaleEffect(0.4)
-                            .frame(width: 10, height: 10)
-                    }
-                }
-
-                if manager.recentCommits.isEmpty {
-                    VStack(spacing: 2) {
-                        Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(white: 0.35))
-                        Text("No commits recorded")
-                            .font(.system(size: 7.5, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.45))
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if let session = activeSession {
+            HStack(spacing: 5) {
+                if let icon = cliIcon(source: session.source, size: 11) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 11, height: 11)
                 } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(manager.recentCommits.prefix(3).enumerated()), id: \.element.id) { index, commit in
-                            GitGraphNodeView(
-                                commit: commit,
-                                isLatest: index == 0,
-                                isLast: index == min(2, manager.recentCommits.count - 1)
-                            )
-                        }
-                    }
+                    Image(systemName: "cpu")
+                        .font(.system(size: 8.5, weight: .medium))
+                        .foregroundStyle(WorkspacePalette.textSecondary)
                 }
-            }
-            .frame(width: 155)
 
-            // Vertical Divider
-            Rectangle()
-                .fill(Color(red: 0.16, green: 0.19, blue: 0.24))
-                .frame(width: 1, height: 86)
+                let name = session.mascotSource.isEmpty ? session.source.uppercased() : session.mascotSource.uppercased()
+                Text(name)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(WorkspacePalette.textPrimary)
 
-            // COLUMN 3: Coding Agent Quota & Usage + Expand (Flexible)
-            VStack(alignment: .leading, spacing: 3.5) {
-                // Universal Coding Agent Quota & Token Usage Card
-                CyberAgentQuotaHUD(appState: appState)
-
-                // Real-Time Mac System Telemetry (CPU, RAM, Net, Battery)
-                CyberSystemGaugeBar()
-
-                Spacer(minLength: 0)
-
-                // Expand / Collapse Full Details Button
-                Button(action: {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                        manager.isExpandedDetail.toggle()
-                    }
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: manager.isExpandedDetail ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
-                            .font(.system(size: 7.5, weight: .bold))
-                        Text(manager.isExpandedDetail ? "COLLAPSE" : "INSPECT DIFF")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundStyle(Color.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 2.5)
-                    .background(RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.0, green: 0.90, blue: 0.46)))
+                if let model = session.modelLabel ?? session.model, !model.isEmpty {
+                    Text("• \(model)")
+                        .font(.system(size: 8.5, design: .monospaced))
+                        .foregroundStyle(WorkspacePalette.textSecondary)
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
+
+                Circle()
+                    .fill(session.status == .idle ? WorkspacePalette.sage : Color.white.opacity(0.70))
+                    .frame(width: 4, height: 4)
             }
-            .frame(maxWidth: .infinity)
-        }
-        .frame(height: 98)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color(red: 0.05, green: 0.06, blue: 0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1)
-                )
-        )
             .padding(.horizontal, 6)
+            .padding(.vertical, 2.5)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(WorkspacePalette.borderSubtle, lineWidth: 0.6))
+            )
         }
     }
 }
 
-// MARK: - Interactive Syntax-Highlighted Git Diff View
-
-struct CyberDiffLineView: View {
-    let line: String
-
-    private var lineType: DiffLineType {
-        if line.hasPrefix("+++") || line.hasPrefix("---") { return .meta }
-        if line.hasPrefix("+") { return .addition }
-        if line.hasPrefix("-") { return .deletion }
-        if line.hasPrefix("@@") { return .hunkHeader }
-        return .context
-    }
-
-    private enum DiffLineType {
-        case addition, deletion, hunkHeader, meta, context
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Text(line)
-                .font(.system(size: 8, design: .monospaced))
-                .foregroundStyle(textColor)
-                .lineLimit(1)
-            Spacer()
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 0.5)
-        .background(bgColor)
-    }
-
-    private var textColor: Color {
-        switch lineType {
-        case .addition: return Color(red: 0.2, green: 1.0, blue: 0.4)
-        case .deletion: return Color(red: 1.0, green: 0.3, blue: 0.4)
-        case .hunkHeader: return Color(red: 0.0, green: 0.96, blue: 0.83)
-        case .meta: return Color(white: 0.6)
-        case .context: return Color(white: 0.75)
-        }
-    }
-
-    private var bgColor: Color {
-        switch lineType {
-        case .addition: return Color(red: 0.0, green: 0.4, blue: 0.1).opacity(0.25)
-        case .deletion: return Color(red: 0.5, green: 0.0, blue: 0.1).opacity(0.25)
-        case .hunkHeader: return Color(red: 0.0, green: 0.2, blue: 0.3).opacity(0.3)
-        case .meta: return Color(white: 0.12)
-        case .context: return Color.clear
-        }
-    }
-}
-
-// MARK: - Full Interactive Git Graph Detail View
-
-struct CyberGitGraphDetailView: View {
-    @ObservedObject var manager: WorkspaceMonitorManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("COMMIT GRAPH (\(manager.recentCommits.count))")
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(white: 0.5))
-
-                Spacer()
-
-                Text("Branch: \(manager.branch)")
-                    .font(.system(size: 7, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-            }
-            .padding(.horizontal, 4)
-
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    ForEach(Array(manager.recentCommits.enumerated()), id: \.element.id) { index, commit in
-                        HStack(alignment: .top, spacing: 6) {
-                            // Graph Spine node
-                            VStack(spacing: 0) {
-                                ZStack {
-                                    Circle()
-                                        .fill(index == 0 ? Color(red: 0.0, green: 0.90, blue: 0.46) : Color(white: 0.35))
-                                        .frame(width: 6, height: 6)
-                                        .shadow(color: index == 0 ? Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.8) : Color.clear, radius: 2)
-
-                                    if index == 0 {
-                                        Circle()
-                                            .stroke(Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.4), lineWidth: 1.5)
-                                            .frame(width: 10, height: 10)
-                                    }
-                                }
-                                .frame(width: 10, height: 10)
-
-                                if index < manager.recentCommits.count - 1 {
-                                    Rectangle()
-                                        .fill(Color(white: 0.22))
-                                        .frame(width: 1.2, height: 16)
-                                }
-                            }
-                            .frame(width: 10)
-
-                            // Commit metadata & message
-                            VStack(alignment: .leading, spacing: 1.5) {
-                                HStack(spacing: 4) {
-                                    Text(commit.hash)
-                                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-
-                                    if !commit.refs.isEmpty {
-                                        Text(commit.refs)
-                                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(Color.black)
-                                            .padding(.horizontal, 3.5)
-                                            .padding(.vertical, 0.5)
-                                            .background(RoundedRectangle(cornerRadius: 2).fill(Color(red: 0.0, green: 0.96, blue: 0.83)))
-                                            .lineLimit(1)
-                                    }
-
-                                    Spacer()
-
-                                    Text(commit.author)
-                                        .font(.system(size: 6.5, design: .monospaced))
-                                        .foregroundStyle(Color(white: 0.5))
-
-                                    Text("• \(commit.timeAgo)")
-                                        .font(.system(size: 6.5, design: .monospaced))
-                                        .foregroundStyle(Color(white: 0.4))
-                                }
-
-                                Text(commit.message)
-                                    .font(.system(size: 8, design: .monospaced))
-                                    .foregroundStyle(Color.white.opacity(0.9))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                            }
-                        }
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(index == 0 ? Color(white: 0.08) : Color.clear))
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .frame(height: 106)
-            .background(Color(red: 0.04, green: 0.04, blue: 0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-        }
-    }
-}
-
-// MARK: - Expanded Workspace Detail Inspector
-
-struct CyberWorkspaceDetailView: View {
-    @ObservedObject var manager: WorkspaceMonitorManager
-
-    var body: some View {
-        VStack(spacing: 5) {
-            // Sub-Tab Switcher: GIT DIFF vs GIT GRAPH
-            HStack(spacing: 4) {
-                ForEach(WorkspaceDetailTab.allCases, id: \.self) { tab in
-                    let isSelected = manager.detailTab == tab
-                    Button(action: {
-                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            manager.detailTab = tab
-                        }
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: tab == .diff ? "doc.text.magnifyingglass" : "point.topleft.down.to.point.bottomright.curvepath")
-                                .font(.system(size: 6.5))
-                            Text(tab.rawValue)
-                                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                        }
-                        .foregroundStyle(isSelected ? Color.black : Color(white: 0.6))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 2.5).fill(isSelected ? Color(red: 0.0, green: 0.90, blue: 0.46) : Color(white: 0.10)))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-
-                // AI Commit Trigger Button
-                Button(action: {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        if manager.proposedCommitMessage.isEmpty {
-                            manager.generateAICommitMessage()
-                        } else {
-                            manager.proposedCommitMessage = ""
-                        }
-                    }
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 6.5))
-                        Text(manager.proposedCommitMessage.isEmpty ? "AI COMMIT" : "CANCEL")
-                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 2.5).fill(Color(red: 0.0, green: 0.96, blue: 0.83)))
-                }
-                .buttonStyle(.plain)
-                .help("Analyze workspace changes and generate a semantic Git commit message")
-
-                Button(action: { manager.refresh(force: true) }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 6.5))
-                        Text("REFRESH")
-                            .font(.system(size: 6.5, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundStyle(Color(white: 0.6))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 2.5).fill(Color(white: 0.09)))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 2)
-
-            // AI Commit Interactive Bar
-            if !manager.proposedCommitMessage.isEmpty {
-                HStack(spacing: 6) {
-                    TextField("Commit message", text: $manager.proposedCommitMessage)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color(white: 0.12)))
-
-                    Button(action: {
-                        manager.executeCommit(message: manager.proposedCommitMessage, push: false)
-                    }) {
-                        Text(manager.isCommitting ? "..." : "COMMIT")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.black)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.0, green: 0.90, blue: 0.46)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(manager.isCommitting)
-
-                    Button(action: {
-                        manager.executeCommit(message: manager.proposedCommitMessage, push: true)
-                    }) {
-                        HStack(spacing: 2) {
-                            Text(manager.isCommitting ? "..." : "COMMIT & PUSH")
-                                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 6, weight: .bold))
-                        }
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color(red: 0.0, green: 0.4, blue: 0.8)))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(manager.isCommitting)
-                }
-                .padding(.horizontal, 2)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-
-            if let status = manager.commitStatusMessage {
-                Text(status)
-                    .font(.system(size: 7, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                    .padding(.horizontal, 2)
-            }
-
-            if manager.detailTab == .graph {
-                CyberGitGraphDetailView(manager: manager)
-            } else {
-                HStack(spacing: 8) {
-                    // LEFT PANE: Modified Files List (Width 135pt)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("CHANGED FILES (\(manager.changedFiles.count))")
-                            .font(.system(size: 7, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(white: 0.5))
-
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 2) {
-                                ForEach(manager.changedFiles) { file in
-                                    let isSelected = manager.selectedFilePath == file.path
-                                    Button(action: {
-                                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                                        manager.fetchDiff(for: file.path)
-                                    }) {
-                                        HStack(spacing: 4) {
-                                            Text(file.status)
-                                                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                                .foregroundStyle(file.statusColor)
-                                                .frame(width: 10)
-
-                                            Text(file.filename)
-                                                .font(.system(size: 8, weight: isSelected ? .bold : .regular, design: .monospaced))
-                                                .foregroundStyle(isSelected ? Color.white : Color(white: 0.75))
-                                                .lineLimit(1)
-                                                .truncationMode(.middle)
-
-                                            Spacer()
-                                        }
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 2)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 3)
-                                                .fill(isSelected ? Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.18) : Color(white: 0.07))
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        .frame(height: 100)
-                    }
-                    .frame(width: 135)
-
-                    // Vertical Divider
-                    Rectangle()
-                        .fill(Color(red: 0.16, green: 0.19, blue: 0.24))
-                        .frame(width: 1, height: 110)
-
-                    // RIGHT PANE: Live Git Diff Preview
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(manager.selectedFilePath ?? "Select a file to inspect diff")
-                                .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.0, green: 0.90, blue: 0.46))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-
-                            Spacer()
-
-                            if manager.isDiffLoading {
-                                ProgressView()
-                                    .scaleEffect(0.4)
-                                    .frame(width: 10, height: 10)
-                            }
-                        }
-
-                        ScrollView([.vertical, .horizontal], showsIndicators: false) {
-                            LazyVStack(alignment: .leading, spacing: 0) {
-                                let lines = manager.selectedFileDiff.components(separatedBy: "\n")
-                                ForEach(Array(lines.prefix(120).enumerated()), id: \.offset) { _, line in
-                                    CyberDiffLineView(line: line)
-                                }
-                            }
-                        }
-                        .frame(height: 100)
-                        .background(Color(red: 0.04, green: 0.04, blue: 0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color(red: 0.05, green: 0.06, blue: 0.08))
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(red: 0.0, green: 0.90, blue: 0.46).opacity(0.3), lineWidth: 1))
-        )
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
-    }
-}
-
-// MARK: - Combined Cyber Workspace Main View
+// MARK: - Redesigned Minimalist Cyber Workspace View
 
 struct CyberWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
     var appState: AppState
 
-    var body: some View {
-        VStack(spacing: 4) {
-            CyberWorkspaceHUDView(manager: manager, appState: appState)
+    @State private var switchFolderHovered = false
+    @State private var refreshHovered = false
+    @State private var terminalHovered = false
+    @State private var aiHovered = false
+    @State private var pushHovered = false
 
-            if manager.isExpandedDetail {
-                CyberWorkspaceDetailView(manager: manager)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+    init(manager: WorkspaceMonitorManager, appState: AppState) {
+        self.manager = manager
+        self.appState = appState
+    }
+
+    private var statusRailColor: Color {
+        if !manager.isGitRepo {
+            return Color.white.opacity(0.18)
+        } else if manager.isCommitting {
+            return Color.white.opacity(0.60)
+        } else if !manager.changedFiles.isEmpty {
+            return WorkspacePalette.amber
+        } else {
+            return WorkspacePalette.sage
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !manager.isGitRepo {
+                // Non-Git Workspace State
+                VStack(spacing: 8) {
+                    Image(systemName: "folder.badge.questionmark")
+                        .font(.system(size: 20))
+                        .foregroundStyle(WorkspacePalette.textSecondary)
+
+                    Text("NO GIT REPOSITORY DETECTED")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(WorkspacePalette.textPrimary)
+
+                    Text(manager.currentCwd.isEmpty ? "No active workspace folder selected" : manager.currentCwd)
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(WorkspacePalette.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 24)
+
+                    Button(action: {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                        manager.chooseWorkspaceFolder()
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 9.5))
+                            Text("SELECT WORKSPACE FOLDER")
+                                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 4.5).fill(Color.white.opacity(0.92)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(maxWidth: .infinity, minHeight: 110)
+                .padding(.vertical, 12)
+            } else {
+                VStack(spacing: 9) {
+                    // ==========================================
+                    // 1. UNIFIED BREADCRUMB HEADER (ZERO CLUNKY TABS)
+                    // ==========================================
+                    HStack(alignment: .center, spacing: 7) {
+                        // Project Identity
+                        HStack(spacing: 5) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.70))
+
+                            Text(manager.projectName.isEmpty ? "WORKSPACE" : manager.projectName)
+                                .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(WorkspacePalette.textPrimary)
+                                .lineLimit(1)
+
+                            Button(action: {
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                manager.chooseWorkspaceFolder()
+                            }) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 8.5))
+                                    .foregroundStyle(switchFolderHovered ? Color.white : Color.white.opacity(0.35))
+                                    .padding(2.5)
+                                    .background(Circle().fill(Color.white.opacity(switchFolderHovered ? 0.12 : 0)))
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { switchFolderHovered = $0 }
+                            .help("Switch workspace directory")
+                        }
+
+                        // Breadcrumb Divider
+                        Text("/")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.22))
+
+                        // Branch & Sync Indicator
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9.5, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.50))
+
+                            Text(manager.branch)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.85))
+                                .lineLimit(1)
+
+                            if manager.aheadCount > 0 || manager.behindCount > 0 {
+                                HStack(spacing: 2) {
+                                    if manager.aheadCount > 0 {
+                                        Text("↑\(manager.aheadCount)")
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(Color.white.opacity(0.75))
+                                    }
+                                    if manager.behindCount > 0 {
+                                        Text("↓\(manager.behindCount)")
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(WorkspacePalette.amber)
+                                    }
+                                }
+                                .padding(.horizontal, 3.5)
+                                .padding(.vertical, 1)
+                                .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.08)))
+                            }
+                        }
+
+                        // Inline Status Indicator (Clean / Modified)
+                        Text("•")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.20))
+
+                        if manager.changedFiles.isEmpty {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(WorkspacePalette.sage)
+                                    .frame(width: 4.5, height: 4.5)
+                                Text("clean")
+                                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(WorkspacePalette.textSecondary)
+                            }
+                        } else {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(WorkspacePalette.amber)
+                                    .frame(width: 4.5, height: 4.5)
+                                Text("\(manager.changedFiles.count) modified")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(WorkspacePalette.amber)
+                            }
+                        }
+
+                        Spacer(minLength: 6)
+
+                        // Right Toolbar: Active Agent & Refresh
+                        CyberActiveAgentPill(appState: appState, cwd: manager.currentCwd)
+
+                        Button(action: {
+                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                            manager.refresh(force: true)
+                        }) {
+                            HStack(spacing: 3) {
+                                if manager.isRefreshing {
+                                    ProgressView()
+                                        .scaleEffect(0.35)
+                                        .frame(width: 10, height: 10)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 9, weight: .medium))
+                                }
+                            }
+                            .foregroundStyle(refreshHovered ? Color.white : Color.white.opacity(0.45))
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(refreshHovered ? 0.08 : 0)))
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { refreshHovered = $0 }
+                        .help("Refresh git status")
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.white.opacity(0.025))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(WorkspacePalette.borderSubtle, lineWidth: 0.6))
+                    )
+
+                    // ==========================================
+                    // 2. HERO: GIT GRAPH COMMIT TIMELINE
+                    // ==========================================
+                    VStack(alignment: .leading, spacing: 2) {
+                        if manager.recentCommits.isEmpty {
+                            VStack(spacing: 3) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(WorkspacePalette.textMuted)
+                                Text("No recent commits recorded")
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(WorkspacePalette.textMuted)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 55)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(Array(manager.recentCommits.prefix(3).enumerated()), id: \.element.id) { index, commit in
+                                    MinimalistGitGraphItemView(
+                                        commit: commit,
+                                        isLatest: index == 0,
+                                        isLast: index == min(2, manager.recentCommits.count - 1)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // 3. ACTION BAR (NON-DUPLICATED)
+                    // ==========================================
+                    if manager.changedFiles.isEmpty {
+                        // Clean state footer: path hint & quick actions
+                        HStack(spacing: 8) {
+                            Text(manager.currentCwd)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(WorkspacePalette.textMuted)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+
+                            Spacer(minLength: 0)
+
+                            if let status = manager.commitStatusMessage {
+                                Text(status)
+                                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(WorkspacePalette.sage)
+                                    .transition(.opacity)
+                            }
+
+                            Button(action: {
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                let url = URL(fileURLWithPath: manager.currentCwd)
+                                NSWorkspace.shared.open(url)
+                            }) {
+                                HStack(spacing: 3.5) {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 8.5))
+                                    Text("OPEN FOLDER")
+                                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                }
+                                .foregroundStyle(terminalHovered ? Color.white : WorkspacePalette.textSecondary)
+                                .padding(.horizontal, 6.5)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 3.5).fill(Color.white.opacity(terminalHovered ? 0.08 : 0.04)))
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { terminalHovered = $0 }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                    } else {
+                        // Quick Action Studio Bar (when uncommitted changes exist)
+                        HStack(spacing: 6) {
+                            // AI Suggest Button
+                            Button(action: {
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                    manager.generateAICommitMessage()
+                                }
+                            }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 8.5, weight: .semibold))
+                                    Text("AI")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundStyle(aiHovered ? Color.white : Color.white.opacity(0.80))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4.5)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(aiHovered ? 0.12 : 0.06)))
+                            }
+                            .buttonStyle(.plain)
+                            .onHover { aiHovered = $0 }
+                            .help("Auto-generate conventional commit message")
+
+                            // Commit Input Field with High-Contrast Readable Placeholder
+                            ZStack(alignment: .leading) {
+                                if manager.proposedCommitMessage.isEmpty {
+                                    Text("Commit message...")
+                                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.50))
+                                        .padding(.horizontal, 8)
+                                        .allowsHitTesting(false)
+                                }
+
+                                TextField("", text: $manager.proposedCommitMessage)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(WorkspacePalette.textPrimary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4.5)
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.white.opacity(0.05))
+                                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.white.opacity(0.12), lineWidth: 0.7))
+                            )
+
+                            // Commit Button
+                            Button(action: {
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                manager.executeCommit(message: manager.proposedCommitMessage, push: false)
+                            }) {
+                                Text(manager.isCommitting ? "..." : "Commit")
+                                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.42) : Color.black)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.08) : Color.white.opacity(0.92))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
+
+                            // Push Button
+                            Button(action: {
+                                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                                manager.executeCommit(message: manager.proposedCommitMessage, push: true)
+                            }) {
+                                HStack(spacing: 2.5) {
+                                    Text("Push")
+                                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 7, weight: .bold))
+                                }
+                                .foregroundStyle(pushHovered ? Color.white : WorkspacePalette.textSecondary)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(pushHovered ? 0.12 : 0.05))
+                                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(WorkspacePalette.borderSubtle, lineWidth: 0.6))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
+                            .onHover { pushHovered = $0 }
+                        }
+                        .padding(.horizontal, 4)
+
+                        if let status = manager.commitStatusMessage {
+                            Text(status)
+                                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(WorkspacePalette.sage)
+                                .padding(.horizontal, 6)
+                                .transition(.opacity)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
             }
         }
+        .background(
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(WorkspacePalette.base)
+
+                // Left 2.5px refined status accent rail
+                Rectangle()
+                    .fill(statusRailColor)
+                    .frame(width: 2.5)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(WorkspacePalette.border, lineWidth: 0.8)
+            )
+        )
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
         .onAppear {
             manager.resolveAndRefreshWorkspace(appState: appState)
         }
