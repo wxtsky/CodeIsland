@@ -38,19 +38,19 @@ public struct HijriDate: Equatable, Sendable, Codable, Hashable {
 
     public static func name(forMonth month: Int) -> String {
         switch month {
-        case 1: return "Muharam"
+        case 1: return "Muharram"
         case 2: return "Safar"
-        case 3: return "Rabiul Awal"
-        case 4: return "Rabiul Akhir"
-        case 5: return "Jumadil Awal"
-        case 6: return "Jumadil Akhir"
+        case 3: return "Rabi' al-Awwal"
+        case 4: return "Rabi' al-Thani"
+        case 5: return "Jumada al-Ula"
+        case 6: return "Jumada al-Akhirah"
         case 7: return "Rajab"
-        case 8: return "Syaban"
+        case 8: return "Sha'ban"
         case 9: return "Ramadan"
-        case 10: return "Syawal"
-        case 11: return "Zulkaidah"
-        case 12: return "Zulhijah"
-        default: return "Bulan \(month)"
+        case 10: return "Shawwal"
+        case 11: return "Dhu al-Qi'dah"
+        case 12: return "Dhu al-Hijjah"
+        default: return "Month \(month)"
         }
     }
 }

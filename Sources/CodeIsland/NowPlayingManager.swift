@@ -197,6 +197,7 @@ final class NowPlayingManager: ObservableObject {
     private var toastDismissTimer: Timer?
     private var progressTimer: Timer?
     private var idleDiscoveryTimer: Timer?
+    private(set) var isDisplayAsleep = false
     private var lastFetchedLyricsKey: String = ""
     private var lastBrowserSnapshots: [PlaybackSourceKind: PlaybackSnapshot] = [:]
     private let probeQueue = DispatchQueue(label: "com.codeisland.nowplaying.probe", qos: .userInitiated)
@@ -246,6 +247,45 @@ final class NowPlayingManager: ObservableObject {
             Task { @MainActor in
                 self?.handleSpotifyNotification(notification)
             }
+        }
+
+        // Display sleep and wake observers for energy efficiency
+        let wsCenter = NSWorkspace.shared.notificationCenter
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleDisplaySleep()
+            }
+        }
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleDisplayWake()
+            }
+        }
+    }
+
+    // Suspend high-frequency timers when display is asleep
+    private func handleDisplaySleep() {
+        isDisplayAsleep = true
+        stopProgressTimer()
+        idleDiscoveryTimer?.invalidate()
+        idleDiscoveryTimer = nil
+    }
+
+    // Resume timers and synchronize playback state when display wakes
+    private func handleDisplayWake() {
+        isDisplayAsleep = false
+        startIdleDiscoveryTimer()
+        if isPlaying {
+            fetchPlaybackDetails()
+            startProgressTimer()
         }
     }
 
@@ -407,6 +447,7 @@ final class NowPlayingManager: ObservableObject {
     // MARK: - Playback Progress & Adaptive Polling
 
     private func startIdleDiscoveryTimer() {
+        guard !isDisplayAsleep else { return }
         idleDiscoveryTimer?.invalidate()
         idleDiscoveryTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -417,6 +458,7 @@ final class NowPlayingManager: ObservableObject {
     }
 
     private func startProgressTimer() {
+        guard !isDisplayAsleep else { return }
         progressTimer?.invalidate()
         var tickCount = 0
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in

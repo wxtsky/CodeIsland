@@ -6,10 +6,10 @@ import CodeIslandCore
 final class PrayerTimeManagerTests: XCTestCase {
 
     func testDayPhaseProperties() {
-        XCTAssertEqual(DayPhase.pagi.displayName, "PAGI")
-        XCTAssertEqual(DayPhase.siang.displayName, "SIANG")
-        XCTAssertEqual(DayPhase.sore.displayName, "SORE")
-        XCTAssertEqual(DayPhase.malam.displayName, "MALAM")
+        XCTAssertEqual(DayPhase.pagi.displayName, "MORNING")
+        XCTAssertEqual(DayPhase.siang.displayName, "AFTERNOON")
+        XCTAssertEqual(DayPhase.sore.displayName, "EVENING")
+        XCTAssertEqual(DayPhase.malam.displayName, "NIGHT")
 
         XCTAssertFalse(DayPhase.pagi.systemImage.isEmpty)
         XCTAssertEqual(DayPhase.pagi.skyGradientColors.count, 2)

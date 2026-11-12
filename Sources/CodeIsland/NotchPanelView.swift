@@ -157,6 +157,7 @@ struct NotchPanelView: View {
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
     @ObservedObject private var sys = SystemMonitorManager.shared
     @ObservedObject private var prayerManager = PrayerTimeManager.shared
+    @ObservedObject private var volumeManager = SystemVolumeManager.shared
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
@@ -218,7 +219,8 @@ struct NotchPanelView: View {
     }
 
     private var shouldShowSubNotchLyrics: Bool {
-        guard showCompactLyrics,
+        guard !volumeManager.isHUDVisible,
+              showCompactLyrics,
               nowPlaying.isPlaying,
               !shouldShowExpanded,
               !appState.surface.isExpanded,
@@ -944,6 +946,16 @@ struct NotchPanelView: View {
                     insertion: .move(edge: .top).combined(with: .opacity),
                     removal: .move(edge: .top).combined(with: .opacity)
                 ))
+            }
+
+            // NOTCH VOLUME HUD: Sleek dynamic island pill when scrolling volume
+            if volumeManager.isHUDVisible {
+                NotchVolumeHUDView(volumeManager: volumeManager)
+                    .padding(.top, 4)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.88, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top)),
+                        removal: .scale(scale: 0.92, anchor: .top).combined(with: .opacity)
+                    ))
             }
 
             Spacer()
@@ -1913,7 +1925,7 @@ private struct RightWingPixelTabs: View {
                     }
                 } label: {
                     PixelText(
-                        text: useShortLabels ? "SLT" : "SALAT",
+                        text: useShortLabels ? "PRY" : "PRAYER",
                         color: isPrayerSelected ? activePrayerColor
                             : (hoveredTab == "prayer" ? .white.opacity(0.9) : Self.inactiveColor),
                         pixelSize: layout.pixelSize
@@ -1926,8 +1938,8 @@ private struct RightWingPixelTabs: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { hoveredTab = $0 ? "prayer" : (hoveredTab == "prayer" ? nil : hoveredTab) }
-                .help("Jadwal Salat & Diorama Langit")
-                .accessibilityLabel("Salat")
+                .help("Prayer Schedule & Living Sky Diorama")
+                .accessibilityLabel("Prayer")
                 .accessibilityAddTraits(isPrayerSelected ? .isSelected : [])
             }
         }
@@ -2056,7 +2068,7 @@ private struct IdleIndicatorBar: View {
             .frame(width: prayerManager.isEnabled ? max(wingWidth, Self.idlePrayerWingMinWidth) : wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
-            .help(prayerManager.isEnabled ? "Waktu Salat & Jam (Klik untuk Buka Tab SLT)" : "Click to expand tabs (Agents / Workspace / Music)")
+            .help(prayerManager.isEnabled ? "Prayer Times & Living Clock (Click to open Prayer tab)" : "Click to expand tabs (Agents / Workspace / Music)")
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)

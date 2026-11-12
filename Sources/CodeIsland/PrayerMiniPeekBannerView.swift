@@ -43,7 +43,7 @@ public struct PrayerMiniPeekBannerView: View {
                 // Countdown badge
                 if manager.upcomingPrayer != nil {
                     let diffMins = manager.minutesUntilNextPrayer
-                    Text(diffMins <= 0 ? "Masuk" : "-\(diffMins)m")
+                    Text(diffMins <= 0 ? "Now" : "-\(diffMins)m")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2.5)

@@ -12,10 +12,10 @@ public enum DayPhase: String, CaseIterable, Sendable {
 
     public var displayName: String {
         switch self {
-        case .pagi: return "PAGI"
-        case .siang: return "SIANG"
-        case .sore: return "SORE"
-        case .malam: return "MALAM"
+        case .pagi: return "MORNING"
+        case .siang: return "AFTERNOON"
+        case .sore: return "EVENING"
+        case .malam: return "NIGHT"
         }
     }
 
@@ -102,7 +102,7 @@ public final class PrayerTimeManager: ObservableObject {
 
     public var formattedCountdown: String {
         let m = minutesUntilNextPrayer
-        return m >= 60 ? "\(m / 60)j \(m % 60)m" : "\(m)m"
+        return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
     }
 
     public var cityName: String {
@@ -142,8 +142,8 @@ public final class PrayerTimeManager: ObservableObject {
 
     private let gregorianDateFormatter: DateFormatter = {
         let df = DateFormatter()
-        df.locale = Locale(identifier: "id_ID")
-        df.dateFormat = "EEEE d MMM"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "EEEE, d MMM"
         return df
     }()
     private var cachedGregorianDay: Int = -1
@@ -355,7 +355,7 @@ public final class PrayerTimeManager: ObservableObject {
             let key = "\(next.prayer.rawValue)-\(alertBeforeMinutes)"
             if !triggeredAlerts.contains(key) {
                 triggeredAlerts.insert(key)
-                let title = "\(alertBeforeMinutes) Menit Menuju \(next.prayer.displayName)"
+                let title = "\(alertBeforeMinutes) Minutes Until \(next.prayer.displayName)"
                 let subtitle = "\(currentTimeString) · \(locationService.displayName)"
                 enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
             }
@@ -366,7 +366,7 @@ public final class PrayerTimeManager: ObservableObject {
             let key = "\(next.prayer.rawValue)-0"
             if !triggeredAlerts.contains(key) {
                 triggeredAlerts.insert(key)
-                let title = "Waktu \(next.prayer.displayName) Telah Masuk"
+                let title = "Time for \(next.prayer.displayName)"
                 let subtitle = "\(currentTimeString) · \(locationService.displayName)"
                 enqueueOrPresentBanner(title: title, subtitle: subtitle, appState: appState)
             }

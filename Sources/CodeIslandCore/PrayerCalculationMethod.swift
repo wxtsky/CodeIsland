@@ -118,13 +118,13 @@ public enum PrayerType: String, CaseIterable, Sendable, Codable {
     public var displayName: String {
         switch self {
         case .imsak: return "Imsak"
-        case .subuh: return "Subuh"
-        case .terbit: return "Terbit"
-        case .dhuha: return "Dhuha"
-        case .dzuhur: return "Dzuhur"
-        case .ashar: return "Ashar"
+        case .subuh: return "Fajr"
+        case .terbit: return "Sunrise"
+        case .dhuha: return "Duha"
+        case .dzuhur: return "Dhuhr"
+        case .ashar: return "Asr"
         case .maghrib: return "Maghrib"
-        case .isya: return "Isya"
+        case .isya: return "Isha"
         }
     }
 

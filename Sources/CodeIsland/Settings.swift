@@ -224,6 +224,9 @@ enum SettingsKey {
     static let showClaudeQuota = "showClaudeQuota"
     static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
 
+    // Notch scroll gesture for system volume control
+    static let notchScrollVolumeControl = "notchScrollVolumeControl"
+
     // Completion notification: "expand" | "glance" | "off". Successor of the
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
     static let completionNotificationStyle = "completionNotificationStyle"
@@ -378,6 +381,7 @@ struct SettingsDefaults {
     static let showUsageStats = true
     static let showClaudeQuota = false
     static let claudeQuotaChip = "auto"
+    static let notchScrollVolumeControl = true
 
     static let rotationInterval = 5
 

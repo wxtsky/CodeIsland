@@ -12,7 +12,7 @@ final class HijriCalendarTests: XCTestCase {
         XCTAssertEqual(h1.day, 1)
         XCTAssertEqual(h1.month, 1)
         XCTAssertEqual(h1.year, 1447)
-        XCTAssertEqual(h1.monthName, "Muharam")
+        XCTAssertEqual(h1.monthName, "Muharram")
 
         // 1 Ramadan 1447 H KHGT is 18 February 2026
         let hRamadan = HijriCalendarCalculator.calculate(
@@ -24,7 +24,7 @@ final class HijriCalendarTests: XCTestCase {
         XCTAssertEqual(hRamadan.year, 1447)
         XCTAssertEqual(hRamadan.monthName, "Ramadan")
 
-        // 1 Syawal 1447 H KHGT is 20 March 2026
+        // 1 Shawwal 1447 H KHGT is 20 March 2026
         let hSyawal = HijriCalendarCalculator.calculate(
             day: YearMonthDay(year: 2026, month: 3, day: 20),
             source: .khgt
@@ -32,7 +32,7 @@ final class HijriCalendarTests: XCTestCase {
         XCTAssertEqual(hSyawal.day, 1)
         XCTAssertEqual(hSyawal.month, 10)
         XCTAssertEqual(hSyawal.year, 1447)
-        XCTAssertEqual(hSyawal.monthName, "Syawal")
+        XCTAssertEqual(hSyawal.monthName, "Shawwal")
     }
 
     func testNeoMABIMSMonthTransitions1447() {
@@ -99,7 +99,7 @@ final class HijriCalendarTests: XCTestCase {
 
     func testFormattedString() {
         let date = HijriDate(day: 21, month: 5, year: 1448)
-        XCTAssertEqual(date.formattedString, "21 Jumadil Awal 1448")
+        XCTAssertEqual(date.formattedString, "21 Jumada al-Ula 1448")
     }
 
     func testAlgorithmicFallbackBeyond1451() {

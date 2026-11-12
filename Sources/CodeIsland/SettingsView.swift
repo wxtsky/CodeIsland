@@ -1507,6 +1507,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.notchHeightMode) private var notchHeightModeRaw = SettingsDefaults.notchHeightMode
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
+    @AppStorage(SettingsKey.notchScrollVolumeControl) private var notchScrollVolumeControl = SettingsDefaults.notchScrollVolumeControl
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1762,6 +1763,13 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
                     Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Scroll on Notch for Volume Control", isOn: $notchScrollVolumeControl)
+                    Text("Adjust macOS system volume by scrolling with trackpad or mouse wheel over the notch.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -3645,49 +3653,49 @@ private struct PrayerSettingsPage: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Aktifkan Waktu Salat & Jam Diorama", isOn: $prayerEnabled)
+                Toggle("Enable Prayer Times & Living Clock", isOn: $prayerEnabled)
                     .font(.headline)
-                Text("Menampilkan waktu salat dan diorama langit di notch bar. Tetap offline dan hemat energi.")
+                Text("Displays prayer schedule and dynamic sky diorama on the notch bar. 100% offline and energy-efficient.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             if prayerEnabled {
-                Section(header: Text("Metode Perhitungan (Hisab)")) {
-                    Picker("Metode", selection: $calculationMethod) {
-                        Text("Kemenag RI (Subuh -20°, Ihtiyati +2m)").tag("kemenag")
-                        Text("Nahdlatul Ulama / LF PBNU (Subuh -20°, Dip Elevasi)").tag("nuLFPBNU")
-                        Text("Muhammadiyah / MTT (Subuh -18°, Hisab Hakiki)").tag("muhammadiyah")
+                Section(header: Text("Calculation Method")) {
+                    Picker("Method", selection: $calculationMethod) {
+                        Text("Ministry of Religious Affairs (Fajr -20°, +2m safety margin)").tag("kemenag")
+                        Text("Nahdlatul Ulama / LF PBNU (Fajr -20°, elevation dip correction)").tag("nuLFPBNU")
+                        Text("Muhammadiyah / MTT (Fajr -18°, astronomical reckoning)").tag("muhammadiyah")
                     }
                     .pickerStyle(.menu)
 
                     methodDescription
                 }
 
-                Section(header: Text("Kalender Hijriah")) {
-                    Picker("Kriteria Kalender", selection: $hijriSource) {
-                        Text("KHGT (Kalender Hijriah Global Tunggal)").tag("khgt")
-                        Text("Takwim Standar Indonesia (Neo-MABIMS)").tag("neoMABIMS")
+                Section(header: Text("Hijri Calendar")) {
+                    Picker("Calendar Standard", selection: $hijriSource) {
+                        Text("Global Unified Hijri Calendar (KHGT)").tag("khgt")
+                        Text("Indonesia Standard Calendar (Neo-MABIMS)").tag("neoMABIMS")
                     }
                     .pickerStyle(.menu)
 
                     Stepper(value: $hijriDayOffset, in: -2...2) {
                         HStack {
-                            Text("Koreksi Hari Manual:")
+                            Text("Manual Day Adjustment:")
                             Spacer()
-                            Text(hijriDayOffset == 0 ? "0 hari" : (hijriDayOffset > 0 ? "+\(hijriDayOffset) hari" : "\(hijriDayOffset) hari"))
+                            Text(hijriDayOffset == 0 ? "0 days" : (hijriDayOffset > 0 ? "+\(hijriDayOffset) days" : "\(hijriDayOffset) days"))
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    Text("Gunakan koreksi manual jika pengumuman Sidang Isbat atau Ikhbar Rukyatul Hilal berbeda 1 hari dari hisab.")
+                    Text("Use manual adjustment if official crescent sighting (Rukyatul Hilal) announcement differs by 1 day from calculated calendar.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Section(header: Text("Lokasi Perangkat")) {
-                    Picker("Mode Penentuan Lokasi", selection: $locationMode) {
-                        Text("Otomatis (CoreLocation)").tag("automatic")
-                        Text("Manual (Pilih Kota)").tag("manual")
+                Section(header: Text("Device Location")) {
+                    Picker("Location Mode", selection: $locationMode) {
+                        Text("Automatic (CoreLocation)").tag("automatic")
+                        Text("Manual (Select City)").tag("manual")
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: locationMode) { _, _ in
@@ -3695,26 +3703,26 @@ private struct PrayerSettingsPage: View {
                     }
 
                     if locationMode == "automatic" {
-                        Toggle("Gunakan Koordinat & Elevasi Presisi", isOn: $usePreciseLocation)
+                        Toggle("Use Precise Coordinates & Elevation", isOn: $usePreciseLocation)
                             .font(.system(size: 12))
-                        Text("Menggunakan koordinat GPS/Wi-Fi dan ketinggian aktual perangkat untuk akurasi hisab astronomis hingga tingkat menit lokal.")
+                        Text("Uses actual device GPS/Wi-Fi coordinates and altitude for precise astronomical calculation down to local minutes.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         HStack {
                             switch locationService.authorizationStatus {
                             case .authorizedAlways, .authorized:
-                                Label("Izin Lokasi: Aktif", systemImage: "checkmark.circle.fill")
+                                Label("Location Access: Authorized", systemImage: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
                                     .font(.caption)
                             case .notDetermined:
-                                Button("Minta Izin Lokasi") {
+                                Button("Request Location Access") {
                                     locationService.requestAuthorization()
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
                             case .denied, .restricted:
-                                Label("Izin Ditolak (Buka System Settings > Privacy)", systemImage: "exclamationmark.triangle.fill")
+                                Label("Access Denied (Open System Settings > Privacy)", systemImage: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)
                                     .font(.caption)
                             @unknown default:
@@ -3726,13 +3734,13 @@ private struct PrayerSettingsPage: View {
                             Button {
                                 locationService.requestCurrentLocation(force: true)
                             } label: {
-                                Label("Perbarui Lokasi", systemImage: "arrow.clockwise")
+                                Label("Refresh Location", systemImage: "arrow.clockwise")
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
                     } else {
-                        Picker("Kota Rujukan", selection: $manualCityId) {
+                        Picker("Reference City", selection: $manualCityId) {
                             ForEach(OfflineCityDatabase.allCities) { city in
                                 Text("\(city.name) (\(city.provinceOrCountry)) - \(Int(city.elevationMeters))m").tag(city.id)
                             }
@@ -3748,11 +3756,11 @@ private struct PrayerSettingsPage: View {
                             .foregroundStyle(.tint)
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Wilayah: \(locationService.displayName)")
+                            Text("Region: \(locationService.displayName)")
                                 .font(.system(size: 13, weight: .medium))
                             let coords = locationService.effectiveCoordinates
                             let elev = locationService.effectiveElevation
-                            Text(String(format: "Koordinat: %.4f°, %.4f° · Elevasi: %.0fm mdpl (%@)",
+                            Text(String(format: "Coordinates: %.4f°, %.4f° · Elevation: %.0fm (%@)",
                                         coords.latitude,
                                         coords.longitude,
                                         elev,
@@ -3763,17 +3771,17 @@ private struct PrayerSettingsPage: View {
                     }
                 }
 
-                Section(header: Text("Pengingat Waktu")) {
-                    Picker("Peringatan Sebelum Masuk", selection: $alertBeforeMinutes) {
-                        Text("Mati").tag(0)
-                        Text("5 Menit Sebelumnya").tag(5)
-                        Text("10 Menit Sebelumnya").tag(10)
-                        Text("15 Menit Sebelumnya").tag(15)
+                Section(header: Text("Notifications & Alerts")) {
+                    Picker("Alert Before Prayer", selection: $alertBeforeMinutes) {
+                        Text("Off").tag(0)
+                        Text("5 Minutes Before").tag(5)
+                        Text("10 Minutes Before").tag(10)
+                        Text("15 Minutes Before").tag(15)
                     }
                     .pickerStyle(.menu)
 
-                    Toggle("Bunyikan Nada Lembut (Chime)", isOn: $soundEnabled)
-                    Toggle("Kirim Notifikasi Sistem macOS", isOn: $systemNotificationEnabled)
+                    Toggle("Play Subtle Chime", isOn: $soundEnabled)
+                    Toggle("Send macOS System Notifications", isOn: $systemNotificationEnabled)
                         .onChange(of: systemNotificationEnabled) { _, isEnabled in
                             if isEnabled {
                                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
@@ -3795,15 +3803,15 @@ private struct PrayerSettingsPage: View {
     private var methodDescription: some View {
         switch calculationMethod {
         case "muhammadiyah":
-            Text("Majelis Tarjih & Tajdid Muhammadiyah menetapkan sudut Subuh -18° berdasarkan hisab hakiki tanpa ihtiyati tambahan.")
+            Text("Majelis Tarjih & Tajdid Muhammadiyah adopts Fajr angle of -18° based on true astronomical reckoning without additional safety margins.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case "nuLFPBNU":
-            Text("Lembaga Falakiyah PBNU menggunakan sudut Subuh -20° dengan koreksi dip ketinggian tempat dan pembulatan ke atas (ceil).")
+            Text("Lembaga Falakiyah PBNU applies Fajr angle of -20° with spherical elevation dip correction and ceiling rounding.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         default:
-            Text("Kementerian Agama RI menggunakan sudut Subuh -20°, Isya -18°, istiwa +2m, serta pengaman waktu (ihtiyati) +2 menit.")
+            Text("Ministry of Religious Affairs of Indonesia applies Fajr angle of -20°, Isha -18°, solar transit +2m, and a +2 minute safety margin (ihtiyati).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

@@ -30,6 +30,30 @@ public final class SystemMonitorManager: ObservableObject {
 
     private init() {
         startMonitoring()
+        setupSleepObservers()
+    }
+
+    // Suspend monitoring when display is asleep to save battery
+    private func setupSleepObservers() {
+        let wsCenter = NSWorkspace.shared.notificationCenter
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stopMonitoring()
+            }
+        }
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.startMonitoring()
+            }
+        }
     }
 
     public func startMonitoring() {
