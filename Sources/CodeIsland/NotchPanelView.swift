@@ -186,8 +186,8 @@ struct NotchPanelView: View {
     private var tabContentTransition: AnyTransition {
         let isForward = appState.tabSlideDirection == .toLeft
         return .asymmetric(
-            insertion: .move(edge: isForward ? .leading : .trailing).combined(with: .opacity),
-            removal: .move(edge: isForward ? .trailing : .leading).combined(with: .opacity)
+            insertion: .move(edge: isForward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: isForward ? .leading : .trailing).combined(with: .opacity)
         )
     }
 

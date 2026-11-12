@@ -46,14 +46,13 @@ final class NotchNavigationManager {
             }
         }
 
-        // On macOS:
-        // Swiping fingers left to navigate forward:
-        // With natural scrolling (isDirectionInvertedFromDevice == true), deltaX is positive.
-        // With natural scrolling off, deltaX is inverted to match forward navigation.
+        // On macOS trackpad:
+        // Swiping 2 fingers from RIGHT to LEFT pulls in the next tab (+1: Agents(0) -> Workspace(1) -> Music(2)).
+        // Trackpad deltaX is negative when swiping left, so we invert it to positive forward progress:
         let rawDelta: CGFloat = event.hasPreciseScrollingDeltas
             ? deltaX
             : (deltaX > 0 ? 15.0 : -15.0)
-        let effectiveDelta = event.isDirectionInvertedFromDevice ? rawDelta : -rawDelta
+        let effectiveDelta = -rawDelta
 
         accumulatedDeltaX += effectiveDelta
 
