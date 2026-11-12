@@ -1790,8 +1790,20 @@ private struct HeaderNavigationMenuTabs: View {
     @State private var activeLabelTab: ExpandedContentTab? = nil
     @State private var isTransitioning = false
 
-    static let pixelThemeColor = Color(red: 0.3, green: 0.85, blue: 0.4)
     static let inactiveColor = Color.white.opacity(0.55)
+
+    private var activeAccentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme:
+            return islandUITheme == IslandUITheme.modern.rawValue ? .white : Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
 
     private func switchToTab(_ target: ExpandedContentTab) {
         guard target != expandedTab else { return }
@@ -1841,12 +1853,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isAgentsActive ? .white : Self.inactiveColor)
+                    .foregroundStyle(isAgentsActive ? activeAccentColor : Self.inactiveColor)
                     .padding(.horizontal, isAgentsActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isAgentsActive ? Color.white.opacity(0.18) : .clear)
+                            .fill(isAgentsActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1871,12 +1883,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isWorkActive ? .white : Self.inactiveColor)
+                    .foregroundStyle(isWorkActive ? activeAccentColor : Self.inactiveColor)
                     .padding(.horizontal, isWorkActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isWorkActive ? Color.white.opacity(0.18) : .clear)
+                            .fill(isWorkActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1901,12 +1913,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isMusicActive ? .white : Self.inactiveColor)
+                    .foregroundStyle(isMusicActive ? activeAccentColor : Self.inactiveColor)
                     .padding(.horizontal, isMusicActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isMusicActive ? Color.white.opacity(0.18) : .clear)
+                            .fill(isMusicActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1917,7 +1929,7 @@ private struct HeaderNavigationMenuTabs: View {
             .onAppear {
                 activeLabelTab = expandedTab
             }
-            .onChange(of: expandedTab) { newTab in
+            .onChange(of: expandedTab) { _, newTab in
                 if activeLabelTab != newTab && !isTransitioning {
                     activeLabelTab = newTab
                 }
@@ -1933,13 +1945,13 @@ private struct HeaderNavigationMenuTabs: View {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .agents,
-                            color: isAgentsActive ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isAgentsActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
                         if activeLabelTab == .agents {
                             PixelText(
                                 text: "AGENTS",
-                                color: Self.pixelThemeColor,
+                                color: activeAccentColor,
                                 pixelSize: 1.15
                             )
                             .transition(.asymmetric(
@@ -1952,7 +1964,7 @@ private struct HeaderNavigationMenuTabs: View {
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isAgentsActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isAgentsActive ? activeAccentColor.opacity(0.20) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1967,13 +1979,13 @@ private struct HeaderNavigationMenuTabs: View {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .workspace,
-                            color: isWorkActive ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isWorkActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
                         if activeLabelTab == .workspace {
                             PixelText(
                                 text: "WORK",
-                                color: Self.pixelThemeColor,
+                                color: activeAccentColor,
                                 pixelSize: 1.15
                             )
                             .transition(.asymmetric(
@@ -1986,7 +1998,7 @@ private struct HeaderNavigationMenuTabs: View {
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isWorkActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isWorkActive ? activeAccentColor.opacity(0.20) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -2001,13 +2013,13 @@ private struct HeaderNavigationMenuTabs: View {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .music,
-                            color: isMusicActive ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isMusicActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
                         if activeLabelTab == .music {
                             PixelText(
                                 text: "MUSIC",
-                                color: Self.pixelThemeColor,
+                                color: activeAccentColor,
                                 pixelSize: 1.15
                             )
                             .transition(.asymmetric(
@@ -2020,7 +2032,7 @@ private struct HeaderNavigationMenuTabs: View {
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isMusicActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isMusicActive ? activeAccentColor.opacity(0.20) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -2031,7 +2043,7 @@ private struct HeaderNavigationMenuTabs: View {
             .onAppear {
                 activeLabelTab = expandedTab
             }
-            .onChange(of: expandedTab) { newTab in
+            .onChange(of: expandedTab) { _, newTab in
                 if activeLabelTab != newTab && !isTransitioning {
                     activeLabelTab = newTab
                 }
@@ -2048,8 +2060,21 @@ private struct SessionGroupingTabs: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
-    static let selectedColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+    private var activeAccentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme:
+            return islandUITheme == IslandUITheme.modern.rawValue ? .white : Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
+
     static let inactiveColor = Color.white.opacity(0.62)
 
     var body: some View {
@@ -2068,12 +2093,12 @@ private struct SessionGroupingTabs: View {
                     } label: {
                         Text(tab.tag == "all" ? "All" : (tab.tag == "status" ? "Status" : "Agent"))
                             .font(.system(size: 9.5, weight: selected ? .bold : .medium, design: .rounded))
-                            .foregroundStyle(selected ? .white : .white.opacity(0.6))
+                            .foregroundStyle(selected ? (activeAccentColor == .white ? .white : activeAccentColor) : .white.opacity(0.6))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule()
-                                    .fill(selected ? Color.white.opacity(0.2) : .clear)
+                                    .fill(selected ? (activeAccentColor == .white ? Color.white.opacity(0.2) : activeAccentColor.opacity(0.25)) : .clear)
                             )
                             .contentShape(Capsule())
                     }
@@ -2100,14 +2125,14 @@ private struct SessionGroupingTabs: View {
                     } label: {
                         PixelText(
                             text: tab.shortPixelLabel,
-                            color: selected ? Self.selectedColor : Self.inactiveColor,
+                            color: selected ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.15
                         )
                         .padding(.horizontal, 5)
                         .frame(height: 16)
                         .background(
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(selected ? Self.selectedColor.opacity(0.18) : .clear)
+                                .fill(selected ? activeAccentColor.opacity(0.18) : .clear)
                         )
                         .contentShape(Rectangle())
                     }
@@ -2123,7 +2148,7 @@ private struct SessionGroupingTabs: View {
                     .fill(Color.white.opacity(0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .stroke(expandedTab == .agents ? Self.selectedColor.opacity(0.4) : .white.opacity(0.12), lineWidth: 1)
+                            .stroke(expandedTab == .agents ? activeAccentColor.opacity(0.4) : .white.opacity(0.12), lineWidth: 1)
                     )
             )
         }
