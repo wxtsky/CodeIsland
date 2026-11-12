@@ -155,6 +155,7 @@ struct NotchPanelView: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
     @ObservedObject private var sys = SystemMonitorManager.shared
+    @ObservedObject private var volumeManager = SystemVolumeManager.shared
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
@@ -199,7 +200,8 @@ struct NotchPanelView: View {
     }
 
     private var shouldShowSubNotchLyrics: Bool {
-        guard showCompactLyrics,
+        guard !volumeManager.isHUDVisible,
+              showCompactLyrics,
               nowPlaying.isPlaying,
               !shouldShowExpanded,
               !appState.surface.isExpanded,
@@ -897,6 +899,16 @@ struct NotchPanelView: View {
                     insertion: .move(edge: .top).combined(with: .opacity),
                     removal: .move(edge: .top).combined(with: .opacity)
                 ))
+            }
+
+            // NOTCH VOLUME HUD: Sleek dynamic island pill when scrolling volume
+            if volumeManager.isHUDVisible {
+                NotchVolumeHUDView(volumeManager: volumeManager)
+                    .padding(.top, 4)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.88, anchor: .top).combined(with: .opacity).combined(with: .move(edge: .top)),
+                        removal: .scale(scale: 0.92, anchor: .top).combined(with: .opacity)
+                    ))
             }
 
             Spacer()

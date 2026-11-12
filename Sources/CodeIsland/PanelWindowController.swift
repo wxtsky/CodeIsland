@@ -30,6 +30,13 @@ private class NotchHostingView<Content: View>: NSHostingView<Content> {
         super.mouseDown(with: event)
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        if SystemVolumeManager.shared.handleScroll(event: event) {
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     /// Latest requested value awaiting its deferred apply, or nil when nothing
