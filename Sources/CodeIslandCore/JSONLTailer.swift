@@ -557,8 +557,9 @@ public final class JSONLTailer: @unchecked Sendable {
 
         // Re-verify the type after a real parse — the byte probe can be fooled by
         // nested content that happens to contain the literal `"type":"assistant"`.
-        let type = json["type"] as? String
-        let message = (json["message"] as? [String: Any]) ?? json
+        let payload = json["payload"] as? [String: Any]
+        let message = (json["message"] as? [String: Any]) ?? payload ?? json
+        let type = (json["type"] as? String) ?? (payload?["type"] as? String)
 
         switch type {
         case "user", "USER_INPUT":
@@ -644,6 +645,10 @@ public final class JSONLTailer: @unchecked Sendable {
             if let text = codexPublicAssistantText(from: json) {
                 delta.lastAssistantMessage = text
             }
+        case "tool_call":
+            delta.hasActivity = true
+        case "turn_start":
+            delta.turnStatus = .processing
         default:
             // Cursor agent transcripts key their entries on a top-level `role`
             // instead of `type`: `{"role":"user","message":{"content":[...]}}`.
@@ -860,6 +865,7 @@ public final class JSONLTailer: @unchecked Sendable {
         case claudeRecap
         /// Codex `turn_context` (the turn's model + reasoning effort).
         case codexTurnContext
+        case kiroTool
         case irrelevant
     }
 
@@ -935,6 +941,9 @@ public final class JSONLTailer: @unchecked Sendable {
                             if hasExactValue(ptr, at: valueStart, total: total, expect: turnContextBytes) {
                                 return .codexTurnContext
                             }
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: toolCallBytes) {
+                                return .kiroTool
+                            }
                         default:
                             break
                         }
@@ -988,6 +997,7 @@ public final class JSONLTailer: @unchecked Sendable {
     private static let systemBytes: [UInt8] = Array(#"system""#.utf8)
     private static let awaySummaryMarker: [UInt8] = Array(#""subtype":"away_summary""#.utf8)
     private static let turnContextBytes: [UInt8] = Array(#"turn_context""#.utf8)
+    private static let toolCallBytes: [UInt8] = Array(#"tool_call""#.utf8)
     private static let codexMessagePayloadMarker: [UInt8] = Array(
         #""payload":{"type":"message","#.utf8
     )
