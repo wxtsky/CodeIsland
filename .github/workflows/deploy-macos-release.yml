@@ -57,13 +57,14 @@ jobs:
           echo "TAG=v$VERSION" >> "$GITHUB_ENV"
           echo "Resolved release version: $VERSION (Tag: v$VERSION)"
 
-      - name: Select Xcode 26
+      - name: Select Xcode 16 or latest
         run: |
-          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -type d | sort | tail -n 1)"
+          XCODE_APP="$(find /Applications -maxdepth 1 \( -name 'Xcode_26*.app' -o -name 'Xcode_16*.app' -o -name 'Xcode*.app' \) -type d | sort -V | tail -n 1)"
           if [ -z "$XCODE_APP" ]; then
-            echo "Xcode 26 is required to compile AppIcon.icon"
+            echo "Xcode is required to compile CodeIsland"
             exit 1
           fi
+          echo "Selected Xcode: $XCODE_APP"
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
       - name: Install DMG packaging tools
