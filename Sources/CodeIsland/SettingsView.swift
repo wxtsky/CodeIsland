@@ -1503,6 +1503,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
     @AppStorage(SettingsKey.notchScrollVolumeControl) private var notchScrollVolumeControl = SettingsDefaults.notchScrollVolumeControl
+    @AppStorage(SettingsKey.notchScrollTabSwitch) private var notchScrollTabSwitch = SettingsDefaults.notchScrollTabSwitch
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1760,6 +1761,13 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Scroll on Notch for Volume Control", isOn: $notchScrollVolumeControl)
                     Text("Adjust macOS system volume by scrolling with trackpad or mouse wheel over the notch.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Horizontal Scroll on Notch to Switch Features", isOn: $notchScrollTabSwitch)
+                    Text("Swipe left or right over the notch with trackpad or mouse wheel to switch between Agents, Workspace, and Music tabs.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }

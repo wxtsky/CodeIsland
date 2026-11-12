@@ -24,6 +24,7 @@ private class KeyablePanel: NSPanel {
 private class NotchHostingView<Content: View>: NSHostingView<Content> {
     /// When true, the deferred handler is setting super — don't re-defer.
     private var applyingDeferred = false
+    var onScroll: ((NSEvent) -> Bool)?
 
     override func mouseDown(with event: NSEvent) {
         window?.makeKey()
@@ -32,6 +33,9 @@ private class NotchHostingView<Content: View>: NSHostingView<Content> {
 
     override func scrollWheel(with event: NSEvent) {
         if SystemVolumeManager.shared.handleScroll(event: event) {
+            return
+        }
+        if let onScroll = onScroll, onScroll(event) {
             return
         }
         super.scrollWheel(with: event)
@@ -374,6 +378,10 @@ class PanelWindowController: NSObject, NSWindowDelegate {
             screenWidth: screen.frame.width
         )
         let contentView = NotchHostingView(rootView: rootView)
+        contentView.onScroll = { [weak self] event in
+            guard let self = self else { return false }
+            return NotchNavigationManager.shared.handleScroll(event: event, appState: self.appState)
+        }
         contentView.sizingOptions = []
         contentView.translatesAutoresizingMaskIntoConstraints = true
         return contentView

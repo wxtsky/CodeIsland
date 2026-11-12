@@ -15,6 +15,21 @@ struct AppSubsessionContext: SubsessionContext {
     }
 }
 
+/// The three main feature tabs hosted in the expanded notch surface
+enum ExpandedContentTab: Int, CaseIterable, Sendable {
+    case agents = 0
+    case workspace = 1
+    case music = 2
+
+    var tabIndex: Int { rawValue }
+}
+
+/// Horizontal slide direction for expanded content transitions based on tab index
+enum TabSlideDirection: Sendable {
+    case toLeft   // newIndex > oldIndex (content enters from trailing edge, exits to leading edge)
+    case toRight  // newIndex < oldIndex (content enters from leading edge, exits to trailing edge)
+}
+
 /// The session store the island's views observe, and the coordinator around
 /// it, on the main actor: hook events, approvals and questions, completions
 /// and attention land here. The slow work it coordinates runs elsewhere —
@@ -224,6 +239,8 @@ final class AppState {
     }
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
+    /// General expanded surface tab selection (.agents = 0, .workspace = 1, .music = 2)
+    var expandedTab: ExpandedContentTab = .agents
     /// Whether the active space is fullscreen — undocks the notch into a Machined Floating Deck
     var isFullscreenMode: Bool = false
     var surface: IslandSurface = .collapsed {

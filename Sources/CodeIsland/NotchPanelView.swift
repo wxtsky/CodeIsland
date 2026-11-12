@@ -110,12 +110,6 @@ enum ToolNameDisplay {
     }
 }
 
-enum ExpandedContentTab: String, CaseIterable {
-    case agents
-    case workspace
-    case music
-}
-
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
@@ -176,7 +170,41 @@ struct NotchPanelView: View {
     /// Measured width of the collapsed right wing (0 until first laid out).
     @State private var rightWingWidth: CGFloat = 0
     @State private var isHoveringRightWing = false
-    @State private var expandedTab: ExpandedContentTab = .agents
+    @State private var slideDirection: TabSlideDirection = .toLeft
+
+    private var expandedTabBinding: Binding<ExpandedContentTab> {
+        Binding(
+            get: { appState.expandedTab },
+            set: { newTab in
+                if newTab.rawValue > appState.expandedTab.rawValue {
+                    slideDirection = .toLeft
+                } else if newTab.rawValue < appState.expandedTab.rawValue {
+                    slideDirection = .toRight
+                }
+                appState.expandedTab = newTab
+            }
+        )
+    }
+
+    private var expandedTab: ExpandedContentTab {
+        get { appState.expandedTab }
+        nonmutating set {
+            if newValue.rawValue > appState.expandedTab.rawValue {
+                slideDirection = .toLeft
+            } else if newValue.rawValue < appState.expandedTab.rawValue {
+                slideDirection = .toRight
+            }
+            appState.expandedTab = newValue
+        }
+    }
+
+    private var tabContentTransition: AnyTransition {
+        let isToLeft = slideDirection == .toLeft
+        return .asymmetric(
+            insertion: .move(edge: isToLeft ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: isToLeft ? .leading : .trailing).combined(with: .opacity)
+        )
+    }
 
     private var isActive: Bool { !appState.sessions.isEmpty || nowPlaying.isPlaying }
     /// First launch / no-session state should still render a visible marker so the app
@@ -398,7 +426,7 @@ struct NotchPanelView: View {
                             mascotSize: mascotSize,
                             hasNotch: hasNotch,
                             showToolStatus: showToolStatus,
-                            expandedTab: $expandedTab,
+                            expandedTab: expandedTabBinding,
                             workspaceManager: workspaceManager
                         )
                             .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
@@ -433,7 +461,7 @@ struct NotchPanelView: View {
                             expanded: shouldShowExpanded,
                             hasNotch: hasNotch,
                             isHovered: $isHoveringRightWing,
-                            expandedTab: $expandedTab,
+                            expandedTab: expandedTabBinding,
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
@@ -611,15 +639,18 @@ struct NotchPanelView: View {
                                 .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         case .sessionList:
                             // Priority 2: General expanded surface respects expandedTab (Music, Workspace, or Agent SessionList)
-                            if expandedTab == .music {
-                                CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
-                            } else if expandedTab == .workspace {
-                                CyberWorkspaceView(manager: workspaceManager, appState: appState)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
-                            } else {
-                                SessionListView(appState: appState, onlySessionId: nil)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
+                            ZStack(alignment: .top) {
+                                switch expandedTab {
+                                case .music:
+                                    CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
+                                        .transition(tabContentTransition)
+                                case .workspace:
+                                    CyberWorkspaceView(manager: workspaceManager, appState: appState)
+                                        .transition(tabContentTransition)
+                                case .agents:
+                                    SessionListView(appState: appState, onlySessionId: nil)
+                                        .transition(tabContentTransition)
+                                }
                             }
                         case .collapsed:
                             EmptyView()
@@ -883,6 +914,16 @@ struct NotchPanelView: View {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
+                }
+            }
+            .onChange(of: appState.expandedTab) { oldTab, newTab in
+                if newTab.rawValue > oldTab.rawValue {
+                    slideDirection = .toLeft
+                } else if newTab.rawValue < oldTab.rawValue {
+                    slideDirection = .toRight
+                }
+                if newTab == .workspace {
+                    workspaceManager.resolveAndRefreshWorkspace(appState: appState)
                 }
             }
             // Outside onHover on purpose: the hover region moves with the bar.
@@ -1821,8 +1862,8 @@ private struct HeaderNavigationMenuTabs: View {
 
         // Phase 2: Setelah itu baru buka (expand target tab text & switch content)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
-            expandedTab = target
-            withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
+                expandedTab = target
                 activeLabelTab = target
                 isTransitioning = false
             }
