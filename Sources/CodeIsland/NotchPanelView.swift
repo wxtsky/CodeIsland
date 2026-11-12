@@ -398,7 +398,8 @@ struct NotchPanelView: View {
                             mascotSize: mascotSize,
                             hasNotch: hasNotch,
                             showToolStatus: showToolStatus,
-                            expandedTab: $expandedTab
+                            expandedTab: $expandedTab,
+                            workspaceManager: workspaceManager
                         )
                             .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
                             .frame(
@@ -944,6 +945,7 @@ private struct CompactLeftWing: View {
     let hasNotch: Bool
     let showToolStatus: Bool
     @Binding var expandedTab: ExpandedContentTab
+    var workspaceManager: WorkspaceMonitorManager? = nil
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     // Bound via @AppStorage so flipping the default mascot in Settings rerenders this view
@@ -989,17 +991,12 @@ private struct CompactLeftWing: View {
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                AppLogoView(size: 36, showBackground: false)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            expandedTab = .agents
-                        }
-                    }
-                if expandedTab == .agents {
-                    SessionGroupingTabs(mode: $groupingMode, expandedTab: $expandedTab)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                }
+                HeaderNavigationMenuTabs(
+                    appState: appState,
+                    expandedTab: $expandedTab,
+                    workspaceManager: workspaceManager ?? WorkspaceMonitorManager.shared
+                )
+                .transition(.opacity)
             } else {
                 ZStack {
                     if nowPlaying.isPlaying && displayStatus == .idle {
@@ -1219,6 +1216,7 @@ private struct CompactRightWing: View {
     var expandedWingWidth: CGFloat = 240
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
+    @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
@@ -1294,14 +1292,14 @@ private struct CompactRightWing: View {
     var body: some View {
         HStack(spacing: 5) {
             if expanded {
-                HStack(spacing: 8) {
-                    // Header icon navigation tabs on the right: [ AGENTS | WORKSPACE | MUSIC ]
-                    RightWingHeaderTabs(
-                        appState: appState,
-                        expandedTab: $expandedTab,
-                        workspaceManager: workspaceManager,
-                        availableWidth: expandedWingWidth
-                    )
+                HStack(spacing: 6) {
+                    if expandedTab == .agents {
+                        SessionGroupingTabs(
+                            mode: $groupingMode,
+                            expandedTab: $expandedTab
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    }
 
                     Spacer(minLength: 4)
 
@@ -1780,7 +1778,7 @@ struct QuitConfirmButton: View {
 }
 
 /// Redesigned Header Tabs (Agents, Workspace, Music) supporting Pixel & Modern themes
-private struct RightWingHeaderTabs: View {
+private struct HeaderNavigationMenuTabs: View {
     var appState: AppState
     @Binding var expandedTab: ExpandedContentTab
     @ObservedObject var workspaceManager: WorkspaceMonitorManager
@@ -1789,188 +1787,227 @@ private struct RightWingHeaderTabs: View {
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hoveredTab: ExpandedContentTab?
 
-    static let activeAgentsColor = Color(red: 0.3, green: 0.85, blue: 0.4)
-    static let activeWorkspaceColor = Color(red: 0.0, green: 0.90, blue: 0.46)
-    static let inactiveColor = Color.white.opacity(0.62)
-
-    private var activeMusicColor: Color {
-        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
-        switch pc {
-        case .theme: return Color(red: 1.0, green: 0.16, blue: 0.53)
-        case .white: return .white
-        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
-        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
-        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
-        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
-        }
-    }
+    static let pixelThemeColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+    static let inactiveColor = Color.white.opacity(0.55)
 
     var body: some View {
         let isModern = islandUITheme == IslandUITheme.modern.rawValue
 
         if isModern {
-            // Modern Clean SF Symbols with continuous squircle highlights
+            // Modern Clean SF Symbols - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
                 // AGENTS TAB
                 let isAgents = expandedTab == .agents
                 Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
                 } label: {
-                    Image(systemName: "cpu.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isAgents ? Self.activeAgentsColor : (hoveredTab == .agents ? .white : .white.opacity(0.6)))
-                        .frame(width: 24, height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(isAgents ? Color.white.opacity(0.18) : (hoveredTab == .agents ? Color.white.opacity(0.08) : .clear))
-                        )
-                        .contentShape(Rectangle())
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if isAgents {
+                            Text("Agents")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isAgents ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isAgents ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isAgents ? Color.white.opacity(0.18) : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .agents : (hoveredTab == .agents ? nil : hoveredTab) }
                 .help("AI Agents")
 
                 // WORKSPACE TAB
                 let isWork = expandedTab == .workspace
                 Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     workspaceManager.resolveAndRefreshWorkspace(appState: appState)
                     withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = isWork ? .agents : .workspace
+                        expandedTab = .workspace
                     }
                 } label: {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isWork ? Self.activeWorkspaceColor : (hoveredTab == .workspace ? .white : .white.opacity(0.6)))
-                        .frame(width: 24, height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(isWork ? Color.white.opacity(0.18) : (hoveredTab == .workspace ? Color.white.opacity(0.08) : .clear))
-                        )
-                        .contentShape(Rectangle())
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if isWork {
+                            Text("Workspace")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isWork ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isWork ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isWork ? Color.white.opacity(0.18) : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .workspace : (hoveredTab == .workspace ? nil : hoveredTab) }
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC TAB
                 let isMusic = expandedTab == .music
                 Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = isMusic ? .agents : .music
+                        expandedTab = .music
                     }
                 } label: {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isMusic ? activeMusicColor : (nowPlaying.isPlaying ? activeMusicColor.opacity(0.9) : (hoveredTab == .music ? .white : .white.opacity(0.6))))
-                        .frame(width: 24, height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(isMusic ? Color.white.opacity(0.18) : (hoveredTab == .music ? Color.white.opacity(0.08) : .clear))
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .music : (hoveredTab == .music ? nil : hoveredTab) }
-                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
-            }
-            .padding(2)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(Color.white.opacity(0.12), lineWidth: 0.6)
-                    )
-            )
-        } else {
-            // Retro Cyber Pixel Icon Tabs
-            let layout = SessionGroupingTabsLayout.self
-            HStack(spacing: layout.spacing) {
-                // AGENTS PIXEL TAB
-                let isAgents = expandedTab == .agents
-                Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                        expandedTab = .agents
+                    HStack(spacing: 5) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 11, weight: .semibold))
+                        if isMusic {
+                            Text("Music")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
                     }
-                } label: {
-                    PixelIcon(
-                        glyph: .agents,
-                        color: isAgents ? Self.activeAgentsColor : (hoveredTab == .agents ? .white.opacity(0.9) : Self.inactiveColor),
-                        pixelSize: 1.5
+                    .foregroundStyle(isMusic ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isMusic ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isMusic ? Color.white.opacity(0.18) : .clear)
                     )
-                    .frame(width: 20, height: layout.stripHeight)
-                    .background(Rectangle().fill(isAgents ? .white.opacity(0.12) : .clear))
-                    .frame(height: layout.hitHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .agents : (hoveredTab == .agents ? nil : hoveredTab) }
+                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+            }
+            .padding(.vertical, 2)
+        } else {
+            // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
+            HStack(spacing: 4) {
+                // AGENTS PIXEL TAB
+                let isAgents = expandedTab == .agents
+                Button {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
+                        expandedTab = .agents
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .agents,
+                            color: isAgents ? Self.pixelThemeColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if isAgents {
+                            PixelText(
+                                text: "AGENTS",
+                                color: Self.pixelThemeColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isAgents ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isAgents ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 .help("AI Agents")
 
                 // WORKSPACE PIXEL TAB
                 let isWork = expandedTab == .workspace
                 Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                        expandedTab = isWork ? .agents : .workspace
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
+                        expandedTab = .workspace
                     }
                 } label: {
-                    PixelIcon(
-                        glyph: .workspace,
-                        color: isWork ? Self.activeWorkspaceColor : (hoveredTab == .workspace ? .white.opacity(0.9) : Self.inactiveColor),
-                        pixelSize: 1.5
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .workspace,
+                            color: isWork ? Self.pixelThemeColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if isWork {
+                            PixelText(
+                                text: "WORK",
+                                color: Self.pixelThemeColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isWork ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isWork ? Self.pixelThemeColor.opacity(0.18) : .clear)
                     )
-                    .frame(width: 22, height: layout.stripHeight)
-                    .background(Rectangle().fill(isWork ? .white.opacity(0.12) : .clear))
-                    .frame(height: layout.hitHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .workspace : (hoveredTab == .workspace ? nil : hoveredTab) }
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC PIXEL TAB
                 let isMusic = expandedTab == .music
                 Button {
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                        expandedTab = isMusic ? .agents : .music
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
+                        expandedTab = .music
                     }
                 } label: {
-                    PixelIcon(
-                        glyph: .music,
-                        color: isMusic ? activeMusicColor : (nowPlaying.isPlaying ? activeMusicColor.opacity(0.85) : (hoveredTab == .music ? .white.opacity(0.9) : Self.inactiveColor)),
-                        pixelSize: 1.5
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .music,
+                            color: isMusic ? Self.pixelThemeColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if isMusic {
+                            PixelText(
+                                text: "MUSIC",
+                                color: Self.pixelThemeColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isMusic ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isMusic ? Self.pixelThemeColor.opacity(0.18) : .clear)
                     )
-                    .frame(width: 20, height: layout.stripHeight)
-                    .background(Rectangle().fill(isMusic ? .white.opacity(0.12) : .clear))
-                    .frame(height: layout.hitHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? .music : (hoveredTab == .music ? nil : hoveredTab) }
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
-            .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
-            .overlay(
-                Rectangle()
-                    .stroke(
-                        expandedTab == .agents ? Self.activeAgentsColor.opacity(0.4)
-                            : (expandedTab == .workspace ? Self.activeWorkspaceColor.opacity(0.4)
-                            : (expandedTab == .music ? activeMusicColor.opacity(0.4) : .white.opacity(0.1))),
-                        lineWidth: 1
-                    )
-                    .frame(height: layout.stripHeight)
-            )
+            .padding(.vertical, 2)
         }
     }
 }
@@ -1983,19 +2020,16 @@ private struct SessionGroupingTabs: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
-    @State private var hoveredTag: String?
 
     static let selectedColor = Color(red: 0.3, green: 0.85, blue: 0.4)
     static let inactiveColor = Color.white.opacity(0.62)
 
     var body: some View {
         let isModern = islandUITheme == IslandUITheme.modern.rawValue
-        let layout = SessionGroupingTabsLayout.self
-        let short = layout.usesShortLabels(room: room)
 
         if isModern {
             // Modern segmented capsule styling
-            HStack(spacing: 3) {
+            HStack(spacing: 2) {
                 ForEach(SessionGroupingTab.all, id: \.tag) { tab in
                     let selected = (expandedTab == .agents) && (mode == tab.tag)
                     Button {
@@ -2004,10 +2038,10 @@ private struct SessionGroupingTabs: View {
                             mode = tab.tag
                         }
                     } label: {
-                        Text(l10n[tab.nameKey])
+                        Text(tab.tag == "all" ? "All" : (tab.tag == "status" ? "Status" : "Agent"))
                             .font(.system(size: 9.5, weight: selected ? .bold : .medium, design: .rounded))
-                            .foregroundStyle(selected ? .white : (hoveredTag == tab.tag ? .white.opacity(0.9) : .white.opacity(0.6)))
-                            .padding(.horizontal, 7)
+                            .foregroundStyle(selected ? .white : .white.opacity(0.6))
+                            .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule()
@@ -2016,7 +2050,6 @@ private struct SessionGroupingTabs: View {
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .onHover { hoveredTag = $0 ? tab.tag : (hoveredTag == tab.tag ? nil : hoveredTag) }
                     .help(l10n[tab.nameKey])
                 }
             }
@@ -2028,7 +2061,7 @@ private struct SessionGroupingTabs: View {
             )
         } else {
             // Authentic 5x7 dot-matrix pixel style
-            HStack(spacing: layout.spacing) {
+            HStack(spacing: 2) {
                 ForEach(SessionGroupingTab.all, id: \.tag) { tab in
                     let selected = (expandedTab == .agents) && (mode == tab.tag)
                     Button {
@@ -2038,26 +2071,33 @@ private struct SessionGroupingTabs: View {
                         }
                     } label: {
                         PixelText(
-                            text: short ? tab.shortPixelLabel : tab.pixelLabel,
-                            color: selected ? Self.selectedColor
-                                : (hoveredTag == tab.tag ? .white.opacity(0.9) : Self.inactiveColor),
-                            pixelSize: layout.pixelSize
+                            text: tab.shortPixelLabel,
+                            color: selected ? Self.selectedColor : Self.inactiveColor,
+                            pixelSize: 1.15
                         )
-                        .padding(.horizontal, layout.horizontalPadding)
-                        .frame(height: layout.stripHeight)
-                        .background(Rectangle().fill(selected ? .white.opacity(0.1) : .clear))
-                        .frame(height: layout.hitHeight)
+                        .padding(.horizontal, 5)
+                        .frame(height: 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(selected ? Self.selectedColor.opacity(0.18) : .clear)
+                        )
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .onHover { hoveredTag = $0 ? tab.tag : (hoveredTag == tab.tag ? nil : hoveredTag) }
                     .help(l10n[tab.nameKey])
                     .accessibilityLabel(l10n[tab.nameKey])
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
-            .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
-            .overlay(Rectangle().stroke(expandedTab == .agents ? Self.selectedColor.opacity(0.4) : .white.opacity(0.1), lineWidth: 1).frame(height: layout.stripHeight))
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(expandedTab == .agents ? Self.selectedColor.opacity(0.4) : .white.opacity(0.12), lineWidth: 1)
+                    )
+            )
         }
     }
 }
@@ -3678,6 +3718,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Natural height of the session cards, scrolling or not.
     @State private var contentHeight: CGFloat = 0
