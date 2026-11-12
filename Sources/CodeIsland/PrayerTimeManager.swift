@@ -84,6 +84,7 @@ public final class PrayerTimeManager: ObservableObject {
     @Published public var showMiniPeekBanner: Bool = false
     @Published public private(set) var miniPeekBannerTitle: String = ""
     @Published public private(set) var miniPeekBannerSubtitle: String = ""
+    public var simulatedDate: Date? = nil
 
     weak var appState: AppState?
 
@@ -260,10 +261,10 @@ public final class PrayerTimeManager: ObservableObject {
 
     // MARK: - Per-Second Tick
 
-    private func tick() {
+    internal func tick(now: Date = Date()) {
         guard isEnabled else { return }
 
-        let now = Date()
+        let now = simulatedDate ?? now
         let tz = locationService.activeCity.timeZone
 
         // Update formatted time

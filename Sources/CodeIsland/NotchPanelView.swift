@@ -178,6 +178,22 @@ struct NotchPanelView: View {
     @State private var isHoveringRightWing = false
     @State private var expandedTab: ExpandedContentTab = .agents
 
+    init(
+        appState: AppState,
+        hasNotch: Bool,
+        notchHeight: CGFloat,
+        notchW: CGFloat,
+        screenWidth: CGFloat,
+        initialTab: ExpandedContentTab = .agents
+    ) {
+        self.appState = appState
+        self.hasNotch = hasNotch
+        self.notchHeight = notchHeight
+        self.notchW = notchW
+        self.screenWidth = screenWidth
+        self._expandedTab = State(initialValue: initialTab)
+    }
+
     private var isActive: Bool { !appState.sessions.isEmpty || nowPlaying.isPlaying }
     /// First launch / no-session state should still render a visible marker so the app
     /// doesn't disappear completely behind the physical notch.
