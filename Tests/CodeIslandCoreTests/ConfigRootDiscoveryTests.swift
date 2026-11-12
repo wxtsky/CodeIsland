@@ -47,6 +47,22 @@ final class ConfigRootDiscoveryTests: XCTestCase {
         XCTAssertNil(ProcArgsParser.completeEnvironment([1, 0], keys: keys))
     }
 
+    /// Node rewrites its process title (pi's argv is just "pi"), leaving NULs
+    /// where the original argv sat. The environment after that gap is still the
+    /// environment; it must not read as withheld.
+    func testCompleteEnvironmentSkipsTheGapARewrittenArgvLeaves() {
+        var padded = procArgs(argc: 2, argv: ["pi", ""], env: [], terminate: false)
+        padded.append(contentsOf: Array(repeating: 0, count: 16))
+        func cString(_ s: String) { padded.append(contentsOf: Array(s.utf8)); padded.append(0) }
+        cString("KITTY_LISTEN_ON=unix:/tmp/kitty-1")
+        cString("PATH=/usr/bin")
+        cString("")
+        XCTAssertEqual(
+            ProcArgsParser.completeEnvironment(padded, keys: ["KITTY_LISTEN_ON"]),
+            ["KITTY_LISTEN_ON": "unix:/tmp/kitty-1"]
+        )
+    }
+
     // MARK: - Process root
 
     func testAVariableThatIsNotAnAbsolutePathIsUnknownNotUnset() {

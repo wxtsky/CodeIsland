@@ -85,6 +85,19 @@ enum ProcessTable {
         return args
     }
 
+    /// `keys` from another process's environment, read from the same
+    /// `KERN_PROCARGS2` block `getProcessArgs` uses. Nil when the process is
+    /// gone, another user's, or the kernel withheld the block.
+    static func environment(for pid: pid_t, keys: Set<String>) -> [String: String]? {
+        guard pid > 1 else { return nil }
+        var mib = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
+        return ProcArgsParser.completeEnvironment(Array(buffer.prefix(size)), keys: keys)
+    }
+
     /// Current ppid of `pid`, or nil if the process is gone / info is unavailable.
     static func parentPid(of pid: pid_t) -> pid_t? {
         var info = proc_bsdinfo()
