@@ -296,6 +296,7 @@ struct CyberMusicWingView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var isHovered: Bool = false
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     init(nowPlaying: NowPlayingManager, isHovered: Bool = false) {
@@ -304,7 +305,9 @@ struct CyberMusicWingView: View {
     }
 
     private var isModernClean: Bool {
-        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+        if islandUITheme == IslandUITheme.modern.rawValue { return true }
+        if islandUITheme == IslandUITheme.pixel.rawValue { return false }
+        return musicHUDTheme == MusicHUDTheme.modernClean.rawValue
     }
 
     private var accentColor: Color {
@@ -417,10 +420,13 @@ struct CyberMusicMiniPeekBanner: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var onOpenFull: () -> Void
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     private var isModernClean: Bool {
-        musicHUDTheme == MusicHUDTheme.modernClean.rawValue
+        if islandUITheme == IslandUITheme.modern.rawValue { return true }
+        if islandUITheme == IslandUITheme.pixel.rawValue { return false }
+        return musicHUDTheme == MusicHUDTheme.modernClean.rawValue
     }
 
     private var accentColor: Color {
@@ -955,21 +961,28 @@ struct CyberMusicHUDView: View {
     @ObservedObject var nowPlaying: NowPlayingManager
     var appState: AppState
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
 
     init(nowPlaying: NowPlayingManager, appState: AppState) {
         self.nowPlaying = nowPlaying
         self.appState = appState
     }
 
+    private var isRetroTheme: Bool {
+        if islandUITheme == IslandUITheme.pixel.rawValue { return true }
+        if islandUITheme == IslandUITheme.modern.rawValue { return false }
+        return musicHUDTheme == MusicHUDTheme.retroCyber.rawValue
+    }
+
     var body: some View {
         Group {
-            if musicHUDTheme == MusicHUDTheme.retroCyber.rawValue {
+            if isRetroTheme {
                 RetroCyberMusicHUDContentView(nowPlaying: nowPlaying, appState: appState)
             } else {
                 ModernCleanMusicHUDContentView(nowPlaying: nowPlaying, appState: appState)
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: musicHUDTheme)
+        .animation(.easeInOut(duration: 0.22), value: isRetroTheme)
     }
 }
 

@@ -17,6 +17,29 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+public enum IslandUITheme: String, CaseIterable, Identifiable, Sendable {
+    case pixel = "pixel"
+    case modern = "modern"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .pixel: return "Pixel Retro (8-Bit)"
+        case .modern: return "Modern Clean"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .pixel:
+            return "Authentic 8-bit pixel art iconography, sharp retro borders, and cyber neon accents."
+        case .modern:
+            return "Sleek Apple SF Symbols, smooth continuous squircles, and dynamic island glass."
+        }
+    }
+}
+
 public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
     case modernClean = "modernClean"
     case retroCyber = "retroCyber"
@@ -175,6 +198,7 @@ enum SettingsKey {
     static let contentFontSize = "contentFontSize"
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
+    static let islandUITheme = "islandUITheme"
     static let showCompactLyrics = "showCompactLyrics"
     static let musicHUDTheme = "musicHUDTheme"
     static let musicHUDProgressColor = "musicHUDProgressColor"
@@ -332,6 +356,7 @@ struct SettingsDefaults {
     static let contentFontSize = 11
     static let aiMessageLines = 1
     static let showAgentDetails = false
+    static let islandUITheme = IslandUITheme.pixel.rawValue
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
     static let musicHUDProgressColor = MusicProgressColor.theme.rawValue

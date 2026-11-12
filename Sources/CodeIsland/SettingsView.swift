@@ -1487,6 +1487,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
@@ -1537,6 +1538,26 @@ private struct AppearancePage: View {
             }
 
             Section("Cyber Theme Engine") {
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Island UI Theme", selection: $islandUITheme) {
+                        ForEach(IslandUITheme.allCases) { theme in
+                            Text(theme.title).tag(theme.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: islandUITheme) { _, newTheme in
+                        if newTheme == IslandUITheme.pixel.rawValue {
+                            musicHUDTheme = MusicHUDTheme.retroCyber.rawValue
+                        } else {
+                            musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+                        }
+                    }
+
+                    Text(IslandUITheme(rawValue: islandUITheme)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
                 Picker("Theme Preset", selection: $themeManager.currentPresetRaw) {
                     ForEach(ThemePreset.allCases) { preset in
                         Text(preset.title).tag(preset.rawValue)
