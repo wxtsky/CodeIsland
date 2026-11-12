@@ -1787,9 +1787,35 @@ private struct HeaderNavigationMenuTabs: View {
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var activeLabelTab: ExpandedContentTab? = nil
+    @State private var isTransitioning = false
 
     static let pixelThemeColor = Color(red: 0.3, green: 0.85, blue: 0.4)
     static let inactiveColor = Color.white.opacity(0.55)
+
+    private func switchToTab(_ target: ExpandedContentTab) {
+        guard target != expandedTab else { return }
+        guard !isTransitioning else { return }
+        isTransitioning = true
+
+        if target == .workspace {
+            workspaceManager.resolveAndRefreshWorkspace(appState: appState)
+        }
+
+        // Phase 1: Tutup dulu (current open tab text collapses into its icon)
+        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
+            activeLabelTab = nil
+        }
+
+        // Phase 2: Setelah itu baru buka (expand target tab text & switch content)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
+            expandedTab = target
+            withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
+                activeLabelTab = target
+                isTransitioning = false
+            }
+        }
+    }
 
     var body: some View {
         let isModern = islandUITheme == IslandUITheme.modern.rawValue
@@ -1798,16 +1824,14 @@ private struct HeaderNavigationMenuTabs: View {
             // Modern Clean SF Symbols - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
                 // AGENTS TAB
-                let isAgents = expandedTab == .agents
+                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
                 Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .agents
-                    }
+                    switchToTab(.agents)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "cpu.fill")
                             .font(.system(size: 11, weight: .semibold))
-                        if isAgents {
+                        if activeLabelTab == .agents {
                             Text("Agents")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1817,12 +1841,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isAgents ? .white : Self.inactiveColor)
-                    .padding(.horizontal, isAgents ? 8 : 6)
+                    .foregroundStyle(isAgentsActive ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isAgentsActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isAgents ? Color.white.opacity(0.18) : .clear)
+                            .fill(isAgentsActive ? Color.white.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1830,17 +1854,14 @@ private struct HeaderNavigationMenuTabs: View {
                 .help("AI Agents")
 
                 // WORKSPACE TAB
-                let isWork = expandedTab == .workspace
+                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
                 Button {
-                    workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .workspace
-                    }
+                    switchToTab(.workspace)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 11, weight: .semibold))
-                        if isWork {
+                        if activeLabelTab == .workspace {
                             Text("Workspace")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1850,12 +1871,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isWork ? .white : Self.inactiveColor)
-                    .padding(.horizontal, isWork ? 8 : 6)
+                    .foregroundStyle(isWorkActive ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isWorkActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isWork ? Color.white.opacity(0.18) : .clear)
+                            .fill(isWorkActive ? Color.white.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1863,16 +1884,14 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC TAB
-                let isMusic = expandedTab == .music
+                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
                 Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .music
-                    }
+                    switchToTab(.music)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "music.note")
                             .font(.system(size: 11, weight: .semibold))
-                        if isMusic {
+                        if activeLabelTab == .music {
                             Text("Music")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1882,12 +1901,12 @@ private struct HeaderNavigationMenuTabs: View {
                                 ))
                         }
                     }
-                    .foregroundStyle(isMusic ? .white : Self.inactiveColor)
-                    .padding(.horizontal, isMusic ? 8 : 6)
+                    .foregroundStyle(isMusicActive ? .white : Self.inactiveColor)
+                    .padding(.horizontal, isMusicActive ? 8 : 6)
                     .frame(height: 20)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(isMusic ? Color.white.opacity(0.18) : .clear)
+                            .fill(isMusicActive ? Color.white.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1895,23 +1914,29 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
+            .onAppear {
+                activeLabelTab = expandedTab
+            }
+            .onChange(of: expandedTab) { newTab in
+                if activeLabelTab != newTab && !isTransitioning {
+                    activeLabelTab = newTab
+                }
+            }
         } else {
             // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
                 // AGENTS PIXEL TAB
-                let isAgents = expandedTab == .agents
+                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
                 Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .agents
-                    }
+                    switchToTab(.agents)
                 } label: {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .agents,
-                            color: isAgents ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isAgentsActive ? Self.pixelThemeColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if isAgents {
+                        if activeLabelTab == .agents {
                             PixelText(
                                 text: "AGENTS",
                                 color: Self.pixelThemeColor,
@@ -1923,11 +1948,11 @@ private struct HeaderNavigationMenuTabs: View {
                             ))
                         }
                     }
-                    .padding(.horizontal, isAgents ? 7 : 5)
+                    .padding(.horizontal, isAgentsActive ? 7 : 5)
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isAgents ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isAgentsActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1935,20 +1960,17 @@ private struct HeaderNavigationMenuTabs: View {
                 .help("AI Agents")
 
                 // WORKSPACE PIXEL TAB
-                let isWork = expandedTab == .workspace
+                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
                 Button {
-                    workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .workspace
-                    }
+                    switchToTab(.workspace)
                 } label: {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .workspace,
-                            color: isWork ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isWorkActive ? Self.pixelThemeColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if isWork {
+                        if activeLabelTab == .workspace {
                             PixelText(
                                 text: "WORK",
                                 color: Self.pixelThemeColor,
@@ -1960,11 +1982,11 @@ private struct HeaderNavigationMenuTabs: View {
                             ))
                         }
                     }
-                    .padding(.horizontal, isWork ? 7 : 5)
+                    .padding(.horizontal, isWorkActive ? 7 : 5)
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isWork ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isWorkActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -1972,19 +1994,17 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC PIXEL TAB
-                let isMusic = expandedTab == .music
+                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
                 Button {
-                    withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
-                        expandedTab = .music
-                    }
+                    switchToTab(.music)
                 } label: {
                     HStack(spacing: 4) {
                         PixelIcon(
                             glyph: .music,
-                            color: isMusic ? Self.pixelThemeColor : Self.inactiveColor,
+                            color: isMusicActive ? Self.pixelThemeColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if isMusic {
+                        if activeLabelTab == .music {
                             PixelText(
                                 text: "MUSIC",
                                 color: Self.pixelThemeColor,
@@ -1996,11 +2016,11 @@ private struct HeaderNavigationMenuTabs: View {
                             ))
                         }
                     }
-                    .padding(.horizontal, isMusic ? 7 : 5)
+                    .padding(.horizontal, isMusicActive ? 7 : 5)
                     .frame(height: 18)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isMusic ? Self.pixelThemeColor.opacity(0.18) : .clear)
+                            .fill(isMusicActive ? Self.pixelThemeColor.opacity(0.18) : .clear)
                     )
                     .contentShape(Rectangle())
                 }
@@ -2008,6 +2028,14 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
+            .onAppear {
+                activeLabelTab = expandedTab
+            }
+            .onChange(of: expandedTab) { newTab in
+                if activeLabelTab != newTab && !isTransitioning {
+                    activeLabelTab = newTab
+                }
+            }
         }
     }
 }
