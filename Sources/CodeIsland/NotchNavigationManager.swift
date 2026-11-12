@@ -48,13 +48,12 @@ final class NotchNavigationManager {
 
         // On macOS:
         // Swiping fingers left to navigate forward:
-        // With natural scrolling (isDirectionInvertedFromDevice == true), deltaX is negative.
-        // Inverting raw delta makes it positive (forward = +1).
-        // With natural scrolling off, deltaX is used directly.
+        // With natural scrolling (isDirectionInvertedFromDevice == true), deltaX is positive.
+        // With natural scrolling off, deltaX is inverted to match forward navigation.
         let rawDelta: CGFloat = event.hasPreciseScrollingDeltas
             ? deltaX
             : (deltaX > 0 ? 15.0 : -15.0)
-        let effectiveDelta = event.isDirectionInvertedFromDevice ? -rawDelta : rawDelta
+        let effectiveDelta = event.isDirectionInvertedFromDevice ? rawDelta : -rawDelta
 
         accumulatedDeltaX += effectiveDelta
 

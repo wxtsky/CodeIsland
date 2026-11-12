@@ -240,7 +240,16 @@ final class AppState {
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
     /// General expanded surface tab selection (.agents = 0, .workspace = 1, .music = 2)
-    var expandedTab: ExpandedContentTab = .agents
+    @ObservationIgnored var tabSlideDirection: TabSlideDirection = .toLeft
+    var expandedTab: ExpandedContentTab = .agents {
+        willSet {
+            if newValue.rawValue > expandedTab.rawValue {
+                tabSlideDirection = .toLeft
+            } else if newValue.rawValue < expandedTab.rawValue {
+                tabSlideDirection = .toRight
+            }
+        }
+    }
     /// Whether the active space is fullscreen — undocks the notch into a Machined Floating Deck
     var isFullscreenMode: Bool = false
     var surface: IslandSurface = .collapsed {

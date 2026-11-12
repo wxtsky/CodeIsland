@@ -170,36 +170,21 @@ struct NotchPanelView: View {
     /// Measured width of the collapsed right wing (0 until first laid out).
     @State private var rightWingWidth: CGFloat = 0
     @State private var isHoveringRightWing = false
-    @State private var slideDirection: TabSlideDirection = .toLeft
 
     private var expandedTabBinding: Binding<ExpandedContentTab> {
         Binding(
             get: { appState.expandedTab },
-            set: { newTab in
-                if newTab.rawValue > appState.expandedTab.rawValue {
-                    slideDirection = .toLeft
-                } else if newTab.rawValue < appState.expandedTab.rawValue {
-                    slideDirection = .toRight
-                }
-                appState.expandedTab = newTab
-            }
+            set: { appState.expandedTab = $0 }
         )
     }
 
     private var expandedTab: ExpandedContentTab {
         get { appState.expandedTab }
-        nonmutating set {
-            if newValue.rawValue > appState.expandedTab.rawValue {
-                slideDirection = .toLeft
-            } else if newValue.rawValue < appState.expandedTab.rawValue {
-                slideDirection = .toRight
-            }
-            appState.expandedTab = newValue
-        }
+        nonmutating set { appState.expandedTab = newValue }
     }
 
     private var tabContentTransition: AnyTransition {
-        let isToLeft = slideDirection == .toLeft
+        let isToLeft = appState.tabSlideDirection == .toLeft
         return .asymmetric(
             insertion: .move(edge: isToLeft ? .trailing : .leading).combined(with: .opacity),
             removal: .move(edge: isToLeft ? .leading : .trailing).combined(with: .opacity)
@@ -916,12 +901,7 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onChange(of: appState.expandedTab) { oldTab, newTab in
-                if newTab.rawValue > oldTab.rawValue {
-                    slideDirection = .toLeft
-                } else if newTab.rawValue < oldTab.rawValue {
-                    slideDirection = .toRight
-                }
+            .onChange(of: appState.expandedTab) { _, newTab in
                 if newTab == .workspace {
                     workspaceManager.resolveAndRefreshWorkspace(appState: appState)
                 }
