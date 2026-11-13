@@ -171,6 +171,8 @@ struct NotchPanelView: View {
     /// Measured width of the collapsed right wing (0 until first laid out).
     @State private var rightWingWidth: CGFloat = 0
     @State private var isHoveringRightWing = false
+    @State private var musicAutoCollapseTimer: Timer?
+    @State private var musicDeferCollapseOnMouseLeave = false
 
     private var expandedTabBinding: Binding<ExpandedContentTab> {
         Binding(
@@ -218,14 +220,11 @@ struct NotchPanelView: View {
     }
     /// Whether the bar content should be visible (respects hideWhenNoSession)
     private var showBar: Bool {
-        if nowPlaying.isPlaying { return true }
+        if nowPlaying.isPlaying || nowPlaying.showToast || prayerManager.showMiniPeekBanner { return true }
         return isActive && !(hideWhenNoSession && appState.activeSessionCount == 0)
     }
     private var shouldShowExpanded: Bool {
-        if appState.surface.isExpanded { return true }
-        if nowPlaying.showToast && !showCompactLyrics { return showBar }
-        if prayerManager.showMiniPeekBanner { return showBar }
-        return false
+        appState.surface.isExpanded
     }
     /// Prehover acknowledgement is only rendered on the collapsed active bar —
     /// once the surface expands (from hover or any other path) it disappears.
@@ -249,7 +248,32 @@ struct NotchPanelView: View {
     }
 
     private var isToastOnly: Bool {
-        (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded
+        prayerManager.showMiniPeekBanner && !appState.surface.isExpanded
+    }
+
+    private func triggerMusicAutoPeek() {
+        guard !appState.surface.isPrompting else { return }
+        musicAutoCollapseTimer?.invalidate()
+        musicDeferCollapseOnMouseLeave = false
+
+        withAnimation(NotchAnimation.open) {
+            appState.transitionToTab(.music)
+            appState.surface = .sessionList
+        }
+
+        musicAutoCollapseTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+            Task { @MainActor in
+                if isHovered || appState.followUps.pointerOverIsland {
+                    musicDeferCollapseOnMouseLeave = true
+                } else {
+                    withAnimation(NotchAnimation.close) {
+                        if appState.surface == .sessionList && expandedTab == .music {
+                            appState.surface = .collapsed
+                        }
+                    }
+                }
+            }
+        }
     }
     private var isBarVisible: Bool {
         showBar || shouldShowExpanded || showIdleIndicator || isToastOnly
@@ -565,7 +589,7 @@ struct NotchPanelView: View {
                 }
 
                 // Below-notch expanded content
-                if shouldShowExpanded || sys.showChargingBanner {
+                if shouldShowExpanded || isToastOnly || sys.showChargingBanner {
                     if sys.showChargingBanner && !appState.surface.isExpanded {
                         // MagSafe Dynamic Island Charging Notification
                         MagSafeChargingBanner(batteryLevel: sys.metrics.batteryLevel)
@@ -578,18 +602,6 @@ struct NotchPanelView: View {
                         PrayerMiniPeekBannerView(manager: prayerManager) {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 appState.transitionToTab(.prayer)
-                                appState.surface = .sessionList
-                            }
-                        }
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .move(edge: .top).combined(with: .opacity)
-                        ))
-                    } else if nowPlaying.showToast && !appState.surface.isExpanded {
-                        // MINI PEEK BANNER: Buka tipis-tipis saat lagu berganti / play
-                        CyberMusicMiniPeekBanner(nowPlaying: nowPlaying) {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                appState.transitionToTab(.music)
                                 appState.surface = .sessionList
                             }
                         }
@@ -764,18 +776,18 @@ struct NotchPanelView: View {
                 displayedToolStatus = showToolStatus
                 prayerManager.appState = appState
             }
-            .onChange(of: nowPlaying.title) { _, newTitle in
-                if !newTitle.isEmpty && nowPlaying.isPlaying && expandedTab == .music {
-                    appState.transitionToTab(.music)
-                }
-            }
-            .onChange(of: nowPlaying.isPlaying) { _, isPlaying in
-                if isPlaying && expandedTab == .music {
-                    appState.transitionToTab(.music)
+            .onChange(of: nowPlaying.title) { oldTitle, newTitle in
+                if !newTitle.isEmpty && newTitle != oldTitle && nowPlaying.isPlaying {
+                    triggerMusicAutoPeek()
                 }
             }
             .onChange(of: nowPlaying.showToast) { _, isToast in
-                if isToast {
+                if isToast && nowPlaying.isPlaying && !nowPlaying.title.isEmpty {
+                    triggerMusicAutoPeek()
+                }
+            }
+            .onChange(of: nowPlaying.isPlaying) { _, isPlaying in
+                if isPlaying && expandedTab == .music && appState.surface.isExpanded {
                     appState.transitionToTab(.music)
                 }
             }
@@ -865,7 +877,23 @@ struct NotchPanelView: View {
                 }
 
                 isHovered = hovering
+                if !hovering && musicDeferCollapseOnMouseLeave {
+                    musicDeferCollapseOnMouseLeave = false
+                    musicAutoCollapseTimer?.invalidate()
+                    musicAutoCollapseTimer = nil
+                    withAnimation(NotchAnimation.close) {
+                        if appState.surface == .sessionList && expandedTab == .music {
+                            appState.surface = .collapsed
+                        }
+                    }
+                    return
+                }
                 if hovering {
+                    if musicAutoCollapseTimer != nil {
+                        musicAutoCollapseTimer?.invalidate()
+                        musicAutoCollapseTimer = nil
+                        musicDeferCollapseOnMouseLeave = true
+                    }
                     // Immediate lightweight acknowledgement; a quick pass-through
                     // only ever plays this first stage and reverses.
                     withAnimation(NotchAnimation.hoverPrehover) {
@@ -961,6 +989,11 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.expandedTab) { _, newTab in
+                if newTab != .music {
+                    musicAutoCollapseTimer?.invalidate()
+                    musicAutoCollapseTimer = nil
+                    musicDeferCollapseOnMouseLeave = false
+                }
                 if newTab == .workspace {
                     workspaceManager.resolveAndRefreshWorkspace(appState: appState)
                 }
