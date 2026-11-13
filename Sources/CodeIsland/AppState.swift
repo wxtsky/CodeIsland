@@ -250,22 +250,34 @@ final class AppState {
                 tabSlideDirection = .toRight
             }
         }
+        didSet {
+            if !isTabTransitioning {
+                activeTabLabel = expandedTab
+            }
+        }
     }
     var activeTabLabel: ExpandedContentTab? = .agents
     var isTabTransitioning: Bool = false
 
     func transitionToTab(_ target: ExpandedContentTab) {
-        guard target != expandedTab else { return }
+        guard target != expandedTab else {
+            if activeTabLabel != target {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    activeTabLabel = target
+                }
+            }
+            return
+        }
         guard !isTabTransitioning else { return }
         isTabTransitioning = true
 
         // Phase 1: Tutup dulu (current open tab text collapses into its icon)
-        withAnimation(.easeIn(duration: 0.12)) {
+        withAnimation(.easeIn(duration: 0.10)) {
             activeTabLabel = nil
         }
 
         // Phase 2: Setelah itu baru buka ke kanan (expand target tab text & switch content)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             if target == .workspace {
                 WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: self)
             }

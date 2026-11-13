@@ -532,10 +532,12 @@ struct NotchPanelView: View {
                         hovered: idleHovered,
                         onExpand: {
                             withAnimation(NotchAnimation.open) {
-                                if PrayerTimeManager.shared.isEnabled {
-                                    expandedTab = .prayer
+                                if prayerManager.isPrayerPrioritized {
+                                    appState.transitionToTab(.prayer)
                                 } else if nowPlaying.isPlaying {
-                                    expandedTab = .music
+                                    appState.transitionToTab(.music)
+                                } else {
+                                    appState.transitionToTab(.agents)
                                 }
                                 appState.surface = .sessionList
                             }
@@ -560,7 +562,7 @@ struct NotchPanelView: View {
                         // PRAYER MINI PEEK BANNER: Buka tipis saat T-10m & saat masuk waktu salat
                         PrayerMiniPeekBannerView(manager: prayerManager) {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                expandedTab = .prayer
+                                appState.transitionToTab(.prayer)
                                 appState.surface = .sessionList
                             }
                         }
@@ -572,7 +574,7 @@ struct NotchPanelView: View {
                         // MINI PEEK BANNER: Buka tipis-tipis saat lagu berganti / play
                         CyberMusicMiniPeekBanner(nowPlaying: nowPlaying) {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                expandedTab = .music
+                                appState.transitionToTab(.music)
                                 appState.surface = .sessionList
                             }
                         }
@@ -748,24 +750,18 @@ struct NotchPanelView: View {
                 prayerManager.appState = appState
             }
             .onChange(of: nowPlaying.title) { _, newTitle in
-                if !newTitle.isEmpty && nowPlaying.isPlaying {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
+                if !newTitle.isEmpty && nowPlaying.isPlaying && expandedTab == .music {
+                    appState.transitionToTab(.music)
                 }
             }
             .onChange(of: nowPlaying.isPlaying) { _, isPlaying in
-                if isPlaying {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
+                if isPlaying && expandedTab == .music {
+                    appState.transitionToTab(.music)
                 }
             }
             .onChange(of: nowPlaying.showToast) { _, isToast in
                 if isToast {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
+                    appState.transitionToTab(.music)
                 }
             }
             .onChange(of: appState.activeSessionId) { _, sid in
@@ -1894,14 +1890,15 @@ private struct HeaderNavigationMenuTabs: View {
             // Modern Clean SF Symbols - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
                 // AGENTS TAB
-                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
+                let isAgentsActive = expandedTab == .agents
+                let showAgentsLabel = isAgentsActive && (activeLabelTab == .agents || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.agents)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "cpu.fill")
                             .font(.system(size: 11, weight: .semibold))
-                        if activeLabelTab == .agents {
+                        if showAgentsLabel {
                             Text("Agents")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1924,14 +1921,15 @@ private struct HeaderNavigationMenuTabs: View {
                 .help("AI Agents")
 
                 // WORKSPACE TAB
-                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
+                let isWorkActive = expandedTab == .workspace
+                let showWorkLabel = isWorkActive && (activeLabelTab == .workspace || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.workspace)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "folder.fill")
                             .font(.system(size: 11, weight: .semibold))
-                        if activeLabelTab == .workspace {
+                        if showWorkLabel {
                             Text("Workspace")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1954,14 +1952,15 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC TAB
-                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
+                let isMusicActive = expandedTab == .music
+                let showMusicLabel = isMusicActive && (activeLabelTab == .music || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.music)
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "music.note")
                             .font(.system(size: 11, weight: .semibold))
-                        if activeLabelTab == .music {
+                        if showMusicLabel {
                             Text("Music")
                                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
@@ -1985,14 +1984,15 @@ private struct HeaderNavigationMenuTabs: View {
 
                 // PRAYER TAB
                 if PrayerTimeManager.shared.isEnabled {
-                    let isPrayerActive = (activeLabelTab ?? expandedTab) == .prayer
+                    let isPrayerActive = expandedTab == .prayer
+                    let showPrayerLabel = isPrayerActive && (activeLabelTab == .prayer || !appState.isTabTransitioning)
                     Button {
                         switchToTab(.prayer)
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "moon.stars.fill")
                                 .font(.system(size: 11, weight: .semibold))
-                            if activeLabelTab == .prayer {
+                            if showPrayerLabel {
                                 Text("Prayer")
                                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                                     .lineLimit(1)
@@ -2020,7 +2020,8 @@ private struct HeaderNavigationMenuTabs: View {
             // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
                 // AGENTS PIXEL TAB
-                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
+                let isAgentsActive = expandedTab == .agents
+                let showAgentsLabel = isAgentsActive && (activeLabelTab == .agents || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.agents)
                 } label: {
@@ -2030,7 +2031,7 @@ private struct HeaderNavigationMenuTabs: View {
                             color: isAgentsActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if activeLabelTab == .agents {
+                        if showAgentsLabel {
                             PixelText(
                                 text: "AGENTS",
                                 color: activeAccentColor,
@@ -2054,7 +2055,8 @@ private struct HeaderNavigationMenuTabs: View {
                 .help("AI Agents")
 
                 // WORKSPACE PIXEL TAB
-                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
+                let isWorkActive = expandedTab == .workspace
+                let showWorkLabel = isWorkActive && (activeLabelTab == .workspace || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.workspace)
                 } label: {
@@ -2064,7 +2066,7 @@ private struct HeaderNavigationMenuTabs: View {
                             color: isWorkActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if activeLabelTab == .workspace {
+                        if showWorkLabel {
                             PixelText(
                                 text: "WORK",
                                 color: activeAccentColor,
@@ -2088,7 +2090,8 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
 
                 // MUSIC PIXEL TAB
-                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
+                let isMusicActive = expandedTab == .music
+                let showMusicLabel = isMusicActive && (activeLabelTab == .music || !appState.isTabTransitioning)
                 Button {
                     switchToTab(.music)
                 } label: {
@@ -2098,7 +2101,7 @@ private struct HeaderNavigationMenuTabs: View {
                             color: isMusicActive ? activeAccentColor : Self.inactiveColor,
                             pixelSize: 1.35
                         )
-                        if activeLabelTab == .music {
+                        if showMusicLabel {
                             PixelText(
                                 text: "MUSIC",
                                 color: activeAccentColor,
@@ -2123,7 +2126,8 @@ private struct HeaderNavigationMenuTabs: View {
 
                 // PRAYER PIXEL TAB
                 if PrayerTimeManager.shared.isEnabled {
-                    let isPrayerActive = (activeLabelTab ?? expandedTab) == .prayer
+                    let isPrayerActive = expandedTab == .prayer
+                    let showPrayerLabel = isPrayerActive && (activeLabelTab == .prayer || !appState.isTabTransitioning)
                     Button {
                         switchToTab(.prayer)
                     } label: {
@@ -2133,7 +2137,7 @@ private struct HeaderNavigationMenuTabs: View {
                                 color: isPrayerActive ? activeAccentColor : Self.inactiveColor,
                                 pixelSize: 1.35
                             )
-                            if activeLabelTab == .prayer {
+                            if showPrayerLabel {
                                 PixelText(
                                     text: "PRAY",
                                     color: activeAccentColor,
