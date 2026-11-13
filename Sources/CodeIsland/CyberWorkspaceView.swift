@@ -161,10 +161,6 @@ struct ModernActiveAgentPill: View {
                         .foregroundStyle(ModernPalette.textSecondary)
                         .lineLimit(1)
                 }
-
-                Circle()
-                    .fill(session.status == .idle ? ModernPalette.sage : Color.white.opacity(0.70))
-                    .frame(width: 4, height: 4)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 2.5)
@@ -805,12 +801,21 @@ struct PixelRetroWorkspaceView: View {
                         // Active Agent Pill
                         if let session = activeSession {
                             HStack(spacing: 4) {
-                                Rectangle()
-                                    .fill(session.status == .idle ? RetroPalette.green : Color.white.opacity(0.70))
-                                    .frame(width: 4, height: 4)
+                                if let icon = cliIcon(source: session.source, size: 10) {
+                                    Image(nsImage: icon)
+                                        .resizable()
+                                        .frame(width: 10, height: 10)
+                                }
                                 Text(session.source.uppercased())
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     .foregroundStyle(Color.white.opacity(0.90))
+
+                                if let model = session.modelLabel ?? session.model, !model.isEmpty {
+                                    Text("• \(model)")
+                                        .font(.system(size: 8.5, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.60))
+                                        .lineLimit(1)
+                                }
                             }
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2.5)
