@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import CodeIslandCore
 
-// MARK: - Modern Minimalist Palette (Obsidian / Zinc)
+// MARK: - 1. Modern Minimalist Palette (Obsidian / Zinc)
 
 private enum ModernPalette {
     static let base = Color(red: 0.055, green: 0.065, blue: 0.08)       // #0E1014 deep zinc
@@ -20,23 +20,26 @@ private enum ModernPalette {
     static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // Modified / Uncommitted
 }
 
-// MARK: - Pixel Retro Palette (Amber Phosphor CRT)
-// Amber phosphor: warm, aged, distinctly terminal — not radioactive green
-// Different from Modern in every dimension: hue family, information density, typography rhythm
+// MARK: - 2. Pixel Retro Palette (Teenage Engineering / Analogue Pocket Sleek Cyber)
+// High-contrast, ultra-crisp monochrome slate with electric mint / ice cyan precision accents.
+// No muddy brown CRT amber, no blurry neon glow. Pure 1-bit / 2-bit engineering craft.
 
-private enum RetroPalette {
-    static let base = Color(red: 0.04, green: 0.035, blue: 0.02)        // #0A0908 amber CRT black
-    static let scanline = Color(red: 0.12, green: 0.10, blue: 0.06)     // subtle scanline row bg
+private enum PixelDeckPalette {
+    static let base = Color(red: 0.035, green: 0.04, blue: 0.055)       // #090A0E deep OLED obsidian
+    static let surface = Color(red: 0.07, green: 0.085, blue: 0.115)    // #12161D modular slot fill
+    static let surfaceHover = Color(red: 0.10, green: 0.12, blue: 0.16) // #1A1F29 active hover
+    static let border = Color(red: 0.16, green: 0.20, blue: 0.27)       // #293345 1px crisp border
+    static let borderMuted = Color(red: 0.11, green: 0.13, blue: 0.18)  // #1C212E slot divider
 
-    // Amber phosphor brightness levels
-    static let hi   = Color(red: 1.00, green: 0.72, blue: 0.20)         // #FFB833 — bright amber (HEAD, active)
-    static let mid  = Color(red: 0.80, green: 0.55, blue: 0.14)         // #CC8C23 — mid phosphor
-    static let dim  = Color(red: 0.55, green: 0.38, blue: 0.09)         // #8C6017 — dim phosphor
-    static let border = Color(red: 1.00, green: 0.72, blue: 0.20).opacity(0.22)
+    // Typography
+    static let textStark = Color(red: 0.97, green: 0.98, blue: 1.0)     // #F8FAFC pure crisp white
+    static let textSlate = Color(red: 0.58, green: 0.64, blue: 0.72)     // #94A3B8 secondary data
+    static let textDim = Color(red: 0.35, green: 0.40, blue: 0.48)       // #59667A muted labels
 
-    // Status
-    static let ok   = Color(red: 1.00, green: 0.72, blue: 0.20)         // bright amber — clean
-    static let warn = Color(red: 1.00, green: 0.44, blue: 0.14)         // #FF7024 — modified/dirty
+    // Precision Accents
+    static let mint = Color(red: 0.0, green: 1.0, blue: 0.64)           // #00FFA3 electric cyber mint
+    static let ice = Color(red: 0.22, green: 0.74, blue: 0.97)          // #38BDF8 cool ice cyan
+    static let coral = Color(red: 1.0, green: 0.35, blue: 0.38)         // #FF5961 modified / warning
 }
 
 // MARK: - Modern Git Graph Item
@@ -521,7 +524,7 @@ struct ModernWorkspaceView: View {
         .background(
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 9).fill(ModernPalette.base)
-                // 1px status rail — craft-floor: no colored border above 1px on list items
+                // 1px status rail
                 Rectangle().fill(railColor).frame(width: 1)
             }
             .clipShape(RoundedRectangle(cornerRadius: 9))
@@ -535,84 +538,108 @@ struct ModernWorkspaceView: View {
     }
 }
 
-// MARK: - 2. Pixel Retro 8-Bit Workspace View
-// Design: Amber phosphor CRT terminal.
-// Information architecture is fundamentally different from Modern:
-//   - Header: 2-line scanline STATUS STRIP (not a breadcrumb — density over breadth)
-//   - Git log: terminal `git log --oneline` with gutter line numbers, no vertical spine
-//   - Action bar: prompt-line format `>_ commit message [commit] [push]`
-// Rules: ALL Rectangle() — zero RoundedRectangle, zero Circle
+// MARK: - 2. Pixel Retro Hardware Deck View
+// Inspired by Teenage Engineering OP-1 / Analogue Pocket / Nothing OS.
+// Sharp 1-bit rectangular geometry with high-contrast obsidian & electric cyber mint accents.
+// Architecture: Modular Hardware Deck (Slot Header -> Precision Commit Track -> Tactile Command Bar).
 
-// MARK: Retro Terminal Log Row
+// MARK: Pixel Commit Track Item
 
-private struct RetroLogRow: View {
-    let lineNum: Int
+private struct PixelCommitTrackItemView: View {
     let commit: GitCommitItem
     let isLatest: Bool
     @State private var isHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
-            // Line number gutter — right-aligned, fixed width
-            Text(String(format: "%02d", lineNum))
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(isHovered ? RetroPalette.mid : RetroPalette.dim)
-                .frame(width: 22, alignment: .trailing)
-                .padding(.trailing, 8)
+        HStack(alignment: .center, spacing: 8) {
+            // Precision Pixel Stepper Node
+            ZStack {
+                if isLatest {
+                    // Active HEAD Node: Sharp 7x7 outer square with electric mint center
+                    Rectangle()
+                        .stroke(PixelDeckPalette.mint, lineWidth: 1.2)
+                        .frame(width: 8, height: 8)
+                    Rectangle()
+                        .fill(PixelDeckPalette.mint)
+                        .frame(width: 4, height: 4)
+                } else {
+                    // Previous commits: subtle hollow 1-bit pixel square
+                    Rectangle()
+                        .stroke(PixelDeckPalette.border, lineWidth: 1)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .frame(width: 10, height: 10)
 
-            // Hash — sharp, highlighted for HEAD
+            // Sharp Hash Pill
             Text(commit.hash)
                 .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(isLatest ? RetroPalette.hi : RetroPalette.mid)
-                .padding(.horizontal, 4)
+                .foregroundStyle(isLatest ? PixelDeckPalette.mint : PixelDeckPalette.textSlate)
+                .padding(.horizontal, 4.5)
                 .padding(.vertical, 1.5)
-                .background(Rectangle().fill(isLatest ? RetroPalette.hi.opacity(0.12) : Color.clear))
-                .overlay(Rectangle().stroke(isLatest ? RetroPalette.hi.opacity(0.35) : Color.clear, lineWidth: 0.75))
+                .background(Rectangle().fill(isLatest ? PixelDeckPalette.mint.opacity(0.12) : PixelDeckPalette.surface))
+                .overlay(Rectangle().stroke(isLatest ? PixelDeckPalette.mint.opacity(0.40) : PixelDeckPalette.border, lineWidth: 0.75))
 
-            // Ref badge
+            // Branch / Tag Badge (if exists)
             if !commit.refs.isEmpty {
                 Text(commit.refs)
-                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(RetroPalette.hi)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Rectangle().fill(RetroPalette.hi.opacity(0.10)))
-                    .overlay(Rectangle().stroke(RetroPalette.hi.opacity(0.40), lineWidth: 0.75))
-                    .padding(.leading, 4)
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(PixelDeckPalette.ice)
+                    .padding(.horizontal, 4.5)
+                    .padding(.vertical, 1.5)
+                    .background(Rectangle().fill(PixelDeckPalette.ice.opacity(0.12)))
+                    .overlay(Rectangle().stroke(PixelDeckPalette.ice.opacity(0.45), lineWidth: 0.75))
                     .lineLimit(1)
             }
 
-            // Message — takes remaining space
+            // Commit Message
             Text(commit.message)
-                .font(.system(size: 10.5, weight: isLatest ? .medium : .regular, design: .monospaced))
-                .foregroundStyle(isLatest ? RetroPalette.hi : RetroPalette.mid)
+                .font(.system(size: 11, weight: isLatest ? .medium : .regular, design: .monospaced))
+                .foregroundStyle(isLatest ? PixelDeckPalette.textStark : PixelDeckPalette.textSlate)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .padding(.leading, 7)
 
             Spacer(minLength: 4)
 
-            // Author + time — right side, dim
-            Text("\(commit.author)  \(commit.timeAgo)")
-                .font(.system(size: 8.5, design: .monospaced))
-                .foregroundStyle(RetroPalette.dim)
-                .lineLimit(1)
+            // Author and Relative Time
+            HStack(spacing: 4) {
+                Text(commit.author)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(PixelDeckPalette.textDim)
+
+                Text("· \(commit.timeAgo)")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(PixelDeckPalette.textDim)
+            }
+            .lineLimit(1)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 3.5)
-        .background(isHovered ? RetroPalette.scanline : Color.clear)
+        .padding(.vertical, 4)
+        .background(
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(isHovered ? PixelDeckPalette.surfaceHover : Color.clear)
+                if isHovered {
+                    Rectangle()
+                        .fill(PixelDeckPalette.mint)
+                        .frame(width: 2)
+                }
+            }
+        )
+        .overlay(
+            Rectangle()
+                .stroke(isHovered ? PixelDeckPalette.border : Color.clear, lineWidth: 0.75)
+        )
         .onHover { isHovered = $0 }
         .help("\(commit.hash) · \(commit.author)\n\(commit.message)")
     }
 }
 
-// MARK: Retro Two-Line Status Strip
+// MARK: Pixel Modular Deck Header
 
-private struct RetroStatusStrip: View {
-    let manager: WorkspaceMonitorManager
-    let appState: AppState
-    let onSwitchFolder: () -> Void
-    let onRefresh: () -> Void
+private struct PixelDeckHeaderView: View {
+    @ObservedObject var manager: WorkspaceMonitorManager
+    var appState: AppState
 
     @State private var switchHovered = false
     @State private var refreshHovered = false
@@ -622,138 +649,159 @@ private struct RetroStatusStrip: View {
         return appState.sessions.values.first { $0.cwd == manager.currentCwd }
     }
 
-    private var statusText: String {
-        if manager.isCommitting                    { return "PUSHING" }
-        else if !manager.changedFiles.isEmpty      { return "MODIFIED \(manager.changedFiles.count)" }
-        else                                       { return "CLEAN" }
-    }
-
-    private var statusColor: Color {
-        if manager.isCommitting                    { return RetroPalette.mid }
-        else if !manager.changedFiles.isEmpty      { return RetroPalette.warn }
-        else                                       { return RetroPalette.ok }
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // ── ROW 1: project + branch + refresh ───────────────────
-            HStack(spacing: 0) {
-                Button(action: onSwitchFolder) {
-                    HStack(spacing: 4) {
-                        Text(manager.projectName.isEmpty ? "WORKSPACE" : manager.projectName.uppercased())
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(switchHovered ? RetroPalette.hi : RetroPalette.mid)
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(switchHovered ? RetroPalette.hi : RetroPalette.dim)
-                    }
-                }
-                .buttonStyle(.plain)
-                .onHover { switchHovered = $0 }
-                .help("Switch workspace folder")
+        HStack(alignment: .center, spacing: 6) {
+            // Workspace Identity Chip
+            Button(action: {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                manager.chooseWorkspaceFolder()
+            }) {
+                HStack(spacing: 5) {
+                    Rectangle()
+                        .fill(PixelDeckPalette.mint)
+                        .frame(width: 4, height: 4)
 
-                Text("  /  ")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(RetroPalette.dim)
-
-                HStack(spacing: 3) {
-                    Text(manager.branch)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(RetroPalette.mid)
+                    Text(manager.projectName.isEmpty ? "WORKSPACE" : manager.projectName.uppercased())
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(switchHovered ? Color.white : PixelDeckPalette.textStark)
                         .lineLimit(1)
 
-                    if manager.aheadCount > 0 {
-                        Text("↑\(manager.aheadCount)")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(RetroPalette.ok)
-                    }
-                    if manager.behindCount > 0 {
-                        Text("↓\(manager.behindCount)")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(RetroPalette.warn)
-                    }
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(switchHovered ? PixelDeckPalette.mint : PixelDeckPalette.textDim)
                 }
-
-                Spacer(minLength: 6)
-
-                Button(action: onRefresh) {
-                    Group {
-                        if manager.isRefreshing {
-                            ProgressView()
-                                .scaleEffect(0.32)
-                                .frame(width: 9, height: 9)
-                        } else {
-                            Text("R")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        }
-                    }
-                    .foregroundStyle(refreshHovered ? RetroPalette.hi : RetroPalette.dim)
-                    .frame(width: 16, height: 16)
-                    .background(Rectangle().fill(refreshHovered ? RetroPalette.hi.opacity(0.12) : Color.clear))
-                }
-                .buttonStyle(.plain)
-                .onHover { refreshHovered = $0 }
-                .help("Reload git status")
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3.5)
+                .background(Rectangle().fill(PixelDeckPalette.surface))
+                .overlay(Rectangle().stroke(switchHovered ? PixelDeckPalette.mint.opacity(0.6) : PixelDeckPalette.border, lineWidth: 1))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
+            .onHover { switchHovered = $0 }
+            .help("Switch workspace folder")
 
-            Rectangle().fill(RetroPalette.border).frame(height: 1)
+            // Branch & Sync Chip
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(PixelDeckPalette.textSlate)
 
-            // ── ROW 2: status + active agent + cwd ──────────────────
-            HStack(spacing: 0) {
-                Text(statusText)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(statusColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-
-                Text("|")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(RetroPalette.dim)
-
-                if let session = activeSession {
-                    let name = session.mascotSource.isEmpty ? session.source.uppercased() : session.mascotSource.uppercased()
-                    HStack(spacing: 4) {
-                        if let icon = cliIcon(source: session.source, size: 10) {
-                            Image(nsImage: icon)
-                                .resizable()
-                                .frame(width: 10, height: 10)
-                        }
-                        Text(name)
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(RetroPalette.mid)
-
-                        if let model = session.modelLabel ?? session.model, !model.isEmpty {
-                            Text(model)
-                                .font(.system(size: 8.5, design: .monospaced))
-                                .foregroundStyle(RetroPalette.dim)
-                                .lineLimit(1)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                } else {
-                    Text("  NO AGENT")
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(RetroPalette.dim)
-                        .padding(.horizontal, 8)
-                }
-
-                Spacer(minLength: 0)
-
-                Text(manager.currentCwd)
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(RetroPalette.dim)
+                Text(manager.branch)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(PixelDeckPalette.textStark)
                     .lineLimit(1)
-                    .truncationMode(.head)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
+
+                if manager.aheadCount > 0 || manager.behindCount > 0 {
+                    HStack(spacing: 2) {
+                        if manager.aheadCount > 0 {
+                            Text("↑\(manager.aheadCount)")
+                                .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                .foregroundStyle(PixelDeckPalette.mint)
+                        }
+                        if manager.behindCount > 0 {
+                            Text("↓\(manager.behindCount)")
+                                .font(.system(size: 8.5, weight: .black, design: .monospaced))
+                                .foregroundStyle(PixelDeckPalette.coral)
+                        }
+                    }
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 1)
+                    .background(Rectangle().fill(Color.black.opacity(0.4)))
+                }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3.5)
+            .background(Rectangle().fill(PixelDeckPalette.surface))
+            .overlay(Rectangle().stroke(PixelDeckPalette.border, lineWidth: 1))
+
+            // State Badge (Clean vs Modified)
+            if manager.changedFiles.isEmpty {
+                HStack(spacing: 4) {
+                    Rectangle()
+                        .fill(PixelDeckPalette.mint)
+                        .frame(width: 4, height: 4)
+                    Text("CLEAN")
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(PixelDeckPalette.mint)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3.5)
+                .background(Rectangle().fill(PixelDeckPalette.mint.opacity(0.08)))
+                .overlay(Rectangle().stroke(PixelDeckPalette.mint.opacity(0.35), lineWidth: 1))
+            } else {
+                HStack(spacing: 4) {
+                    Rectangle()
+                        .fill(PixelDeckPalette.coral)
+                        .frame(width: 4, height: 4)
+                    Text("\(manager.changedFiles.count) MODIFIED")
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(PixelDeckPalette.coral)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3.5)
+                .background(Rectangle().fill(PixelDeckPalette.coral.opacity(0.08)))
+                .overlay(Rectangle().stroke(PixelDeckPalette.coral.opacity(0.4), lineWidth: 1))
+            }
+
+            Spacer(minLength: 4)
+
+            // Active Agent Hardware Badge
+            if let session = activeSession {
+                HStack(spacing: 4.5) {
+                    if let icon = cliIcon(source: session.source, size: 9.5) {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 9.5, height: 9.5)
+                    }
+                    let name = session.mascotSource.isEmpty ? session.source.uppercased() : session.mascotSource.uppercased()
+                    Text(name)
+                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                        .foregroundStyle(PixelDeckPalette.textStark)
+
+                    if let model = session.modelLabel ?? session.model, !model.isEmpty {
+                        Text("· \(model)")
+                            .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(PixelDeckPalette.textSlate)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Rectangle().fill(PixelDeckPalette.surface))
+                .overlay(Rectangle().stroke(PixelDeckPalette.border, lineWidth: 1))
+            }
+
+            // Tactile Refresh Button
+            Button(action: {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                manager.refresh(force: true)
+            }) {
+                Group {
+                    if manager.isRefreshing {
+                        ProgressView()
+                            .scaleEffect(0.35)
+                            .frame(width: 10, height: 10)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 8.5, weight: .bold))
+                    }
+                }
+                .foregroundStyle(refreshHovered ? PixelDeckPalette.mint : PixelDeckPalette.textSlate)
+                .frame(width: 18, height: 18)
+                .background(Rectangle().fill(refreshHovered ? PixelDeckPalette.surfaceHover : PixelDeckPalette.surface))
+                .overlay(Rectangle().stroke(refreshHovered ? PixelDeckPalette.mint.opacity(0.6) : PixelDeckPalette.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .onHover { refreshHovered = $0 }
+            .help("Refresh git status")
         }
-        .background(Rectangle().fill(RetroPalette.scanline))
-        .overlay(Rectangle().stroke(RetroPalette.border, lineWidth: 1))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(Rectangle().fill(PixelDeckPalette.base))
+        .overlay(Rectangle().stroke(PixelDeckPalette.borderMuted, lineWidth: 1))
     }
 }
+
+// MARK: - 2. Pixel Retro Hardware Deck Main View
 
 struct PixelRetroWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
@@ -767,30 +815,35 @@ struct PixelRetroWorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             if !manager.isGitRepo {
-                // ── NO GIT STATE ──────────────────────────────────────────
+                // Non-Git State
                 VStack(spacing: 10) {
-                    Text("NO GIT REPO")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(RetroPalette.warn)
+                    Text("NO GIT REPOSITORY")
+                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                        .foregroundStyle(PixelDeckPalette.coral)
 
                     Text(manager.currentCwd.isEmpty ? "NO WORKSPACE SELECTED" : manager.currentCwd)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(RetroPalette.dim)
+                        .foregroundStyle(PixelDeckPalette.textDim)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 24)
 
                     Button(action: {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                         manager.chooseWorkspaceFolder()
                     }) {
-                        Text(">_ SELECT WORKSPACE")
-                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(RetroPalette.hi)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4.5)
-                            .background(Rectangle().fill(Color.clear))
-                            .overlay(Rectangle().stroke(RetroPalette.mid, lineWidth: 1))
+                        HStack(spacing: 5) {
+                            Rectangle()
+                                .fill(PixelDeckPalette.mint)
+                                .frame(width: 4, height: 4)
+                            Text("SELECT WORKSPACE FOLDER")
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(PixelDeckPalette.textStark)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Rectangle().fill(PixelDeckPalette.surface))
+                        .overlay(Rectangle().stroke(PixelDeckPalette.mint.opacity(0.6), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
@@ -798,77 +851,52 @@ struct PixelRetroWorkspaceView: View {
                 .padding(.vertical, 12)
 
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: 6) {
 
-                    // ── TWO-LINE SCANLINE STATUS STRIP ───────────────────────
-                    RetroStatusStrip(
-                        manager: manager,
-                        appState: appState,
-                        onSwitchFolder: {
-                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                            manager.chooseWorkspaceFolder()
-                        },
-                        onRefresh: {
-                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                            manager.refresh(force: true)
-                        }
-                    )
+                    // ── 1. MODULAR HARDWARE DECK HEADER ────────────────────────
+                    PixelDeckHeaderView(manager: manager, appState: appState)
 
-                    // ── TERMINAL GIT LOG ─────────────────────────────────────
-                    // No vertical spine. Gutter line numbers are the navigational anchor.
-                    VStack(alignment: .leading, spacing: 0) {
+                    // ── 2. PRECISION GIT COMMIT TRACK ──────────────────────────
+                    VStack(alignment: .leading, spacing: 2) {
                         if manager.recentCommits.isEmpty {
-                            HStack(spacing: 8) {
-                                Text("00")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.dim)
-                                    .frame(width: 22, alignment: .trailing)
-                                Text("no commits recorded")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.dim)
+                            HStack(spacing: 6) {
+                                Rectangle()
+                                    .stroke(PixelDeckPalette.border, lineWidth: 1)
+                                    .frame(width: 6, height: 6)
+                                Text("No recent commits recorded")
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(PixelDeckPalette.textDim)
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
                             .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
                         } else {
                             ForEach(Array(manager.recentCommits.prefix(3).enumerated()), id: \.element.id) { index, commit in
-                                RetroLogRow(
-                                    lineNum: index + 1,
+                                PixelCommitTrackItemView(
                                     commit: commit,
                                     isLatest: index == 0
                                 )
-                                if index < min(2, manager.recentCommits.count - 1) {
-                                    Rectangle()
-                                        .fill(RetroPalette.border.opacity(0.5))
-                                        .frame(height: 1)
-                                        .padding(.leading, 30)
-                                }
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 2)
 
-                    Rectangle().fill(RetroPalette.border).frame(height: 1)
-
-                    // ── PROMPT ACTION BAR ────────────────────────────────────
-                    // Terminal prompt: `>_ [action] [input] [commit] [push]`
+                    // ── 3. TACTILE COMMAND CONSOLE BAR ─────────────────────────
                     if manager.changedFiles.isEmpty {
+                        // Clean Tree Console
                         HStack(spacing: 8) {
-                            Text(">_")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.ok)
-                                .padding(.leading, 10)
-
-                            Text("working tree clean")
-                                .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundStyle(RetroPalette.mid)
+                            Text(manager.currentCwd)
+                                .font(.system(size: 8.5, design: .monospaced))
+                                .foregroundStyle(PixelDeckPalette.textDim)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
 
                             Spacer(minLength: 0)
 
                             if let status = manager.commitStatusMessage {
                                 Text(status)
-                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.ok)
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(PixelDeckPalette.mint)
                                     .transition(.opacity)
                             }
 
@@ -876,95 +904,96 @@ struct PixelRetroWorkspaceView: View {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                 NSWorkspace.shared.open(URL(fileURLWithPath: manager.currentCwd))
                             }) {
-                                Text("open")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(openHovered ? RetroPalette.base : RetroPalette.mid)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(Rectangle().fill(openHovered ? RetroPalette.mid : Color.clear))
-                                    .overlay(Rectangle().stroke(RetroPalette.mid.opacity(0.6), lineWidth: 1))
+                                HStack(spacing: 4) {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 8))
+                                    Text("OPEN DIRECTORY")
+                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundStyle(openHovered ? Color.black : PixelDeckPalette.textStark)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Rectangle().fill(openHovered ? PixelDeckPalette.mint : PixelDeckPalette.surface))
+                                .overlay(Rectangle().stroke(openHovered ? PixelDeckPalette.mint : PixelDeckPalette.border, lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { openHovered = $0 }
-                            .padding(.trailing, 10)
                         }
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
 
                     } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(spacing: 0) {
-                                Text(">_")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.warn)
-                                    .padding(.leading, 10)
-                                    .padding(.trailing, 6)
-
+                        // Quick Action Hardware Controls
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 5) {
+                                // AI Chip Button
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                         manager.generateAICommitMessage()
                                     }
                                 }) {
-                                    Text("AI")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(aiHovered ? RetroPalette.base : RetroPalette.mid)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3.5)
-                                        .background(Rectangle().fill(aiHovered ? RetroPalette.mid : Color.clear))
-                                        .overlay(Rectangle().stroke(RetroPalette.mid.opacity(0.5), lineWidth: 1))
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 8, weight: .bold))
+                                        Text("AI")
+                                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                                    }
+                                    .foregroundStyle(aiHovered ? Color.black : PixelDeckPalette.mint)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(Rectangle().fill(aiHovered ? PixelDeckPalette.mint : PixelDeckPalette.mint.opacity(0.12)))
+                                    .overlay(Rectangle().stroke(PixelDeckPalette.mint.opacity(0.5), lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                                 .onHover { aiHovered = $0 }
                                 .help("Auto-generate conventional commit message")
-                                .padding(.trailing, 5)
 
+                                // Sharp Commit Input Field
                                 ZStack(alignment: .leading) {
                                     if manager.proposedCommitMessage.isEmpty {
-                                        Text("commit message...")
+                                        Text("Commit changes...")
                                             .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(RetroPalette.dim)
-                                            .padding(.horizontal, 6)
+                                            .foregroundStyle(PixelDeckPalette.textDim)
+                                            .padding(.horizontal, 7)
                                             .allowsHitTesting(false)
                                     }
                                     TextField("", text: $manager.proposedCommitMessage)
                                         .textFieldStyle(.plain)
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(RetroPalette.hi)
-                                        .padding(.horizontal, 6)
+                                        .foregroundStyle(PixelDeckPalette.textStark)
+                                        .padding(.horizontal, 7)
                                         .padding(.vertical, 4)
                                 }
-                                .background(
-                                    Rectangle()
-                                        .fill(Color.clear)
-                                        .overlay(Rectangle().stroke(RetroPalette.border, lineWidth: 0.75))
-                                )
-                                .padding(.trailing, 5)
+                                .background(Rectangle().fill(PixelDeckPalette.surface))
+                                .overlay(Rectangle().stroke(PixelDeckPalette.border, lineWidth: 1))
 
+                                // Solid High-Contrast Commit Button
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     manager.executeCommit(message: manager.proposedCommitMessage, push: false)
                                 }) {
-                                    Text(manager.isCommitting ? "..." : "commit")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    Text(manager.isCommitting ? "..." : "COMMIT")
+                                        .font(.system(size: 9, weight: .black, design: .monospaced))
                                         .foregroundStyle(
                                             manager.proposedCommitMessage.isEmpty
-                                                ? RetroPalette.dim
-                                                : (commitHovered ? RetroPalette.base : RetroPalette.hi)
+                                                ? PixelDeckPalette.textDim
+                                                : (commitHovered ? Color.white : Color.black)
                                         )
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3.5)
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 4.5)
                                         .background(
                                             Rectangle().fill(
                                                 manager.proposedCommitMessage.isEmpty
-                                                    ? Color.clear
-                                                    : (commitHovered ? RetroPalette.hi : Color.clear)
+                                                    ? PixelDeckPalette.surface
+                                                    : (commitHovered ? PixelDeckPalette.mint.opacity(0.85) : PixelDeckPalette.mint)
                                             )
                                         )
                                         .overlay(
                                             Rectangle().stroke(
                                                 manager.proposedCommitMessage.isEmpty
-                                                    ? RetroPalette.dim.opacity(0.4)
-                                                    : RetroPalette.hi.opacity(0.7),
+                                                    ? PixelDeckPalette.border
+                                                    : PixelDeckPalette.mint,
                                                 lineWidth: 1
                                             )
                                         )
@@ -972,53 +1001,53 @@ struct PixelRetroWorkspaceView: View {
                                 .buttonStyle(.plain)
                                 .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
                                 .onHover { commitHovered = $0 }
-                                .padding(.trailing, 4)
 
+                                // Sharp Push Button
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     manager.executeCommit(message: manager.proposedCommitMessage, push: true)
                                 }) {
-                                    HStack(spacing: 2) {
-                                        Text("push")
+                                    HStack(spacing: 3) {
+                                        Text("PUSH")
                                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                                         Image(systemName: "arrow.up")
-                                            .font(.system(size: 7, weight: .bold))
+                                            .font(.system(size: 7, weight: .black))
                                     }
-                                    .foregroundStyle(pushHovered ? RetroPalette.base : RetroPalette.mid)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3.5)
-                                    .background(Rectangle().fill(pushHovered ? RetroPalette.mid : Color.clear))
-                                    .overlay(Rectangle().stroke(RetroPalette.mid.opacity(0.5), lineWidth: 1))
+                                    .foregroundStyle(pushHovered ? PixelDeckPalette.mint : PixelDeckPalette.textSlate)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4.5)
+                                    .background(Rectangle().fill(pushHovered ? PixelDeckPalette.surfaceHover : PixelDeckPalette.surface))
+                                    .overlay(Rectangle().stroke(pushHovered ? PixelDeckPalette.mint.opacity(0.6) : PixelDeckPalette.border, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
                                 .onHover { pushHovered = $0 }
-                                .padding(.trailing, 10)
                             }
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 4)
 
                             if let status = manager.commitStatusMessage {
-                                HStack(spacing: 6) {
-                                    Text(">_")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(RetroPalette.ok)
-                                    Text(status)
-                                        .font(.system(size: 9, design: .monospaced))
-                                        .foregroundStyle(RetroPalette.ok)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.bottom, 4)
-                                .transition(.opacity)
+                                Text(status)
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(PixelDeckPalette.mint)
+                                    .padding(.horizontal, 6)
+                                    .transition(.opacity)
                             }
                         }
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
         }
         .background(
-            Rectangle()
-                .fill(RetroPalette.base)
-                .overlay(Rectangle().stroke(RetroPalette.border, lineWidth: 1))
+            ZStack(alignment: .leading) {
+                Rectangle().fill(PixelDeckPalette.base)
+                // Left 1.5px cyber mint precision rail
+                Rectangle()
+                    .fill(manager.changedFiles.isEmpty ? PixelDeckPalette.mint : PixelDeckPalette.coral)
+                    .frame(width: 1.5)
+            }
+            .overlay(Rectangle().stroke(PixelDeckPalette.border, lineWidth: 1))
         )
         .padding(.horizontal, 8)
         .padding(.bottom, 6)
