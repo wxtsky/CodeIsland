@@ -20,27 +20,25 @@ private enum ModernPalette {
     static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // Modified / Uncommitted
 }
 
-// MARK: - 2. Authentic Cyber Pixel Palette (Vibrant Arcade Cyberpunk)
-// Rich retro palette inspired by classic 8-bit / 16-bit arcade hardware:
-// Deep pitch black with neon cyan (#00F5D4), cyber pink (#FF2E93), and electric amber (#FFD166).
+// MARK: - 2. Calm Monochrome Pixel Palette (Playdate / Analogue Pocket / Mac Classic)
+// Pure high-contrast, zero-eyestrain 1-bit engineering craft:
+// Deep pitch slate with crisp white & slate gray. Restrained, comfortable, and timeless.
 
-private enum CyberPixelPalette {
-    static let base = Color(red: 0.04, green: 0.05, blue: 0.07)         // #0A0D12 Deep cyber black
-    static let cardBg = Color(red: 0.07, green: 0.09, blue: 0.13)       // #121721 Panel fill
-    static let cardHover = Color(red: 0.10, green: 0.13, blue: 0.18)    // #1A212E Card hover
-    static let border = Color(red: 0.18, green: 0.24, blue: 0.33)       // #2E3D54 Pixel border
-    static let borderBright = Color(red: 0.0, green: 0.96, blue: 0.83)  // #00F5D4 Active stroke
+private enum CalmPixelPalette {
+    static let base = Color(red: 0.05, green: 0.055, blue: 0.065)       // #0D0E10 deep charcoal
+    static let cardBg = Color.white.opacity(0.04)                        // Gentle card fill
+    static let cardHover = Color.white.opacity(0.08)                     // Subtle hover fill
+    static let border = Color.white.opacity(0.12)                        // Hairline 1px border
+    static let borderActive = Color.white.opacity(0.28)                  // Focused/active border
 
-    // Neon Accents
-    static let cyan = Color(red: 0.0, green: 0.96, blue: 0.83)          // #00F5D4 Cyber Cyan (Primary)
-    static let pink = Color(red: 1.0, green: 0.18, blue: 0.58)          // #FF2E93 Cyber Pink (Branch / Ref)
-    static let yellow = Color(red: 1.0, green: 0.82, blue: 0.40)        // #FFD166 Coin Amber (Modified)
-    static let green = Color(red: 0.12, green: 0.92, blue: 0.45)        // #1FEB73 1-Up Green (Clean)
+    // Text & Icons (High legibility, zero glare)
+    static let textWhite = Color.white.opacity(0.92)                     // Paper white
+    static let textMuted = Color.white.opacity(0.55)                     // Soft secondary slate
+    static let textDim = Color.white.opacity(0.35)                       // Subtle tertiary details
 
-    // Text
-    static let textWhite = Color(red: 0.98, green: 0.99, blue: 1.0)     // Crisp foreground
-    static let textMuted = Color(red: 0.60, green: 0.68, blue: 0.78)     // Secondary data
-    static let textDim = Color(red: 0.38, green: 0.44, blue: 0.54)       // Muted details
+    // Single Restrained Semantic Accents
+    static let sage = Color(red: 0.22, green: 0.78, blue: 0.55)         // Clean status
+    static let amber = Color(red: 0.95, green: 0.65, blue: 0.22)        // Modified status
 }
 
 // MARK: - Vector Pixel Art Icon Renderer (9×9 Matrix)
@@ -692,9 +690,10 @@ struct ModernWorkspaceView: View {
     }
 }
 
-// MARK: - 2. Authentic Cyber Pixel Retro Workspace View
-// Features bespoke 9x9 Vector Pixel Art Icons, Arcade Neon Cyan & Pink palette,
-// and a structured Cyberdeck layout that feels completely authentic and premium.
+// MARK: - 2. Calm Monochrome Pixel Retro Workspace View
+// Playdate & Mac OS Classic 1-Bit Aesthetic:
+// Zero eyestrain, pure monochrome paper & slate with a single restrained status accent.
+// Vector pixel art icons, 1-bit invert on hover, crisp hairline borders.
 
 struct PixelRetroWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
@@ -724,17 +723,17 @@ struct PixelRetroWorkspaceView: View {
         VStack(spacing: 0) {
             if !manager.isGitRepo {
                 // Non-Git State
-                VStack(spacing: 9) {
+                VStack(spacing: 8) {
                     HStack(spacing: 7) {
-                        WorkspacePixelIcon(glyph: .modified, color: CyberPixelPalette.pink, pixelSize: 1.6)
+                        WorkspacePixelIcon(glyph: .folder, color: CalmPixelPalette.textWhite, pixelSize: 1.4)
                         Text("NO REPOSITORY ATTACHED")
-                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(CyberPixelPalette.pink)
+                            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(CalmPixelPalette.textWhite)
                     }
 
-                    Text(manager.currentCwd.isEmpty ? "SELECT WORKSPACE DIRECTORY" : manager.currentCwd)
+                    Text(manager.currentCwd.isEmpty ? "Select a local project directory" : manager.currentCwd)
                         .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(CyberPixelPalette.textDim)
+                        .foregroundStyle(CalmPixelPalette.textDim)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .padding(.horizontal, 24)
@@ -744,25 +743,25 @@ struct PixelRetroWorkspaceView: View {
                         manager.chooseWorkspaceFolder()
                     }) {
                         HStack(spacing: 6) {
-                            WorkspacePixelIcon(glyph: .folder, color: Color.black, pixelSize: 1.3)
+                            WorkspacePixelIcon(glyph: .folder, color: Color.black, pixelSize: 1.2)
                             Text("MOUNT WORKSPACE")
-                                .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color.black)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(Rectangle().fill(CyberPixelPalette.cyan))
+                        .background(Rectangle().fill(CalmPixelPalette.textWhite))
                     }
                     .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, minHeight: 115)
+                .frame(maxWidth: .infinity, minHeight: 110)
                 .padding(.vertical, 12)
 
             } else {
-                VStack(spacing: 7) {
+                VStack(spacing: 6) {
 
                     // ========================================================
-                    // 1. TOP RETRO CYBER HEADER STRIP (WITH PIXEL ICONS)
+                    // 1. TOP HEADER STRIP (CALM MONOCHROME WITH PIXEL ICONS)
                     // ========================================================
                     HStack(alignment: .center, spacing: 6) {
                         // Project Identity Badge with Pixel Folder Icon
@@ -771,82 +770,86 @@ struct PixelRetroWorkspaceView: View {
                             manager.chooseWorkspaceFolder()
                         }) {
                             HStack(spacing: 5) {
-                                WorkspacePixelIcon(glyph: .folder, color: switchHovered ? Color.white : CyberPixelPalette.cyan, pixelSize: 1.2)
+                                WorkspacePixelIcon(
+                                    glyph: .folder,
+                                    color: switchHovered ? Color.white : CalmPixelPalette.textWhite,
+                                    pixelSize: 1.2
+                                )
 
                                 Text(manager.projectName.isEmpty ? "WORKSPACE" : manager.projectName.uppercased())
-                                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(switchHovered ? Color.white : CyberPixelPalette.textWhite)
+                                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(switchHovered ? Color.white : CalmPixelPalette.textWhite)
                                     .lineLimit(1)
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3.5)
-                            .background(Rectangle().fill(CyberPixelPalette.cardBg))
-                            .overlay(Rectangle().stroke(switchHovered ? CyberPixelPalette.cyan : CyberPixelPalette.border, lineWidth: 1))
+                            .background(Rectangle().fill(switchHovered ? CalmPixelPalette.cardHover : CalmPixelPalette.cardBg))
+                            .overlay(Rectangle().stroke(switchHovered ? CalmPixelPalette.borderActive : CalmPixelPalette.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .onHover { switchHovered = $0 }
                         .help("Swap workspace folder")
 
-                        // Branch Chip with Pixel Branch Icon & Pink Accent
+                        // Branch Chip with Pixel Branch Icon
                         HStack(spacing: 5) {
-                            WorkspacePixelIcon(glyph: .branch, color: CyberPixelPalette.pink, pixelSize: 1.2)
+                            WorkspacePixelIcon(glyph: .branch, color: CalmPixelPalette.textMuted, pixelSize: 1.2)
 
                             Text(manager.branch)
-                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(CyberPixelPalette.textWhite)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(CalmPixelPalette.textWhite)
                                 .lineLimit(1)
 
                             if manager.aheadCount > 0 || manager.behindCount > 0 {
                                 HStack(spacing: 2) {
                                     if manager.aheadCount > 0 {
                                         Text("↑\(manager.aheadCount)")
-                                            .font(.system(size: 8.5, weight: .black, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.cyan)
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(CalmPixelPalette.textWhite)
                                     }
                                     if manager.behindCount > 0 {
                                         Text("↓\(manager.behindCount)")
-                                            .font(.system(size: 8.5, weight: .black, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.yellow)
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(CalmPixelPalette.amber)
                                     }
                                 }
                                 .padding(.horizontal, 3)
                                 .padding(.vertical, 0.5)
-                                .background(Rectangle().fill(Color.black.opacity(0.5)))
+                                .background(Rectangle().fill(Color.white.opacity(0.08)))
                             }
                         }
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3.5)
-                        .background(Rectangle().fill(CyberPixelPalette.cardBg))
-                        .overlay(Rectangle().stroke(CyberPixelPalette.border, lineWidth: 1))
+                        .background(Rectangle().fill(CalmPixelPalette.cardBg))
+                        .overlay(Rectangle().stroke(CalmPixelPalette.border, lineWidth: 1))
 
-                        // State Badge (Pixel Check vs Pixel Warning)
+                        // State Badge (Single Restrained Semantic Indicator)
                         if manager.changedFiles.isEmpty {
                             HStack(spacing: 4) {
-                                WorkspacePixelIcon(glyph: .check, color: CyberPixelPalette.green, pixelSize: 1.1)
+                                WorkspacePixelIcon(glyph: .check, color: CalmPixelPalette.sage, pixelSize: 1.1)
                                 Text("CLEAN")
-                                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.green)
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(CalmPixelPalette.sage)
                             }
                             .padding(.horizontal, 5)
                             .padding(.vertical, 3.5)
-                            .background(Rectangle().fill(CyberPixelPalette.green.opacity(0.12)))
-                            .overlay(Rectangle().stroke(CyberPixelPalette.green.opacity(0.4), lineWidth: 1))
+                            .background(Rectangle().fill(CalmPixelPalette.sage.opacity(0.10)))
+                            .overlay(Rectangle().stroke(CalmPixelPalette.sage.opacity(0.35), lineWidth: 1))
                         } else {
                             HStack(spacing: 4) {
-                                WorkspacePixelIcon(glyph: .modified, color: CyberPixelPalette.yellow, pixelSize: 1.1)
+                                WorkspacePixelIcon(glyph: .modified, color: CalmPixelPalette.amber, pixelSize: 1.1)
                                 Text("\(manager.changedFiles.count) MODS")
-                                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.yellow)
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(CalmPixelPalette.amber)
                             }
                             .padding(.horizontal, 5)
                             .padding(.vertical, 3.5)
-                            .background(Rectangle().fill(CyberPixelPalette.yellow.opacity(0.12)))
-                            .overlay(Rectangle().stroke(CyberPixelPalette.yellow.opacity(0.4), lineWidth: 1))
+                            .background(Rectangle().fill(CalmPixelPalette.amber.opacity(0.10)))
+                            .overlay(Rectangle().stroke(CalmPixelPalette.amber.opacity(0.35), lineWidth: 1))
                         }
 
                         Spacer(minLength: 4)
 
-                        // Active Agent Hardware Pill
+                        // Active Agent Pill
                         if let session = activeSession {
                             HStack(spacing: 4) {
                                 if let icon = cliIcon(source: session.source, size: 9.5) {
@@ -855,35 +858,35 @@ struct PixelRetroWorkspaceView: View {
                                         .frame(width: 9.5, height: 9.5)
                                 }
                                 Text(session.source.uppercased())
-                                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.textWhite)
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(CalmPixelPalette.textWhite)
 
                                 if let model = session.modelLabel ?? session.model, !model.isEmpty {
                                     Text("[\(model)]")
-                                        .font(.system(size: 8.5, design: .monospaced))
-                                        .foregroundStyle(CyberPixelPalette.cyan)
+                                        .font(.system(size: 8, design: .monospaced))
+                                        .foregroundStyle(CalmPixelPalette.textMuted)
                                         .lineLimit(1)
                                 }
                             }
                             .padding(.horizontal, 5)
                             .padding(.vertical, 3.5)
-                            .background(Rectangle().fill(CyberPixelPalette.cardBg))
-                            .overlay(Rectangle().stroke(CyberPixelPalette.border, lineWidth: 1))
+                            .background(Rectangle().fill(CalmPixelPalette.cardBg))
+                            .overlay(Rectangle().stroke(CalmPixelPalette.border, lineWidth: 1))
                         }
 
-                        // Pixel Sync / Refresh Button
+                        // Pixel Reload Button
                         Button(action: {
                             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                             manager.refresh(force: true)
                         }) {
                             WorkspacePixelIcon(
                                 glyph: .sync,
-                                color: refreshHovered ? Color.white : CyberPixelPalette.textMuted,
+                                color: refreshHovered ? Color.white : CalmPixelPalette.textMuted,
                                 pixelSize: 1.2
                             )
                             .padding(4)
-                            .background(Rectangle().fill(refreshHovered ? CyberPixelPalette.cyan.opacity(0.3) : CyberPixelPalette.cardBg))
-                            .overlay(Rectangle().stroke(refreshHovered ? CyberPixelPalette.cyan : CyberPixelPalette.border, lineWidth: 1))
+                            .background(Rectangle().fill(refreshHovered ? CalmPixelPalette.cardHover : CalmPixelPalette.cardBg))
+                            .overlay(Rectangle().stroke(refreshHovered ? CalmPixelPalette.borderActive : CalmPixelPalette.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .onHover { refreshHovered = $0 }
@@ -891,31 +894,29 @@ struct PixelRetroWorkspaceView: View {
                     }
 
                     // ========================================================
-                    // 2. RETRO COMMIT TIMELINE DECK (FEATURED HEAD + LOG STRIP)
+                    // 2. RETRO COMMIT TIMELINE (HEAD CARD + ARCHIVE STRIP)
                     // ========================================================
-                    VStack(spacing: 4) {
-                        // 2A. ACTIVE HEAD COMMIT (FEATURED CYBER CARD)
+                    VStack(spacing: 3) {
+                        // 2A. ACTIVE HEAD COMMIT (FEATURED 1-BIT CARD)
                         if let head = latestCommit {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack(spacing: 6) {
-                                    // Pixel Commit Node
-                                    WorkspacePixelIcon(glyph: .commitNode, color: CyberPixelPalette.cyan, pixelSize: 1.2)
+                                    WorkspacePixelIcon(glyph: .commitNode, color: CalmPixelPalette.textWhite, pixelSize: 1.1)
 
-                                    // Hash Pill
                                     Text(head.hash)
-                                        .font(.system(size: 9, weight: .black, design: .monospaced))
-                                        .foregroundStyle(CyberPixelPalette.cyan)
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(CalmPixelPalette.textWhite)
                                         .padding(.horizontal, 4)
                                         .padding(.vertical, 1)
-                                        .background(Rectangle().fill(CyberPixelPalette.cyan.opacity(0.12)))
+                                        .background(Rectangle().fill(Color.white.opacity(0.08)))
 
                                     if !head.refs.isEmpty {
                                         Text(head.refs)
-                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.pink)
+                                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(CalmPixelPalette.textMuted)
                                             .padding(.horizontal, 4)
                                             .padding(.vertical, 1)
-                                            .background(Rectangle().fill(CyberPixelPalette.pink.opacity(0.10)))
+                                            .background(Rectangle().fill(Color.white.opacity(0.05)))
                                             .lineLimit(1)
                                     }
 
@@ -923,48 +924,47 @@ struct PixelRetroWorkspaceView: View {
 
                                     Text("\(head.author) · \(head.timeAgo)")
                                         .font(.system(size: 8.5, design: .monospaced))
-                                        .foregroundStyle(CyberPixelPalette.textDim)
+                                        .foregroundStyle(CalmPixelPalette.textDim)
                                 }
 
                                 Text(head.message)
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.textWhite)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(CalmPixelPalette.textWhite)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
-                            .background(Rectangle().fill(CyberPixelPalette.cardBg))
+                            .background(Rectangle().fill(CalmPixelPalette.cardBg))
                             .overlay(
-                                Rectangle()
-                                    .stroke(CyberPixelPalette.borderBright.opacity(0.6), lineWidth: 1)
+                                Rectangle().stroke(CalmPixelPalette.borderActive, lineWidth: 1)
                             )
                         } else {
                             HStack {
                                 Text("NO COMMITS FOUND ON THIS BRANCH")
                                     .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.textDim)
+                                    .foregroundStyle(CalmPixelPalette.textDim)
                             }
                             .frame(maxWidth: .infinity, minHeight: 40)
-                            .background(Rectangle().fill(CyberPixelPalette.cardBg))
+                            .background(Rectangle().fill(CalmPixelPalette.cardBg))
                         }
 
-                        // 2B. PREVIOUS ARCHIVES (COMPACT CYBER LOGS)
+                        // 2B. PREVIOUS ARCHIVES (COMPACT SLATE STRIP)
                         if !previousCommits.isEmpty {
                             VStack(spacing: 2) {
                                 ForEach(previousCommits, id: \.id) { prev in
                                     HStack(spacing: 6) {
                                         Rectangle()
-                                            .fill(CyberPixelPalette.border)
-                                            .frame(width: 4, height: 4)
+                                            .fill(CalmPixelPalette.textDim)
+                                            .frame(width: 3.5, height: 3.5)
 
                                         Text(prev.hash)
                                             .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.textMuted)
+                                            .foregroundStyle(CalmPixelPalette.textMuted)
 
                                         Text(prev.message)
                                             .font(.system(size: 9.5, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.textMuted)
+                                            .foregroundStyle(CalmPixelPalette.textMuted)
                                             .lineLimit(1)
                                             .truncationMode(.tail)
 
@@ -972,7 +972,7 @@ struct PixelRetroWorkspaceView: View {
 
                                         Text(prev.timeAgo)
                                             .font(.system(size: 8, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.textDim)
+                                            .foregroundStyle(CalmPixelPalette.textDim)
                                     }
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -983,14 +983,14 @@ struct PixelRetroWorkspaceView: View {
                     }
 
                     // ========================================================
-                    // 3. RETRO COMMAND PAD (INPUT + PIXEL ACTION BUTTONS)
+                    // 3. RETRO COMMAND PAD (INPUT + TACTILE PIXEL BUTTONS)
                     // ========================================================
                     if manager.changedFiles.isEmpty {
                         // Clean Tree Bar
                         HStack(spacing: 8) {
                             Text(manager.currentCwd)
                                 .font(.system(size: 8.5, design: .monospaced))
-                                .foregroundStyle(CyberPixelPalette.textDim)
+                                .foregroundStyle(CalmPixelPalette.textDim)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
 
@@ -998,8 +998,8 @@ struct PixelRetroWorkspaceView: View {
 
                             if let status = manager.commitStatusMessage {
                                 Text(status)
-                                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(CyberPixelPalette.green)
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(CalmPixelPalette.sage)
                                     .transition(.opacity)
                             }
 
@@ -1008,15 +1008,19 @@ struct PixelRetroWorkspaceView: View {
                                 NSWorkspace.shared.open(URL(fileURLWithPath: manager.currentCwd))
                             }) {
                                 HStack(spacing: 4) {
-                                    WorkspacePixelIcon(glyph: .folder, color: openHovered ? Color.black : CyberPixelPalette.cyan, pixelSize: 1.1)
+                                    WorkspacePixelIcon(
+                                        glyph: .folder,
+                                        color: openHovered ? Color.black : CalmPixelPalette.textWhite,
+                                        pixelSize: 1.1
+                                    )
                                     Text("OPEN FOLDER")
-                                        .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                                 }
-                                .foregroundStyle(openHovered ? Color.black : CyberPixelPalette.textWhite)
+                                .foregroundStyle(openHovered ? Color.black : CalmPixelPalette.textWhite)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3.5)
-                                .background(Rectangle().fill(openHovered ? CyberPixelPalette.cyan : CyberPixelPalette.cardBg))
-                                .overlay(Rectangle().stroke(openHovered ? CyberPixelPalette.cyan : CyberPixelPalette.border, lineWidth: 1))
+                                .background(Rectangle().fill(openHovered ? Color.white : CalmPixelPalette.cardBg))
+                                .overlay(Rectangle().stroke(openHovered ? Color.white : CalmPixelPalette.border, lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { openHovered = $0 }
@@ -1029,29 +1033,29 @@ struct PixelRetroWorkspaceView: View {
                         VStack(spacing: 4) {
                             // Row 1: Pixel Input Bar
                             HStack(spacing: 5) {
-                                WorkspacePixelIcon(glyph: .sparkle, color: CyberPixelPalette.cyan, pixelSize: 1.1)
+                                WorkspacePixelIcon(glyph: .sparkle, color: CalmPixelPalette.textMuted, pixelSize: 1.1)
 
                                 ZStack(alignment: .leading) {
                                     if manager.proposedCommitMessage.isEmpty {
-                                        Text("COMMIT MESSAGE...")
+                                        Text("Commit message...")
                                             .font(.system(size: 9.5, design: .monospaced))
-                                            .foregroundStyle(CyberPixelPalette.textDim)
+                                            .foregroundStyle(CalmPixelPalette.textDim)
                                             .allowsHitTesting(false)
                                     }
                                     TextField("", text: $manager.proposedCommitMessage)
                                         .textFieldStyle(.plain)
-                                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(CyberPixelPalette.textWhite)
+                                        .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+                                        .foregroundStyle(CalmPixelPalette.textWhite)
                                 }
                             }
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
-                            .background(Rectangle().fill(CyberPixelPalette.cardBg))
-                            .overlay(Rectangle().stroke(CyberPixelPalette.border, lineWidth: 1))
+                            .background(Rectangle().fill(CalmPixelPalette.cardBg))
+                            .overlay(Rectangle().stroke(CalmPixelPalette.border, lineWidth: 1))
 
-                            // Row 2: Pixel Buttons Deck
+                            // Row 2: 1-Bit Invert Pixel Buttons Deck
                             HStack(spacing: 6) {
-                                // AI Button with Pixel Sparkle Icon
+                                // AI Button
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -1059,15 +1063,19 @@ struct PixelRetroWorkspaceView: View {
                                     }
                                 }) {
                                     HStack(spacing: 4) {
-                                        WorkspacePixelIcon(glyph: .sparkle, color: aiHovered ? Color.black : CyberPixelPalette.pink, pixelSize: 1.1)
+                                        WorkspacePixelIcon(
+                                            glyph: .sparkle,
+                                            color: aiHovered ? Color.black : CalmPixelPalette.textWhite,
+                                            pixelSize: 1.1
+                                        )
                                         Text("AI DRAFT")
-                                            .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                                     }
-                                    .foregroundStyle(aiHovered ? Color.black : CyberPixelPalette.pink)
+                                    .foregroundStyle(aiHovered ? Color.black : CalmPixelPalette.textWhite)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 4)
-                                    .background(Rectangle().fill(aiHovered ? CyberPixelPalette.pink : CyberPixelPalette.pink.opacity(0.12)))
-                                    .overlay(Rectangle().stroke(CyberPixelPalette.pink.opacity(0.6), lineWidth: 1))
+                                    .background(Rectangle().fill(aiHovered ? Color.white : CalmPixelPalette.cardBg))
+                                    .overlay(Rectangle().stroke(aiHovered ? Color.white : CalmPixelPalette.border, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                                 .onHover { aiHovered = $0 }
@@ -1075,7 +1083,7 @@ struct PixelRetroWorkspaceView: View {
 
                                 Spacer(minLength: 0)
 
-                                // Commit Button with Pixel Disk Icon
+                                // Commit Button (1-Bit Invert on Hover / Active)
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     manager.executeCommit(message: manager.proposedCommitMessage, push: false)
@@ -1083,15 +1091,15 @@ struct PixelRetroWorkspaceView: View {
                                     HStack(spacing: 4) {
                                         WorkspacePixelIcon(
                                             glyph: .disk,
-                                            color: manager.proposedCommitMessage.isEmpty ? CyberPixelPalette.textDim : Color.black,
+                                            color: manager.proposedCommitMessage.isEmpty ? CalmPixelPalette.textDim : (commitHovered ? Color.white : Color.black),
                                             pixelSize: 1.1
                                         )
                                         Text(manager.isCommitting ? "..." : "COMMIT")
-                                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     }
                                     .foregroundStyle(
                                         manager.proposedCommitMessage.isEmpty
-                                            ? CyberPixelPalette.textDim
+                                            ? CalmPixelPalette.textDim
                                             : (commitHovered ? Color.white : Color.black)
                                     )
                                     .padding(.horizontal, 9)
@@ -1099,15 +1107,15 @@ struct PixelRetroWorkspaceView: View {
                                     .background(
                                         Rectangle().fill(
                                             manager.proposedCommitMessage.isEmpty
-                                                ? CyberPixelPalette.cardBg
-                                                : (commitHovered ? CyberPixelPalette.cyan.opacity(0.8) : CyberPixelPalette.cyan)
+                                                ? CalmPixelPalette.cardBg
+                                                : (commitHovered ? Color.white.opacity(0.8) : Color.white)
                                         )
                                     )
                                     .overlay(
                                         Rectangle().stroke(
                                             manager.proposedCommitMessage.isEmpty
-                                                ? CyberPixelPalette.border
-                                                : CyberPixelPalette.cyan,
+                                                ? CalmPixelPalette.border
+                                                : Color.white,
                                             lineWidth: 1
                                         )
                                     )
@@ -1116,7 +1124,7 @@ struct PixelRetroWorkspaceView: View {
                                 .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
                                 .onHover { commitHovered = $0 }
 
-                                // Push Button with Pixel Push Icon
+                                // Push Button
                                 Button(action: {
                                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                     manager.executeCommit(message: manager.proposedCommitMessage, push: true)
@@ -1124,17 +1132,17 @@ struct PixelRetroWorkspaceView: View {
                                     HStack(spacing: 4) {
                                         WorkspacePixelIcon(
                                             glyph: .push,
-                                            color: pushHovered ? Color.black : CyberPixelPalette.textWhite,
+                                            color: pushHovered ? Color.black : CalmPixelPalette.textWhite,
                                             pixelSize: 1.1
                                         )
                                         Text("PUSH")
-                                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     }
-                                    .foregroundStyle(pushHovered ? Color.black : CyberPixelPalette.textWhite)
+                                    .foregroundStyle(pushHovered ? Color.black : CalmPixelPalette.textWhite)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4.5)
-                                    .background(Rectangle().fill(pushHovered ? CyberPixelPalette.cyan : CyberPixelPalette.cardBg))
-                                    .overlay(Rectangle().stroke(pushHovered ? CyberPixelPalette.cyan : CyberPixelPalette.border, lineWidth: 1))
+                                    .background(Rectangle().fill(pushHovered ? Color.white : CalmPixelPalette.cardBg))
+                                    .overlay(Rectangle().stroke(pushHovered ? Color.white : CalmPixelPalette.border, lineWidth: 1))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
@@ -1149,15 +1157,15 @@ struct PixelRetroWorkspaceView: View {
         }
         .background(
             ZStack(alignment: .leading) {
-                Rectangle().fill(CyberPixelPalette.base)
-                // Left 2px Cyber Cyan Rail
+                Rectangle().fill(CalmPixelPalette.base)
+                // Left 1.5px Calm Semantic Status Rail
                 Rectangle()
-                    .fill(manager.changedFiles.isEmpty ? CyberPixelPalette.cyan : CyberPixelPalette.yellow)
-                    .frame(width: 2)
+                    .fill(manager.changedFiles.isEmpty ? CalmPixelPalette.sage : CalmPixelPalette.amber)
+                    .frame(width: 1.5)
             }
             .overlay(
                 Rectangle()
-                    .stroke(CyberPixelPalette.border, lineWidth: 1.5)
+                    .stroke(CalmPixelPalette.border, lineWidth: 1)
             )
         )
         .padding(.horizontal, 8)
