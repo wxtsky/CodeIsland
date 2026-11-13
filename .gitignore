@@ -68,6 +68,9 @@ android-watch/**/build/
 .zencoder/
 skills/
 skills-lock.json
+.impeccable/
+.github/agents/
+.github/hooks/
 CLAUDE.md
 build-dir/
 

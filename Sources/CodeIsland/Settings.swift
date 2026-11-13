@@ -40,6 +40,29 @@ public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum WorkspaceHUDTheme: String, CaseIterable, Identifiable, Sendable {
+    case modern = "modern"
+    case pixelRetro = "pixelRetro"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .modern: return "Modern Minimalist (Obsidian)"
+        case .pixelRetro: return "Pixel Retro 8-Bit (Arcade)"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .modern:
+            return "Sleek monochromatic dark zinc aesthetic with integrated breadcrumb navigation and tactile controls."
+        case .pixelRetro:
+            return "Classic 8-bit arcade terminal with dot-matrix pixel headers, phosphor accents, and sharp stepped frames."
+        }
+    }
+}
+
 public enum FloatingLyricPreset: String, CaseIterable, Identifiable, Sendable {
     case pureText = "pureText"
     case capsule = "capsule"
@@ -177,6 +200,7 @@ enum SettingsKey {
     static let showAgentDetails = "showAgentDetails"
     static let showCompactLyrics = "showCompactLyrics"
     static let musicHUDTheme = "musicHUDTheme"
+    static let workspaceHUDTheme = "workspaceHUDTheme"
     static let musicHUDProgressColor = "musicHUDProgressColor"
     static let floatingLyricPreset = "floatingLyricPreset"
     static let floatingLyricFontSize = "floatingLyricFontSize"
@@ -334,6 +358,7 @@ struct SettingsDefaults {
     static let showAgentDetails = false
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+    static let workspaceHUDTheme = WorkspaceHUDTheme.modern.rawValue
     static let musicHUDProgressColor = MusicProgressColor.theme.rawValue
     static let floatingLyricPreset = FloatingLyricPreset.pureText.rawValue
     static let floatingLyricFontSize: Double = 10.0
@@ -451,6 +476,7 @@ class SettingsManager {
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
             SettingsKey.showCompactLyrics: SettingsDefaults.showCompactLyrics,
             SettingsKey.musicHUDTheme: SettingsDefaults.musicHUDTheme,
+            SettingsKey.workspaceHUDTheme: SettingsDefaults.workspaceHUDTheme,
             SettingsKey.musicHUDProgressColor: SettingsDefaults.musicHUDProgressColor,
             SettingsKey.floatingLyricPreset: SettingsDefaults.floatingLyricPreset,
             SettingsKey.floatingLyricFontSize: SettingsDefaults.floatingLyricFontSize,
@@ -602,6 +628,11 @@ class SettingsManager {
     var showAgentDetails: Bool {
         get { defaults.bool(forKey: SettingsKey.showAgentDetails) }
         set { defaults.set(newValue, forKey: SettingsKey.showAgentDetails) }
+    }
+
+    var workspaceHUDTheme: String {
+        get { defaults.string(forKey: SettingsKey.workspaceHUDTheme) ?? SettingsDefaults.workspaceHUDTheme }
+        set { defaults.set(newValue, forKey: SettingsKey.workspaceHUDTheme) }
     }
 
     var notchHeightMode: NotchHeightMode {
