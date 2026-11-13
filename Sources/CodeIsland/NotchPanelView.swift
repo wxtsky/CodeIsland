@@ -341,6 +341,21 @@ struct NotchPanelView: View {
         return false
     }
 
+    private var hasQuotaChip: Bool {
+        guard showClaudeQuota, !shouldShowExpanded,
+              let _ = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+              appState.claudeQuota.snapshot != nil
+        else { return false }
+        return true
+    }
+
+    private var quotaWingWidth: CGFloat {
+        guard hasQuotaChip else { return 54 }
+        let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
+        let chipWidth = quotaChipWidth > 0 ? quotaChipWidth : (limit.map { QuotaChip.estimatedWidth(for: $0) } ?? 90)
+        return max(136, mascotSize + chipWidth + 20)
+    }
+
     /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
     private var symmetricWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
@@ -348,6 +363,9 @@ struct NotchPanelView: View {
         }
         if isHoveringRightWing && !shouldShowExpanded {
             return 148
+        }
+        if hasQuotaChip {
+            return quotaWingWidth
         }
         if nowPlaying.isPlaying {
             return 54
@@ -478,10 +496,10 @@ struct NotchPanelView: View {
                             expandedTab: expandedTabBinding,
                             workspaceManager: workspaceManager
                         )
-                            .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
+                            .padding(.leading, 8)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: shouldShowExpanded ? .leading : (isThinking ? .leading : .center)
+                                alignment: .leading
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
@@ -514,10 +532,10 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, (isThinking || isHoveringRightWing || shouldShowExpanded) ? 6 : 0)
+                            .padding(.trailing, 8)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: (isThinking || isHoveringRightWing || shouldShowExpanded) ? .trailing : .center
+                                alignment: .trailing
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
