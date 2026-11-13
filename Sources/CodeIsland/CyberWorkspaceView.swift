@@ -20,20 +20,19 @@ private enum ModernPalette {
     static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // Modified / Uncommitted
 }
 
-// MARK: - Pixel Retro 8-Bit Palette (Arcade / Phosphor CRT)
+// MARK: - Pixel Retro 8-Bit Palette (Authentic Phosphor CRT)
 
 private enum RetroPalette {
     static let base = Color(red: 0.02, green: 0.03, blue: 0.025)        // #050806 CRT deep black
     static let surface = Color(red: 0.04, green: 0.065, blue: 0.05)     // #0A110D
-    static let border = Color(red: 0.0, green: 0.90, blue: 0.42).opacity(0.30)
+    static let border = Color(red: 0.0, green: 0.90, blue: 0.42).opacity(0.28)
     static let borderAmber = Color(red: 1.0, green: 0.70, blue: 0.0).opacity(0.35)
     
-    // Phosphor CRT Accents
-    static let green = Color(red: 0.0, green: 0.95, blue: 0.45)         // #00F273 Phosphor Green
-    static let amber = Color(red: 1.0, green: 0.70, blue: 0.0)          // #FFB300 Arcade Amber
-    static let cyan = Color(red: 0.20, green: 0.85, blue: 1.0)          // #33D6FF Arcade Cyan
-    static let textBright = Color(red: 0.85, green: 1.0, blue: 0.90)    // #D9FFE6
-    static let textDim = Color(red: 0.0, green: 0.95, blue: 0.45).opacity(0.65)
+    // Authentic Phosphor Green & Amber
+    static let green = Color(red: 0.29, green: 0.85, blue: 0.50)        // #4ADE80 Retro Phosphor Green
+    static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // #F59E0B Retro Amber
+    static let textBright = Color(red: 0.88, green: 0.98, blue: 0.92)   // High-contrast foreground
+    static let textDim = Color(red: 0.29, green: 0.85, blue: 0.50).opacity(0.65)
     static let textMuted = Color.white.opacity(0.40)
 }
 
@@ -183,14 +182,12 @@ struct ModernActiveAgentPill: View {
 struct ModernWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
     var appState: AppState
-    @Binding var currentTheme: String
 
     @State private var switchFolderHovered = false
     @State private var refreshHovered = false
     @State private var terminalHovered = false
     @State private var aiHovered = false
     @State private var pushHovered = false
-    @State private var themeToggleHovered = false
 
     private var statusRailColor: Color {
         if !manager.isGitRepo {
@@ -246,7 +243,7 @@ struct ModernWorkspaceView: View {
             } else {
                 VStack(spacing: 9) {
                     // ==========================================
-                    // 1. UNIFIED BREADCRUMB HEADER
+                    // 1. UNIFIED BREADCRUMB HEADER (CLEAN TOOLBAR)
                     // ==========================================
                     HStack(alignment: .center, spacing: 7) {
                         // Project Identity
@@ -336,28 +333,6 @@ struct ModernWorkspaceView: View {
                         }
 
                         Spacer(minLength: 6)
-
-                        // Quick Theme Switcher Pill (Modern -> 8-Bit)
-                        Button(action: {
-                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                currentTheme = WorkspaceHUDTheme.pixelRetro.rawValue
-                            }
-                        }) {
-                            HStack(spacing: 3) {
-                                Image(systemName: "arcade.stick")
-                                    .font(.system(size: 8))
-                                Text("8-BIT")
-                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                            }
-                            .foregroundStyle(themeToggleHovered ? Color.white : Color.white.opacity(0.50))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2.5)
-                            .background(RoundedRectangle(cornerRadius: 3.5).fill(Color.white.opacity(themeToggleHovered ? 0.12 : 0.05)))
-                        }
-                        .buttonStyle(.plain)
-                        .onHover { themeToggleHovered = $0 }
-                        .help("Switch to 8-Bit Retro Pixel Theme")
 
                         // Right Toolbar: Active Agent & Refresh
                         ModernActiveAgentPill(appState: appState, cwd: manager.currentCwd)
@@ -587,12 +562,99 @@ struct ModernWorkspaceView: View {
     }
 }
 
-// MARK: - 2. Pixel Retro 8-Bit Workspace View (Arcade / Phosphor Terminal)
+// MARK: - Pixel Retro Git Graph Item View (Strict 1-bit Pixel Grid)
+
+struct PixelRetroGitGraphItemView: View {
+    let commit: GitCommitItem
+    let isLatest: Bool
+    let isLast: Bool
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            // Visual Git Spine & Pixel Square Node
+            VStack(spacing: 0) {
+                ZStack {
+                    if isLatest {
+                        Rectangle()
+                            .stroke(RetroPalette.green, lineWidth: 1)
+                            .frame(width: 9, height: 9)
+
+                        Rectangle()
+                            .fill(RetroPalette.green)
+                            .frame(width: 5, height: 5)
+                    } else {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.35))
+                            .frame(width: 4, height: 4)
+                    }
+                }
+                .frame(width: 12, height: 12)
+
+                if !isLast {
+                    Rectangle()
+                        .fill(RetroPalette.green.opacity(0.20))
+                        .frame(width: 1, height: 22)
+                }
+            }
+            .frame(width: 12)
+
+            // Commit Details
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(commit.hash)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(isLatest ? RetroPalette.green : Color.white.opacity(0.85))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Rectangle().fill(Color.white.opacity(0.06)))
+                        .overlay(Rectangle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+
+                    if !commit.refs.isEmpty {
+                        Text(commit.refs)
+                            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(RetroPalette.green)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Rectangle().fill(RetroPalette.green.opacity(0.10)))
+                            .overlay(Rectangle().stroke(RetroPalette.green.opacity(0.35), lineWidth: 0.5))
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text(commit.author)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.60))
+
+                    Text("• \(commit.timeAgo)")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.40))
+                }
+
+                Text(commit.message)
+                    .font(.system(size: 11.5, weight: isLatest ? .medium : .regular, design: .monospaced))
+                    .foregroundStyle(isLatest ? RetroPalette.textBright : Color.white.opacity(0.70))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Rectangle()
+                .fill(isHovered ? Color.white.opacity(0.04) : Color.clear)
+        )
+        .onHover { isHovered = $0 }
+        .help("\(commit.hash) • \(commit.author)\n\(commit.message)")
+    }
+}
+
+// MARK: - 2. Pixel Retro 8-Bit Workspace View (Authentic Dot-Matrix & Pixel Grid)
 
 struct PixelRetroWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
     var appState: AppState
-    @Binding var currentTheme: String
 
     @State private var switchFolderHovered = false
     @State private var refreshHovered = false
@@ -600,7 +662,6 @@ struct PixelRetroWorkspaceView: View {
     @State private var aiHovered = false
     @State private var commitHovered = false
     @State private var pushHovered = false
-    @State private var themeToggleHovered = false
 
     private var activeSession: SessionSnapshot? {
         guard !manager.currentCwd.isEmpty else { return nil }
@@ -609,9 +670,9 @@ struct PixelRetroWorkspaceView: View {
 
     private var statusPhosphorColor: Color {
         if !manager.isGitRepo {
-            return Color.white.opacity(0.3)
+            return Color.white.opacity(0.25)
         } else if manager.isCommitting {
-            return RetroPalette.cyan
+            return RetroPalette.green.opacity(0.7)
         } else if !manager.changedFiles.isEmpty {
             return RetroPalette.amber
         } else {
@@ -627,9 +688,9 @@ struct PixelRetroWorkspaceView: View {
                     PixelText(text: "NO GIT REPO DETECTED", color: RetroPalette.amber, pixelSize: 1.8)
                         .frame(height: 12)
 
-                    Text(manager.currentCwd.isEmpty ? "[ NO WORKSPACE FOLDER SELECTED ]" : "[ \(manager.currentCwd) ]")
+                    Text(manager.currentCwd.isEmpty ? "NO WORKSPACE FOLDER SELECTED" : manager.currentCwd)
                         .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(RetroPalette.textDim)
+                        .foregroundStyle(Color.white.opacity(0.50))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .padding(.horizontal, 20)
@@ -638,21 +699,13 @@ struct PixelRetroWorkspaceView: View {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                         manager.chooseWorkspaceFolder()
                     }) {
-                        HStack(spacing: 4) {
-                            Text("[")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.green.opacity(0.7))
-                            Text("SELECT WORKSPACE FOLDER")
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.green)
-                            Text("]")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.green.opacity(0.7))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Rectangle().fill(RetroPalette.surface))
-                        .overlay(Rectangle().strokeBorder(RetroPalette.green.opacity(0.5), lineWidth: 1))
+                        Text("SELECT WORKSPACE FOLDER")
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(RetroPalette.green)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4.5)
+                            .background(Rectangle().fill(RetroPalette.surface))
+                            .overlay(Rectangle().stroke(RetroPalette.green.opacity(0.5), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
@@ -661,21 +714,21 @@ struct PixelRetroWorkspaceView: View {
             } else {
                 VStack(spacing: 8) {
                     // ==========================================
-                    // 1. RETRO 8-BIT ARCADE BANNER HEADER
+                    // 1. AUTHENTIC 8-BIT DOT-MATRIX HEADER
                     // ==========================================
-                    HStack(alignment: .center, spacing: 6) {
+                    HStack(alignment: .center, spacing: 7) {
                         // Dot Matrix Section Header
                         PixelText(text: "WORKSPACE", color: RetroPalette.green, pixelSize: 1.6)
                             .frame(height: 10)
 
-                        Text("::")
-                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(RetroPalette.green.opacity(0.35))
+                        Text("/")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.20))
 
-                        // Project Folder Tag [DIR: NAME]
-                        HStack(spacing: 3) {
-                            Text("[DIR: \(manager.projectName.uppercased())]")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        // Project Folder Name & Switcher
+                        HStack(spacing: 4) {
+                            Text(manager.projectName.isEmpty ? "WORKSPACE" : manager.projectName.uppercased())
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
                                 .foregroundStyle(RetroPalette.textBright)
                                 .lineLimit(1)
 
@@ -683,24 +736,24 @@ struct PixelRetroWorkspaceView: View {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                 manager.chooseWorkspaceFolder()
                             }) {
-                                Text("⟲")
-                                    .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(switchFolderHovered ? RetroPalette.green : RetroPalette.textDim)
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 8.5))
+                                    .foregroundStyle(switchFolderHovered ? RetroPalette.green : Color.white.opacity(0.35))
                             }
                             .buttonStyle(.plain)
                             .onHover { switchFolderHovered = $0 }
                             .help("Switch workspace folder")
                         }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Rectangle().fill(Color.black.opacity(0.5)))
-                        .overlay(Rectangle().strokeBorder(RetroPalette.border, lineWidth: 1))
 
-                        // Branch Tag [BR: NAME]
-                        HStack(spacing: 3) {
-                            Text("[BR: \(manager.branch.uppercased())]")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.cyan)
+                        Text("/")
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.20))
+
+                        // Branch & Sync Indicator
+                        HStack(spacing: 4) {
+                            Text(manager.branch)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.85))
                                 .lineLimit(1)
 
                             if manager.aheadCount > 0 || manager.behindCount > 0 {
@@ -716,179 +769,121 @@ struct PixelRetroWorkspaceView: View {
                                             .foregroundStyle(RetroPalette.amber)
                                     }
                                 }
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 0.5)
+                                .background(Rectangle().fill(Color.white.opacity(0.08)))
                             }
                         }
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Rectangle().fill(Color.black.opacity(0.5)))
-                        .overlay(Rectangle().strokeBorder(RetroPalette.cyan.opacity(0.3), lineWidth: 1))
 
-                        // Working Tree Status Badge
+                        Text("•")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.20))
+
+                        // Status Badge (Square Pixel Dot)
                         if manager.changedFiles.isEmpty {
-                            Text("[★ CLEAN]")
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.green)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Rectangle().fill(RetroPalette.green.opacity(0.12)))
-                                .overlay(Rectangle().strokeBorder(RetroPalette.green.opacity(0.45), lineWidth: 1))
-                        } else {
-                            Text("[▲ \(manager.changedFiles.count) MOD]")
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(RetroPalette.amber)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Rectangle().fill(RetroPalette.amber.opacity(0.12)))
-                                .overlay(Rectangle().strokeBorder(RetroPalette.amber.opacity(0.55), lineWidth: 1))
-                        }
-
-                        Spacer(minLength: 4)
-
-                        // Quick Theme Switcher Pill (8-Bit -> Modern)
-                        Button(action: {
-                            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                currentTheme = WorkspaceHUDTheme.modern.rawValue
+                            HStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(RetroPalette.green)
+                                    .frame(width: 4.5, height: 4.5)
+                                Text("clean")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(RetroPalette.green)
                             }
-                        }) {
-                            Text("[MODERN]")
-                                .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(themeToggleHovered ? Color.white : RetroPalette.textDim)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Rectangle().fill(Color.black.opacity(0.4)))
-                                .overlay(Rectangle().strokeBorder(Color.white.opacity(themeToggleHovered ? 0.35 : 0.15), lineWidth: 1))
+                        } else {
+                            HStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(RetroPalette.amber)
+                                    .frame(width: 4.5, height: 4.5)
+                                Text("\(manager.changedFiles.count) modified")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(RetroPalette.amber)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .onHover { themeToggleHovered = $0 }
-                        .help("Switch to Modern Minimalist Theme")
+
+                        Spacer(minLength: 6)
 
                         // Active Agent Pill
                         if let session = activeSession {
-                            HStack(spacing: 3) {
-                                Text("■")
-                                    .font(.system(size: 7))
-                                    .foregroundStyle(session.status == .idle ? RetroPalette.green : RetroPalette.cyan)
-                                Text("[\(session.source.uppercased())]")
-                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.textBright)
+                            HStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(session.status == .idle ? RetroPalette.green : Color.white.opacity(0.70))
+                                    .frame(width: 4, height: 4)
+                                Text(session.source.uppercased())
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.white.opacity(0.90))
                             }
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Rectangle().fill(Color.black.opacity(0.4)))
-                            .overlay(Rectangle().strokeBorder(RetroPalette.border, lineWidth: 0.8))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2.5)
+                            .background(Rectangle().fill(Color.white.opacity(0.05)))
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
                         }
 
-                        // Retro Refresh Button
+                        // Retro Reload Button
                         Button(action: {
                             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                             manager.refresh(force: true)
                         }) {
-                            Text(manager.isRefreshing ? "[...]" : "[⟳]")
-                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(refreshHovered ? Color.white : RetroPalette.green)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(Rectangle().fill(Color.black.opacity(0.4)))
-                                .overlay(Rectangle().strokeBorder(RetroPalette.green.opacity(refreshHovered ? 0.8 : 0.4), lineWidth: 1))
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(refreshHovered ? Color.white : Color.white.opacity(0.45))
+                                .padding(4)
+                                .background(Rectangle().fill(Color.white.opacity(refreshHovered ? 0.08 : 0)))
                         }
                         .buttonStyle(.plain)
                         .onHover { refreshHovered = $0 }
                         .help("Reload git status")
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Rectangle().fill(Color.black.opacity(0.6)))
-                    .overlay(Rectangle().strokeBorder(RetroPalette.border, lineWidth: 1))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(
+                        Rectangle()
+                            .fill(Color.white.opacity(0.025))
+                            .overlay(Rectangle().stroke(Color.white.opacity(0.08), lineWidth: 0.8))
+                    )
 
                     // ==========================================
-                    // 2. HERO: 8-BIT ARCADE COMMIT TIMELINE
+                    // 2. HERO: 8-BIT PIXEL COMMIT TIMELINE
                     // ==========================================
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 2) {
                         if manager.recentCommits.isEmpty {
                             VStack(spacing: 3) {
-                                Text("[ NO COMMITS IN REPO LOG ]")
-                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.textDim)
+                                Text("No recent commits recorded")
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(Color.white.opacity(0.40))
                             }
-                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .frame(maxWidth: .infinity, minHeight: 55)
                         } else {
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 ForEach(Array(manager.recentCommits.prefix(3).enumerated()), id: \.element.id) { index, commit in
-                                    HStack(alignment: .top, spacing: 8) {
-                                        // 8-bit Spine & Node
-                                        VStack(spacing: 0) {
-                                            if index == 0 {
-                                                Text("■")
-                                                    .font(.system(size: 9, weight: .bold))
-                                                    .foregroundStyle(RetroPalette.green)
-                                            } else {
-                                                Text("▫")
-                                                    .font(.system(size: 8, weight: .regular))
-                                                    .foregroundStyle(RetroPalette.textDim)
-                                            }
-
-                                            if index < min(2, manager.recentCommits.count - 1) {
-                                                Rectangle()
-                                                    .fill(RetroPalette.green.opacity(0.20))
-                                                    .frame(width: 1, height: 18)
-                                            }
-                                        }
-                                        .frame(width: 10)
-
-                                        // Commit Content
-                                        VStack(alignment: .leading, spacing: 1.5) {
-                                            HStack(spacing: 5) {
-                                                Text("[#\(commit.hash)]")
-                                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                                    .foregroundStyle(index == 0 ? RetroPalette.green : RetroPalette.cyan)
-
-                                                if !commit.refs.isEmpty {
-                                                    Text("<\(commit.refs)>")
-                                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                                        .foregroundStyle(RetroPalette.amber)
-                                                        .lineLimit(1)
-                                                }
-
-                                                Spacer(minLength: 0)
-
-                                                Text("\(commit.author.uppercased()) // \(commit.timeAgo.uppercased())")
-                                                    .font(.system(size: 8.5, weight: .medium, design: .monospaced))
-                                                    .foregroundStyle(RetroPalette.textDim)
-                                            }
-
-                                            Text(commit.message)
-                                                .font(.system(size: 11, weight: index == 0 ? .semibold : .regular, design: .monospaced))
-                                                .foregroundStyle(index == 0 ? RetroPalette.textBright : RetroPalette.textDim)
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                    }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
+                                    PixelRetroGitGraphItemView(
+                                        commit: commit,
+                                        isLatest: index == 0,
+                                        isLast: index == min(2, manager.recentCommits.count - 1)
+                                    )
                                 }
                             }
                         }
                     }
 
                     // ==========================================
-                    // 3. ACTION BAR (ARCADE COMMAND DECK)
+                    // 3. ACTION BAR (PIXEL COMMAND DECK)
                     // ==========================================
                     if manager.changedFiles.isEmpty {
-                        // Clean state: Retro terminal path
+                        // Clean state: Path hint & Open Folder
                         HStack(spacing: 8) {
-                            Text("ROOT: \(manager.currentCwd)")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundStyle(RetroPalette.textDim)
+                            Text(manager.currentCwd)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(Color.white.opacity(0.40))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
 
                             Spacer(minLength: 0)
 
                             if let status = manager.commitStatusMessage {
-                                Text("[✓ \(status.uppercased())]")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                Text(status)
+                                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                                     .foregroundStyle(RetroPalette.green)
+                                    .transition(.opacity)
                             }
 
                             Button(action: {
@@ -896,101 +891,110 @@ struct PixelRetroWorkspaceView: View {
                                 let url = URL(fileURLWithPath: manager.currentCwd)
                                 NSWorkspace.shared.open(url)
                             }) {
-                                Text("[ OPEN FOLDER ]")
-                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(terminalHovered ? Color.black : RetroPalette.green)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2.5)
-                                    .background(Rectangle().fill(terminalHovered ? RetroPalette.green : Color.clear))
-                                    .overlay(Rectangle().strokeBorder(RetroPalette.green, lineWidth: 1))
+                                HStack(spacing: 3.5) {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 8.5))
+                                    Text("OPEN FOLDER")
+                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundStyle(terminalHovered ? Color.black : RetroPalette.green)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Rectangle().fill(terminalHovered ? RetroPalette.green : Color.clear))
+                                .overlay(Rectangle().stroke(RetroPalette.green.opacity(0.5), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { terminalHovered = $0 }
                         }
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                     } else {
                         // Quick Action Studio Bar (when uncommitted changes exist)
-                        HStack(spacing: 5) {
-                            // Arcade AI Suggest Button
+                        HStack(spacing: 6) {
+                            // AI Suggest Button (Sharp 1px Border)
                             Button(action: {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                     manager.generateAICommitMessage()
                                 }
                             }) {
-                                Text("[✦ AI MSG]")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(aiHovered ? Color.black : RetroPalette.cyan)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 4)
-                                    .background(Rectangle().fill(aiHovered ? RetroPalette.cyan : Color.clear))
-                                    .overlay(Rectangle().strokeBorder(RetroPalette.cyan, lineWidth: 1))
+                                HStack(spacing: 3) {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 8.5, weight: .bold))
+                                    Text("AI")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                }
+                                .foregroundStyle(aiHovered ? Color.black : RetroPalette.green)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 4.5)
+                                .background(Rectangle().fill(aiHovered ? RetroPalette.green : Color.clear))
+                                .overlay(Rectangle().stroke(RetroPalette.green.opacity(0.6), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { aiHovered = $0 }
                             .help("Auto-generate conventional commit message")
 
-                            // Arcade Prompt Input Field
-                            HStack(spacing: 4) {
-                                Text(">")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(RetroPalette.green)
-
-                                ZStack(alignment: .leading) {
-                                    if manager.proposedCommitMessage.isEmpty {
-                                        Text("COMMIT MESSAGE...")
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(RetroPalette.green.opacity(0.40))
-                                            .allowsHitTesting(false)
-                                    }
-
-                                    TextField("", text: $manager.proposedCommitMessage)
-                                        .textFieldStyle(.plain)
+                            // Input Field with High-Contrast Readable Placeholder
+                            ZStack(alignment: .leading) {
+                                if manager.proposedCommitMessage.isEmpty {
+                                    Text("Commit message...")
                                         .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                                        .foregroundStyle(RetroPalette.textBright)
+                                        .foregroundStyle(Color.white.opacity(0.50))
+                                        .padding(.horizontal, 8)
+                                        .allowsHitTesting(false)
                                 }
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(Rectangle().fill(Color.black.opacity(0.6)))
-                            .overlay(Rectangle().strokeBorder(RetroPalette.green.opacity(0.4), lineWidth: 1))
 
-                            // Arcade COMMIT Button (Inverted Solid)
+                                TextField("", text: $manager.proposedCommitMessage)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(RetroPalette.textBright)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4.5)
+                            }
+                            .background(
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.04))
+                                    .overlay(Rectangle().stroke(Color.white.opacity(0.14), lineWidth: 0.8))
+                            )
+
+                            // Commit Button (Solid Sharp Inverted Button)
                             Button(action: {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                 manager.executeCommit(message: manager.proposedCommitMessage, push: false)
                             }) {
-                                Text(manager.isCommitting ? "[...]" : "[ COMMIT ]")
+                                Text(manager.isCommitting ? "..." : "Commit")
                                     .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                                     .foregroundStyle(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.3) : Color.black)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
                                     .background(
                                         Rectangle()
-                                            .fill(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.08) : (commitHovered ? Color(red: 0.3, green: 1.0, blue: 0.6) : RetroPalette.green))
+                                            .fill(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.08) : (commitHovered ? Color(red: 0.4, green: 1.0, blue: 0.6) : RetroPalette.green))
                                     )
                                     .overlay(
-                                        Rectangle()
-                                            .strokeBorder(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.15) : RetroPalette.green, lineWidth: 1)
+                                        Rectangle().stroke(manager.proposedCommitMessage.isEmpty ? Color.white.opacity(0.15) : RetroPalette.green, lineWidth: 1)
                                     )
                             }
                             .buttonStyle(.plain)
                             .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
                             .onHover { commitHovered = $0 }
 
-                            // Arcade PUSH Button
+                            // Push Button (Sharp 1px Border)
                             Button(action: {
                                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                                 manager.executeCommit(message: manager.proposedCommitMessage, push: true)
                             }) {
-                                Text(manager.isCommitting ? "[...]" : "[ PUSH ↑ ]")
-                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(pushHovered ? Color.black : RetroPalette.textBright)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Rectangle().fill(pushHovered ? RetroPalette.textBright : Color.clear))
-                                    .overlay(Rectangle().strokeBorder(RetroPalette.textBright.opacity(0.5), lineWidth: 1))
+                                HStack(spacing: 2.5) {
+                                    Text("Push")
+                                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 7, weight: .bold))
+                                }
+                                .foregroundStyle(pushHovered ? Color.black : RetroPalette.green)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(Rectangle().fill(pushHovered ? RetroPalette.green : Color.clear))
+                                .overlay(Rectangle().stroke(RetroPalette.green.opacity(0.6), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
@@ -999,15 +1003,16 @@ struct PixelRetroWorkspaceView: View {
                         .padding(.horizontal, 4)
 
                         if let status = manager.commitStatusMessage {
-                            Text("[STATUS: \(status.uppercased())]")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            Text(status)
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                                 .foregroundStyle(RetroPalette.green)
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, 6)
+                                .transition(.opacity)
                         }
                     }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
             }
         }
         .background(
@@ -1030,7 +1035,7 @@ struct PixelRetroWorkspaceView: View {
     }
 }
 
-// MARK: - Main Cyber Workspace View Container (Switches Between Themes)
+// MARK: - Main Cyber Workspace View Container (Theme Driven from Settings)
 
 struct CyberWorkspaceView: View {
     @ObservedObject var manager: WorkspaceMonitorManager
@@ -1045,9 +1050,9 @@ struct CyberWorkspaceView: View {
     var body: some View {
         Group {
             if workspaceHUDTheme == WorkspaceHUDTheme.pixelRetro.rawValue {
-                PixelRetroWorkspaceView(manager: manager, appState: appState, currentTheme: $workspaceHUDTheme)
+                PixelRetroWorkspaceView(manager: manager, appState: appState)
             } else {
-                ModernWorkspaceView(manager: manager, appState: appState, currentTheme: $workspaceHUDTheme)
+                ModernWorkspaceView(manager: manager, appState: appState)
             }
         }
         .animation(.easeInOut(duration: 0.20), value: workspaceHUDTheme)
