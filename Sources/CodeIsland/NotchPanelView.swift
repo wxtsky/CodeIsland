@@ -1808,7 +1808,6 @@ private struct HeaderNavigationMenuTabs: View {
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var tabFrames: [ExpandedContentTab: CGRect] = [:]
 
     private var activeLabelTab: ExpandedContentTab? {
         appState.activeTabLabel
@@ -1838,296 +1837,202 @@ private struct HeaderNavigationMenuTabs: View {
 
         if isModern {
             // Modern Clean SF Symbols - borderless, backgroundless container with leading-revealing text
-            ZStack(alignment: .leading) {
-                // Gravitational Liquid Metaball Bridge behind icons
-                if let origin = appState.liquidOriginTab,
-                   let target = appState.liquidTargetTab,
-                   appState.isTabTransitioning {
-                    LiquidMetaballBridge(
-                        originTab: origin,
-                        targetTab: target,
-                        progress: appState.liquidProgress,
-                        tabFrames: tabFrames,
-                        color: activeAccentColor,
-                        isPixel: false
+            HStack(spacing: 4) {
+                // AGENTS TAB
+                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
+                Button {
+                    switchToTab(.agents)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if activeLabelTab == .agents {
+                            Text("Agents")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isAgentsActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isAgentsActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isAgentsActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
                     )
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help("AI Agents")
 
-                HStack(spacing: 4) {
-                    // AGENTS TAB
-                    let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
-                    let isAgentsLiquid = (appState.liquidOriginTab == .agents || appState.liquidTargetTab == .agents) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.agents)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "cpu.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                            if activeLabelTab == .agents {
-                                Text("Agents")
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                    .lineLimit(1)
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .leading).combined(with: .opacity),
-                                        removal: .move(edge: .leading).combined(with: .opacity)
-                                    ))
-                            }
+                // WORKSPACE TAB
+                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
+                Button {
+                    switchToTab(.workspace)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if activeLabelTab == .workspace {
+                            Text("Workspace")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
                         }
-                        .foregroundStyle(isAgentsActive ? activeAccentColor : Self.inactiveColor)
-                        .padding(.horizontal, isAgentsActive ? 8 : 6)
-                        .frame(height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill((isAgentsActive && !isAgentsLiquid) ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.agents: geo.frame(in: .named("HeaderTabsBarModern"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help("AI Agents")
-
-                    // WORKSPACE TAB
-                    let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
-                    let isWorkLiquid = (appState.liquidOriginTab == .workspace || appState.liquidTargetTab == .workspace) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.workspace)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "folder.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                            if activeLabelTab == .workspace {
-                                Text("Workspace")
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                    .lineLimit(1)
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .leading).combined(with: .opacity),
-                                        removal: .move(edge: .leading).combined(with: .opacity)
-                                    ))
-                            }
-                        }
-                        .foregroundStyle(isWorkActive ? activeAccentColor : Self.inactiveColor)
-                        .padding(.horizontal, isWorkActive ? 8 : 6)
-                        .frame(height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill((isWorkActive && !isWorkLiquid) ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.workspace: geo.frame(in: .named("HeaderTabsBarModern"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
-
-                    // MUSIC TAB
-                    let isMusicActive = (activeLabelTab ?? expandedTab) == .music
-                    let isMusicLiquid = (appState.liquidOriginTab == .music || appState.liquidTargetTab == .music) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.music)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 11, weight: .semibold))
-                            if activeLabelTab == .music {
-                                Text("Music")
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                    .lineLimit(1)
-                                    .transition(.asymmetric(
-                                        insertion: .move(edge: .leading).combined(with: .opacity),
-                                        removal: .move(edge: .leading).combined(with: .opacity)
-                                    ))
-                            }
-                        }
-                        .foregroundStyle(isMusicActive ? activeAccentColor : Self.inactiveColor)
-                        .padding(.horizontal, isMusicActive ? 8 : 6)
-                        .frame(height: 20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill((isMusicActive && !isMusicLiquid) ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.music: geo.frame(in: .named("HeaderTabsBarModern"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+                    .foregroundStyle(isWorkActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isWorkActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isWorkActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
-            }
-            .coordinateSpace(name: "HeaderTabsBarModern")
-            .onPreferenceChange(TabIconFrameKey.self) { frames in
-                self.tabFrames = frames
+                .buttonStyle(.plain)
+                .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
+
+                // MUSIC TAB
+                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
+                Button {
+                    switchToTab(.music)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 11, weight: .semibold))
+                        if activeLabelTab == .music {
+                            Text("Music")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isMusicActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isMusicActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isMusicActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
         } else {
             // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
-            ZStack(alignment: .leading) {
-                // Gravitational Liquid Metaball Bridge behind icons
-                if let origin = appState.liquidOriginTab,
-                   let target = appState.liquidTargetTab,
-                   appState.isTabTransitioning {
-                    LiquidMetaballBridge(
-                        originTab: origin,
-                        targetTab: target,
-                        progress: appState.liquidProgress,
-                        tabFrames: tabFrames,
-                        color: activeAccentColor,
-                        isPixel: true
+            HStack(spacing: 4) {
+                // AGENTS PIXEL TAB
+                let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
+                Button {
+                    switchToTab(.agents)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .agents,
+                            color: isAgentsActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if activeLabelTab == .agents {
+                            PixelText(
+                                text: "AGENTS",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isAgentsActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isAgentsActive ? activeAccentColor.opacity(0.20) : .clear)
                     )
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help("AI Agents")
 
-                HStack(spacing: 4) {
-                    // AGENTS PIXEL TAB
-                    let isAgentsActive = (activeLabelTab ?? expandedTab) == .agents
-                    let isAgentsLiquid = (appState.liquidOriginTab == .agents || appState.liquidTargetTab == .agents) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.agents)
-                    } label: {
-                        HStack(spacing: 4) {
-                            PixelIcon(
-                                glyph: .agents,
-                                color: isAgentsActive ? activeAccentColor : Self.inactiveColor,
-                                pixelSize: 1.35
+                // WORKSPACE PIXEL TAB
+                let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
+                Button {
+                    switchToTab(.workspace)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .workspace,
+                            color: isWorkActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if activeLabelTab == .workspace {
+                            PixelText(
+                                text: "WORK",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
                             )
-                            if activeLabelTab == .agents {
-                                PixelText(
-                                    text: "AGENTS",
-                                    color: activeAccentColor,
-                                    pixelSize: 1.15
-                                )
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .leading).combined(with: .opacity),
-                                    removal: .move(edge: .leading).combined(with: .opacity)
-                                ))
-                            }
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
                         }
-                        .padding(.horizontal, isAgentsActive ? 7 : 5)
-                        .frame(height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill((isAgentsActive && !isAgentsLiquid) ? activeAccentColor.opacity(0.20) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.agents: geo.frame(in: .named("HeaderTabsBarPixel"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help("AI Agents")
-
-                    // WORKSPACE PIXEL TAB
-                    let isWorkActive = (activeLabelTab ?? expandedTab) == .workspace
-                    let isWorkLiquid = (appState.liquidOriginTab == .workspace || appState.liquidTargetTab == .workspace) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.workspace)
-                    } label: {
-                        HStack(spacing: 4) {
-                            PixelIcon(
-                                glyph: .workspace,
-                                color: isWorkActive ? activeAccentColor : Self.inactiveColor,
-                                pixelSize: 1.35
-                            )
-                            if activeLabelTab == .workspace {
-                                PixelText(
-                                    text: "WORK",
-                                    color: activeAccentColor,
-                                    pixelSize: 1.15
-                                )
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .leading).combined(with: .opacity),
-                                    removal: .move(edge: .leading).combined(with: .opacity)
-                                ))
-                            }
-                        }
-                        .padding(.horizontal, isWorkActive ? 7 : 5)
-                        .frame(height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill((isWorkActive && !isWorkLiquid) ? activeAccentColor.opacity(0.20) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.workspace: geo.frame(in: .named("HeaderTabsBarPixel"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
-
-                    // MUSIC PIXEL TAB
-                    let isMusicActive = (activeLabelTab ?? expandedTab) == .music
-                    let isMusicLiquid = (appState.liquidOriginTab == .music || appState.liquidTargetTab == .music) && appState.isTabTransitioning
-                    Button {
-                        switchToTab(.music)
-                    } label: {
-                        HStack(spacing: 4) {
-                            PixelIcon(
-                                glyph: .music,
-                                color: isMusicActive ? activeAccentColor : Self.inactiveColor,
-                                pixelSize: 1.35
-                            )
-                            if activeLabelTab == .music {
-                                PixelText(
-                                    text: "MUSIC",
-                                    color: activeAccentColor,
-                                    pixelSize: 1.15
-                                )
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .leading).combined(with: .opacity),
-                                    removal: .move(edge: .leading).combined(with: .opacity)
-                                ))
-                            }
-                        }
-                        .padding(.horizontal, isMusicActive ? 7 : 5)
-                        .frame(height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill((isMusicActive && !isMusicLiquid) ? activeAccentColor.opacity(0.20) : .clear)
-                        )
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: TabIconFrameKey.self,
-                                    value: [.music: geo.frame(in: .named("HeaderTabsBarPixel"))]
-                                )
-                            }
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+                    .padding(.horizontal, isWorkActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isWorkActive ? activeAccentColor.opacity(0.20) : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
-            }
-            .coordinateSpace(name: "HeaderTabsBarPixel")
-            .onPreferenceChange(TabIconFrameKey.self) { frames in
-                self.tabFrames = frames
+                .buttonStyle(.plain)
+                .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
+
+                // MUSIC PIXEL TAB
+                let isMusicActive = (activeLabelTab ?? expandedTab) == .music
+                Button {
+                    switchToTab(.music)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .music,
+                            color: isMusicActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if activeLabelTab == .music {
+                            PixelText(
+                                text: "MUSIC",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isMusicActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isMusicActive ? activeAccentColor.opacity(0.20) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
         }

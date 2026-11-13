@@ -252,54 +252,25 @@ final class AppState {
     }
     var activeTabLabel: ExpandedContentTab? = .agents
     var isTabTransitioning: Bool = false
-    var liquidOriginTab: ExpandedContentTab? = nil
-    var liquidTargetTab: ExpandedContentTab? = nil
-    var liquidProgress: CGFloat = 0.0
 
     func transitionToTab(_ target: ExpandedContentTab) {
         guard target != expandedTab else { return }
         guard !isTabTransitioning else { return }
         isTabTransitioning = true
 
-        let origin = expandedTab
-        liquidOriginTab = origin
-        liquidTargetTab = target
-        liquidProgress = 0.0
-
-        // Phase 1: Tutup dulu label lama ke dalam icon (0.00s - 0.10s)
-        withAnimation(.easeIn(duration: 0.10)) {
+        // Phase 1: Tutup dulu (current open tab text collapses into its icon)
+        withAnimation(.easeIn(duration: 0.12)) {
             activeTabLabel = nil
         }
 
-        // Phase 2: Cairan meregang ditarik gravitasi antar-icon (0.10s - 0.24s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-            let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
-            if hapticOn {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-            }
-
-            withAnimation(.easeInOut(duration: 0.14)) {
-                self.liquidProgress = 1.0
-            }
-        }
-
-        // Phase 3: Snap & Coalesce + Ganti konten & buka label baru (0.24s - 0.40s)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
-            if hapticOn {
-                NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
-            }
-
+        // Phase 2: Setelah itu baru buka ke kanan (expand target tab text & switch content)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
             if target == .workspace {
                 WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: self)
             }
-
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                 self.expandedTab = target
                 self.activeTabLabel = target
-                self.liquidOriginTab = nil
-                self.liquidTargetTab = nil
-                self.liquidProgress = 0.0
                 self.isTabTransitioning = false
             }
         }
