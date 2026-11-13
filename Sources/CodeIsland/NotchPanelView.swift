@@ -318,7 +318,7 @@ struct NotchPanelView: View {
     private var mascotSize: CGFloat { min(27, notchHeight - 6) }
 
     /// Minimum wing width needed to display compact bar content
-    private var compactWingWidth: CGFloat { mascotSize + 8 }
+    private var compactWingWidth: CGFloat { mascotSize + 17 }
 
     /// Effective island width — on notched screens the scale can only widen past the notch.
     private var effectiveNotchW: CGFloat {
@@ -342,7 +342,7 @@ struct NotchPanelView: View {
     }
 
     private var hasQuotaChip: Bool {
-        guard showClaudeQuota, !shouldShowExpanded,
+        guard showAgentDetails, showClaudeQuota, !shouldShowExpanded,
               let _ = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
               appState.claudeQuota.snapshot != nil
         else { return false }
@@ -370,7 +370,7 @@ struct NotchPanelView: View {
         if nowPlaying.isPlaying {
             return 54
         }
-        return 54
+        return showAgentDetails ? 54 : 44
     }
 
     /// Notch cutout reserved in the center of the expanded header.
@@ -459,7 +459,7 @@ struct NotchPanelView: View {
     /// Room for the plan-limit chip in the collapsed bar; `.none` whenever the
     /// chip isn't shown, which leaves the bar exactly as it is without it.
     private var quotaReserve: QuotaChipLayout.Reserve {
-        guard showBar, !shouldShowExpanded,
+        guard showAgentDetails, showBar, !shouldShowExpanded,
               let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip)
         else { return .none }
         // Measured once laid out; the label-length estimate covers the first frame.
@@ -496,10 +496,10 @@ struct NotchPanelView: View {
                             expandedTab: expandedTabBinding,
                             workspaceManager: workspaceManager
                         )
-                            .padding(.leading, 8)
+                            .padding(.leading, hasQuotaChip ? 8 : (showAgentDetails ? 6 : 0))
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: .leading
+                                alignment: hasQuotaChip ? .leading : .center
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
@@ -532,10 +532,10 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, 8)
+                            .padding(.trailing, hasQuotaChip ? 8 : (showAgentDetails ? 6 : 0))
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
-                                alignment: .trailing
+                                alignment: (hasQuotaChip || isHoveringRightWing) ? .trailing : .center
                             )
                             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
                             .contentShape(Rectangle())
@@ -1086,6 +1086,7 @@ private struct CompactLeftWing: View {
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
+    @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
 
     private var displaySession: SessionSnapshot? {
         let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -1193,7 +1194,7 @@ private struct CompactLeftWing: View {
                 }
 
                 // Tool name or thinking indicator
-                if let tool = shownTool, showToolStatus {
+                if let tool = shownTool, showToolStatus && showAgentDetails {
                     HStack(spacing: 3) {
                         Image(systemName: "wrench.and.screwdriver.fill")
                             .font(.system(size: 7, weight: .bold))
@@ -1223,7 +1224,8 @@ private struct CompactLeftWing: View {
                         insertion: .opacity.combined(with: .scale(scale: 0.9)),
                         removal: .opacity
                     ))
-                } else if let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
+                } else if showAgentDetails,
+                          let limit = QuotaChip.limit(appState: appState, enabled: showClaudeQuota, modeRaw: claudeQuotaChip),
                           let snapshot = appState.claudeQuota.snapshot {
                     // Plan-limit chip takes the tool slot while no tool is
                     // running: window label + ring + percent, all windows in
@@ -1364,6 +1366,7 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+    @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
 
     private var modernMusicAccent: Color {
         let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
@@ -1550,35 +1553,37 @@ private struct CompactRightWing: View {
                         // "KECIL AWAL" - Refined Standby Dynamic Island Pill
                         let active = appState.activeSessionCount
                         let total = appState.totalSessionCount
-                        HStack(spacing: 3.5) {
-                            if active > 0 {
-                                Circle()
-                                    .fill(Color(red: 0.20, green: 0.88, blue: 0.65))
-                                    .frame(width: 4, height: 4)
-                                    .shadow(color: Color(red: 0.20, green: 0.88, blue: 0.65).opacity(0.6), radius: 2)
-                                Text("\(active)/\(total)")
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.white)
-                            } else if total > 0 {
-                                Image(systemName: "terminal.fill")
-                                    .font(.system(size: 6.5, weight: .bold))
-                                    .foregroundStyle(Color.white.opacity(0.45))
-                                Text("\(total)")
-                                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.white.opacity(0.75))
-                            } else {
-                                Circle()
-                                    .fill(Color.white.opacity(0.35))
-                                    .frame(width: 4, height: 4)
+                        if showAgentDetails && (active > 0 || total > 0) {
+                            HStack(spacing: 3.5) {
+                                if active > 0 {
+                                    Circle()
+                                        .fill(Color(red: 0.20, green: 0.88, blue: 0.65))
+                                        .frame(width: 4, height: 4)
+                                        .shadow(color: Color(red: 0.20, green: 0.88, blue: 0.65).opacity(0.6), radius: 2)
+                                    Text("\(active)/\(total)")
+                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(Color.white)
+                                } else {
+                                    Image(systemName: "terminal.fill")
+                                        .font(.system(size: 6.5, weight: .bold))
+                                        .foregroundStyle(Color.white.opacity(0.45))
+                                    Text("\(total)")
+                                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.75))
+                                }
                             }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(
+                                Capsule()
+                                    .fill(Color.white.opacity(0.06))
+                                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5))
+                            )
+                        } else {
+                            Circle()
+                                .fill(Color.white.opacity(0.35))
+                                .frame(width: 4, height: 4)
                         }
-                        .padding(.horizontal, total > 0 ? 6 : 5)
-                        .padding(.vertical, 2.5)
-                        .background(
-                            Capsule()
-                                .fill(Color.white.opacity(0.06))
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5))
-                        )
                     }
                 }
 
@@ -1967,6 +1972,7 @@ private struct HeaderNavigationMenuTabs: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+    @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activeLabelTab: ExpandedContentTab? {
@@ -2283,6 +2289,7 @@ private struct SessionGroupingTabs: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
+    @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
 
     private var activeAccentColor: Color {
         let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
@@ -2399,12 +2406,12 @@ private struct IdleIndicatorBar: View {
         HStack(spacing: 0) {
             // Left Wing: mascot with precise positioning
             HStack {
+                Spacer(minLength: 0)
                 MascotView(source: defaultSource, status: .idle, size: mascotSize)
                     .opacity(hovered ? 0.95 : 0.65)
-                    .padding(.leading, hovered ? 7 : 5)
                 Spacer(minLength: 0)
             }
-            .frame(width: wingWidth, alignment: .leading)
+            .frame(width: wingWidth, alignment: .center)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
             .help("Click to expand tabs (Agents / Workspace / Music)")
