@@ -118,6 +118,7 @@ enum AgentProcessFinder {
         case "grok":       return findGrokPids(candidatePids: candidatePids)
         case "qwen":       return findQwenPids(candidatePids: candidatePids)
         case "kimi":       return findKimiPids(candidatePids: candidatePids)
+        case "kiro":       return findKiroPids(candidatePids: candidatePids)
         case "pi":         return findPiPids(candidatePids: candidatePids)
         case "cline":      return findClinePids(candidatePids: candidatePids)
         case "zcode":      return findZcodePids(candidatePids: candidatePids)
@@ -610,6 +611,31 @@ enum AgentProcessFinder {
             executablePath: executablePath,
             arguments: arguments
         )
+    }
+
+    static func findKiroPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
+        let pids = findPids(
+            matchingPathSubstrings: [
+                "/Application Support/kiro-cli/",
+                "/kiro-cli",
+            ],
+            pathSuffixes: [
+                "/bin/kiro",
+                "/bin/kiro-cli",
+                "/kiro",
+                "/kiro-cli",
+            ],
+            argSubstrings: [
+                "kiro-cli",
+                "/kiro-cli",
+            ],
+            candidatePids: candidatePids
+        )
+        let pidSet = Set(pids)
+        return pids.filter { pid in
+            guard let parent = ProcessTable.parentPID(for: pid) else { return true }
+            return !pidSet.contains(parent)
+        }
     }
 
     static func findCopilotPids(candidatePids: [pid_t]? = nil) -> [pid_t] {
