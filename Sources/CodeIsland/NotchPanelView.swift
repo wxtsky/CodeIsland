@@ -1808,8 +1808,10 @@ private struct HeaderNavigationMenuTabs: View {
     @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var activeLabelTab: ExpandedContentTab? = nil
-    @State private var isTransitioning = false
+
+    private var activeLabelTab: ExpandedContentTab? {
+        appState.activeTabLabel
+    }
 
     static let inactiveColor = Color.white.opacity(0.55)
 
@@ -1827,27 +1829,7 @@ private struct HeaderNavigationMenuTabs: View {
     }
 
     private func switchToTab(_ target: ExpandedContentTab) {
-        guard target != expandedTab else { return }
-        guard !isTransitioning else { return }
-        isTransitioning = true
-
-        if target == .workspace {
-            workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-        }
-
-        // Phase 1: Tutup dulu (current open tab text collapses into its icon)
-        withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
-            activeLabelTab = nil
-        }
-
-        // Phase 2: Setelah itu baru buka (expand target tab text & switch content)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
-            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                expandedTab = target
-                activeLabelTab = target
-                isTransitioning = false
-            }
-        }
+        appState.transitionToTab(target)
     }
 
     var body: some View {
@@ -1947,14 +1929,6 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
-            .onAppear {
-                activeLabelTab = expandedTab
-            }
-            .onChange(of: expandedTab) { _, newTab in
-                if activeLabelTab != newTab && !isTransitioning {
-                    activeLabelTab = newTab
-                }
-            }
         } else {
             // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
             HStack(spacing: 4) {
@@ -2061,14 +2035,6 @@ private struct HeaderNavigationMenuTabs: View {
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
             }
             .padding(.vertical, 2)
-            .onAppear {
-                activeLabelTab = expandedTab
-            }
-            .onChange(of: expandedTab) { _, newTab in
-                if activeLabelTab != newTab && !isTransitioning {
-                    activeLabelTab = newTab
-                }
-            }
         }
     }
 }

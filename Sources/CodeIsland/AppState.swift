@@ -250,6 +250,31 @@ final class AppState {
             }
         }
     }
+    var activeTabLabel: ExpandedContentTab? = .agents
+    var isTabTransitioning: Bool = false
+
+    func transitionToTab(_ target: ExpandedContentTab) {
+        guard target != expandedTab else { return }
+        guard !isTabTransitioning else { return }
+        isTabTransitioning = true
+
+        // Phase 1: Tutup dulu (current open tab text collapses into its icon)
+        withAnimation(.easeIn(duration: 0.12)) {
+            activeTabLabel = nil
+        }
+
+        // Phase 2: Setelah itu baru buka ke kanan (expand target tab text & switch content)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
+            if target == .workspace {
+                WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: self)
+            }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                self.expandedTab = target
+                self.activeTabLabel = target
+                self.isTabTransitioning = false
+            }
+        }
+    }
     /// Whether the active space is fullscreen — undocks the notch into a Machined Floating Deck
     var isFullscreenMode: Bool = false
     var surface: IslandSurface = .collapsed {

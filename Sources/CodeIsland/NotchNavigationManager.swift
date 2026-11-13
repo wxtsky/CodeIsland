@@ -30,6 +30,7 @@ final class NotchNavigationManager {
         // Only handle predominant horizontal scroll
         guard abs(deltaX) > abs(deltaY) else { return false }
         guard abs(deltaX) > 0.4 else { return false }
+        guard !appState.isTabTransitioning else { return true }
 
         // Handle trackpad phases
         if event.hasPreciseScrollingDeltas {
@@ -102,12 +103,7 @@ final class NotchNavigationManager {
         let allTabs = ExpandedContentTab.allCases
         if targetIndex >= 0 && targetIndex < allTabs.count {
             let targetTab = allTabs[targetIndex]
-            if targetTab == .workspace {
-                WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: appState)
-            }
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                appState.expandedTab = targetTab
-            }
+            appState.transitionToTab(targetTab)
             let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
             if hapticOn {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
