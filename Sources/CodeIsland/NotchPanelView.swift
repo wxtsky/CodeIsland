@@ -222,7 +222,7 @@ struct NotchPanelView: View {
     }
     /// Whether the bar content should be visible (respects hideWhenNoSession)
     private var showBar: Bool {
-        if nowPlaying.isPlaying || nowPlaying.showToast || prayerManager.showMiniPeekBanner { return true }
+        if nowPlaying.isPlaying || nowPlaying.showToast || prayerManager.showMiniPeekBanner || sys.showChargingBanner { return true }
         return isActive && !(hideWhenNoSession && appState.activeSessionCount == 0)
     }
     private var shouldShowExpanded: Bool {
@@ -250,7 +250,7 @@ struct NotchPanelView: View {
     }
 
     private var isToastOnly: Bool {
-        prayerManager.showMiniPeekBanner && !appState.surface.isExpanded
+        (prayerManager.showMiniPeekBanner || sys.showChargingBanner) && !appState.surface.isExpanded
     }
 
     private func triggerMusicAutoPeek() {
@@ -344,15 +344,15 @@ struct NotchPanelView: View {
     /// Symmetrical wing width calculated dynamically — ultra-compact, sleek, and balanced
     private var symmetricWingWidth: CGFloat {
         if isThinking && !shouldShowExpanded {
-            return 118
+            return 144
         }
         if isHoveringRightWing && !shouldShowExpanded {
-            return 128
+            return 148
         }
         if nowPlaying.isPlaying {
-            return 52
+            return 54
         }
-        return 48
+        return 54
     }
 
     /// Notch cutout reserved in the center of the expanded header.
@@ -514,7 +514,7 @@ struct NotchPanelView: View {
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
-                            .padding(.trailing, (isThinking || isHoveringRightWing || shouldShowExpanded) ? 8 : 0)
+                            .padding(.trailing, (isThinking || isHoveringRightWing || shouldShowExpanded) ? 6 : 0)
                             .frame(
                                 width: shouldShowExpanded ? expandedWingWidth : symmetricWingWidth,
                                 alignment: (isThinking || isHoveringRightWing || shouldShowExpanded) ? .trailing : .center
@@ -1176,17 +1176,22 @@ private struct CompactLeftWing: View {
 
                 // Tool name or thinking indicator
                 if let tool = shownTool, showToolStatus {
-                    Text(ToolNameDisplay.compact(tool))
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(toolStatusColor(tool))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: 65, alignment: .leading)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.9)),
-                            removal: .opacity
-                        ))
-                        .help(tool)
+                    HStack(spacing: 3) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(toolStatusColor(tool))
+                        Text(ToolNameDisplay.compact(tool))
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(toolStatusColor(tool))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .frame(maxWidth: 82, alignment: .leading)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.9)),
+                        removal: .opacity
+                    ))
+                    .help(tool)
                 } else if isThinking {
                     TypingIndicator(
                         fontSize: 9,
@@ -1436,89 +1441,125 @@ private struct CompactRightWing: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
                     // AGENT / STANDBY MODE:
+                    let extraBadgeCount: Int = {
+                        var count = 0
+                        if inQuietHours { count += 1 }
+                        if appState.glanceCompletionActive { count += 1 }
+                        if appState.hiddenPendingQuestionSessionId != nil || appState.followUps.hintActive || appState.status == .waitingApproval || appState.status == .waitingQuestion { count += 1 }
+                        return count
+                    }()
+                    let maxBranchWidth: CGFloat = extraBadgeCount > 0 ? 54 : 76
+
                     if shouldExpandRightWing {
-                        // "KECIL KEDUA / THINKING EXPANDED" - Agent Mode: Project + Git Branch + Sessions (Ultra-Compact)
-                        HStack(spacing: 3.5) {
+                        // "KECIL KEDUA / THINKING EXPANDED" - Sleek Dynamic Island Capsule
+                        HStack(spacing: 4.5) {
+                            // 1. Branch or Project
                             if let branch = gitBranch, !branch.isEmpty {
-                                HStack(spacing: 2) {
+                                HStack(spacing: 3) {
                                     Image(systemName: "arrow.triangle.branch")
-                                        .font(.system(size: 6.5, weight: .bold))
+                                        .font(.system(size: 7.5, weight: .bold))
+                                        .foregroundStyle(Color(red: 0.20, green: 0.88, blue: 0.65))
+
                                     Text(branch)
-                                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+                                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.92))
                                         .lineLimit(1)
-                                        .frame(maxWidth: 58, alignment: .leading)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: maxBranchWidth, alignment: .leading)
                                 }
-                                .foregroundStyle(Color(red: 0.0, green: 0.96, blue: 0.83))
-                            } else {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "cpu")
-                                        .font(.system(size: 6.5, weight: .bold))
-                                    Text("agents")
-                                        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color.white.opacity(0.85))
+                            } else if let proj = projectName, !proj.isEmpty {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "folder.fill")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(Color.white.opacity(0.60))
+
+                                    Text(proj)
+                                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.90))
                                         .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: maxBranchWidth, alignment: .leading)
+                                }
+                            } else {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "cpu")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(Color.white.opacity(0.60))
+
+                                    Text(agentDisplayLabel.lowercased())
+                                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.white.opacity(0.90))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: maxBranchWidth, alignment: .leading)
                                 }
                             }
 
-                            // Session badge
+                            // 2. Subtle Divider
+                            Rectangle()
+                                .fill(Color.white.opacity(0.18))
+                                .frame(width: 1, height: 9)
+
+                            // 3. Session Badge (Active / Total)
                             let active = appState.activeSessionCount
                             let total = appState.totalSessionCount
-                            HStack(spacing: 2) {
+                            HStack(spacing: 3) {
                                 if active > 0 {
                                     Circle()
-                                        .fill(Color(red: 0.96, green: 0.62, blue: 0.04))
-                                        .frame(width: 3.5, height: 3.5)
+                                        .fill(Color(red: 0.20, green: 0.88, blue: 0.65))
+                                        .frame(width: 4, height: 4)
+                                        .shadow(color: Color(red: 0.20, green: 0.88, blue: 0.65).opacity(0.7), radius: 2)
                                 } else {
                                     Image(systemName: "terminal")
-                                        .font(.system(size: 6.5, weight: .bold))
-                                        .foregroundStyle(Color.white.opacity(0.55))
+                                        .font(.system(size: 6.5, weight: .semibold))
+                                        .foregroundStyle(Color.white.opacity(0.40))
                                 }
+
                                 Text("\(active)/\(total)")
-                                    .font(.system(size: 7.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(Color.white.opacity(0.85))
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(active > 0 ? Color.white : Color.white.opacity(0.65))
                             }
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(
-                                RoundedRectangle(cornerRadius: 2.5)
-                                    .fill(Color(white: 0.12))
-                            )
                         }
-                        .padding(.horizontal, 4.5)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6.5)
+                        .padding(.vertical, 3)
                         .background(
-                            RoundedRectangle(cornerRadius: 3.5)
-                                .fill(Color(white: 0.07))
-                                .overlay(RoundedRectangle(cornerRadius: 3.5).stroke(Color(red: 0.0, green: 0.96, blue: 0.83).opacity(0.35), lineWidth: 0.6))
+                            Capsule()
+                                .fill(Color.white.opacity(0.08))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.6))
                         )
+                        .shadow(color: Color.black.opacity(0.4), radius: 3, y: 1)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else {
-                        // "KECIL AWAL" - Agent Mode: Minimal Machined Pill (Ultra-Compact)
-                        HStack(spacing: 3) {
-                            if appState.status == .idle {
-                                Image(systemName: "terminal")
-                                    .font(.system(size: 7, weight: .bold))
-                                    .foregroundStyle(Color.white.opacity(0.65))
+                        // "KECIL AWAL" - Refined Standby Dynamic Island Pill
+                        let active = appState.activeSessionCount
+                        let total = appState.totalSessionCount
+                        HStack(spacing: 3.5) {
+                            if active > 0 {
+                                Circle()
+                                    .fill(Color(red: 0.20, green: 0.88, blue: 0.65))
+                                    .frame(width: 4, height: 4)
+                                    .shadow(color: Color(red: 0.20, green: 0.88, blue: 0.65).opacity(0.6), radius: 2)
+                                Text("\(active)/\(total)")
+                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.white)
+                            } else if total > 0 {
+                                Image(systemName: "terminal.fill")
+                                    .font(.system(size: 6.5, weight: .bold))
+                                    .foregroundStyle(Color.white.opacity(0.45))
+                                Text("\(total)")
+                                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.white.opacity(0.75))
                             } else {
                                 Circle()
-                                    .fill(Color(red: 0.96, green: 0.62, blue: 0.04))
-                                    .frame(width: 3.5, height: 3.5)
-                                    .shadow(color: Color(red: 0.96, green: 0.62, blue: 0.04).opacity(0.6), radius: 1.5)
+                                    .fill(Color.white.opacity(0.35))
+                                    .frame(width: 4, height: 4)
                             }
-
-                            // Session count pill
-                            let active = appState.activeSessionCount
-                            let total = appState.totalSessionCount
-                            Text("\(active)/\(total)")
-                                .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.white.opacity(0.85))
                         }
-                        .padding(.horizontal, 3.5)
-                        .padding(.vertical, 1.5)
+                        .padding(.horizontal, total > 0 ? 6 : 5)
+                        .padding(.vertical, 2.5)
                         .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(white: 0.06))
-                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color(white: 0.14), lineWidth: 0.5))
+                            Capsule()
+                                .fill(Color.white.opacity(0.06))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5))
                         )
                     }
                 }

@@ -67,19 +67,18 @@ public struct PrayerMiniPeekBannerView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(red: 0.08, green: 0.09, blue: 0.12))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(manager.currentPhase.accentColor.opacity(0.35), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 0.8)
                     )
-                    .shadow(color: Color.black.opacity(0.5), radius: 6, y: 3)
             )
-            .padding(.horizontal, 6)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 5)
         }
         .buttonStyle(.plain)
     }

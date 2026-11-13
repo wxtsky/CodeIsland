@@ -496,15 +496,15 @@ struct CyberMusicMiniPeekBanner: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous)
-                    .fill(Color(red: 0.06, green: 0.07, blue: 0.09))
-                    .overlay(RoundedRectangle(cornerRadius: isModernClean ? 8 : 5, style: .continuous).stroke(isModernClean ? Color.white.opacity(0.18) : Color(red: 0.16, green: 0.19, blue: 0.24), lineWidth: 1))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
             )
-            .padding(.horizontal, 6)
-            .padding(.bottom, 3)
+            .padding(.horizontal, 8)
+            .padding(.bottom, 5)
         }
         .buttonStyle(.plain)
     }

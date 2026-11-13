@@ -20,24 +20,25 @@ private enum ModernPalette {
     static let amber = Color(red: 0.94, green: 0.64, blue: 0.20)        // Modified / Uncommitted
 }
 
-// MARK: - 2. Minimalist Modern Pixel Palette (Deep Midnight & Electric Ice Cyan)
-// A cool, sophisticated, zero-eyestrain developer palette inspired by Linear & Zed:
-// Deep Midnight Navy background, Electric Ice Cyan primary, and Emerald Sage status.
+// MARK: - 2. Minimalist Modern Pixel Palette (Tab Phosphor Green & Warm Amber)
+// Dominant Accent: Tab Green (Color(red: 0.12, green: 0.84, blue: 0.38)) matching CodeIsland's signature active tabs.
+// Deep terminal base, crisp readable typography, and intentional warm amber contrast for modified states.
 
 private enum MinimalPixelPalette {
-    static let base = Color(red: 0.045, green: 0.055, blue: 0.08)       // #0B0E14 Deep Midnight Navy
-    static let surface = Color(red: 0.08, green: 0.10, blue: 0.14)      // #141A24 Clean slot surface
-    static let border = Color(red: 0.14, green: 0.18, blue: 0.25)       // #242E40 Hairline 1px border
+    static let base = Color(red: 0.04, green: 0.06, blue: 0.05)         // #0A0F0D Deep Terminal Dark
+    static let surface = Color(red: 0.07, green: 0.11, blue: 0.09)      // #121C17 Clean slot surface
+    static let border = Color(red: 0.13, green: 0.22, blue: 0.17)       // #21382B Hairline 1px border
 
     // Typography
-    static let textWhite = Color(red: 0.96, green: 0.98, blue: 1.0)     // #F5FAFF Crisp readable white
-    static let textMuted = Color(red: 0.50, green: 0.58, blue: 0.68)     // #8094AE Cool slate secondary
-    static let textDim = Color(red: 0.32, green: 0.38, blue: 0.46)       // #526175 Dim details
+    static let textWhite = Color(red: 0.95, green: 0.98, blue: 0.96)     // #F2FAF5 Crisp readable white
+    static let textMuted = Color(red: 0.52, green: 0.66, blue: 0.58)     // #85A894 Soft sage secondary
+    static let textDim = Color(red: 0.30, green: 0.42, blue: 0.35)       // #4D6B59 Dim details
 
-    // Signature Cool Accents (Pleasant & Non-Glaring)
-    static let cyan = Color(red: 0.22, green: 0.74, blue: 0.97)          // #38BDF8 Electric Ice Cyan
-    static let sage = Color(red: 0.20, green: 0.78, blue: 0.55)          // #34D399 Emerald Sage (Clean)
-    static let coral = Color(red: 0.98, green: 0.45, blue: 0.48)         // #FA737A Soft Coral (Modified)
+    // Dominant Signature Accent: Tab Green (exact match to CodeIsland active tab)
+    static let green = Color(red: 0.12, green: 0.84, blue: 0.38)        // #1FD661 Tab Green
+
+    // Contrast Accent: Warm Amber (Modified / Uncommitted / Behind)
+    static let amber = Color(red: 1.00, green: 0.72, blue: 0.20)        // #FFB833 Warm Terminal Amber
 }
 
 // MARK: - Vector Pixel Art Icon Renderer (9×9 Matrix)
@@ -716,7 +717,7 @@ struct PixelRetroWorkspaceView: View {
                 // Non-Git State: Minimal & Clean
                 VStack(spacing: 8) {
                     HStack(spacing: 6) {
-                        WorkspacePixelIcon(glyph: .folder, color: MinimalPixelPalette.cyan, pixelSize: 1.3)
+                        WorkspacePixelIcon(glyph: .folder, color: MinimalPixelPalette.green, pixelSize: 1.3)
                         Text("NO REPOSITORY DETECTED")
                             .font(.system(size: 10.5, weight: .bold, design: .monospaced))
                             .foregroundStyle(MinimalPixelPalette.textWhite)
@@ -741,7 +742,7 @@ struct PixelRetroWorkspaceView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4.5)
-                        .background(Rectangle().fill(MinimalPixelPalette.cyan))
+                        .background(Rectangle().fill(MinimalPixelPalette.green))
                     }
                     .buttonStyle(.plain)
                 }
@@ -763,7 +764,7 @@ struct PixelRetroWorkspaceView: View {
                             HStack(spacing: 5) {
                                 WorkspacePixelIcon(
                                     glyph: .folder,
-                                    color: switchHovered ? Color.white : MinimalPixelPalette.cyan,
+                                    color: switchHovered ? Color.white : MinimalPixelPalette.green,
                                     pixelSize: 1.2
                                 )
 
@@ -783,11 +784,11 @@ struct PixelRetroWorkspaceView: View {
 
                         // Branch
                         HStack(spacing: 4) {
-                            WorkspacePixelIcon(glyph: .branch, color: MinimalPixelPalette.cyan.opacity(0.8), pixelSize: 1.1)
+                            WorkspacePixelIcon(glyph: .branch, color: MinimalPixelPalette.green.opacity(0.85), pixelSize: 1.1)
 
                             Text(manager.branch)
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(MinimalPixelPalette.cyan)
+                                .foregroundStyle(MinimalPixelPalette.green)
                                 .lineLimit(1)
 
                             if manager.aheadCount > 0 || manager.behindCount > 0 {
@@ -795,12 +796,12 @@ struct PixelRetroWorkspaceView: View {
                                     if manager.aheadCount > 0 {
                                         Text("↑\(manager.aheadCount)")
                                             .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(MinimalPixelPalette.textWhite)
+                                            .foregroundStyle(MinimalPixelPalette.green)
                                     }
                                     if manager.behindCount > 0 {
                                         Text("↓\(manager.behindCount)")
                                             .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(MinimalPixelPalette.coral)
+                                            .foregroundStyle(MinimalPixelPalette.amber)
                                     }
                                 }
                             }
@@ -813,17 +814,17 @@ struct PixelRetroWorkspaceView: View {
                         // State (Clean vs Modified)
                         if manager.changedFiles.isEmpty {
                             HStack(spacing: 3.5) {
-                                WorkspacePixelIcon(glyph: .check, color: MinimalPixelPalette.sage, pixelSize: 1.0)
+                                WorkspacePixelIcon(glyph: .check, color: MinimalPixelPalette.green, pixelSize: 1.0)
                                 Text("clean")
                                     .font(.system(size: 9.5, design: .monospaced))
-                                    .foregroundStyle(MinimalPixelPalette.sage)
+                                    .foregroundStyle(MinimalPixelPalette.green)
                             }
                         } else {
                             HStack(spacing: 3.5) {
-                                WorkspacePixelIcon(glyph: .modified, color: MinimalPixelPalette.coral, pixelSize: 1.0)
+                                WorkspacePixelIcon(glyph: .modified, color: MinimalPixelPalette.amber, pixelSize: 1.0)
                                 Text("\(manager.changedFiles.count) modified")
                                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(MinimalPixelPalette.coral)
+                                    .foregroundStyle(MinimalPixelPalette.amber)
                             }
                         }
 
@@ -860,7 +861,7 @@ struct PixelRetroWorkspaceView: View {
                         }) {
                             WorkspacePixelIcon(
                                 glyph: .sync,
-                                color: refreshHovered ? MinimalPixelPalette.cyan : MinimalPixelPalette.textDim,
+                                color: refreshHovered ? MinimalPixelPalette.green : MinimalPixelPalette.textDim,
                                 pixelSize: 1.1
                             )
                             .padding(2)
@@ -887,21 +888,21 @@ struct PixelRetroWorkspaceView: View {
                                 HStack(alignment: .center, spacing: 6) {
                                     // Pixel Node
                                     if index == 0 {
-                                        // HEAD: Sharp Cyan Node
+                                        // HEAD: Sharp Tab Green Node
                                         Rectangle()
-                                            .fill(MinimalPixelPalette.cyan)
+                                            .fill(MinimalPixelPalette.green)
                                             .frame(width: 5, height: 5)
                                     } else {
                                         // Previous: Hollow Dim Node
                                         Rectangle()
-                                            .stroke(MinimalPixelPalette.textDim, lineWidth: 1)
+                                            .stroke(MinimalPixelPalette.green.opacity(0.35), lineWidth: 1)
                                             .frame(width: 4, height: 4)
                                     }
 
                                     // Hash Pill
                                     Text(commit.hash)
                                         .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(index == 0 ? MinimalPixelPalette.cyan : MinimalPixelPalette.textMuted)
+                                        .foregroundStyle(index == 0 ? MinimalPixelPalette.green : MinimalPixelPalette.textMuted)
                                         .padding(.horizontal, 3.5)
                                         .padding(.vertical, 1)
                                         .background(Rectangle().fill(MinimalPixelPalette.surface))
@@ -943,7 +944,7 @@ struct PixelRetroWorkspaceView: View {
                             if let status = manager.commitStatusMessage {
                                 Text(status)
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(MinimalPixelPalette.sage)
+                                    .foregroundStyle(MinimalPixelPalette.green)
                                     .transition(.opacity)
                             }
 
@@ -952,15 +953,15 @@ struct PixelRetroWorkspaceView: View {
                                 NSWorkspace.shared.open(URL(fileURLWithPath: manager.currentCwd))
                             }) {
                                 HStack(spacing: 4) {
-                                    WorkspacePixelIcon(glyph: .folder, color: openHovered ? Color.black : MinimalPixelPalette.cyan, pixelSize: 1.0)
+                                    WorkspacePixelIcon(glyph: .folder, color: openHovered ? Color.black : MinimalPixelPalette.green, pixelSize: 1.0)
                                     Text("OPEN")
                                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                                 }
-                                .foregroundStyle(openHovered ? Color.black : MinimalPixelPalette.cyan)
+                                .foregroundStyle(openHovered ? Color.black : MinimalPixelPalette.green)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
-                                .background(Rectangle().fill(openHovered ? MinimalPixelPalette.cyan : MinimalPixelPalette.surface))
-                                .overlay(Rectangle().stroke(MinimalPixelPalette.cyan.opacity(0.4), lineWidth: 1))
+                                .background(Rectangle().fill(openHovered ? MinimalPixelPalette.green : MinimalPixelPalette.surface))
+                                .overlay(Rectangle().stroke(MinimalPixelPalette.green.opacity(0.4), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { openHovered = $0 }
@@ -979,15 +980,15 @@ struct PixelRetroWorkspaceView: View {
                                 }
                             }) {
                                 HStack(spacing: 3) {
-                                    WorkspacePixelIcon(glyph: .sparkle, color: aiHovered ? Color.black : MinimalPixelPalette.cyan, pixelSize: 1.0)
+                                    WorkspacePixelIcon(glyph: .sparkle, color: aiHovered ? Color.black : MinimalPixelPalette.green, pixelSize: 1.0)
                                     Text("AI")
                                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                                 }
-                                .foregroundStyle(aiHovered ? Color.black : MinimalPixelPalette.cyan)
+                                .foregroundStyle(aiHovered ? Color.black : MinimalPixelPalette.green)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3.5)
-                                .background(Rectangle().fill(aiHovered ? MinimalPixelPalette.cyan : MinimalPixelPalette.surface))
-                                .overlay(Rectangle().stroke(MinimalPixelPalette.cyan.opacity(0.5), lineWidth: 1))
+                                .background(Rectangle().fill(aiHovered ? MinimalPixelPalette.green : MinimalPixelPalette.surface))
+                                .overlay(Rectangle().stroke(MinimalPixelPalette.green.opacity(0.5), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .onHover { aiHovered = $0 }
@@ -1037,7 +1038,7 @@ struct PixelRetroWorkspaceView: View {
                                     Rectangle().fill(
                                         manager.proposedCommitMessage.isEmpty
                                             ? MinimalPixelPalette.surface
-                                            : (commitHovered ? MinimalPixelPalette.cyan.opacity(0.85) : MinimalPixelPalette.cyan)
+                                            : (commitHovered ? MinimalPixelPalette.green.opacity(0.85) : MinimalPixelPalette.green)
                                     )
                                 )
                             }
@@ -1062,8 +1063,8 @@ struct PixelRetroWorkspaceView: View {
                                 .foregroundStyle(pushHovered ? Color.black : MinimalPixelPalette.textWhite)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3.5)
-                                .background(Rectangle().fill(pushHovered ? MinimalPixelPalette.cyan : MinimalPixelPalette.surface))
-                                .overlay(Rectangle().stroke(pushHovered ? MinimalPixelPalette.cyan : MinimalPixelPalette.border, lineWidth: 1))
+                                .background(Rectangle().fill(pushHovered ? MinimalPixelPalette.green : MinimalPixelPalette.surface))
+                                .overlay(Rectangle().stroke(pushHovered ? MinimalPixelPalette.green : MinimalPixelPalette.border, lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .disabled(manager.isCommitting || manager.proposedCommitMessage.isEmpty)
@@ -1080,9 +1081,9 @@ struct PixelRetroWorkspaceView: View {
         .background(
             ZStack(alignment: .leading) {
                 Rectangle().fill(MinimalPixelPalette.base)
-                // Left 1.5px Ice Cyan Status Rail
+                // Left 1.5px Tab Green / Amber Status Rail
                 Rectangle()
-                    .fill(manager.changedFiles.isEmpty ? MinimalPixelPalette.cyan : MinimalPixelPalette.coral)
+                    .fill(manager.changedFiles.isEmpty ? MinimalPixelPalette.green : MinimalPixelPalette.amber)
                     .frame(width: 1.5)
             }
             .overlay(
