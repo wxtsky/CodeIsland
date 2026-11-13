@@ -122,18 +122,25 @@ git push origin v1.0.41
 
 ## Monitoring and Logs on Debian
 
-Check webhook service status and recent execution logs:
+### Standalone Daemon (Systemd)
 ```bash
 journalctl -u codeisland-webhook.service -f
 ```
 
-Inspect published files in the web root:
+### Docker Containerized Node (`codeisland-node`)
+If running inside the isolated Docker container:
 ```bash
-ls -la /var/www/codeisland-updates/
-ls -la /var/www/codeisland-updates/releases/
+# View real-time webhook & ingress logs
+docker logs -f codeisland-node
+
+# Inspect resource utilization (RAM capped at 64MB, ~7MB idle)
+docker stats --no-stream codeisland-node
+
+# Inspect releases directory
+docker exec codeisland-node ls -la /data/releases/
 ```
 
 Verify the Sparkle update feed endpoint:
 ```bash
-curl -I https://updates.yourdomain.com/appcast.xml
+curl -I https://codeisland.azhr.cloud/appcast.xml
 ```
