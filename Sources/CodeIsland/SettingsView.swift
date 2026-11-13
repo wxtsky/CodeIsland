@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import UserNotifications
 import CodeIslandCore
 
 // MARK: - Navigation Model
@@ -12,6 +13,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case mascots
     case sound
     case shortcuts
+    case prayer
     case remote
     case hooks
     case buddy
@@ -27,6 +29,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
         case .shortcuts: return "command.circle.fill"
+        case .prayer: return "moon.stars.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
         case .buddy: return "dot.radiowaves.left.and.right"
@@ -42,6 +45,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return .pink
         case .sound: return .green
         case .shortcuts: return .indigo
+        case .prayer: return .teal
         case .remote: return .mint
         case .hooks: return .purple
         case .buddy: return .red
@@ -57,7 +61,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.prayer, .remote, .hooks, .buddy, .about]),
 ]
 
 // MARK: - Main View
@@ -101,6 +105,7 @@ struct SettingsView: View {
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
                 case .shortcuts: ShortcutsPage()
+                case .prayer: PrayerSettingsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage(appState: appState)
                 case .buddy: BuddyPage()
@@ -3625,5 +3630,190 @@ private struct ShortcutRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Prayer Settings Page
+
+private struct PrayerSettingsPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var locationService = PrayerLocationService.shared
+
+    @AppStorage(SettingsKey.prayerEnabled) private var prayerEnabled = SettingsDefaults.prayerEnabled
+    @AppStorage(SettingsKey.prayerCalculationMethod) private var calculationMethod = SettingsDefaults.prayerCalculationMethod
+    @AppStorage(SettingsKey.prayerHijriCalendarSource) private var hijriSource = SettingsDefaults.prayerHijriCalendarSource
+    @AppStorage(SettingsKey.prayerHijriDayOffset) private var hijriDayOffset = SettingsDefaults.prayerHijriDayOffset
+    @AppStorage(SettingsKey.prayerLocationMode) private var locationMode = SettingsDefaults.prayerLocationMode
+    @AppStorage(SettingsKey.prayerManualCityId) private var manualCityId = SettingsDefaults.prayerManualCityId
+    @AppStorage(SettingsKey.prayerAlertBeforeMinutes) private var alertBeforeMinutes = SettingsDefaults.prayerAlertBeforeMinutes
+    @AppStorage(SettingsKey.prayerSoundEnabled) private var soundEnabled = SettingsDefaults.prayerSoundEnabled
+    @AppStorage(SettingsKey.prayerSystemNotificationEnabled) private var systemNotificationEnabled = SettingsDefaults.prayerSystemNotificationEnabled
+    @AppStorage(SettingsKey.prayerUsePreciseLocation) private var usePreciseLocation = SettingsDefaults.prayerUsePreciseLocation
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable Prayer Times & Living Clock", isOn: $prayerEnabled)
+                    .font(.headline)
+                Text("Displays prayer schedule and dynamic sky diorama on the notch bar. 100% offline and energy-efficient.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if prayerEnabled {
+                Section(header: Text("Calculation Method")) {
+                    Picker("Method", selection: $calculationMethod) {
+                        Text("Ministry of Religious Affairs (Fajr -20°, +2m safety margin)").tag("kemenag")
+                        Text("Nahdlatul Ulama / LF PBNU (Fajr -20°, elevation dip correction)").tag("nuLFPBNU")
+                        Text("Muhammadiyah / MTT (Fajr -18°, astronomical reckoning)").tag("muhammadiyah")
+                    }
+                    .pickerStyle(.menu)
+
+                    methodDescription
+                }
+
+                Section(header: Text("Hijri Calendar")) {
+                    Picker("Calendar Standard", selection: $hijriSource) {
+                        Text("Global Unified Hijri Calendar (KHGT)").tag("khgt")
+                        Text("Indonesia Standard Calendar (Neo-MABIMS)").tag("neoMABIMS")
+                    }
+                    .pickerStyle(.menu)
+
+                    Stepper(value: $hijriDayOffset, in: -2...2) {
+                        HStack {
+                            Text("Manual Day Adjustment:")
+                            Spacer()
+                            Text(hijriDayOffset == 0 ? "0 days" : (hijriDayOffset > 0 ? "+\(hijriDayOffset) days" : "\(hijriDayOffset) days"))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Use manual adjustment if official crescent sighting (Rukyatul Hilal) announcement differs by 1 day from calculated calendar.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section(header: Text("Device Location")) {
+                    Picker("Location Mode", selection: $locationMode) {
+                        Text("Automatic (CoreLocation)").tag("automatic")
+                        Text("Manual (Select City)").tag("manual")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: locationMode) { _, _ in
+                        locationService.requestCurrentLocation(force: true)
+                    }
+
+                    if locationMode == "automatic" {
+                        Toggle("Use Precise Coordinates & Elevation", isOn: $usePreciseLocation)
+                            .font(.system(size: 12))
+                        Text("Uses actual device GPS/Wi-Fi coordinates and altitude for precise astronomical calculation down to local minutes.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            switch locationService.authorizationStatus {
+                            case .authorizedAlways, .authorized:
+                                Label("Location Access: Authorized", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.caption)
+                            case .notDetermined:
+                                Button("Request Location Access") {
+                                    locationService.requestAuthorization()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            case .denied, .restricted:
+                                Label("Access Denied (Open System Settings > Privacy)", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                            @unknown default:
+                                EmptyView()
+                            }
+
+                            Spacer()
+
+                            Button {
+                                locationService.requestCurrentLocation(force: true)
+                            } label: {
+                                Label("Refresh Location", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Picker("Reference City", selection: $manualCityId) {
+                            ForEach(OfflineCityDatabase.allCities) { city in
+                                Text("\(city.name) (\(city.provinceOrCountry)) - \(Int(city.elevationMeters))m").tag(city.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: manualCityId) { _, newId in
+                            locationService.setManualCity(id: newId)
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "location.fill")
+                            .foregroundStyle(.tint)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Region: \(locationService.displayName)")
+                                .font(.system(size: 13, weight: .medium))
+                            let coords = locationService.effectiveCoordinates
+                            let elev = locationService.effectiveElevation
+                            Text(String(format: "Coordinates: %.4f°, %.4f° · Elevation: %.0fm (%@)",
+                                        coords.latitude,
+                                        coords.longitude,
+                                        elev,
+                                        locationService.activeCity.provinceOrCountry))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("Notifications & Alerts")) {
+                    Picker("Alert Before Prayer", selection: $alertBeforeMinutes) {
+                        Text("Off").tag(0)
+                        Text("5 Minutes Before").tag(5)
+                        Text("10 Minutes Before").tag(10)
+                        Text("15 Minutes Before").tag(15)
+                    }
+                    .pickerStyle(.menu)
+
+                    Toggle("Play Subtle Chime", isOn: $soundEnabled)
+                    Toggle("Send macOS System Notifications", isOn: $systemNotificationEnabled)
+                        .onChange(of: systemNotificationEnabled) { _, isEnabled in
+                            if isEnabled {
+                                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                                    if !granted {
+                                        Task { @MainActor in
+                                            systemNotificationEnabled = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var methodDescription: some View {
+        switch calculationMethod {
+        case "muhammadiyah":
+            Text("Majelis Tarjih & Tajdid Muhammadiyah adopts Fajr angle of -18° based on true astronomical reckoning without additional safety margins.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case "nuLFPBNU":
+            Text("Lembaga Falakiyah PBNU applies Fajr angle of -20° with spherical elevation dip correction and ceiling rounding.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        default:
+            Text("Ministry of Religious Affairs of Indonesia applies Fajr angle of -20°, Isha -18°, solar transit +2m, and a +2 minute safety margin (ihtiyati).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }
