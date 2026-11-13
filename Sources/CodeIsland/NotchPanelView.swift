@@ -251,11 +251,26 @@ struct NotchPanelView: View {
     private var isToastOnly: Bool {
         (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded
     }
+    private var isBarVisible: Bool {
+        showBar || shouldShowExpanded || showIdleIndicator || isToastOnly
+    }
     private var currentTopExt: CGFloat {
-        (shouldShowExpanded && !isToastOnly) ? 14 : 0
+        guard isBarVisible else { return 0 }
+        if shouldShowExpanded && !isToastOnly {
+            return 14
+        } else if isToastOnly {
+            return 12
+        } else {
+            return 10
+        }
     }
     private var currentBottomRadius: CGFloat {
-        shouldShowExpanded ? (isToastOnly ? 14 : 24) : 10
+        guard isBarVisible else { return 0 }
+        if shouldShowExpanded {
+            return isToastOnly ? 14 : 24
+        } else {
+            return 12
+        }
     }
     private var currentStrokeColor: Color {
         (shouldShowExpanded && !isToastOnly) ? Color(red: 0.14, green: 0.16, blue: 0.2) : Color.clear
@@ -6117,9 +6132,10 @@ private struct NotchPanelShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let ext = topExtension
-        let maxY = max(rect.maxY, rect.minY + minHeight)
-        let br = min(bottomRadius, rect.width / 4, (maxY - rect.minY) / 2)
+        let availableH = max(rect.maxY, rect.minY + minHeight) - rect.minY
+        let ext = min(topExtension, availableH * 0.38)
+        let maxY = rect.minY + availableH
+        let br = min(bottomRadius, rect.width / 4, max(0, availableH - ext))
         // Smoothness factor for continuous-curvature corners (superellipse approximation).
         // 0.5523 = perfect circle; higher values tighten the curve for an Apple squircle feel.
         let k: CGFloat = 0.62
