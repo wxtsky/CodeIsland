@@ -40,13 +40,18 @@ fi
 # ---------------------------------------------------------------------------
 # Collect fields for the <enclosure> tag
 # ---------------------------------------------------------------------------
-DOWNLOAD_URL="https://github.com/wxtsky/CodeIsland/releases/download/v${VERSION}/CodeIsland.dmg"
+DOWNLOAD_URL="${SPARKLE_DOWNLOAD_URL:-https://github.com/fzrsahi/CodeIsland/releases/download/v${VERSION}/CodeIsland.dmg}"
 PUB_DATE="$(LC_TIME=en_US.UTF-8 date -u "+%a, %d %b %Y %H:%M:%S +0000")"
 LENGTH="$(stat -f%z "$DMG_PATH")"
 MIN_OS="14.0"
 
-echo "==> Signing $DMG_PATH with Sparkle EdDSA key from Keychain"
-SIGN_OUTPUT="$("$SIGN_UPDATE" "$DMG_PATH")"
+if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+    echo "==> Signing $DMG_PATH with Sparkle EdDSA key from SPARKLE_PRIVATE_KEY"
+    SIGN_OUTPUT="$("$SIGN_UPDATE" -s "$SPARKLE_PRIVATE_KEY" "$DMG_PATH")"
+else
+    echo "==> Signing $DMG_PATH with Sparkle EdDSA key from Keychain"
+    SIGN_OUTPUT="$("$SIGN_UPDATE" "$DMG_PATH")"
+fi
 # sign_update emits `sparkle:edSignature="..." length="..."` on success.
 ED_SIG="$(printf '%s' "$SIGN_OUTPUT" | /usr/bin/perl -ne 'print $1 if /sparkle:edSignature="([^"]+)"/')"
 if [[ -z "$ED_SIG" ]]; then
@@ -60,7 +65,7 @@ fi
 # ---------------------------------------------------------------------------
 NEW_ITEM="    <item>
       <title>Version ${VERSION}</title>
-      <link>https://github.com/wxtsky/CodeIsland/releases/tag/v${VERSION}</link>
+      <link>https://github.com/fzrsahi/CodeIsland/releases/tag/v${VERSION}</link>
       <sparkle:version>${VERSION}</sparkle:version>
       <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>${MIN_OS}</sparkle:minimumSystemVersion>
@@ -84,7 +89,7 @@ if [[ ! -f "$APPCAST" ]]; then
      version="2.0">
   <channel>
     <title>CodeIsland</title>
-    <link>https://raw.githubusercontent.com/wxtsky/CodeIsland/main/appcast.xml</link>
+    <link>https://codeisland.azhr.cloud/appcast.xml</link>
     <description>Most recent CodeIsland updates</description>
     <language>en</language>
 ${NEW_ITEM}

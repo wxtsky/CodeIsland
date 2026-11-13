@@ -16,13 +16,15 @@ struct NotchVolumeHUDView: View {
     private var speakerIconName: String {
         if volumeManager.isMuted {
             return "speaker.slash.fill"
-        } else if volumeManager.volume <= 0.001 {
+        }
+        switch volumeManager.volume {
+        case ...0.001:
             return "speaker.fill"
-        } else if volumeManager.volume < 0.33 {
+        case ..<0.33:
             return "speaker.wave.1.fill"
-        } else if volumeManager.volume < 0.66 {
+        case ..<0.66:
             return "speaker.wave.2.fill"
-        } else {
+        default:
             return "speaker.wave.3.fill"
         }
     }
@@ -30,9 +32,11 @@ struct NotchVolumeHUDView: View {
     private var speakerIconColor: Color {
         if volumeManager.isMuted {
             return Color(red: 1.0, green: 0.28, blue: 0.38)
-        } else if volumeManager.volume <= 0.001 {
+        }
+        switch volumeManager.volume {
+        case ...0.001:
             return Color.white.opacity(0.5)
-        } else {
+        default:
             return activeProgressColor
         }
     }

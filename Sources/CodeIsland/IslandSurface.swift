@@ -14,6 +14,12 @@ enum IslandSurface: Equatable {
     case quickPrompt
 
     var isExpanded: Bool { self != .collapsed }
+    var isPrompting: Bool {
+        switch self {
+        case .approvalCard, .questionCard: return true
+        default: return false
+        }
+    }
 
     /// 当前 surface 关联的 session ID（如有）
     var sessionId: String? {

@@ -97,6 +97,8 @@ enum SessionDiscovery {
             )
         case "grok":
             return GrokDiscovery.readModelFromGrokStore(cwd: session.cwd, processStart: processStart)
+        case "kiro":
+            return KiroDiscovery.readModelFromKiroStore(cwd: session.cwd, processStart: processStart)
         default:
             return nil
         }
@@ -172,6 +174,9 @@ enum SessionDiscovery {
         if ConfigInstaller.isEnabled(source: "cline") {
             discovered.append(contentsOf: ClineDiscovery.findActiveClineSessions(candidatePids: candidatePids))
         }
+        if ConfigInstaller.isEnabled(source: "kiro") {
+            discovered.append(contentsOf: KiroDiscovery.findActiveKiroSessions(candidatePids: candidatePids))
+        }
         return discovered
     }
 
@@ -194,6 +199,8 @@ enum SessionDiscovery {
             ("kimi", "\(home)/.kimi-code/sessions"),
             ("kimi", "\(home)/.kimi/sessions"),
             ("grok", "\(ConfigInstaller.grokHome())/sessions"),
+            ("kiro", "\(home)/.kiro/sessions"),
+            ("kiro", "\(home)/.kiro/session-leases"),
         ] + CustomAgentCommandStore.activeConfigDirs(forAgent: "claude").map { ("claude", "\($0)/projects") }
         let fm = FileManager.default
         // By identity: an extra dir that is a primary one under another

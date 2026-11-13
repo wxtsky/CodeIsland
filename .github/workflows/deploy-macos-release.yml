@@ -1,0 +1,190 @@
+name: Deploy macOS Release (Sparkle + Debian Webhook)
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.41). Leave empty to derive from git tag or Info.plist.'
+        required: false
+        type: string
+      deploy_to_debian:
+        description: 'Trigger deployment webhook to Debian server'
+        required: true
+        default: true
+        type: boolean
+      sign_developer_id:
+        description: 'Sign with Apple Developer ID and notarize (requires Apple certificates in secrets)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    name: Build DMG & Trigger Debian Webhook
+    runs-on: macos-15
+    env:
+      BUILD_ARCH: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: version_step
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              VERSION="${GITHUB_REF_NAME#v}"
+            else
+              VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+            fi
+          fi
+          # Strip leading 'v' or 'V' if accidentally passed
+          VERSION="${VERSION#[vV]}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          echo "Resolved release version: $VERSION (Tag: v$VERSION)"
+
+      - name: Select Xcode 16 or latest
+        run: |
+          XCODE_APP="$(find /Applications -maxdepth 1 \( -name 'Xcode_26*.app' -o -name 'Xcode_16*.app' -o -name 'Xcode*.app' \) -type d | sort -V | tail -n 1)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "Xcode is required to compile CodeIsland"
+            exit 1
+          fi
+          echo "Selected Xcode: $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+
+      - name: Install DMG packaging tools
+        run: |
+          if ! command -v create-dmg >/dev/null 2>&1; then
+            brew install create-dmg
+          fi
+
+      - name: Configure signing mode
+        shell: bash
+        run: |
+          if [ "${{ inputs.sign_developer_id }}" = "true" ]; then
+            echo "SKIP_SIGN=0" >> "$GITHUB_ENV"
+            echo "SKIP_NOTARIZE=0" >> "$GITHUB_ENV"
+          else
+            echo "SKIP_SIGN=1" >> "$GITHUB_ENV"
+            echo "SKIP_NOTARIZE=1" >> "$GITHUB_ENV"
+            echo "::notice::Building ad-hoc signed DMG. Updates will be cryptographically verified by Sparkle Ed25519 signature."
+          fi
+
+      - name: Build CodeIsland.dmg
+        run: ./scripts/build-dmg.sh "$VERSION"
+
+      - name: Verify binary integrity
+        run: |
+          test -f .build/CodeIsland.dmg
+          APP_BIN=".build/dmg-staging/CodeIsland.app/Contents/MacOS/CodeIsland"
+          test "$(lipo -archs "$APP_BIN")" = "arm64"
+          ls -lh .build/CodeIsland.dmg
+
+      - name: Extract release changelog
+        shell: bash
+        run: |
+          mkdir -p .build/dist
+          if ./scripts/extract-changelog.sh "$VERSION" > .build/dist/CHANGELOG_SNIPPET.md 2>/dev/null; then
+            echo "Successfully extracted changelog snippet."
+          else
+            echo "### CodeIsland v$VERSION" > .build/dist/CHANGELOG_SNIPPET.md
+            echo "Automated release build for CodeIsland v$VERSION." >> .build/dist/CHANGELOG_SNIPPET.md
+          fi
+
+      - name: Update Sparkle appcast feed & sign with Ed25519
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          SPARKLE_DOWNLOAD_URL: ${{ secrets.SPARKLE_DOWNLOAD_URL }}
+        run: |
+          if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "Sparkle private key detected. Signing DMG and generating appcast item..."
+            ./scripts/update-appcast.sh "$VERSION" .build/CodeIsland.dmg
+          else
+            echo "::warning::SPARKLE_PRIVATE_KEY secret is not configured. Skipping Sparkle Ed25519 signing."
+          fi
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          cd .build
+          shasum -a 256 CodeIsland.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_FILES=(".build/CodeIsland.dmg" ".build/SHA256SUMS.txt")
+          if [ -f "appcast.xml" ]; then
+            RELEASE_FILES+=("appcast.xml")
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Uploading assets..."
+            gh release upload "$TAG" "${RELEASE_FILES[@]}" --clobber
+          else
+            echo "Creating GitHub Release $TAG..."
+            gh release create "$TAG" "${RELEASE_FILES[@]}" \
+              --title "CodeIsland v$VERSION" \
+              --notes-file .build/dist/CHANGELOG_SNIPPET.md
+          fi
+
+      - name: Trigger Debian deployment webhook
+        if: ${{ inputs.deploy_to_debian != false }}
+        shell: bash
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::notice::WEBHOOK_URL secret is not set. Skipping webhook notification to Debian."
+            exit 0
+          fi
+
+          SHA256="$(awk '{print $1}' .build/SHA256SUMS.txt)"
+          DMG_URL="https://github.com/$GITHUB_REPO/releases/download/$TAG/CodeIsland.dmg"
+
+          echo "Sending deployment dispatch to Debian via Cloudflared Tunnel: $WEBHOOK_URL"
+          PAYLOAD=$(printf '{"version":"%s","tag":"%s","repository":"%s","dmg_url":"%s","sha256":"%s","timestamp":"%s"}' \
+            "$VERSION" "$TAG" "$GITHUB_REPO" "$DMG_URL" "$SHA256" "$(date -u +'%Y-%m-%dT%H:%M:%SZ')")
+
+          HTTP_STATUS=$(curl -s -o .build/webhook_response.txt -w "%{http_code}" \
+            -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: $WEBHOOK_SECRET" \
+            -d "$PAYLOAD")
+
+          echo "Webhook response HTTP status: $HTTP_STATUS"
+          cat .build/webhook_response.txt || true
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Debian server successfully accepted the deployment!"
+          else
+            echo "::warning::Debian webhook returned non-success code ($HTTP_STATUS)."
+          fi
+
+      - name: Upload artifact for backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeIsland-v${{ env.VERSION }}-arm64
+          path: |
+            .build/CodeIsland.dmg
+            .build/SHA256SUMS.txt
+            appcast.xml
+          if-no-files-found: warn

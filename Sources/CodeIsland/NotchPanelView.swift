@@ -110,12 +110,6 @@ enum ToolNameDisplay {
     }
 }
 
-enum ExpandedContentTab: String, CaseIterable {
-    case agents
-    case workspace
-    case music
-}
-
 struct NotchPanelView: View {
     var appState: AppState
     let hasNotch: Bool
@@ -138,6 +132,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     private var modernMusicAccent: Color {
@@ -155,6 +150,7 @@ struct NotchPanelView: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
     @ObservedObject private var sys = SystemMonitorManager.shared
+    @ObservedObject private var prayerManager = PrayerTimeManager.shared
     @ObservedObject private var volumeManager = SystemVolumeManager.shared
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
@@ -175,7 +171,48 @@ struct NotchPanelView: View {
     /// Measured width of the collapsed right wing (0 until first laid out).
     @State private var rightWingWidth: CGFloat = 0
     @State private var isHoveringRightWing = false
-    @State private var expandedTab: ExpandedContentTab = ProcessInfo.processInfo.arguments.contains("workspace") ? .workspace : .agents
+    @State private var musicAutoCollapseTimer: Timer?
+    @State private var musicDeferCollapseOnMouseLeave = false
+
+    private var expandedTabBinding: Binding<ExpandedContentTab> {
+        Binding(
+            get: { appState.expandedTab },
+            set: { appState.expandedTab = $0 }
+        )
+    }
+
+    private var expandedTab: ExpandedContentTab {
+        get { appState.expandedTab }
+        nonmutating set { appState.expandedTab = newValue }
+    }
+
+    private var tabContentTransition: AnyTransition {
+        let isForward = appState.tabSlideDirection == .toLeft
+        return .asymmetric(
+            insertion: .move(edge: isForward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: isForward ? .leading : .trailing).combined(with: .opacity)
+        )
+    }
+
+    init(
+        appState: AppState,
+        hasNotch: Bool,
+        notchHeight: CGFloat,
+        notchW: CGFloat,
+        screenWidth: CGFloat,
+        initialTab: ExpandedContentTab = .agents
+    ) {
+        self.appState = appState
+        self.hasNotch = hasNotch
+        self.notchHeight = notchHeight
+        self.notchW = notchW
+        self.screenWidth = screenWidth
+        if initialTab != .agents {
+            self.appState.expandedTab = initialTab
+        } else if ProcessInfo.processInfo.arguments.contains("workspace") {
+            self.appState.expandedTab = .workspace
+        }
+    }
 
     private var isActive: Bool { !appState.sessions.isEmpty || nowPlaying.isPlaying }
     /// First launch / no-session state should still render a visible marker so the app
@@ -185,13 +222,11 @@ struct NotchPanelView: View {
     }
     /// Whether the bar content should be visible (respects hideWhenNoSession)
     private var showBar: Bool {
-        if nowPlaying.isPlaying { return true }
+        if nowPlaying.isPlaying || nowPlaying.showToast || prayerManager.showMiniPeekBanner { return true }
         return isActive && !(hideWhenNoSession && appState.activeSessionCount == 0)
     }
     private var shouldShowExpanded: Bool {
-        if appState.surface.isExpanded { return true }
-        if nowPlaying.showToast && !showCompactLyrics { return showBar }
-        return false
+        appState.surface.isExpanded
     }
     /// Prehover acknowledgement is only rendered on the collapsed active bar —
     /// once the surface expands (from hover or any other path) it disappears.
@@ -215,13 +250,53 @@ struct NotchPanelView: View {
     }
 
     private var isToastOnly: Bool {
-        nowPlaying.showToast && !appState.surface.isExpanded
+        prayerManager.showMiniPeekBanner && !appState.surface.isExpanded
+    }
+
+    private func triggerMusicAutoPeek() {
+        guard !appState.surface.isPrompting else { return }
+        musicAutoCollapseTimer?.invalidate()
+        musicDeferCollapseOnMouseLeave = false
+
+        withAnimation(NotchAnimation.open) {
+            appState.transitionToTab(.music)
+            appState.surface = .sessionList
+        }
+
+        musicAutoCollapseTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
+            Task { @MainActor in
+                if isHovered || appState.followUps.pointerOverIsland {
+                    musicDeferCollapseOnMouseLeave = true
+                } else {
+                    withAnimation(NotchAnimation.close) {
+                        if appState.surface == .sessionList && expandedTab == .music {
+                            appState.surface = .collapsed
+                        }
+                    }
+                }
+            }
+        }
+    }
+    private var isBarVisible: Bool {
+        showBar || shouldShowExpanded || showIdleIndicator || isToastOnly
     }
     private var currentTopExt: CGFloat {
-        (shouldShowExpanded && !isToastOnly) ? 14 : 0
+        guard isBarVisible else { return 0 }
+        if shouldShowExpanded && !isToastOnly {
+            return 14
+        } else if isToastOnly {
+            return 12
+        } else {
+            return 10
+        }
     }
     private var currentBottomRadius: CGFloat {
-        shouldShowExpanded ? (isToastOnly ? 14 : 24) : 10
+        guard isBarVisible else { return 0 }
+        if shouldShowExpanded {
+            return isToastOnly ? 14 : 24
+        } else {
+            return 12
+        }
     }
     private var currentStrokeColor: Color {
         (shouldShowExpanded && !isToastOnly) ? Color(red: 0.14, green: 0.16, blue: 0.2) : Color.clear
@@ -310,6 +385,9 @@ struct NotchPanelView: View {
             if expandedTab == .workspace && workspaceManager.isExpandedDetail {
                 return min(max(baseWidth, 720), maxPanelWidth)
             }
+            if expandedTab == .prayer {
+                return min(max(baseWidth, 720), maxPanelWidth)
+            }
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
         if showIdleIndicator {
@@ -321,7 +399,7 @@ struct NotchPanelView: View {
             return min(320, maxPanelWidth)
         }
         // Mini peek banner width: sleek ~330pt when toast is showing while collapsed
-        if nowPlaying.showToast && !appState.surface.isExpanded {
+        if (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded {
             return min(330, maxPanelWidth)
         }
         let wing = symmetricWingWidth
@@ -397,7 +475,8 @@ struct NotchPanelView: View {
                             mascotSize: mascotSize,
                             hasNotch: hasNotch,
                             showToolStatus: showToolStatus,
-                            expandedTab: $expandedTab
+                            expandedTab: expandedTabBinding,
+                            workspaceManager: workspaceManager
                         )
                             .padding(.leading, (isThinking && !shouldShowExpanded) ? 8 : (shouldShowExpanded ? 8 : 0))
                             .frame(
@@ -431,7 +510,7 @@ struct NotchPanelView: View {
                             expanded: shouldShowExpanded,
                             hasNotch: hasNotch,
                             isHovered: $isHoveringRightWing,
-                            expandedTab: $expandedTab,
+                            expandedTab: expandedTabBinding,
                             workspaceManager: workspaceManager,
                             expandedWingWidth: expandedWingWidth
                         )
@@ -494,8 +573,12 @@ struct NotchPanelView: View {
                         hovered: idleHovered,
                         onExpand: {
                             withAnimation(NotchAnimation.open) {
-                                if nowPlaying.isPlaying {
-                                    expandedTab = .music
+                                if prayerManager.isPrayerPrioritized {
+                                    appState.transitionToTab(.prayer)
+                                } else if nowPlaying.isPlaying {
+                                    appState.transitionToTab(.music)
+                                } else {
+                                    appState.transitionToTab(.agents)
                                 }
                                 appState.surface = .sessionList
                             }
@@ -508,7 +591,7 @@ struct NotchPanelView: View {
                 }
 
                 // Below-notch expanded content
-                if shouldShowExpanded || sys.showChargingBanner {
+                if shouldShowExpanded || isToastOnly || sys.showChargingBanner {
                     if sys.showChargingBanner && !appState.surface.isExpanded {
                         // MagSafe Dynamic Island Charging Notification
                         MagSafeChargingBanner(batteryLevel: sys.metrics.batteryLevel)
@@ -516,11 +599,11 @@ struct NotchPanelView: View {
                                 insertion: .move(edge: .top).combined(with: .opacity),
                                 removal: .move(edge: .top).combined(with: .opacity)
                             ))
-                    } else if nowPlaying.showToast && !appState.surface.isExpanded {
-                        // MINI PEEK BANNER: Buka tipis-tipis saat lagu berganti / play
-                        CyberMusicMiniPeekBanner(nowPlaying: nowPlaying) {
+                    } else if prayerManager.showMiniPeekBanner && !appState.surface.isExpanded {
+                        // PRAYER MINI PEEK BANNER: Buka tipis saat T-10m & saat masuk waktu salat
+                        PrayerMiniPeekBannerView(manager: prayerManager) {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                expandedTab = .music
+                                appState.transitionToTab(.prayer)
                                 appState.surface = .sessionList
                             }
                         }
@@ -608,16 +691,22 @@ struct NotchPanelView: View {
                             CyberQuickPromptView(appState: appState)
                                 .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         case .sessionList:
-                            // Priority 2: General expanded surface respects expandedTab (Music, Workspace, or Agent SessionList)
-                            if expandedTab == .music {
-                                CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
-                            } else if expandedTab == .workspace {
-                                CyberWorkspaceView(manager: workspaceManager, appState: appState)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
-                            } else {
-                                SessionListView(appState: appState, onlySessionId: nil)
-                                    .transition(.blurFade.combined(with: .move(edge: .top)))
+                            // Priority 2: General expanded surface respects expandedTab (Music, Workspace, Prayer, or Agent SessionList)
+                            ZStack(alignment: .top) {
+                                switch expandedTab {
+                                case .music:
+                                    CyberMusicHUDView(nowPlaying: nowPlaying, appState: appState)
+                                        .transition(tabContentTransition)
+                                case .workspace:
+                                    CyberWorkspaceView(manager: workspaceManager, appState: appState)
+                                        .transition(tabContentTransition)
+                                case .prayer:
+                                    PrayerExpandedCardView(manager: prayerManager)
+                                        .transition(tabContentTransition)
+                                case .agents:
+                                    SessionListView(appState: appState, onlySessionId: nil)
+                                        .transition(tabContentTransition)
+                                }
                             }
                         case .collapsed:
                             EmptyView()
@@ -631,6 +720,7 @@ struct NotchPanelView: View {
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: panelWidth)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: shouldShowExpanded)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: nowPlaying.showToast)
+            .animation(.spring(response: 0.40, dampingFraction: 0.84), value: prayerManager.showMiniPeekBanner)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isThinking)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: nowPlaying.isPlaying)
@@ -684,26 +774,23 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onAppear { displayedToolStatus = showToolStatus }
-            .onChange(of: nowPlaying.title) { _, newTitle in
-                if !newTitle.isEmpty && nowPlaying.isPlaying {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
-                }
+            .onAppear {
+                displayedToolStatus = showToolStatus
+                prayerManager.appState = appState
             }
-            .onChange(of: nowPlaying.isPlaying) { _, isPlaying in
-                if isPlaying {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
+            .onChange(of: nowPlaying.title) { oldTitle, newTitle in
+                if !newTitle.isEmpty && newTitle != oldTitle && nowPlaying.isPlaying {
+                    triggerMusicAutoPeek()
                 }
             }
             .onChange(of: nowPlaying.showToast) { _, isToast in
-                if isToast {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        expandedTab = .music
-                    }
+                if isToast && nowPlaying.isPlaying && !nowPlaying.title.isEmpty {
+                    triggerMusicAutoPeek()
+                }
+            }
+            .onChange(of: nowPlaying.isPlaying) { _, isPlaying in
+                if isPlaying && expandedTab == .music && appState.surface.isExpanded {
+                    appState.transitionToTab(.music)
                 }
             }
             .onChange(of: appState.activeSessionId) { _, sid in
@@ -713,6 +800,10 @@ struct NotchPanelView: View {
             }
             .onChange(of: appState.status) { _, newStatus in
                 handleStatusChange(newStatus)
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
+            }
+            .onChange(of: appState.surface) { _, _ in
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
             }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
@@ -788,7 +879,23 @@ struct NotchPanelView: View {
                 }
 
                 isHovered = hovering
+                if !hovering && musicDeferCollapseOnMouseLeave {
+                    musicDeferCollapseOnMouseLeave = false
+                    musicAutoCollapseTimer?.invalidate()
+                    musicAutoCollapseTimer = nil
+                    withAnimation(NotchAnimation.close) {
+                        if appState.surface == .sessionList && expandedTab == .music {
+                            appState.surface = .collapsed
+                        }
+                    }
+                    return
+                }
                 if hovering {
+                    if musicAutoCollapseTimer != nil {
+                        musicAutoCollapseTimer?.invalidate()
+                        musicAutoCollapseTimer = nil
+                        musicDeferCollapseOnMouseLeave = true
+                    }
                     // Immediate lightweight acknowledgement; a quick pass-through
                     // only ever plays this first stage and reverses.
                     withAnimation(NotchAnimation.hoverPrehover) {
@@ -869,7 +976,7 @@ struct NotchPanelView: View {
             .onChange(of: appState.status) { oldStatus, newStatus in
                 // Switch to .agents if task completes while viewing secondary tabs
                 if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
-                    if expandedTab == .music || expandedTab == .workspace {
+                    if expandedTab == .music || expandedTab == .workspace || expandedTab == .prayer {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             expandedTab = .agents
                         }
@@ -877,10 +984,20 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.justCompletedSessionId) { _, completedId in
-                if completedId != nil && (expandedTab == .music || expandedTab == .workspace) {
+                if completedId != nil && (expandedTab == .music || expandedTab == .workspace || expandedTab == .prayer) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
+                }
+            }
+            .onChange(of: appState.expandedTab) { _, newTab in
+                if newTab != .music {
+                    musicAutoCollapseTimer?.invalidate()
+                    musicAutoCollapseTimer = nil
+                    musicDeferCollapseOnMouseLeave = false
+                }
+                if newTab == .workspace {
+                    workspaceManager.resolveAndRefreshWorkspace(appState: appState)
                 }
             }
             // Outside onHover on purpose: the hover region moves with the bar.
@@ -943,6 +1060,7 @@ private struct CompactLeftWing: View {
     let hasNotch: Bool
     let showToolStatus: Bool
     @Binding var expandedTab: ExpandedContentTab
+    var workspaceManager: WorkspaceMonitorManager? = nil
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     // Bound via @AppStorage so flipping the default mascot in Settings rerenders this view
@@ -988,14 +1106,12 @@ private struct CompactLeftWing: View {
     var body: some View {
         HStack(spacing: 6) {
             if expanded {
-                AppLogoView(size: 36, showBackground: false)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            expandedTab = .agents
-                        }
-                    }
-                SessionGroupingTabs(mode: $groupingMode, expandedTab: $expandedTab)
+                HeaderNavigationMenuTabs(
+                    appState: appState,
+                    expandedTab: $expandedTab,
+                    workspaceManager: workspaceManager ?? WorkspaceMonitorManager.shared
+                )
+                .transition(.opacity)
             } else {
                 ZStack {
                     if nowPlaying.isPlaying && displayStatus == .idle {
@@ -1215,6 +1331,7 @@ private struct CompactRightWing: View {
     var expandedWingWidth: CGFloat = 240
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
+    @AppStorage(SettingsKey.sessionGroupingMode) private var groupingMode = SettingsDefaults.sessionGroupingMode
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
@@ -1222,6 +1339,7 @@ private struct CompactRightWing: View {
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
     private var modernMusicAccent: Color {
@@ -1289,14 +1407,14 @@ private struct CompactRightWing: View {
     var body: some View {
         HStack(spacing: 5) {
             if expanded {
-                HStack(spacing: 8) {
-                    // Matching pixel tabs on the right: [ WORKSPACE | MUSIC ]
-                    RightWingPixelTabs(
-                        appState: appState,
-                        expandedTab: $expandedTab,
-                        workspaceManager: workspaceManager,
-                        availableWidth: expandedWingWidth
-                    )
+                HStack(spacing: 6) {
+                    if expandedTab == .agents {
+                        SessionGroupingTabs(
+                            mode: $groupingMode,
+                            expandedTab: $expandedTab
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    }
 
                     Spacer(minLength: 4)
 
@@ -1305,8 +1423,15 @@ private struct CompactRightWing: View {
                 }
                 .padding(.horizontal, 4)
             } else {
-                // Music Visualizer or Machined Cyber Activity Pill
-                if nowPlaying.isPlaying {
+                let prayerManager = PrayerTimeManager.shared
+                if prayerManager.isPrayerPrioritized {
+                    // SMART PRIORITY: Prayer countdown takes active priority at T <= 15m
+                    PrayerCompactWingView(isHovered: shouldExpandRightWing) {
+                        expandedTab = .prayer
+                        appState.surface = .sessionList
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else if nowPlaying.isPlaying {
                     CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
@@ -1774,25 +1899,28 @@ struct QuitConfirmButton: View {
     }
 }
 
-/// Right-wing tabs in the matching 5×7 pixel font (WORKSPACE · MUSIC),
-/// identical in height, border, padding, and font to SessionGroupingTabs on the left.
-private struct RightWingPixelTabs: View {
+/// Redesigned Header Tabs (Agents, Workspace, Music) supporting Pixel & Modern themes
+private struct HeaderNavigationMenuTabs: View {
     var appState: AppState
     @Binding var expandedTab: ExpandedContentTab
     @ObservedObject var workspaceManager: WorkspaceMonitorManager
     var availableWidth: CGFloat = 240
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hoveredTab: String?
 
-    static let activeWorkspaceColor = Color(red: 0.0, green: 0.90, blue: 0.46)
-    static let inactiveColor = Color.white.opacity(0.62)
+    private var activeLabelTab: ExpandedContentTab? {
+        appState.activeTabLabel
+    }
 
-    private var activeMusicColor: Color {
+    static let inactiveColor = Color.white.opacity(0.55)
+
+    private var activeAccentColor: Color {
         let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
         switch pc {
-        case .theme: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .theme:
+            return islandUITheme == IslandUITheme.modern.rawValue ? .white : Color(red: 0.12, green: 0.84, blue: 0.38)
         case .white: return .white
         case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
         case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
@@ -1801,128 +1929,392 @@ private struct RightWingPixelTabs: View {
         }
     }
 
-    private var useShortLabels: Bool {
-        availableWidth < 225
+    private func switchToTab(_ target: ExpandedContentTab) {
+        appState.transitionToTab(target)
     }
 
     var body: some View {
-        let layout = SessionGroupingTabsLayout.self
-        HStack(spacing: layout.spacing) {
-            // WORKSPACE TAB
-            let isWorkspaceSelected = expandedTab == .workspace
-            Button {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                workspaceManager.resolveAndRefreshWorkspace(appState: appState)
-                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                    expandedTab = isWorkspaceSelected ? .agents : .workspace
-                }
-            } label: {
-                PixelText(
-                    text: useShortLabels ? "WORK" : "WORKSPACE",
-                    color: isWorkspaceSelected ? Self.activeWorkspaceColor
-                        : (hoveredTab == "workspace" ? .white.opacity(0.9) : Self.inactiveColor),
-                    pixelSize: layout.pixelSize
-                )
-                .padding(.horizontal, layout.horizontalPadding)
-                .frame(height: layout.stripHeight)
-                .background(Rectangle().fill(isWorkspaceSelected ? .white.opacity(0.1) : .clear))
-                .frame(height: layout.hitHeight)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .onHover { hoveredTab = $0 ? "workspace" : (hoveredTab == "workspace" ? nil : hoveredTab) }
-            .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
-            .accessibilityLabel("Workspace")
-            .accessibilityAddTraits(isWorkspaceSelected ? .isSelected : [])
+        let isModern = islandUITheme == IslandUITheme.modern.rawValue
 
-            // MUSIC TAB
-            let isMusicSelected = expandedTab == .music
-            Button {
-                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82)) {
-                    expandedTab = isMusicSelected ? .agents : .music
+        if isModern {
+            // Modern Clean SF Symbols - borderless, backgroundless container with leading-revealing text
+            HStack(spacing: 4) {
+                // AGENTS TAB
+                let isAgentsActive = expandedTab == .agents
+                let showAgentsLabel = isAgentsActive && (activeLabelTab == .agents || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.agents)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "cpu.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if showAgentsLabel {
+                            Text("Agents")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isAgentsActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isAgentsActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isAgentsActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                    )
+                    .contentShape(Rectangle())
                 }
-            } label: {
-                PixelText(
-                    text: useShortLabels ? "MUS" : "MUSIC",
-                    color: isMusicSelected ? activeMusicColor
-                        : (nowPlaying.isPlaying ? activeMusicColor.opacity(0.85) : (hoveredTab == "music" ? .white.opacity(0.9) : Self.inactiveColor)),
-                    pixelSize: layout.pixelSize
-                )
-                .padding(.horizontal, layout.horizontalPadding)
-                .frame(height: layout.stripHeight)
-                .background(Rectangle().fill(isMusicSelected ? .white.opacity(0.1) : .clear))
-                .frame(height: layout.hitHeight)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .help("AI Agents")
+
+                // WORKSPACE TAB
+                let isWorkActive = expandedTab == .workspace
+                let showWorkLabel = isWorkActive && (activeLabelTab == .workspace || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.workspace)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                        if showWorkLabel {
+                            Text("Workspace")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isWorkActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isWorkActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isWorkActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
+
+                // MUSIC TAB
+                let isMusicActive = expandedTab == .music
+                let showMusicLabel = isMusicActive && (activeLabelTab == .music || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.music)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 11, weight: .semibold))
+                        if showMusicLabel {
+                            Text("Music")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                        }
+                    }
+                    .foregroundStyle(isMusicActive ? activeAccentColor : Self.inactiveColor)
+                    .padding(.horizontal, isMusicActive ? 8 : 6)
+                    .frame(height: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isMusicActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+
+                // PRAYER TAB
+                if PrayerTimeManager.shared.isEnabled {
+                    let isPrayerActive = expandedTab == .prayer
+                    let showPrayerLabel = isPrayerActive && (activeLabelTab == .prayer || !appState.isTabTransitioning)
+                    Button {
+                        switchToTab(.prayer)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            if showPrayerLabel {
+                                Text("Prayer")
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .leading).combined(with: .opacity),
+                                        removal: .move(edge: .leading).combined(with: .opacity)
+                                    ))
+                            }
+                        }
+                        .foregroundStyle(isPrayerActive ? activeAccentColor : Self.inactiveColor)
+                        .padding(.horizontal, isPrayerActive ? 8 : 6)
+                        .frame(height: 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(isPrayerActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Prayer Schedule & Living Sky Diorama")
+                }
             }
-            .buttonStyle(.plain)
-            .onHover { hoveredTab = $0 ? "music" : (hoveredTab == "music" ? nil : hoveredTab) }
-            .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
-            .accessibilityLabel("Music")
-            .accessibilityAddTraits(isMusicSelected ? .isSelected : [])
+            .padding(.vertical, 2)
+        } else {
+            // Retro Cyber Pixel Tabs - borderless, backgroundless container with leading-revealing text
+            HStack(spacing: 4) {
+                // AGENTS PIXEL TAB
+                let isAgentsActive = expandedTab == .agents
+                let showAgentsLabel = isAgentsActive && (activeLabelTab == .agents || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.agents)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .agents,
+                            color: isAgentsActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if showAgentsLabel {
+                            PixelText(
+                                text: "AGENTS",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isAgentsActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isAgentsActive ? activeAccentColor.opacity(0.20) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("AI Agents")
+
+                // WORKSPACE PIXEL TAB
+                let isWorkActive = expandedTab == .workspace
+                let showWorkLabel = isWorkActive && (activeLabelTab == .workspace || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.workspace)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .workspace,
+                            color: isWorkActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if showWorkLabel {
+                            PixelText(
+                                text: "WORK",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isWorkActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isWorkActive ? activeAccentColor.opacity(0.20) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(workspaceManager.projectName.isEmpty ? "Workspace View" : "Workspace: \(workspaceManager.projectName)")
+
+                // MUSIC PIXEL TAB
+                let isMusicActive = expandedTab == .music
+                let showMusicLabel = isMusicActive && (activeLabelTab == .music || !appState.isTabTransitioning)
+                Button {
+                    switchToTab(.music)
+                } label: {
+                    HStack(spacing: 4) {
+                        PixelIcon(
+                            glyph: .music,
+                            color: isMusicActive ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.35
+                        )
+                        if showMusicLabel {
+                            PixelText(
+                                text: "MUSIC",
+                                color: activeAccentColor,
+                                pixelSize: 1.15
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                        }
+                    }
+                    .padding(.horizontal, isMusicActive ? 7 : 5)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isMusicActive ? activeAccentColor.opacity(0.20) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+
+                // PRAYER PIXEL TAB
+                if PrayerTimeManager.shared.isEnabled {
+                    let isPrayerActive = expandedTab == .prayer
+                    let showPrayerLabel = isPrayerActive && (activeLabelTab == .prayer || !appState.isTabTransitioning)
+                    Button {
+                        switchToTab(.prayer)
+                    } label: {
+                        HStack(spacing: 4) {
+                            PixelIcon(
+                                glyph: .prayer,
+                                color: isPrayerActive ? activeAccentColor : Self.inactiveColor,
+                                pixelSize: 1.35
+                            )
+                            if showPrayerLabel {
+                                PixelText(
+                                    text: "PRAY",
+                                    color: activeAccentColor,
+                                    pixelSize: 1.15
+                                )
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                            }
+                        }
+                        .padding(.horizontal, isPrayerActive ? 7 : 5)
+                        .frame(height: 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(isPrayerActive ? activeAccentColor.opacity(0.20) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Prayer Schedule & Living Sky Diorama")
+                }
+            }
+            .padding(.vertical, 2)
         }
-        .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
-        .overlay(
-            Rectangle()
-                .stroke(
-                    expandedTab == .workspace ? Self.activeWorkspaceColor.opacity(0.4)
-                        : (expandedTab == .music ? activeMusicColor.opacity(0.4) : .white.opacity(0.1)),
-                    lineWidth: 1
-                )
-                .frame(height: layout.stripHeight)
-        )
     }
 }
 
-/// The grouping tabs in the 5×7 pixel font, spelled out (ALL · STATUS ·
-/// AGENT) where the header has room for them.
 private struct SessionGroupingTabs: View {
     @Binding var mode: String
     @Binding var expandedTab: ExpandedContentTab
     @Environment(\.sessionGroupingTabsRoom) private var room
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var l10n = L10n.shared
-    @State private var hoveredTag: String?
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
+    @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
 
-    static let selectedColor = Color(red: 0.3, green: 0.85, blue: 0.4)
-    /// ≈7:1 on black — the thin pixel strokes need more than the AA minimum.
+    private var activeAccentColor: Color {
+        let pc = MusicProgressColor(rawValue: musicHUDProgressColor) ?? .theme
+        switch pc {
+        case .theme:
+            return islandUITheme == IslandUITheme.modern.rawValue ? .white : Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .white: return .white
+        case .cyan: return Color(red: 0.0, green: 0.96, blue: 0.83)
+        case .pink: return Color(red: 1.0, green: 0.16, blue: 0.53)
+        case .green: return Color(red: 0.12, green: 0.84, blue: 0.38)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.20)
+        }
+    }
+
     static let inactiveColor = Color.white.opacity(0.62)
 
     var body: some View {
-        let layout = SessionGroupingTabsLayout.self
-        let short = layout.usesShortLabels(room: room)
-        HStack(spacing: layout.spacing) {
-            ForEach(SessionGroupingTab.all, id: \.tag) { tab in
-                let selected = (expandedTab == .agents) && (mode == tab.tag)
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
-                        expandedTab = .agents
-                        mode = tab.tag
+        let isModern = islandUITheme == IslandUITheme.modern.rawValue
+
+        if isModern {
+            // Modern segmented capsule styling
+            HStack(spacing: 2) {
+                ForEach(SessionGroupingTab.all, id: \.tag) { tab in
+                    let selected = (expandedTab == .agents) && (mode == tab.tag)
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                            expandedTab = .agents
+                            mode = tab.tag
+                        }
+                    } label: {
+                        Text(tab.tag == "all" ? "All" : (tab.tag == "status" ? "Status" : "Agent"))
+                            .font(.system(size: 9.5, weight: selected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(selected ? (activeAccentColor == .white ? .white : activeAccentColor) : .white.opacity(0.6))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule()
+                                    .fill(selected ? (activeAccentColor == .white ? Color.white.opacity(0.2) : activeAccentColor.opacity(0.25)) : .clear)
+                            )
+                            .contentShape(Capsule())
                     }
-                } label: {
-                    PixelText(
-                        text: short ? tab.shortPixelLabel : tab.pixelLabel,
-                        color: selected ? Self.selectedColor
-                            : (hoveredTag == tab.tag ? .white.opacity(0.9) : Self.inactiveColor),
-                        pixelSize: layout.pixelSize
-                    )
-                    .padding(.horizontal, layout.horizontalPadding)
-                    .frame(height: layout.stripHeight)
-                    .background(Rectangle().fill(selected ? .white.opacity(0.1) : .clear))
-                    // Taller than the strip it draws: a 24pt target.
-                    .frame(height: layout.hitHeight)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .help(l10n[tab.nameKey])
                 }
-                .buttonStyle(.plain)
-                .onHover { hoveredTag = $0 ? tab.tag : (hoveredTag == tab.tag ? nil : hoveredTag) }
-                // The pixel glyphs are drawn, not text: without a label
-                // VoiceOver reads nothing.
-                .help(l10n[tab.nameKey])
-                .accessibilityLabel(l10n[tab.nameKey])
-                .accessibilityAddTraits(selected ? .isSelected : [])
             }
+            .padding(2)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.6))
+            )
+        } else {
+            // Authentic 5x7 dot-matrix pixel style
+            HStack(spacing: 2) {
+                ForEach(SessionGroupingTab.all, id: \.tag) { tab in
+                    let selected = (expandedTab == .agents) && (mode == tab.tag)
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
+                            expandedTab = .agents
+                            mode = tab.tag
+                        }
+                    } label: {
+                        PixelText(
+                            text: tab.shortPixelLabel,
+                            color: selected ? activeAccentColor : Self.inactiveColor,
+                            pixelSize: 1.15
+                        )
+                        .padding(.horizontal, 5)
+                        .frame(height: 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(selected ? activeAccentColor.opacity(0.18) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(l10n[tab.nameKey])
+                    .accessibilityLabel(l10n[tab.nameKey])
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(2)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(expandedTab == .agents ? activeAccentColor.opacity(0.4) : .white.opacity(0.12), lineWidth: 1)
+                    )
+            )
         }
-        .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
-        .overlay(Rectangle().stroke(expandedTab == .agents ? Self.selectedColor.opacity(0.4) : .white.opacity(0.1), lineWidth: 1).frame(height: layout.stripHeight))
     }
 }
 
@@ -1937,6 +2329,8 @@ private struct IdleIndicatorBar: View {
     let hovered: Bool
     var onExpand: (() -> Void)? = nil
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
+
+    private static let idlePrayerWingMinWidth: CGFloat = 126
 
     private var wingWidth: CGFloat {
         hovered ? (compactWingWidth + 6) : compactWingWidth
@@ -1962,9 +2356,13 @@ private struct IdleIndicatorBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand?() }
 
-            // Right Wing: sleek, ultra-compact expand indicator (Option 1)
-            HStack {
+            // Right Wing: sleek, ultra-compact expand indicator & living clock
+            let prayerManager = PrayerTimeManager.shared
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
+                if prayerManager.isEnabled {
+                    PrayerCompactWingView(isHovered: hovered, onExpand: onExpand)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: hovered ? 8 : 7.5, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(hovered ? 0.9 : 0.45))
@@ -1975,10 +2373,10 @@ private struct IdleIndicatorBar: View {
                     )
                     .padding(.trailing, 8)
             }
-            .frame(width: wingWidth, alignment: .trailing)
+            .frame(width: prayerManager.isEnabled ? max(wingWidth, Self.idlePrayerWingMinWidth) : wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
-            .help("Click to expand tabs (Agents / Workspace / Music)")
+            .help(prayerManager.isEnabled ? "Prayer Times & Living Clock (Click to open Prayer tab)" : "Click to expand tabs (Agents / Workspace / Music)")
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)
@@ -3542,6 +3940,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Natural height of the session cards, scrolling or not.
     @State private var contentHeight: CGFloat = 0
@@ -5768,9 +6167,10 @@ private struct NotchPanelShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let ext = topExtension
-        let maxY = max(rect.maxY, rect.minY + minHeight)
-        let br = min(bottomRadius, rect.width / 4, (maxY - rect.minY) / 2)
+        let availableH = max(rect.maxY, rect.minY + minHeight) - rect.minY
+        let ext = min(topExtension, availableH * 0.38)
+        let maxY = rect.minY + availableH
+        let br = min(bottomRadius, rect.width / 4, max(0, availableH - ext))
         // Smoothness factor for continuous-curvature corners (superellipse approximation).
         // 0.5523 = perfect circle; higher values tighten the curve for an Apple squircle feel.
         let k: CGFloat = 0.62

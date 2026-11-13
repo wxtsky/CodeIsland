@@ -15,6 +15,22 @@ struct AppSubsessionContext: SubsessionContext {
     }
 }
 
+/// The main feature tabs hosted in the expanded notch surface
+enum ExpandedContentTab: Int, CaseIterable, Sendable {
+    case agents = 0
+    case workspace = 1
+    case music = 2
+    case prayer = 3
+
+    var tabIndex: Int { rawValue }
+}
+
+/// Horizontal slide direction for expanded content transitions based on tab index
+enum TabSlideDirection: Sendable {
+    case toLeft   // newIndex > oldIndex (content enters from trailing edge, exits to leading edge)
+    case toRight  // newIndex < oldIndex (content enters from leading edge, exits to trailing edge)
+}
+
 /// The session store the island's views observe, and the coordinator around
 /// it, on the main actor: hook events, approvals and questions, completions
 /// and attention land here. The slow work it coordinates runs elsewhere —
@@ -224,6 +240,68 @@ final class AppState {
     }
     /// Preview-only: mock question payload for DebugHarness (no continuation needed)
     var previewQuestionPayload: QuestionPayload?
+    /// General expanded surface tab selection (.agents = 0, .workspace = 1, .music = 2)
+    @ObservationIgnored var tabSlideDirection: TabSlideDirection = .toLeft
+    var expandedTab: ExpandedContentTab = .agents {
+        willSet {
+            if newValue.rawValue > expandedTab.rawValue {
+                tabSlideDirection = .toLeft
+            } else if newValue.rawValue < expandedTab.rawValue {
+                tabSlideDirection = .toRight
+            }
+        }
+        didSet {
+            if !isTabTransitioning {
+                activeTabLabel = expandedTab
+            }
+        }
+    }
+    var activeTabLabel: ExpandedContentTab? = .agents
+    var isTabTransitioning: Bool = false
+
+    func transitionToTab(_ target: ExpandedContentTab) {
+        guard target != expandedTab || surface != .sessionList else {
+            if activeTabLabel != target {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    activeTabLabel = target
+                }
+            }
+            return
+        }
+        guard !isTabTransitioning else { return }
+        isTabTransitioning = true
+
+        // Phase 1: Tutup dulu (current open tab text collapses into its icon)
+        withAnimation(.easeIn(duration: 0.10)) {
+            activeTabLabel = nil
+        }
+
+        // Phase 2: Setelah itu baru buka ke kanan (expand target tab text & switch content)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            if target == .workspace {
+                WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: self)
+            }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                if target == .agents {
+                    // When returning to Agents, restore pending card if any, or default to sessionList
+                    let activeSid = self.activeSessionId ?? self.sessions.keys.first
+                    if let sid = activeSid, self.pendingPermission(forSession: sid) != nil {
+                        self.surface = .approvalCard(sessionId: sid)
+                    } else if let sid = activeSid, self.pendingQuestion(forSession: sid) != nil {
+                        self.surface = .questionCard(sessionId: sid)
+                    } else {
+                        self.surface = .sessionList
+                    }
+                } else {
+                    self.surface = .sessionList
+                }
+
+                self.expandedTab = target
+                self.activeTabLabel = target
+                self.isTabTransitioning = false
+            }
+        }
+    }
     /// Whether the active space is fullscreen — undocks the notch into a Machined Floating Deck
     var isFullscreenMode: Bool = false
     var surface: IslandSurface = .collapsed {

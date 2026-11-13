@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import UserNotifications
 import CodeIslandCore
 
 // MARK: - Navigation Model
@@ -12,6 +13,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case mascots
     case sound
     case shortcuts
+    case prayer
     case remote
     case hooks
     case buddy
@@ -27,6 +29,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return "person.2.fill"
         case .sound: return "speaker.wave.2.fill"
         case .shortcuts: return "command.circle.fill"
+        case .prayer: return "moon.stars.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
         case .buddy: return "dot.radiowaves.left.and.right"
@@ -42,6 +45,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .mascots: return .pink
         case .sound: return .green
         case .shortcuts: return .indigo
+        case .prayer: return .teal
         case .remote: return .mint
         case .hooks: return .purple
         case .buddy: return .red
@@ -57,7 +61,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.prayer, .remote, .hooks, .buddy, .about]),
 ]
 
 // MARK: - Main View
@@ -101,6 +105,7 @@ struct SettingsView: View {
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
                 case .shortcuts: ShortcutsPage()
+                case .prayer: PrayerSettingsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage(appState: appState)
                 case .buddy: BuddyPage()
@@ -1473,7 +1478,6 @@ enum ContentFontSize {
 
 private struct AppearancePage: View {
     @ObservedObject private var l10n = L10n.shared
-    @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.sessionListDensity) private var sessionListDensityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
@@ -1488,6 +1492,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
     @AppStorage(SettingsKey.workspaceHUDTheme) private var workspaceHUDTheme = SettingsDefaults.workspaceHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
@@ -1504,6 +1509,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
     @AppStorage(SettingsKey.notchScrollVolumeControl) private var notchScrollVolumeControl = SettingsDefaults.notchScrollVolumeControl
+    @AppStorage(SettingsKey.notchScrollTabSwitch) private var notchScrollTabSwitch = SettingsDefaults.notchScrollTabSwitch
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1538,29 +1544,71 @@ private struct AppearancePage: View {
             }
 
             Section("Cyber Theme Engine") {
-                Picker("Theme Preset", selection: $themeManager.currentPresetRaw) {
-                    ForEach(ThemePreset.allCases) { preset in
-                        Text(preset.title).tag(preset.rawValue)
-                    }
-                }
-                HStack(spacing: 6) {
-                    ForEach(ThemePreset.allCases) { preset in
-                        let isSel = themeManager.currentPresetRaw == preset.rawValue
-                        Button(action: {
-                            themeManager.currentPresetRaw = preset.rawValue
-                        }) {
-                            HStack(spacing: 3) {
-                                Circle().fill(preset.primaryAccent).frame(width: 5, height: 5)
-                                Text(preset.shortTag)
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(isSel ? preset.primaryAccent.opacity(0.18) : Color(white: 0.12)))
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(isSel ? preset.primaryAccent : Color.clear, lineWidth: 1))
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Island UI Theme", selection: $islandUITheme) {
+                        ForEach(IslandUITheme.allCases) { theme in
+                            Text(theme.title).tag(theme.rawValue)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .pickerStyle(.segmented)
+                    .onChange(of: islandUITheme) { _, newTheme in
+                        if newTheme == IslandUITheme.pixel.rawValue {
+                            musicHUDTheme = MusicHUDTheme.retroCyber.rawValue
+                        } else {
+                            musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+                        }
+                    }
+
+                    Text(IslandUITheme(rawValue: islandUITheme)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Global Unified Color Theme
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("Color Theme")
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ForEach(MusicProgressColor.allCases) { col in
+                                let isSelected = (musicHUDProgressColor == col.rawValue)
+                                Button(action: {
+                                    musicHUDProgressColor = col.rawValue
+                                }) {
+                                    ZStack {
+                                        if col == .theme {
+                                            Circle()
+                                                .fill(LinearGradient(
+                                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 0.12, green: 0.84, blue: 0.38)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ))
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        } else {
+                                            Circle()
+                                                .fill(col.color)
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        }
+
+                                        if isSelected {
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 2)
+                                                .frame(width: 20, height: 20)
+                                        }
+                                    }
+                                    .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .help(col.title)
+                            }
+                        }
+                    }
+
+                    Text("Global accent color theme for navigation tabs, volume HUD, and music visualizer.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -1709,53 +1757,6 @@ private struct AppearancePage: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Color Theme (Consistent right-aligned palette style)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text("Color Theme")
-                        Spacer()
-                        HStack(spacing: 8) {
-                            ForEach(MusicProgressColor.allCases) { col in
-                                let isSelected = (musicHUDProgressColor == col.rawValue)
-                                Button(action: {
-                                    musicHUDProgressColor = col.rawValue
-                                }) {
-                                    ZStack {
-                                        if col == .theme {
-                                            Circle()
-                                                .fill(LinearGradient(
-                                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 1.0, green: 0.65, blue: 0.45)],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                ))
-                                                .frame(width: 14, height: 14)
-                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
-                                        } else {
-                                            Circle()
-                                                .fill(col.color)
-                                                .frame(width: 14, height: 14)
-                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
-                                        }
-
-                                        if isSelected {
-                                            Circle()
-                                                .stroke(Color.white, lineWidth: 2)
-                                                .frame(width: 20, height: 20)
-                                        }
-                                    }
-                                    .frame(width: 22, height: 22)
-                                }
-                                .buttonStyle(.plain)
-                                .help(col.title)
-                            }
-                        }
-                    }
-
-                    Text("Accent color theme for progress bar, playback controls, and retro visualizer. 'Match Theme' adapts to the chosen HUD theme.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
                     Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
@@ -1766,6 +1767,13 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Scroll on Notch for Volume Control", isOn: $notchScrollVolumeControl)
                     Text("Adjust macOS system volume by scrolling with trackpad or mouse wheel over the notch.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Horizontal Scroll on Notch to Switch Features", isOn: $notchScrollTabSwitch)
+                    Text("Swipe left or right over the notch with trackpad or mouse wheel to switch between Agents, Workspace, and Music tabs.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -3641,5 +3649,190 @@ private struct ShortcutRow: View {
             }
         }
         .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Prayer Settings Page
+
+private struct PrayerSettingsPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var locationService = PrayerLocationService.shared
+
+    @AppStorage(SettingsKey.prayerEnabled) private var prayerEnabled = SettingsDefaults.prayerEnabled
+    @AppStorage(SettingsKey.prayerCalculationMethod) private var calculationMethod = SettingsDefaults.prayerCalculationMethod
+    @AppStorage(SettingsKey.prayerHijriCalendarSource) private var hijriSource = SettingsDefaults.prayerHijriCalendarSource
+    @AppStorage(SettingsKey.prayerHijriDayOffset) private var hijriDayOffset = SettingsDefaults.prayerHijriDayOffset
+    @AppStorage(SettingsKey.prayerLocationMode) private var locationMode = SettingsDefaults.prayerLocationMode
+    @AppStorage(SettingsKey.prayerManualCityId) private var manualCityId = SettingsDefaults.prayerManualCityId
+    @AppStorage(SettingsKey.prayerAlertBeforeMinutes) private var alertBeforeMinutes = SettingsDefaults.prayerAlertBeforeMinutes
+    @AppStorage(SettingsKey.prayerSoundEnabled) private var soundEnabled = SettingsDefaults.prayerSoundEnabled
+    @AppStorage(SettingsKey.prayerSystemNotificationEnabled) private var systemNotificationEnabled = SettingsDefaults.prayerSystemNotificationEnabled
+    @AppStorage(SettingsKey.prayerUsePreciseLocation) private var usePreciseLocation = SettingsDefaults.prayerUsePreciseLocation
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable Prayer Times & Living Clock", isOn: $prayerEnabled)
+                    .font(.headline)
+                Text("Displays prayer schedule and dynamic sky diorama on the notch bar. 100% offline and energy-efficient.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if prayerEnabled {
+                Section(header: Text("Calculation Method")) {
+                    Picker("Method", selection: $calculationMethod) {
+                        Text("Ministry of Religious Affairs (Fajr -20°, +2m safety margin)").tag("kemenag")
+                        Text("Nahdlatul Ulama / LF PBNU (Fajr -20°, elevation dip correction)").tag("nuLFPBNU")
+                        Text("Muhammadiyah / MTT (Fajr -18°, astronomical reckoning)").tag("muhammadiyah")
+                    }
+                    .pickerStyle(.menu)
+
+                    methodDescription
+                }
+
+                Section(header: Text("Hijri Calendar")) {
+                    Picker("Calendar Standard", selection: $hijriSource) {
+                        Text("Global Unified Hijri Calendar (KHGT)").tag("khgt")
+                        Text("Indonesia Standard Calendar (Neo-MABIMS)").tag("neoMABIMS")
+                    }
+                    .pickerStyle(.menu)
+
+                    Stepper(value: $hijriDayOffset, in: -2...2) {
+                        HStack {
+                            Text("Manual Day Adjustment:")
+                            Spacer()
+                            Text(hijriDayOffset == 0 ? "0 days" : (hijriDayOffset > 0 ? "+\(hijriDayOffset) days" : "\(hijriDayOffset) days"))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Use manual adjustment if official crescent sighting (Rukyatul Hilal) announcement differs by 1 day from calculated calendar.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section(header: Text("Device Location")) {
+                    Picker("Location Mode", selection: $locationMode) {
+                        Text("Automatic (CoreLocation)").tag("automatic")
+                        Text("Manual (Select City)").tag("manual")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: locationMode) { _, _ in
+                        locationService.requestCurrentLocation(force: true)
+                    }
+
+                    if locationMode == "automatic" {
+                        Toggle("Use Precise Coordinates & Elevation", isOn: $usePreciseLocation)
+                            .font(.system(size: 12))
+                        Text("Uses actual device GPS/Wi-Fi coordinates and altitude for precise astronomical calculation down to local minutes.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack {
+                            switch locationService.authorizationStatus {
+                            case .authorizedAlways, .authorized:
+                                Label("Location Access: Authorized", systemImage: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                    .font(.caption)
+                            case .notDetermined:
+                                Button("Request Location Access") {
+                                    locationService.requestAuthorization()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            case .denied, .restricted:
+                                Label("Access Denied (Open System Settings > Privacy)", systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption)
+                            @unknown default:
+                                EmptyView()
+                            }
+
+                            Spacer()
+
+                            Button {
+                                locationService.requestCurrentLocation(force: true)
+                            } label: {
+                                Label("Refresh Location", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    } else {
+                        Picker("Reference City", selection: $manualCityId) {
+                            ForEach(OfflineCityDatabase.allCities) { city in
+                                Text("\(city.name) (\(city.provinceOrCountry)) - \(Int(city.elevationMeters))m").tag(city.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: manualCityId) { _, newId in
+                            locationService.setManualCity(id: newId)
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "location.fill")
+                            .foregroundStyle(.tint)
+                            .padding(.top, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Region: \(locationService.displayName)")
+                                .font(.system(size: 13, weight: .medium))
+                            let coords = locationService.effectiveCoordinates
+                            let elev = locationService.effectiveElevation
+                            Text(String(format: "Coordinates: %.4f°, %.4f° · Elevation: %.0fm (%@)",
+                                        coords.latitude,
+                                        coords.longitude,
+                                        elev,
+                                        locationService.activeCity.provinceOrCountry))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("Notifications & Alerts")) {
+                    Picker("Alert Before Prayer", selection: $alertBeforeMinutes) {
+                        Text("Off").tag(0)
+                        Text("5 Minutes Before").tag(5)
+                        Text("10 Minutes Before").tag(10)
+                        Text("15 Minutes Before").tag(15)
+                    }
+                    .pickerStyle(.menu)
+
+                    Toggle("Play Subtle Chime", isOn: $soundEnabled)
+                    Toggle("Send macOS System Notifications", isOn: $systemNotificationEnabled)
+                        .onChange(of: systemNotificationEnabled) { _, isEnabled in
+                            if isEnabled {
+                                UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                                    if !granted {
+                                        Task { @MainActor in
+                                            systemNotificationEnabled = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var methodDescription: some View {
+        switch calculationMethod {
+        case "muhammadiyah":
+            Text("Majelis Tarjih & Tajdid Muhammadiyah adopts Fajr angle of -18° based on true astronomical reckoning without additional safety margins.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case "nuLFPBNU":
+            Text("Lembaga Falakiyah PBNU applies Fajr angle of -20° with spherical elevation dip correction and ceiling rounding.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        default:
+            Text("Ministry of Religious Affairs of Indonesia applies Fajr angle of -20°, Isha -18°, solar transit +2m, and a +2 minute safety margin (ihtiyati).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }

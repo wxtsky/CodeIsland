@@ -35,12 +35,16 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>CodeIsland advertises itself on the local network so iPhone can mirror the island state.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>CodeIsland uses your location on-device to compute local prayer times and sun phases. Coordinates never leave your Mac.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CodeIsland uses your location on-device to compute local prayer times and sun phases. Coordinates never leave your Mac.</string>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/wxtsky/CodeIsland/main/appcast.xml</string>
+	<string>https://codeisland.azhr.cloud/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>oqLtx5s2hc8Xgsp4rEuTwnQ8UGRT4ma4tjlf+1i3YHA=</string>
 	<key>SUScheduledCheckInterval</key>

@@ -17,6 +17,29 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+public enum IslandUITheme: String, CaseIterable, Identifiable, Sendable {
+    case pixel = "pixel"
+    case modern = "modern"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .pixel: return "Pixel Retro (8-Bit)"
+        case .modern: return "Modern Clean"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .pixel:
+            return "Authentic 8-bit pixel art iconography, sharp retro borders, and cyber neon accents."
+        case .modern:
+            return "Sleek Apple SF Symbols, smooth continuous squircles, and dynamic island glass."
+        }
+    }
+}
+
 public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
     case modernClean = "modernClean"
     case retroCyber = "retroCyber"
@@ -198,6 +221,7 @@ enum SettingsKey {
     static let contentFontSize = "contentFontSize"
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
+    static let islandUITheme = "islandUITheme"
     static let showCompactLyrics = "showCompactLyrics"
     static let musicHUDTheme = "musicHUDTheme"
     static let workspaceHUDTheme = "workspaceHUDTheme"
@@ -248,12 +272,29 @@ enum SettingsKey {
     static let showClaudeQuota = "showClaudeQuota"
     static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
 
-    // Notch scroll gesture for system volume control
+    // Notch scroll gesture for system volume control and tab feature navigation
     static let notchScrollVolumeControl = "notchScrollVolumeControl"
+    static let notchScrollTabSwitch = "notchScrollTabSwitch"
 
     // Completion notification: "expand" | "glance" | "off". Successor of the
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
     static let completionNotificationStyle = "completionNotificationStyle"
+
+    // Prayer & Living Diorama Clock
+    static let prayerEnabled = "prayerEnabled"
+    static let prayerCalculationMethod = "prayerCalculationMethod"
+    static let prayerHijriCalendarSource = "prayerHijriCalendarSource"
+    static let prayerHijriDayOffset = "prayerHijriDayOffset"
+    static let prayerLocationMode = "prayerLocationMode"
+    static let prayerManualCityId = "prayerManualCityId"
+    static let prayerAlertBeforeMinutes = "prayerAlertBeforeMinutes"
+    static let prayerSoundEnabled = "prayerSoundEnabled"
+    static let prayerSystemNotificationEnabled = "prayerSystemNotificationEnabled"
+    static let prayerLastLatitude = "prayerLastLatitude"
+    static let prayerLastLongitude = "prayerLastLongitude"
+    static let prayerLastAltitude = "prayerLastAltitude"
+    static let prayerResolvedCityName = "prayerResolvedCityName"
+    static let prayerUsePreciseLocation = "prayerUsePreciseLocation"
 
     // Shortcuts (per-action: shortcut_{action}_enabled, shortcut_{action}_keyCode, shortcut_{action}_modifiers)
     static func shortcutEnabled(_ action: String) -> String { "shortcut_\(action)_enabled" }
@@ -356,6 +397,7 @@ struct SettingsDefaults {
     static let contentFontSize = 11
     static let aiMessageLines = 1
     static let showAgentDetails = false
+    static let islandUITheme = IslandUITheme.pixel.rawValue
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
     static let workspaceHUDTheme = WorkspaceHUDTheme.modern.rawValue
@@ -391,6 +433,7 @@ struct SettingsDefaults {
     static let showClaudeQuota = false
     static let claudeQuotaChip = "auto"
     static let notchScrollVolumeControl = true
+    static let notchScrollTabSwitch = true
 
     static let rotationInterval = 5
 
@@ -438,6 +481,22 @@ struct SettingsDefaults {
     static let pushAwayIdleMinutes = 5
     static let pushSummaryLength = PushMessageFormatter.defaultSummaryLimit
     static let pushChannels = ""
+
+    // Prayer & Living Diorama Clock
+    static let prayerEnabled = false
+    static let prayerCalculationMethod = "kemenag"
+    static let prayerHijriCalendarSource = "neoMABIMS"
+    static let prayerHijriDayOffset = 0
+    static let prayerLocationMode = "automatic"
+    static let prayerManualCityId = "jakarta"
+    static let prayerAlertBeforeMinutes = 10
+    static let prayerSoundEnabled = false
+    static let prayerSystemNotificationEnabled = false
+    static let prayerLastLatitude: Double = 0.0
+    static let prayerLastLongitude: Double = 0.0
+    static let prayerLastAltitude: Double = 0.0
+    static let prayerResolvedCityName = ""
+    static let prayerUsePreciseLocation = true
 }
 
 @MainActor
@@ -535,6 +594,20 @@ class SettingsManager {
             SettingsKey.pushAwayIdleMinutes: SettingsDefaults.pushAwayIdleMinutes,
             SettingsKey.pushSummaryLength: SettingsDefaults.pushSummaryLength,
             SettingsKey.pushChannels: SettingsDefaults.pushChannels,
+            SettingsKey.prayerEnabled: SettingsDefaults.prayerEnabled,
+            SettingsKey.prayerCalculationMethod: SettingsDefaults.prayerCalculationMethod,
+            SettingsKey.prayerHijriCalendarSource: SettingsDefaults.prayerHijriCalendarSource,
+            SettingsKey.prayerHijriDayOffset: SettingsDefaults.prayerHijriDayOffset,
+            SettingsKey.prayerLocationMode: SettingsDefaults.prayerLocationMode,
+            SettingsKey.prayerManualCityId: SettingsDefaults.prayerManualCityId,
+            SettingsKey.prayerAlertBeforeMinutes: SettingsDefaults.prayerAlertBeforeMinutes,
+            SettingsKey.prayerSoundEnabled: SettingsDefaults.prayerSoundEnabled,
+            SettingsKey.prayerSystemNotificationEnabled: SettingsDefaults.prayerSystemNotificationEnabled,
+            SettingsKey.prayerLastLatitude: SettingsDefaults.prayerLastLatitude,
+            SettingsKey.prayerLastLongitude: SettingsDefaults.prayerLastLongitude,
+            SettingsKey.prayerLastAltitude: SettingsDefaults.prayerLastAltitude,
+            SettingsKey.prayerResolvedCityName: SettingsDefaults.prayerResolvedCityName,
+            SettingsKey.prayerUsePreciseLocation: SettingsDefaults.prayerUsePreciseLocation,
         ])
     }
 

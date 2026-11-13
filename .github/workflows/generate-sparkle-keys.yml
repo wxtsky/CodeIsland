@@ -1,0 +1,42 @@
+name: Generate Sparkle Keys (One-Time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  keygen:
+    name: Generate Ed25519 Sparkle Keys
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16 or latest
+        run: |
+          XCODE_APP="$(find /Applications -maxdepth 1 \( -name 'Xcode_26*.app' -o -name 'Xcode_16*.app' -o -name 'Xcode*.app' \) -type d | sort -V | tail -n 1)"
+          if [ -n "$XCODE_APP" ]; then
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          fi
+
+      - name: Build Sparkle binary artifacts
+        run: |
+          swift package resolve
+          swift build -c release --product CodeIsland
+
+      - name: Generate and output Ed25519 keypair
+        run: |
+          KEYGEN="$(find .build -name generate_keys -type f -perm +111 2>/dev/null | head -n 1)"
+          if [ -z "$KEYGEN" ]; then
+            echo "ERROR: generate_keys binary not found in .build artifacts"
+            exit 1
+          fi
+          echo "Found key generation tool at: $KEYGEN"
+          echo "=========================================================================="
+          echo "SPARKLE ED25519 KEYPAIR GENERATED:"
+          echo "=========================================================================="
+          $KEYGEN -p
+          echo "=========================================================================="
+          echo "INSTRUCTIONS:"
+          echo "1. Copy the PRIVATE KEY to GitHub Secrets as: SPARKLE_PRIVATE_KEY"
+          echo "2. Copy the PUBLIC KEY to Info.plist as: SUPublicEDKey"
+          echo "=========================================================================="
