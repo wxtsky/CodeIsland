@@ -103,19 +103,16 @@ final class NotchNavigationManager {
         let allTabs = PrayerTimeManager.shared.isEnabled
             ? ExpandedContentTab.allCases
             : ExpandedContentTab.allCases.filter { $0 != .prayer }
-        if targetIndex >= 0 && targetIndex < allTabs.count {
-            let targetTab = allTabs[targetIndex]
-            appState.transitionToTab(targetTab)
-            let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
-            if hapticOn {
-                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-            }
-        } else {
-            // Reached boundary edge
-            let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
-            if hapticOn {
-                NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
-            }
+        guard targetIndex >= 0 && targetIndex < allTabs.count else {
+            // Reached boundary edge: do nothing and do not trigger haptic
+            return
+        }
+
+        let targetTab = allTabs[targetIndex]
+        appState.transitionToTab(targetTab)
+        let hapticOn = UserDefaults.standard.object(forKey: SettingsKey.hapticOnHover) as? Bool ?? SettingsDefaults.hapticOnHover
+        if hapticOn {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
         }
     }
 }
