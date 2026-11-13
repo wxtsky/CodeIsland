@@ -17,6 +17,29 @@ enum NotchHeightMode: String, CaseIterable {
     case custom = "custom"
 }
 
+public enum IslandUITheme: String, CaseIterable, Identifiable, Sendable {
+    case pixel = "pixel"
+    case modern = "modern"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .pixel: return "Pixel Retro (8-Bit)"
+        case .modern: return "Modern Clean"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .pixel:
+            return "Authentic 8-bit pixel art iconography, sharp retro borders, and cyber neon accents."
+        case .modern:
+            return "Sleek Apple SF Symbols, smooth continuous squircles, and dynamic island glass."
+        }
+    }
+}
+
 public enum MusicHUDTheme: String, CaseIterable, Identifiable, Sendable {
     case modernClean = "modernClean"
     case retroCyber = "retroCyber"
@@ -175,6 +198,7 @@ enum SettingsKey {
     static let contentFontSize = "contentFontSize"
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
+    static let islandUITheme = "islandUITheme"
     static let showCompactLyrics = "showCompactLyrics"
     static let musicHUDTheme = "musicHUDTheme"
     static let musicHUDProgressColor = "musicHUDProgressColor"
@@ -224,8 +248,9 @@ enum SettingsKey {
     static let showClaudeQuota = "showClaudeQuota"
     static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
 
-    // Notch scroll gesture for system volume control
+    // Notch scroll gesture for system volume control and tab feature navigation
     static let notchScrollVolumeControl = "notchScrollVolumeControl"
+    static let notchScrollTabSwitch = "notchScrollTabSwitch"
 
     // Completion notification: "expand" | "glance" | "off". Successor of the
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
@@ -348,6 +373,7 @@ struct SettingsDefaults {
     static let contentFontSize = 11
     static let aiMessageLines = 1
     static let showAgentDetails = false
+    static let islandUITheme = IslandUITheme.pixel.rawValue
     static let showCompactLyrics = true
     static let musicHUDTheme = MusicHUDTheme.modernClean.rawValue
     static let musicHUDProgressColor = MusicProgressColor.theme.rawValue
@@ -382,6 +408,7 @@ struct SettingsDefaults {
     static let showClaudeQuota = false
     static let claudeQuotaChip = "auto"
     static let notchScrollVolumeControl = true
+    static let notchScrollTabSwitch = true
 
     static let rotationInterval = 5
 

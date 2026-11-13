@@ -1478,7 +1478,6 @@ enum ContentFontSize {
 
 private struct AppearancePage: View {
     @ObservedObject private var l10n = L10n.shared
-    @ObservedObject private var themeManager = ThemeManager.shared
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.sessionListDensity) private var sessionListDensityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
@@ -1492,6 +1491,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
     @AppStorage(SettingsKey.showCompactLyrics) private var showCompactLyrics = SettingsDefaults.showCompactLyrics
     @AppStorage(SettingsKey.musicHUDTheme) private var musicHUDTheme = SettingsDefaults.musicHUDTheme
+    @AppStorage(SettingsKey.islandUITheme) private var islandUITheme = SettingsDefaults.islandUITheme
     @AppStorage(SettingsKey.musicHUDProgressColor) private var musicHUDProgressColor = SettingsDefaults.musicHUDProgressColor
     @AppStorage(SettingsKey.floatingLyricPreset) private var floatingLyricPreset = SettingsDefaults.floatingLyricPreset
     @AppStorage(SettingsKey.floatingLyricFontSize) private var floatingLyricFontSize = SettingsDefaults.floatingLyricFontSize
@@ -1508,6 +1508,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.customNotchHeight) private var customNotchHeight = SettingsDefaults.customNotchHeight
     @AppStorage(SettingsKey.notchAnimationSpeed) private var notchAnimationSpeed = SettingsDefaults.notchAnimationSpeed
     @AppStorage(SettingsKey.notchScrollVolumeControl) private var notchScrollVolumeControl = SettingsDefaults.notchScrollVolumeControl
+    @AppStorage(SettingsKey.notchScrollTabSwitch) private var notchScrollTabSwitch = SettingsDefaults.notchScrollTabSwitch
 
     private var notchHeightMode: Binding<NotchHeightMode> {
         Binding(
@@ -1542,29 +1543,71 @@ private struct AppearancePage: View {
             }
 
             Section("Cyber Theme Engine") {
-                Picker("Theme Preset", selection: $themeManager.currentPresetRaw) {
-                    ForEach(ThemePreset.allCases) { preset in
-                        Text(preset.title).tag(preset.rawValue)
-                    }
-                }
-                HStack(spacing: 6) {
-                    ForEach(ThemePreset.allCases) { preset in
-                        let isSel = themeManager.currentPresetRaw == preset.rawValue
-                        Button(action: {
-                            themeManager.currentPresetRaw = preset.rawValue
-                        }) {
-                            HStack(spacing: 3) {
-                                Circle().fill(preset.primaryAccent).frame(width: 5, height: 5)
-                                Text(preset.shortTag)
-                                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 3).fill(isSel ? preset.primaryAccent.opacity(0.18) : Color(white: 0.12)))
-                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(isSel ? preset.primaryAccent : Color.clear, lineWidth: 1))
+                VStack(alignment: .leading, spacing: 3) {
+                    Picker("Island UI Theme", selection: $islandUITheme) {
+                        ForEach(IslandUITheme.allCases) { theme in
+                            Text(theme.title).tag(theme.rawValue)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .pickerStyle(.segmented)
+                    .onChange(of: islandUITheme) { _, newTheme in
+                        if newTheme == IslandUITheme.pixel.rawValue {
+                            musicHUDTheme = MusicHUDTheme.retroCyber.rawValue
+                        } else {
+                            musicHUDTheme = MusicHUDTheme.modernClean.rawValue
+                        }
+                    }
+
+                    Text(IslandUITheme(rawValue: islandUITheme)?.description ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                // Global Unified Color Theme
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text("Color Theme")
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ForEach(MusicProgressColor.allCases) { col in
+                                let isSelected = (musicHUDProgressColor == col.rawValue)
+                                Button(action: {
+                                    musicHUDProgressColor = col.rawValue
+                                }) {
+                                    ZStack {
+                                        if col == .theme {
+                                            Circle()
+                                                .fill(LinearGradient(
+                                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 0.12, green: 0.84, blue: 0.38)],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                ))
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        } else {
+                                            Circle()
+                                                .fill(col.color)
+                                                .frame(width: 14, height: 14)
+                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
+                                        }
+
+                                        if isSelected {
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 2)
+                                                .frame(width: 20, height: 20)
+                                        }
+                                    }
+                                    .frame(width: 22, height: 22)
+                                }
+                                .buttonStyle(.plain)
+                                .help(col.title)
+                            }
+                        }
+                    }
+
+                    Text("Global accent color theme for navigation tabs, volume HUD, and music visualizer.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -1713,53 +1756,6 @@ private struct AppearancePage: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Color Theme (Consistent right-aligned palette style)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text("Color Theme")
-                        Spacer()
-                        HStack(spacing: 8) {
-                            ForEach(MusicProgressColor.allCases) { col in
-                                let isSelected = (musicHUDProgressColor == col.rawValue)
-                                Button(action: {
-                                    musicHUDProgressColor = col.rawValue
-                                }) {
-                                    ZStack {
-                                        if col == .theme {
-                                            Circle()
-                                                .fill(LinearGradient(
-                                                    colors: [Color(red: 0.0, green: 0.96, blue: 0.83), Color(red: 1.0, green: 0.65, blue: 0.45)],
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                ))
-                                                .frame(width: 14, height: 14)
-                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
-                                        } else {
-                                            Circle()
-                                                .fill(col.color)
-                                                .frame(width: 14, height: 14)
-                                                .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 0.8))
-                                        }
-
-                                        if isSelected {
-                                            Circle()
-                                                .stroke(Color.white, lineWidth: 2)
-                                                .frame(width: 20, height: 20)
-                                        }
-                                    }
-                                    .frame(width: 22, height: 22)
-                                }
-                                .buttonStyle(.plain)
-                                .help(col.title)
-                            }
-                        }
-                    }
-
-                    Text("Accent color theme for progress bar, playback controls, and retro visualizer. 'Match Theme' adapts to the chosen HUD theme.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Detect Web Music Players in Browsers", isOn: $detectSpotifyWebInBrowsers)
                     Text("Automatically detect Spotify Web, YouTube Music, and Apple Music Web in Safari, Brave, Chrome, Arc, and Edge. Enable 'Allow JavaScript from Apple Events' in your browser's Developer menu for exact lyric sync and controls.")
@@ -1770,6 +1766,13 @@ private struct AppearancePage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle("Scroll on Notch for Volume Control", isOn: $notchScrollVolumeControl)
                     Text("Adjust macOS system volume by scrolling with trackpad or mouse wheel over the notch.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Horizontal Scroll on Notch to Switch Features", isOn: $notchScrollTabSwitch)
+                    Text("Swipe left or right over the notch with trackpad or mouse wheel to switch between Agents, Workspace, and Music tabs.")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
