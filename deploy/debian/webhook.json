@@ -1,0 +1,37 @@
+[
+  {
+    "id": "deploy-codeisland",
+    "execute-command": "/var/www/codeisland-updates/scripts/deploy-codeisland.sh",
+    "command-working-directory": "/var/www/codeisland-updates",
+    "response-message": "Deployment job received and executing",
+    "include-command-output-in-response": true,
+    "pass-arguments-to-command": [
+      {
+        "source": "payload",
+        "name": "version"
+      },
+      {
+        "source": "payload",
+        "name": "tag"
+      },
+      {
+        "source": "payload",
+        "name": "repository"
+      },
+      {
+        "source": "payload",
+        "name": "sha256"
+      }
+    ],
+    "trigger-rule": {
+      "match": {
+        "type": "value",
+        "value": "CHANGE_ME_TO_STRONG_SHARED_SECRET",
+        "parameter": {
+          "source": "header",
+          "name": "X-Webhook-Secret"
+        }
+      }
+    }
+  }
+]
