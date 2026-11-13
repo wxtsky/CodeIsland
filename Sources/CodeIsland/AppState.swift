@@ -15,11 +15,12 @@ struct AppSubsessionContext: SubsessionContext {
     }
 }
 
-/// The three main feature tabs hosted in the expanded notch surface
+/// The main feature tabs hosted in the expanded notch surface
 enum ExpandedContentTab: Int, CaseIterable, Sendable {
     case agents = 0
     case workspace = 1
     case music = 2
+    case prayer = 3
 
     var tabIndex: Int { rawValue }
 }

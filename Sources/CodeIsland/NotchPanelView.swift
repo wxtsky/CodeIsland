@@ -150,6 +150,7 @@ struct NotchPanelView: View {
     @ObservedObject private var nowPlaying = NowPlayingManager.shared
     @ObservedObject private var workspaceManager = WorkspaceMonitorManager.shared
     @ObservedObject private var sys = SystemMonitorManager.shared
+    @ObservedObject private var prayerManager = PrayerTimeManager.shared
     @ObservedObject private var volumeManager = SystemVolumeManager.shared
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
@@ -191,6 +192,24 @@ struct NotchPanelView: View {
         )
     }
 
+    init(
+        appState: AppState,
+        hasNotch: Bool,
+        notchHeight: CGFloat,
+        notchW: CGFloat,
+        screenWidth: CGFloat,
+        initialTab: ExpandedContentTab = .agents
+    ) {
+        self.appState = appState
+        self.hasNotch = hasNotch
+        self.notchHeight = notchHeight
+        self.notchW = notchW
+        self.screenWidth = screenWidth
+        if initialTab != .agents {
+            self.appState.expandedTab = initialTab
+        }
+    }
+
     private var isActive: Bool { !appState.sessions.isEmpty || nowPlaying.isPlaying }
     /// First launch / no-session state should still render a visible marker so the app
     /// doesn't disappear completely behind the physical notch.
@@ -205,6 +224,7 @@ struct NotchPanelView: View {
     private var shouldShowExpanded: Bool {
         if appState.surface.isExpanded { return true }
         if nowPlaying.showToast && !showCompactLyrics { return showBar }
+        if prayerManager.showMiniPeekBanner { return showBar }
         return false
     }
     /// Prehover acknowledgement is only rendered on the collapsed active bar —
@@ -229,7 +249,7 @@ struct NotchPanelView: View {
     }
 
     private var isToastOnly: Bool {
-        nowPlaying.showToast && !appState.surface.isExpanded
+        (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded
     }
     private var currentTopExt: CGFloat {
         (shouldShowExpanded && !isToastOnly) ? 14 : 0
@@ -324,6 +344,9 @@ struct NotchPanelView: View {
             if expandedTab == .workspace && workspaceManager.isExpandedDetail {
                 return min(max(baseWidth, 720), maxPanelWidth)
             }
+            if expandedTab == .prayer {
+                return min(max(baseWidth, 720), maxPanelWidth)
+            }
             return min(max(baseWidth, minWidth), maxPanelWidth)
         }
         if showIdleIndicator {
@@ -335,7 +358,7 @@ struct NotchPanelView: View {
             return min(320, maxPanelWidth)
         }
         // Mini peek banner width: sleek ~330pt when toast is showing while collapsed
-        if nowPlaying.showToast && !appState.surface.isExpanded {
+        if (nowPlaying.showToast || prayerManager.showMiniPeekBanner) && !appState.surface.isExpanded {
             return min(330, maxPanelWidth)
         }
         let wing = symmetricWingWidth
@@ -509,7 +532,9 @@ struct NotchPanelView: View {
                         hovered: idleHovered,
                         onExpand: {
                             withAnimation(NotchAnimation.open) {
-                                if nowPlaying.isPlaying {
+                                if PrayerTimeManager.shared.isEnabled {
+                                    expandedTab = .prayer
+                                } else if nowPlaying.isPlaying {
                                     expandedTab = .music
                                 }
                                 appState.surface = .sessionList
@@ -531,6 +556,18 @@ struct NotchPanelView: View {
                                 insertion: .move(edge: .top).combined(with: .opacity),
                                 removal: .move(edge: .top).combined(with: .opacity)
                             ))
+                    } else if prayerManager.showMiniPeekBanner && !appState.surface.isExpanded {
+                        // PRAYER MINI PEEK BANNER: Buka tipis saat T-10m & saat masuk waktu salat
+                        PrayerMiniPeekBannerView(manager: prayerManager) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                expandedTab = .prayer
+                                appState.surface = .sessionList
+                            }
+                        }
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .move(edge: .top).combined(with: .opacity)
+                        ))
                     } else if nowPlaying.showToast && !appState.surface.isExpanded {
                         // MINI PEEK BANNER: Buka tipis-tipis saat lagu berganti / play
                         CyberMusicMiniPeekBanner(nowPlaying: nowPlaying) {
@@ -623,7 +660,7 @@ struct NotchPanelView: View {
                             CyberQuickPromptView(appState: appState)
                                 .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         case .sessionList:
-                            // Priority 2: General expanded surface respects expandedTab (Music, Workspace, or Agent SessionList)
+                            // Priority 2: General expanded surface respects expandedTab (Music, Workspace, Prayer, or Agent SessionList)
                             ZStack(alignment: .top) {
                                 switch expandedTab {
                                 case .music:
@@ -631,6 +668,9 @@ struct NotchPanelView: View {
                                         .transition(tabContentTransition)
                                 case .workspace:
                                     CyberWorkspaceView(manager: workspaceManager, appState: appState)
+                                        .transition(tabContentTransition)
+                                case .prayer:
+                                    PrayerExpandedCardView(manager: prayerManager)
                                         .transition(tabContentTransition)
                                 case .agents:
                                     SessionListView(appState: appState, onlySessionId: nil)
@@ -649,6 +689,7 @@ struct NotchPanelView: View {
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: panelWidth)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: shouldShowExpanded)
             .animation(.spring(response: 0.40, dampingFraction: 0.84), value: nowPlaying.showToast)
+            .animation(.spring(response: 0.40, dampingFraction: 0.84), value: prayerManager.showMiniPeekBanner)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: isThinking)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: symmetricWingWidth)
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: nowPlaying.isPlaying)
@@ -702,7 +743,10 @@ struct NotchPanelView: View {
                     }
                 }
             }
-            .onAppear { displayedToolStatus = showToolStatus }
+            .onAppear {
+                displayedToolStatus = showToolStatus
+                prayerManager.appState = appState
+            }
             .onChange(of: nowPlaying.title) { _, newTitle in
                 if !newTitle.isEmpty && nowPlaying.isPlaying {
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -731,6 +775,10 @@ struct NotchPanelView: View {
             }
             .onChange(of: appState.status) { _, newStatus in
                 handleStatusChange(newStatus)
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
+            }
+            .onChange(of: appState.surface) { _, _ in
+                prayerManager.checkAndFlushPendingBanner(appState: appState)
             }
             .scaleEffect(shouldShowPrehover ? NotchHoverInteraction.prehoverScale : 1, anchor: .top)
             .contentShape(Rectangle())
@@ -887,7 +935,7 @@ struct NotchPanelView: View {
             .onChange(of: appState.status) { oldStatus, newStatus in
                 // Switch to .agents if task completes while viewing secondary tabs
                 if (oldStatus == .processing || oldStatus == .running) && newStatus == .idle {
-                    if expandedTab == .music || expandedTab == .workspace {
+                    if expandedTab == .music || expandedTab == .workspace || expandedTab == .prayer {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                             expandedTab = .agents
                         }
@@ -895,7 +943,7 @@ struct NotchPanelView: View {
                 }
             }
             .onChange(of: appState.justCompletedSessionId) { _, completedId in
-                if completedId != nil && (expandedTab == .music || expandedTab == .workspace) {
+                if completedId != nil && (expandedTab == .music || expandedTab == .workspace || expandedTab == .prayer) {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                         expandedTab = .agents
                     }
@@ -1329,8 +1377,15 @@ private struct CompactRightWing: View {
                 }
                 .padding(.horizontal, 4)
             } else {
-                // Music Visualizer or Machined Cyber Activity Pill
-                if nowPlaying.isPlaying {
+                let prayerManager = PrayerTimeManager.shared
+                if prayerManager.isPrayerPrioritized {
+                    // SMART PRIORITY: Prayer countdown takes active priority at T <= 15m
+                    PrayerCompactWingView(isHovered: shouldExpandRightWing) {
+                        expandedTab = .prayer
+                        appState.surface = .sessionList
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else if nowPlaying.isPlaying {
                     CyberMusicWingView(nowPlaying: nowPlaying, isHovered: shouldExpandRightWing)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 } else {
@@ -1927,6 +1982,38 @@ private struct HeaderNavigationMenuTabs: View {
                 }
                 .buttonStyle(.plain)
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+
+                // PRAYER TAB
+                if PrayerTimeManager.shared.isEnabled {
+                    let isPrayerActive = (activeLabelTab ?? expandedTab) == .prayer
+                    Button {
+                        switchToTab(.prayer)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "moon.stars.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                            if activeLabelTab == .prayer {
+                                Text("Prayer")
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
+                                    .transition(.asymmetric(
+                                        insertion: .move(edge: .leading).combined(with: .opacity),
+                                        removal: .move(edge: .leading).combined(with: .opacity)
+                                    ))
+                            }
+                        }
+                        .foregroundStyle(isPrayerActive ? activeAccentColor : Self.inactiveColor)
+                        .padding(.horizontal, isPrayerActive ? 8 : 6)
+                        .frame(height: 20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(isPrayerActive ? (activeAccentColor == .white ? Color.white.opacity(0.18) : activeAccentColor.opacity(0.22)) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Prayer Schedule & Living Sky Diorama")
+                }
             }
             .padding(.vertical, 2)
         } else {
@@ -2033,13 +2120,48 @@ private struct HeaderNavigationMenuTabs: View {
                 }
                 .buttonStyle(.plain)
                 .help(nowPlaying.isPlaying ? "♫ \(nowPlaying.title) - \(nowPlaying.artist)" : "Music HUD")
+
+                // PRAYER PIXEL TAB
+                if PrayerTimeManager.shared.isEnabled {
+                    let isPrayerActive = (activeLabelTab ?? expandedTab) == .prayer
+                    Button {
+                        switchToTab(.prayer)
+                    } label: {
+                        HStack(spacing: 4) {
+                            PixelIcon(
+                                glyph: .prayer,
+                                color: isPrayerActive ? activeAccentColor : Self.inactiveColor,
+                                pixelSize: 1.35
+                            )
+                            if activeLabelTab == .prayer {
+                                PixelText(
+                                    text: "PRAY",
+                                    color: activeAccentColor,
+                                    pixelSize: 1.15
+                                )
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                ))
+                            }
+                        }
+                        .padding(.horizontal, isPrayerActive ? 7 : 5)
+                        .frame(height: 18)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(isPrayerActive ? activeAccentColor.opacity(0.20) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Prayer Schedule & Living Sky Diorama")
+                }
             }
             .padding(.vertical, 2)
         }
     }
 }
 
-/// The grouping tabs supporting both Pixel and Modern UI themes
 private struct SessionGroupingTabs: View {
     @Binding var mode: String
     @Binding var expandedTab: ExpandedContentTab
@@ -2154,6 +2276,8 @@ private struct IdleIndicatorBar: View {
     var onExpand: (() -> Void)? = nil
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
+    private static let idlePrayerWingMinWidth: CGFloat = 126
+
     private var wingWidth: CGFloat {
         hovered ? (compactWingWidth + 6) : compactWingWidth
     }
@@ -2178,9 +2302,13 @@ private struct IdleIndicatorBar: View {
                 .contentShape(Rectangle())
                 .onTapGesture { onExpand?() }
 
-            // Right Wing: sleek, ultra-compact expand indicator (Option 1)
-            HStack {
+            // Right Wing: sleek, ultra-compact expand indicator & living clock
+            let prayerManager = PrayerTimeManager.shared
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
+                if prayerManager.isEnabled {
+                    PrayerCompactWingView(isHovered: hovered, onExpand: onExpand)
+                }
                 Image(systemName: "chevron.down")
                     .font(.system(size: hovered ? 8 : 7.5, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(hovered ? 0.9 : 0.45))
@@ -2191,10 +2319,10 @@ private struct IdleIndicatorBar: View {
                     )
                     .padding(.trailing, 8)
             }
-            .frame(width: wingWidth, alignment: .trailing)
+            .frame(width: prayerManager.isEnabled ? max(wingWidth, Self.idlePrayerWingMinWidth) : wingWidth, alignment: .trailing)
             .contentShape(Rectangle())
             .onTapGesture { onExpand?() }
-            .help("Click to expand tabs (Agents / Workspace / Music)")
+            .help(prayerManager.isEnabled ? "Prayer Times & Living Clock (Click to open Prayer tab)" : "Click to expand tabs (Agents / Workspace / Music)")
         }
         .frame(height: notchHeight)
         .animation(NotchAnimation.micro, value: hovered)

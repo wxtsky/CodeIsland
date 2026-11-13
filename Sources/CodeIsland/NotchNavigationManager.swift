@@ -100,7 +100,9 @@ final class NotchNavigationManager {
         let currentIndex = currentTab.rawValue
         let targetIndex = currentIndex + (forward ? 1 : -1)
 
-        let allTabs = ExpandedContentTab.allCases
+        let allTabs = PrayerTimeManager.shared.isEnabled
+            ? ExpandedContentTab.allCases
+            : ExpandedContentTab.allCases.filter { $0 != .prayer }
         if targetIndex >= 0 && targetIndex < allTabs.count {
             let targetTab = allTabs[targetIndex]
             appState.transitionToTab(targetTab)
