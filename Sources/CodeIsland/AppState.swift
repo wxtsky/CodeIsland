@@ -260,7 +260,7 @@ final class AppState {
     var isTabTransitioning: Bool = false
 
     func transitionToTab(_ target: ExpandedContentTab) {
-        guard target != expandedTab else {
+        guard target != expandedTab || surface != .sessionList else {
             if activeTabLabel != target {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                     activeTabLabel = target
@@ -282,6 +282,20 @@ final class AppState {
                 WorkspaceMonitorManager.shared.resolveAndRefreshWorkspace(appState: self)
             }
             withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                if target == .agents {
+                    // When returning to Agents, restore pending card if any, or default to sessionList
+                    let activeSid = self.activeSessionId ?? self.sessions.keys.first
+                    if let sid = activeSid, self.pendingPermission(forSession: sid) != nil {
+                        self.surface = .approvalCard(sessionId: sid)
+                    } else if let sid = activeSid, self.pendingQuestion(forSession: sid) != nil {
+                        self.surface = .questionCard(sessionId: sid)
+                    } else {
+                        self.surface = .sessionList
+                    }
+                } else {
+                    self.surface = .sessionList
+                }
+
                 self.expandedTab = target
                 self.activeTabLabel = target
                 self.isTabTransitioning = false
