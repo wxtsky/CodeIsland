@@ -5248,6 +5248,8 @@ private struct SessionCard: View {
     var compactProjectWidth: CGFloat = 150
     var compactStatusWidth: CGFloat = 64
     @State private var hovering = false
+    @State private var deleteHovered = false
+    @State private var dragOffset: CGFloat = 0
     @State private var failureShakeOffset: CGFloat = 0
     @State private var jumpValidationTask: Task<Void, Never>?
     @State private var showApprovalDetails = false
@@ -5309,16 +5311,67 @@ private struct SessionCard: View {
     }
 
     var body: some View {
-        Group {
-            if isCompactRow {
-                compactBody
-            } else {
-                comfortableBody
+        ZStack(alignment: .leading) {
+            // Swipe right delete indicator
+            if dragOffset > 0 {
+                RoundedRectangle(cornerRadius: isCompactRow ? 8 : 10)
+                    .fill(Color(red: 0.85, green: 0.25, blue: 0.25).opacity(min(0.85, Double(dragOffset) / 80.0)))
+                    .overlay(
+                        HStack {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.leading, 14)
+                            Spacer()
+                        }
+                    )
+                    .padding(.horizontal, 6)
             }
+
+            Group {
+                if isCompactRow {
+                    compactBody
+                } else {
+                    comfortableBody
+                }
+            }
+            .offset(x: dragOffset + failureShakeOffset)
         }
         .modifier(ReplyLinks())
-        .offset(x: failureShakeOffset)
         .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 15)
+                .onChanged { value in
+                    if value.translation.width > 0 {
+                        dragOffset = value.translation.width
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.width > 80 {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            dragOffset = 350
+                        }
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                            appState.removeSession(sessionId)
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        .contextMenu {
+            Button(role: .destructive) {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                withAnimation(NotchAnimation.micro) {
+                    appState.removeSession(sessionId)
+                }
+            } label: {
+                Label("Remove Agent Session", systemImage: "trash")
+            }
+        }
         .onTapGesture { handleSessionClick() }
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
         .onDisappear {
@@ -5446,6 +5499,26 @@ private struct SessionCard: View {
                 }
                 SessionTag(timeAgo(session.startTime))
                 TerminalBadge(session: session)
+
+                // Minimal Delete Icon Button
+                Button(action: {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                    withAnimation(NotchAnimation.micro) {
+                        appState.removeSession(sessionId)
+                    }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(deleteHovered ? Color(red: 1.0, green: 0.38, blue: 0.38) : Color.white.opacity(hovering ? 0.45 : 0.18))
+                        .frame(width: 16, height: 16)
+                        .background(
+                            Circle()
+                                .fill(deleteHovered ? Color(red: 1.0, green: 0.38, blue: 0.38).opacity(0.15) : Color.white.opacity(hovering ? 0.05 : 0))
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { deleteHovered = $0 }
+                .help("Dismiss / remove agent session from list")
             }
         }
     }
@@ -5691,6 +5764,26 @@ private struct SessionCard: View {
                     .frame(width: compactStatusWidth, alignment: .leading)
                 compactActivity
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Minimal Delete Icon Button
+                Button(action: {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                    withAnimation(NotchAnimation.micro) {
+                        appState.removeSession(sessionId)
+                    }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 7.5, weight: .medium))
+                        .foregroundStyle(deleteHovered ? Color(red: 1.0, green: 0.38, blue: 0.38) : Color.white.opacity(hovering ? 0.45 : 0.12))
+                        .frame(width: 15, height: 15)
+                        .background(
+                            Circle()
+                                .fill(deleteHovered ? Color(red: 1.0, green: 0.38, blue: 0.38).opacity(0.15) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .onHover { deleteHovered = $0 }
+                .help("Dismiss / remove agent session from list")
             }
             .frame(minHeight: CompactSessionRowMetrics.rowHeight)
 
