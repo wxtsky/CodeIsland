@@ -2963,6 +2963,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.showUsageStats) private var showUsageStats = SettingsDefaults.showUsageStats
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
+    @AppStorage(SettingsKey.showCodexLimits) private var showCodexLimits = SettingsDefaults.showCodexLimits
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
@@ -3161,7 +3162,12 @@ private struct SessionListView: View {
             // Full session list only — the completion card stays focused on
             // the finished session.
             if onlySessionId == nil {
-                SessionListFooter(appState: appState, showUsageStats: showUsageStats, showClaudeQuota: showClaudeQuota)
+                SessionListFooter(
+                    appState: appState,
+                    showUsageStats: showUsageStats,
+                    showClaudeQuota: showClaudeQuota,
+                    showCodexLimits: showCodexLimits
+                )
             }
         }
     }
@@ -3442,14 +3448,34 @@ struct SessionListFooterContent: Equatable {
     var tokens = false
     /// "Plan limits: could not reach Anthropic" — limits on, nothing fetched.
     var quotaMessage = false
+    /// Codex's limits on a line of their own, last.
+    var codexLimits = false
+
+    /// Both providers' limits on screen: each line names its provider.
+    var namesProviders: Bool { limits && codexLimits }
 
     /// With plan limits on and fetched, they lead and the tokens fold into
     /// their line; otherwise (setting off, first fetch pending or failed) the
     /// token line shows as before, with the fetch error under it.
-    static func resolve(showClaudeQuota: Bool, hasSnapshot: Bool, hasError: Bool, hasUsage: Bool) -> Self {
-        if showClaudeQuota && hasSnapshot { return Self(limits: true) }
-        return Self(tokens: hasUsage, quotaMessage: showClaudeQuota && hasError)
+    /// Codex's limits come from its local logs and are independent of all
+    /// that: a line of their own once Codex has logged some today.
+    static func resolve(
+        showClaudeQuota: Bool,
+        hasSnapshot: Bool,
+        hasError: Bool,
+        hasUsage: Bool,
+        showCodexLimits: Bool = false,
+        hasCodexLimits: Bool = false
+    ) -> Self {
+        var content = showClaudeQuota && hasSnapshot
+            ? Self(limits: true)
+            : Self(tokens: hasUsage, quotaMessage: showClaudeQuota && hasError)
+        content.codexLimits = showCodexLimits && hasCodexLimits
+        return content
     }
+
+    /// Whether any line shows above Codex's.
+    var hasLineAboveCodex: Bool { limits || tokens || quotaMessage }
 }
 
 /// The footer's words: token totals ("last 5h: 422K in · 96K out") and the
@@ -3550,6 +3576,16 @@ enum UsageFooterText {
         if let usage { lines += ["", usageTooltip(usage, l10n: l10n)] }
         return lines.joined(separator: "\n")
     }
+
+    /// Codex's line tooltip: "Codex", each window with its reset and pace,
+    /// then when Codex logged them ("As of 14:05, from Codex's session logs").
+    static func codexLimitsTooltip(_ reading: CodexRateLimits.Reading, l10n: L10n, now: Date) -> String {
+        var lines = ["Codex" + (reading.planType.map { " · \($0.capitalized)" } ?? "")]
+        lines += reading.snapshot(now: now).ordered.map { limitLine($0, l10n: l10n, now: now) }
+        let time = reading.observedAt.formatted(date: .omitted, time: .shortened)
+        lines.append(String(format: l10n["codex_limits_as_of"], time))
+        return lines.joined(separator: "\n")
+    }
 }
 
 /// The session list's footer (SessionListFooterContent): plan limits first
@@ -3558,19 +3594,27 @@ private struct SessionListFooter: View {
     var appState: AppState
     let showUsageStats: Bool
     let showClaudeQuota: Bool
+    let showCodexLimits: Bool
 
     var body: some View {
         let usage = UsageFooterText.shownUsage(appState.claudeUsage, enabled: showUsageStats)
         let snapshot = appState.claudeQuota.snapshot
         let error = appState.claudeQuota.lastError
+        let codex = appState.codexLimits
         let content = SessionListFooterContent.resolve(
             showClaudeQuota: showClaudeQuota,
             hasSnapshot: snapshot != nil,
             hasError: error != nil,
-            hasUsage: usage != nil
+            hasUsage: usage != nil,
+            showCodexLimits: showCodexLimits,
+            hasCodexLimits: codex != nil
         )
         if content.limits, let snapshot {
-            QuotaFooterLine(snapshot: snapshot, error: error, usage: usage)
+            QuotaFooterLine(
+                snapshot: snapshot, error: error, usage: usage,
+                title: content.namesProviders ? "Claude" : nil,
+                followedByLine: content.codexLimits
+            )
         }
         if content.tokens, let usage {
             UsageFooterLine(usage: usage)
@@ -3578,7 +3622,27 @@ private struct SessionListFooter: View {
         if content.quotaMessage, let error {
             QuotaFooterMessage(error: error)
         }
+        if content.codexLimits, let codex {
+            CodexLimitsFooterLine(reading: codex, followsLine: content.hasLineAboveCodex)
+        }
     }
+}
+
+/// The provider's name leading a limits line, when both providers show.
+private struct QuotaFooterTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .fontWeight(.semibold)
+            .foregroundStyle(.white.opacity(0.75))
+            .frame(width: QuotaFooterTitle.width, alignment: .leading)
+            .lineLimit(1)
+    }
+
+    /// Fits "Claude" / "Codex" in the footer's monospaced font, so the two
+    /// lines' bars start in one column.
+    static let width: CGFloat = 40
 }
 
 /// Plan limits on one line, what can stop you first: each window's bar,
@@ -3588,6 +3652,10 @@ private struct QuotaFooterLine: View {
     let snapshot: ClaudeQuotaSnapshot
     let error: ClaudeQuotaClientError?
     let usage: ClaudeUsageScanner.Snapshot?
+    /// "Claude" when Codex's line shows too.
+    var title: String? = nil
+    /// Another limits line follows: less space below this one.
+    var followedByLine = false
     @ObservedObject private var l10n = L10n.shared
 
     static let barWidth: CGFloat = 46
@@ -3600,12 +3668,13 @@ private struct QuotaFooterLine: View {
                 snapshot, stale: error != nil, usage: usage, l10n: l10n, now: now
             )
             HStack(spacing: 8) {
+                if let title { QuotaFooterTitle(title: title) }
                 // Too narrow for every window with its countdown (long
                 // model name, large text): the countdowns go first, to the
                 // tooltip.
                 ViewThatFits(in: .horizontal) {
-                    windows(now: now, countdowns: true)
-                    windows(now: now, countdowns: false)
+                    QuotaFooterWindows(limits: snapshot.ordered, now: now, countdowns: true)
+                    QuotaFooterWindows(limits: snapshot.ordered, now: now, countdowns: false)
                 }
                 Spacer(minLength: 0)
                 if error != nil {
@@ -3621,7 +3690,7 @@ private struct QuotaFooterLine: View {
             .font(.system(size: 10, weight: .medium, design: .monospaced))
             .padding(.horizontal, 14)
             .padding(.top, 7)
-            .padding(.bottom, 9)
+            .padding(.bottom, followedByLine ? 2 : 9)
             .contentShape(Rectangle())
             .help(tooltip)
             // The tooltip is the whole story, tokens included.
@@ -3629,10 +3698,55 @@ private struct QuotaFooterLine: View {
             .accessibilityLabel(tooltip)
         }
     }
+}
 
-    private func windows(now: Date, countdowns: Bool) -> some View {
+/// Codex's limits, drawn like Claude's: a bar, percent and countdown per
+/// window. A window past its reset reads 0% (`CodexRateLimits.Reading`);
+/// when Codex logged the numbers is in the tooltip.
+private struct CodexLimitsFooterLine: View {
+    let reading: CodexRateLimits.Reading
+    /// Another footer line sits above: less space on top.
+    let followsLine: Bool
+    @ObservedObject private var l10n = L10n.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let now = context.date
+            let limits = reading.snapshot(now: now).ordered
+            let tooltip = UsageFooterText.codexLimitsTooltip(reading, l10n: l10n, now: now)
+            HStack(spacing: 8) {
+                QuotaFooterTitle(title: "Codex")
+                ViewThatFits(in: .horizontal) {
+                    QuotaFooterWindows(limits: limits, now: now, countdowns: true)
+                    QuotaFooterWindows(limits: limits, now: now, countdowns: false)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .padding(.horizontal, 14)
+            .padding(.top, followsLine ? 2 : 7)
+            .padding(.bottom, 9)
+            .contentShape(Rectangle())
+            .help(tooltip)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(tooltip)
+        }
+    }
+}
+
+/// A limits line's windows side by side: label, bar with the even-pace
+/// tick, percent and, when there is room, the reset countdown.
+private struct QuotaFooterWindows: View {
+    let limits: [ClaudeQuotaLimit]
+    let now: Date
+    let countdowns: Bool
+    @ObservedObject private var l10n = L10n.shared
+
+    private static let barWidth = QuotaFooterLine.barWidth
+
+    var body: some View {
         HStack(spacing: 12) {
-            ForEach(Array(snapshot.ordered.enumerated()), id: \.offset) { _, limit in
+            ForEach(Array(limits.enumerated()), id: \.offset) { _, limit in
                 segment(limit, now: now, countdown: countdowns)
             }
         }
