@@ -147,6 +147,78 @@ final class SessionListOrderingTests: XCTestCase {
                        "the request the inline buttons can answer comes first")
     }
 
+    // MARK: - Only Claude Desktop sessions
+
+    func testDesktopOnlyKeepsDesktopAppSessionsAndOtherAgents() {
+        var codeTab = session(.idle, prompt: "p")
+        codeTab.claudeDesktopSessionId = "local_0123"
+        var cowork = session(.idle, prompt: "p")
+        cowork.termBundleId = AppState.claudeDesktopBundleId
+        var terminal = session(.idle, prompt: "p")
+        terminal.termBundleId = "com.apple.Terminal"
+        let headless = session(.running)
+        var codex = session(.running)
+        codex.source = "codex"
+
+        for kept in [codeTab, cowork, codex] {
+            XCTAssertTrue(SessionListOrdering.isListed(kept, desktopOnly: true))
+        }
+        for hidden in [terminal, headless] {
+            XCTAssertFalse(SessionListOrdering.isListed(hidden, desktopOnly: true))
+        }
+        for any in [codeTab, cowork, terminal, headless, codex] {
+            XCTAssertTrue(SessionListOrdering.isListed(any, desktopOnly: false), "off lists everything")
+        }
+    }
+
+    func testAppStateListsOnlyDesktopSessionsWhenOn() {
+        let state = AppState()
+        let now = Date()
+        var desktop = session(.idle, prompt: "p", activity: now)
+        desktop.claudeDesktopSessionId = "local_0123"
+        var codex = session(.idle, prompt: "p", activity: now.addingTimeInterval(-10))
+        codex.source = "codex"
+        state.sessions = [
+            "desktop": desktop,
+            "cli": session(.running, started: now),
+            "codex": codex,
+        ]
+        XCTAssertEqual(state.sessionListOrder(desktopOnly: false), ["cli", "desktop", "codex"])
+        XCTAssertEqual(state.sessionListOrder(desktopOnly: true), ["desktop", "codex"])
+    }
+
+    /// With the list open, an approval is normally answered inline. A session
+    /// the list leaves out has no row to answer from: its card must open, or
+    /// the tool call waits for nobody.
+    func testApprovalForAHiddenSessionStillOpensItsCard() async throws {
+        let defaults = UserDefaults.standard
+        let keys = [SettingsKey.listOnlyClaudeDesktopSessions, SettingsKey.autoExpandOnPermission, SettingsKey.smartSuppress]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) } }
+        defaults.set(true, forKey: SettingsKey.autoExpandOnPermission)
+        defaults.set(false, forKey: SettingsKey.smartSuppress)
+
+        let state = AppState()
+        var desktop = session(.waitingApproval)
+        desktop.claudeDesktopSessionId = "local_0123"
+        state.sessions = ["cli": session(.waitingApproval), "desktop": desktop]
+        let release = await DemoRequests.enqueuePermission(state, event: try DemoRequests.hookEvent([
+            "hook_event_name": "PermissionRequest", "session_id": "cli", "tool_name": "Bash",
+            "tool_input": ["command": "ls"],
+        ]))
+        defer { release() }
+
+        defaults.set(false, forKey: SettingsKey.listOnlyClaudeDesktopSessions)
+        state.surface = .sessionList
+        XCTAssertTrue(state.showNextPending())
+        XCTAssertEqual(state.surface, .sessionList, "listed: answered inline")
+
+        defaults.set(true, forKey: SettingsKey.listOnlyClaudeDesktopSessions)
+        XCTAssertFalse(state.sessionListOrder().contains("cli"))
+        XCTAssertTrue(state.showNextPending())
+        XCTAssertEqual(state.surface, .approvalCard(sessionId: "cli"), "hidden from the list: its card opens")
+    }
+
     // MARK: - Held order
 
     func testOrderIsHeldWhileThePointerIsOverTheList() {

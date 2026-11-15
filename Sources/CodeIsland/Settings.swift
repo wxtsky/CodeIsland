@@ -50,6 +50,7 @@ enum SettingsKey {
     // Display
     static let maxPanelHeight = "maxPanelHeight"
     static let maxVisibleSessions = "maxVisibleSessions"
+    static let listOnlyClaudeDesktopSessions = "listOnlyClaudeDesktopSessions"  // hide Claude Code sessions run outside the desktop app
     static let sessionListDensity = "sessionListDensity"  // SessionListDensity raw value: "comfortable" | "compact"
     static let contentFontSize = "contentFontSize"
     static let aiMessageLines = "aiMessageLines"
@@ -190,6 +191,7 @@ struct SettingsDefaults {
 
     static let maxPanelHeight = 560
     static let maxVisibleSessions = 5
+    static let listOnlyClaudeDesktopSessions = false
     static let sessionListDensity = SessionListDensity.comfortable.rawValue
     static let contentFontSize = 11
     static let aiMessageLines = 1
@@ -295,6 +297,7 @@ class SettingsManager {
             SettingsKey.sessionTimeout: SettingsDefaults.sessionTimeout,
             SettingsKey.maxPanelHeight: SettingsDefaults.maxPanelHeight,
             SettingsKey.maxVisibleSessions: SettingsDefaults.maxVisibleSessions,
+            SettingsKey.listOnlyClaudeDesktopSessions: SettingsDefaults.listOnlyClaudeDesktopSessions,
             SettingsKey.sessionListDensity: SettingsDefaults.sessionListDensity,
             SettingsKey.contentFontSize: SettingsDefaults.contentFontSize,
             SettingsKey.aiMessageLines: SettingsDefaults.aiMessageLines,
@@ -465,6 +468,11 @@ class SettingsManager {
     var rotationInterval: Int {
         get { defaults.integer(forKey: SettingsKey.rotationInterval) }
         set { defaults.set(newValue, forKey: SettingsKey.rotationInterval) }
+    }
+
+    var listOnlyClaudeDesktopSessions: Bool {
+        get { defaults.bool(forKey: SettingsKey.listOnlyClaudeDesktopSessions) }
+        set { defaults.set(newValue, forKey: SettingsKey.listOnlyClaudeDesktopSessions) }
     }
 
     var sessionGroupingMode: String {

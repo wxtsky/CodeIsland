@@ -2966,6 +2966,7 @@ private struct SessionListView: View {
     @AppStorage(SettingsKey.sessionListDensity) private var densityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.showProjectName) private var showProjectName = SettingsDefaults.showProjectName
+    @AppStorage(SettingsKey.listOnlyClaudeDesktopSessions) private var desktopOnly = SettingsDefaults.listOnlyClaudeDesktopSessions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Natural height of the session cards, scrolling or not.
     @State private var contentHeight: CGFloat = 0
@@ -2981,7 +2982,7 @@ private struct SessionListView: View {
     /// Needs-you first, then working, then the rest by recent activity —
     /// held in place while the pointer is over the list.
     private var orderedSessionIds: [String] {
-        orderFreeze.apply(appState.sessionListOrder())
+        orderFreeze.apply(appState.sessionListOrder(desktopOnly: desktopOnly))
     }
 
     private var groupedSessions: [(header: String, source: String?, ids: [String])] {
@@ -3130,7 +3131,7 @@ private struct SessionListView: View {
             thawTask = nil
             if inside {
                 orderFreeze.freeze(
-                    appState.sessionListOrder(),
+                    appState.sessionListOrder(desktopOnly: desktopOnly),
                     statuses: appState.sessions.mapValues(\.status)
                 )
             } else {
