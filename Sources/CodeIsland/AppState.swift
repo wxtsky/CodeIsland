@@ -260,6 +260,7 @@ final class AppState {
             }
             if surface.isExpanded {
                 refreshClaudeUsageIfStale()
+                refreshCodexLimitsIfStale()
                 claudeQuota.noteExpanded()
             } else {
                 claudeQuota.noteCollapsed()
@@ -318,6 +319,16 @@ final class AppState {
     /// Incremental parse state — round-trips through each detached scan so
     /// growing transcripts are only read past their last consumed offset.
     private var usageFileCache = ClaudeUsageScanner.FileCache()
+
+    /// Codex's 5h / weekly limits from its local session logs — opt-in, no
+    /// network. Read in the background on panel expansion and when a local
+    /// Codex turn ends (each turn logs fresh numbers); no resident timer.
+    var codexLimits: CodexRateLimits.Reading?
+    @ObservationIgnored private var codexLimitsReadAt: Date?
+    @ObservationIgnored private var codexLimitsReadInFlight = false
+    @ObservationIgnored private var codexLimitsFileCache = CodexRateLimits.FileCache()
+    /// An expansion right after a read reuses it.
+    static let codexLimitsMinInterval: TimeInterval = 15
 
     /// Glance completion mode: an agent finished while the pill was collapsed —
     /// light the dot instead of expanding. Cleared when the user expands the
@@ -1262,6 +1273,31 @@ final class AppState {
         }
     }
 
+    /// Off the main thread: a stat per log file, a tail read only for logs
+    /// that grew since the last read.
+    func refreshCodexLimitsIfStale(force: Bool = false) {
+        // Off, the footer hides the line; the last reading may stay.
+        guard UserDefaults.standard.bool(forKey: SettingsKey.showCodexLimits) else { return }
+        guard !codexLimitsReadInFlight else { return }
+        if !force, let readAt = codexLimitsReadAt, Date().timeIntervalSince(readAt) < Self.codexLimitsMinInterval { return }
+        codexLimitsReadInFlight = true
+        let cacheCopy = codexLimitsFileCache
+        let homes = SessionDiscovery.codexStateRoots()
+        Task.detached(priority: .utility) {
+            var cache = cacheCopy
+            let reading = CodexRateLimits.read(codexHomes: homes, cache: &cache)
+            let readCache = cache
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.codexLimitsReadInFlight = false
+                self.codexLimitsReadAt = Date()
+                self.codexLimitsFileCache = readCache
+                // The setting may have gone off while reading.
+                self.codexLimits = UserDefaults.standard.bool(forKey: SettingsKey.showCodexLimits) ? reading : nil
+            }
+        }
+    }
+
     /// Last unresolved-branch probe per session — keeps `gitBranch == nil`
     /// (non-repo cwds, SessionStart snapshot rebuilds) from probing on every event.
     private var gitBranchCheckedAt: [String: Date] = [:]
@@ -1788,6 +1824,11 @@ final class AppState {
         if normalizedEventName == "Stop",
            let s = sessions[sessionId], s.isClaude, s.isRemote != true {
             claudeQuota.noteStop()
+        }
+        // A finished local Codex turn has logged its latest limits.
+        if normalizedEventName == "Stop",
+           let s = sessions[sessionId], s.isCodex, s.isRemote != true {
+            refreshCodexLimitsIfStale(force: true)
         }
 
         // Backfill model after metadata extraction. Hooks are inconsistent across providers,

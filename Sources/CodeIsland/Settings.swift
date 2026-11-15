@@ -89,6 +89,9 @@ enum SettingsKey {
     static let showClaudeQuota = "showClaudeQuota"
     static let claudeQuotaChip = "claudeQuotaChip"              // ClaudeQuotaChipMode raw value
 
+    // Codex plan limits (read from Codex's local session logs)
+    static let showCodexLimits = "showCodexLimits"
+
     // Completion notification: "expand" | "glance" | "off". Successor of the
     // boolean autoExpandOnCompletion — see AppState.completionStyle migration.
     static let completionNotificationStyle = "completionNotificationStyle"
@@ -216,6 +219,7 @@ struct SettingsDefaults {
     static let showUsageStats = true
     static let showClaudeQuota = false
     static let claudeQuotaChip = "auto"
+    static let showCodexLimits = false
 
     static let rotationInterval = 5
 
@@ -320,6 +324,7 @@ class SettingsManager {
             SettingsKey.showUsageStats: SettingsDefaults.showUsageStats,
             SettingsKey.showClaudeQuota: SettingsDefaults.showClaudeQuota,
             SettingsKey.claudeQuotaChip: SettingsDefaults.claudeQuotaChip,
+            SettingsKey.showCodexLimits: SettingsDefaults.showCodexLimits,
             SettingsKey.rotationInterval: SettingsDefaults.rotationInterval,
             SettingsKey.maxToolHistory: SettingsDefaults.maxToolHistory,
             SettingsKey.showTaskProgress: SettingsDefaults.showTaskProgress,

@@ -92,7 +92,9 @@ final class UIGalleryHarness: XCTestCase {
         struct Job { let name: String; let count: Int; let settings: [(String, Any)]; let quota: Bool
                      var wallpaper: StageWallpaper = .dark; var appearance: NSAppearance.Name = .darkAqua
                      /// The header's trash clicked: the confirmation banner over the list.
-                     var removeIdle = false }
+                     var removeIdle = false
+                     /// Codex's limits from a fixture reading, on a line under Claude's.
+                     var codex = false }
         var jobs = [
             Job(name: "1", count: 1, settings: [], quota: false),
             Job(name: "4", count: 4, settings: [], quota: false),
@@ -102,6 +104,8 @@ final class UIGalleryHarness: XCTestCase {
             Job(name: "8-remove-idle", count: 8, settings: [], quota: false, removeIdle: true),
             Job(name: "4-f16", count: 4, settings: [(SettingsKey.contentFontSize, 16)], quota: false),
             Job(name: "8-quota", count: 8, settings: [], quota: true),
+            Job(name: "8-quota-codex", count: 8, settings: [], quota: true, codex: true),
+            Job(name: "4-codex", count: 4, settings: [], quota: false, codex: true),
             Job(name: "8-status", count: 8, settings: [(SettingsKey.sessionGroupingMode, "status")], quota: false),
             Job(name: "8-cli", count: 8, settings: [(SettingsKey.sessionGroupingMode, "cli")], quota: false),
             Job(name: "4-compact", count: 4, settings: [(SettingsKey.sessionListDensity, "compact")], quota: false),
@@ -129,7 +133,11 @@ final class UIGalleryHarness: XCTestCase {
             GallerySettings.reset()
             for (key, value) in job.settings { GallerySettings.set(value, key) }
             if job.quota { GallerySettings.set(true, SettingsKey.showClaudeQuota, suiteOnly: true) }
-            let demo = try await GalleryDemo.list(count: job.count, lang: lang, quota: job.quota, removeIdle: job.removeIdle)
+            // Suite only: in the standard defaults it would send the panel's
+            // expansion to read the real Codex logs over the fixture.
+            if job.codex { GallerySettings.set(true, SettingsKey.showCodexLimits, suiteOnly: true) }
+            let demo = try await GalleryDemo.list(count: job.count, lang: lang, quota: job.quota,
+                                                  removeIdle: job.removeIdle, codex: job.codex)
             defer { demo.release() }
             try renderOnStage(demo, group: "list", name: job.name, lang: lang, screen: .macBook14,
                               layout: StageLayout(width: 700, bottomMargin: 40, menuItems: false),
@@ -471,6 +479,14 @@ enum GalleryDemo {
         ], fetchedAt: now))
     }
 
+    private static func applyCodexLimits(_ state: AppState) {
+        let now = Date()
+        state.codexLimits = CodexRateLimits.Reading(limits: [
+            ClaudeQuotaLimit(kind: .session, percent: 33, resetsAt: now.addingTimeInterval(3 * 3600 + 600)),
+            ClaudeQuotaLimit(kind: .weeklyAll, percent: 23, resetsAt: now.addingTimeInterval(5 * 86_400)),
+        ], observedAt: now.addingTimeInterval(-240), planType: "plus")
+    }
+
     // MARK: Sessions
 
     static func claudeWorking(_ lang: GalleryLang) -> SessionSnapshot {
@@ -648,7 +664,8 @@ enum GalleryDemo {
 
     // MARK: Session list
 
-    static func list(count: Int, lang: GalleryLang, quota: Bool, removeIdle: Bool = false) async throws -> GalleryDemoState {
+    static func list(count: Int, lang: GalleryLang, quota: Bool, removeIdle: Bool = false,
+                     codex: Bool = false) async throws -> GalleryDemoState {
         let state = AppState()
         state.claudeUsage = usage()
         var sessions: [String: SessionSnapshot] = [:]
@@ -676,6 +693,7 @@ enum GalleryDemo {
             release = await DemoRequests.enqueuePermission(state, event: event)
         }
         if quota { applyQuota(state) }
+        if codex { applyCodexLimits(state) }
         state.refreshDerivedState()
         state.surface = .sessionList
         if removeIdle { state.toggleIdleSessionRemovalRequest() }

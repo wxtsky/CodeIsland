@@ -71,6 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak appState] in
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 appState?.refreshClaudeUsageIfStale()
+                appState?.refreshCodexLimitsIfStale()
             }
         }
 

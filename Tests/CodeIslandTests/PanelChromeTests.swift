@@ -227,6 +227,47 @@ final class PanelChromeTests: XCTestCase {
                        C(quotaMessage: true))
     }
 
+    func testCodexLimitsGetALineOfTheirOwn() {
+        typealias C = SessionListFooterContent
+        // Off, or on with nothing logged today: no Codex line.
+        XCTAssertEqual(C.resolve(showClaudeQuota: false, hasSnapshot: false, hasError: false, hasUsage: true,
+                                 showCodexLimits: false, hasCodexLimits: true), C(tokens: true))
+        XCTAssertEqual(C.resolve(showClaudeQuota: false, hasSnapshot: false, hasError: false, hasUsage: true,
+                                 showCodexLimits: true, hasCodexLimits: false), C(tokens: true))
+        // On: under whatever Claude's side shows; names on both lines only
+        // when both are limits.
+        let withTokens = C.resolve(showClaudeQuota: false, hasSnapshot: false, hasError: false, hasUsage: true,
+                                   showCodexLimits: true, hasCodexLimits: true)
+        XCTAssertEqual(withTokens, C(tokens: true, codexLimits: true))
+        XCTAssertFalse(withTokens.namesProviders)
+        XCTAssertTrue(withTokens.hasLineAboveCodex)
+        let both = C.resolve(showClaudeQuota: true, hasSnapshot: true, hasError: false, hasUsage: true,
+                             showCodexLimits: true, hasCodexLimits: true)
+        XCTAssertEqual(both, C(limits: true, codexLimits: true))
+        XCTAssertTrue(both.namesProviders)
+        let alone = C.resolve(showClaudeQuota: false, hasSnapshot: false, hasError: false, hasUsage: false,
+                              showCodexLimits: true, hasCodexLimits: true)
+        XCTAssertEqual(alone, C(codexLimits: true))
+        XCTAssertFalse(alone.hasLineAboveCodex)
+    }
+
+    func testCodexTooltipNamesTheWindowsAndWhenCodexLoggedThem() {
+        withLanguage("en") {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reading = CodexRateLimits.Reading(limits: [
+                ClaudeQuotaLimit(kind: .session, percent: 33, resetsAt: now.addingTimeInterval(3600)),
+                ClaudeQuotaLimit(kind: .weeklyAll, percent: 23, resetsAt: now.addingTimeInterval(-60)),
+            ], observedAt: now.addingTimeInterval(-300), planType: "plus")
+            let lines = UsageFooterText.codexLimitsTooltip(reading, l10n: .shared, now: now)
+                .components(separatedBy: "\n")
+            XCTAssertEqual(lines.first, "Codex · Plus")
+            XCTAssertTrue(lines[1].hasPrefix("5h 33% · resets in 1h"), lines[1])
+            // The weekly window has reset since Codex logged it.
+            XCTAssertEqual(lines[2], "Week 0%")
+            XCTAssertTrue(lines.last?.hasPrefix("As of ") == true, lines.last ?? "")
+        }
+    }
+
     func testTokenUsageIsShownOnlyWhenOnAndNonEmpty() {
         XCTAssertNil(UsageFooterText.shownUsage(usage(), enabled: false))
         XCTAssertNil(UsageFooterText.shownUsage(nil, enabled: true))
