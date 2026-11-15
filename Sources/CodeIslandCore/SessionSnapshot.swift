@@ -4,6 +4,8 @@ public enum SessionTitleSource: String, Sendable, Codable {
     case codexThreadName
     case claudeCustomTitle
     case claudeAiTitle
+    /// The Claude desktop app's Code tab title for the session.
+    case claudeDesktopTitle
 }
 
 public struct SessionSnapshot: Sendable {

@@ -1595,7 +1595,9 @@ final class AppState {
         guard SessionTitleStore.supports(provider: session.source) else { return }
 
         readProviderTitle(
-            ProviderTitleLookup(sessionId: lookupSessionId, provider: session.source, cwd: session.cwd),
+            ProviderTitleLookup(
+                sessionId: lookupSessionId, provider: session.source, cwd: session.cwd,
+                transcriptPath: session.transcriptPath),
             for: trackedSessionId
         )
     }
@@ -1615,10 +1617,10 @@ final class AppState {
 
     /// Look a card's title up in its provider's store, off the main actor:
     /// every Claude and Codex hook asks, and the lookup reads a file (Codex's
-    /// whole thread index, the head and tail of a Claude transcript). One read
-    /// per card at a time. What a read finds is applied when it lands (unless
-    /// a newer title came from elsewhere meanwhile), then the newest lookup
-    /// asked for during it runs.
+    /// whole thread index, the Claude app's Code tab session file, the head
+    /// and tail of a Claude transcript). One read per card at a time. What a
+    /// read finds is applied when it lands (unless a newer title came from
+    /// elsewhere meanwhile), then the newest lookup asked for during it runs.
     private func readProviderTitle(_ lookup: ProviderTitleLookup, for cardId: String) {
         if providerTitleReads[cardId] != nil {
             providerTitleReads[cardId]?.next = lookup

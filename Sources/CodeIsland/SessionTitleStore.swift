@@ -16,13 +16,24 @@ enum SessionTitleStore {
         }
     }
 
-    static func title(for sessionId: String, provider: String, cwd: String? = nil) -> ResolvedSessionTitle? {
+    static func title(
+        for sessionId: String,
+        provider: String,
+        cwd: String? = nil,
+        transcriptPath: String? = nil,
+        desktopTitles: ClaudeDesktopTitles = .shared
+    ) -> ResolvedSessionTitle? {
         switch provider {
         case "codex":
             guard let title = codexThreadName(sessionId: sessionId) else { return nil }
             return ResolvedSessionTitle(title: title, source: .codexThreadName)
         case "claude":
-            return claudeTitle(sessionId: sessionId, cwd: cwd)
+            // The Claude app's Code tab title is what its sidebar shows, renames
+            // included; a session it never ran falls back to the transcript.
+            if let title = desktopTitles.title(cliSessionId: sessionId) {
+                return ResolvedSessionTitle(title: title, source: .claudeDesktopTitle)
+            }
+            return claudeTitle(sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath)
         default:
             return nil
         }
@@ -72,13 +83,19 @@ enum SessionTitleStore {
         return latestMatch?.title
     }
 
-    static func claudeTitle(sessionId: String, cwd: String?) -> ResolvedSessionTitle? {
-        guard let cwd else { return nil }
-
-        let projectDir = cwd.claudeProjectDirEncoded()
-        // The transcript sits under whichever config dir (account) ran it.
-        guard let path = ClaudeConfigPaths.transcriptPath(projectDir: projectDir, sessionId: sessionId),
-              let handle = FileHandle(forReadingAtPath: path) else {
+    static func claudeTitle(sessionId: String, cwd: String?, transcriptPath: String? = nil) -> ResolvedSessionTitle? {
+        // The hook's transcript_path first: a session whose cwd changed keeps
+        // its transcript under the project dir it started in.
+        let path: String?
+        if let transcriptPath, FileManager.default.fileExists(atPath: transcriptPath) {
+            path = transcriptPath
+        } else if let cwd {
+            // The transcript sits under whichever config dir (account) ran it.
+            path = ClaudeConfigPaths.transcriptPath(projectDir: cwd.claudeProjectDirEncoded(), sessionId: sessionId)
+        } else {
+            path = nil
+        }
+        guard let path, let handle = FileHandle(forReadingAtPath: path) else {
             return nil
         }
         defer { handle.closeFile() }
