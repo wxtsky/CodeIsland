@@ -1335,6 +1335,7 @@ private struct AppearancePage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
     @AppStorage(SettingsKey.sessionListDensity) private var sessionListDensityRaw = SettingsDefaults.sessionListDensity
+    @AppStorage(SettingsKey.islandTheme) private var islandThemeRaw = SettingsDefaults.islandTheme
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
@@ -1356,6 +1357,13 @@ private struct AppearancePage: View {
         Binding(
             get: { NotchHeightMode(rawValue: notchHeightModeRaw) ?? .matchNotch },
             set: { notchHeightModeRaw = $0.rawValue }
+        )
+    }
+
+    private var islandThemeBinding: Binding<IslandTheme> {
+        Binding(
+            get: { IslandTheme(storedValue: islandThemeRaw) },
+            set: { islandThemeRaw = $0.rawValue }
         )
     }
 
@@ -1423,6 +1431,14 @@ private struct AppearancePage: View {
                 } label: {
                     Text(l10n["session_list_density"])
                     Text(l10n["session_list_density_desc"])
+                }
+                Picker(selection: islandThemeBinding) {
+                    ForEach(IslandTheme.allCases) { theme in
+                        Text(l10n[theme.titleKey]).tag(theme)
+                    }
+                } label: {
+                    Text(l10n["theme"])
+                    Text(l10n["theme_desc"])
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
