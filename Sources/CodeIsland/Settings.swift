@@ -118,6 +118,9 @@ enum SettingsKey {
     // Tool status display
     static let showToolStatus = "showToolStatus"              // true = detailed, false = simple
 
+    // Collapsed bar: one dot per session instead of the active/total count
+    static let showSessionDots = "showSessionDots"
+
     // Island collapsed width scale (percentage: 50–150, default 100)
     static let collapsedWidthScale = "collapsedWidthScale"
 
@@ -228,6 +231,8 @@ struct SettingsDefaults {
 
     static let showToolStatus = true
 
+    static let showSessionDots = false
+
     static let collapsedWidthScale = 100  // percentage
 
     static let defaultSource = "claude"
@@ -326,6 +331,7 @@ class SettingsManager {
             SettingsKey.mascotSpeed: SettingsDefaults.mascotSpeed,
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
+            SettingsKey.showSessionDots: SettingsDefaults.showSessionDots,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
             SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
             SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,

@@ -790,6 +790,7 @@ private struct CompactRightWing: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.soundEnabled) private var soundEnabled = SettingsDefaults.soundEnabled
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
+    @AppStorage(SettingsKey.showSessionDots) private var showSessionDots = SettingsDefaults.showSessionDots
     @AppStorage(SettingsKey.quietHoursEnabled) private var quietHoursEnabled = SettingsDefaults.quietHoursEnabled
     @AppStorage(SettingsKey.quietHoursStart) private var quietHoursStart = SettingsDefaults.quietHoursStart
     @AppStorage(SettingsKey.quietHoursEnd) private var quietHoursEnd = SettingsDefaults.quietHoursEnd
@@ -863,7 +864,10 @@ private struct CompactRightWing: View {
                         .modifier(WaitingBadgePulse())
                 }
 
-                if showToolStatus {
+                if showSessionDots {
+                    // One dot per session in its status colour, in place of the count.
+                    CompactSessionDots(appState: appState)
+                } else if showToolStatus {
                     // Detailed mode: session count (project name is shown in center on non-notch)
                     HStack(spacing: 1) {
                         let active = appState.activeSessionCount
@@ -3308,7 +3312,7 @@ struct QuotaChipWidthKey: PreferenceKey {
 /// How the collapsed bar makes room for its right wing on a notched screen.
 ///
 /// The right wing (quiet-hours moon, completion dot, question badge, session
-/// count) sits at the bar's right end, and whatever it is wider than its room
+/// count or session dots) sits at the bar's right end, and whatever it is wider than its room
 /// reaches back under the notch. Its room is a wing plus half the status
 /// reserve — enough for the count and one badge. With tool status in simple
 /// mode nothing else pads it, so a waiting question's badge slid under the
@@ -3329,6 +3333,78 @@ struct CompactRightWingWidthKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = Swift.max(value, nextValue())
+    }
+}
+
+/// What the collapsed right wing draws for its sessions when session dots are
+/// on: one dot each, in the session list's order, up to `maxDots`, then a
+/// `+N` for the rest. A dot is filled in the session's status colour while
+/// the session is doing something or wants something — needs you, working,
+/// thinking, stopped, failed — and a grey ring while it is idle or done, so a
+/// row of finished sessions stays quiet and the ones that matter stand out.
+enum CompactSessionDotsLayout {
+    static let maxDots = 8
+
+    struct Dot: Equatable, Identifiable {
+        let id: String
+        let status: SessionCardStatus
+
+        var isFilled: Bool { CompactSessionDotsLayout.isFilled(status) }
+    }
+
+    struct Model: Equatable {
+        let dots: [Dot]
+        /// Sessions past `maxDots`, shown as `+N`; 0 draws no label.
+        let overflow: Int
+    }
+
+    static func isFilled(_ status: SessionCardStatus) -> Bool {
+        switch status {
+        case .idle, .done: return false
+        case .needsYou, .working, .thinking, .stopped, .error: return true
+        }
+    }
+
+    /// - Parameter sessions: session ids and statuses in the list's order.
+    static func model(_ sessions: [(id: String, status: SessionCardStatus)], maxDots: Int = maxDots) -> Model {
+        let shown = sessions.prefix(Swift.max(0, maxDots)).map { Dot(id: $0.id, status: $0.status) }
+        return Model(dots: shown, overflow: sessions.count - shown.count)
+    }
+}
+
+/// The collapsed right wing's session dots (`CompactSessionDotsLayout`). It
+/// sits inside the wing, so the wing's measured width
+/// (`CompactRightWingWidthKey`) covers it and the bar makes room for a long
+/// row the same way it does for a badge.
+private struct CompactSessionDots: View {
+    var appState: AppState
+
+    private static let dotSize: CGFloat = 6
+
+    var body: some View {
+        let ids = appState.sessionListOrder()
+        let model = CompactSessionDotsLayout.model(ids.compactMap { id in
+            appState.sessions[id].map { (id: id, status: SessionCardStatus($0)) }
+        })
+        HStack(spacing: 3) {
+            ForEach(model.dots) { dot in
+                if dot.isFilled {
+                    Circle()
+                        .fill(dot.status.color)
+                        .frame(width: Self.dotSize, height: Self.dotSize)
+                } else {
+                    Circle()
+                        .strokeBorder(.white.opacity(0.45), lineWidth: 1)
+                        .frame(width: Self.dotSize, height: Self.dotSize)
+                }
+            }
+            if model.overflow > 0 {
+                Text("+\(model.overflow)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .help(ids.compactMap { appState.sessions[$0]?.headline(showProjectName: true).text }.joined(separator: "\n"))
     }
 }
 
