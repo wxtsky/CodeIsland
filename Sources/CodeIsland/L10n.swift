@@ -404,6 +404,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× Very Fast",
         "default_mascot": "Default Mascot",
         "default_mascot_desc": "Shown in the island when no sessions are active",
+        "mascot_style": "Mascot Style",
+        "mascot_style_desc": "How Claude and Codex are drawn",
+        "mascot_style_classic": "Classic",
+        "mascot_style_critter": "Pixel critter",
 
         // Sound
         "enable_sound": "Enable Sound Effects",
@@ -1009,6 +1013,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2x Sehr schnell",
         "default_mascot": "Standard-Maskottchen",
         "default_mascot_desc": "Wird in der Island angezeigt, wenn keine Sitzungen aktiv sind",
+        "mascot_style": "Maskottchen-Stil",
+        "mascot_style_desc": "Wie Claude und Codex gezeichnet werden",
+        "mascot_style_classic": "Klassisch",
+        "mascot_style_critter": "Pixel-Wesen",
 
         // Sound
         "enable_sound": "Soundeffekte aktivieren",
@@ -1614,6 +1622,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× 极速",
         "default_mascot": "默认角色",
         "default_mascot_desc": "没有活跃会话时在灵动岛显示的角色",
+        "mascot_style": "角色风格",
+        "mascot_style_desc": "Claude 和 Codex 的画风",
+        "mascot_style_classic": "经典",
+        "mascot_style_critter": "像素小怪",
 
         // Sound
         "enable_sound": "启用音效",
@@ -2219,6 +2231,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× 極速",
         "default_mascot": "預設角色",
         "default_mascot_desc": "沒有活躍會話時在靈動島顯示的角色",
+        "mascot_style": "角色風格",
+        "mascot_style_desc": "Claude 與 Codex 的畫風",
+        "mascot_style_classic": "經典",
+        "mascot_style_critter": "像素小怪",
 
         // Sound
         "enable_sound": "啟用音效",
@@ -2824,6 +2840,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× 超高速",
         "default_mascot": "デフォルトキャラ",
         "default_mascot_desc": "アクティブなセッションがないときにノッチに表示",
+        "mascot_style": "キャラスタイル",
+        "mascot_style_desc": "Claude と Codex の描き方",
+        "mascot_style_classic": "クラシック",
+        "mascot_style_critter": "ピクセルクリッター",
 
         // Sound
         "enable_sound": "効果音を有効化",
@@ -3429,6 +3449,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× 매우 빠름",
         "default_mascot": "기본 캐릭터",
         "default_mascot_desc": "활성 세션이 없을 때 노치에 표시",
+        "mascot_style": "캐릭터 스타일",
+        "mascot_style_desc": "Claude와 Codex의 그림체",
+        "mascot_style_classic": "클래식",
+        "mascot_style_critter": "픽셀 크리터",
 
         // Sound
         "enable_sound": "사운드 효과 사용",
@@ -4034,6 +4058,10 @@ final class L10n: ObservableObject {
         "speed_very_fast": "2× Çok Hızlı",
         "default_mascot": "Varsayılan Maskot",
         "default_mascot_desc": "Aktif oturum yokken çentikte gösterilir",
+        "mascot_style": "Maskot Stili",
+        "mascot_style_desc": "Claude ve Codex'in çizimi",
+        "mascot_style_classic": "Klasik",
+        "mascot_style_critter": "Piksel yaratık",
 
         // Sound
         "enable_sound": "Ses Efektlerini Etkinleştir",

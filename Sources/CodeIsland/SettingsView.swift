@@ -1685,6 +1685,7 @@ private struct MascotsPage: View {
     @ObservedObject private var l10n = L10n.shared
     @State private var previewStatus: AgentStatus = .processing
     @AppStorage(SettingsKey.mascotSpeed) private var mascotSpeed = SettingsDefaults.mascotSpeed
+    @AppStorage(SettingsKey.mascotStyle) private var mascotStyle = SettingsDefaults.mascotStyle
     @AppStorage(SettingsKey.defaultSource) private var defaultSource = SettingsDefaults.defaultSource
 
     private let mascotList: [(name: String, source: String, desc: String, color: Color)] = [
@@ -1744,6 +1745,14 @@ private struct MascotsPage: View {
                     get: { Double(mascotSpeed) },
                     set: { mascotSpeed = Int($0) }
                 ), in: 0...300, step: 25)
+
+                Picker(selection: $mascotStyle) {
+                    Text(l10n["mascot_style_classic"]).tag(MascotStyle.classic.rawValue)
+                    Text(l10n["mascot_style_critter"]).tag(MascotStyle.critter.rawValue)
+                } label: {
+                    Text(l10n["mascot_style"])
+                    Text(l10n["mascot_style_desc"])
+                }
 
                 Picker(selection: $defaultSource) {
                     ForEach(mascotList, id: \.source) { mascot in

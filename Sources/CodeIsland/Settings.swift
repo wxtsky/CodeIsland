@@ -111,6 +111,8 @@ enum SettingsKey {
 
     // Mascot
     static let mascotSpeed = "mascotSpeed"
+    /// "classic" or "critter": how Claude's and Codex's mascots are drawn.
+    static let mascotStyle = "mascotStyle"
 
     // Session grouping
     static let sessionGroupingMode = "sessionGroupingMode"
@@ -223,6 +225,7 @@ struct SettingsDefaults {
     static let showTaskProgress = true
 
     static let mascotSpeed = 100  // percentage: 0–300, 0 = silent
+    static let mascotStyle = MascotStyle.classic.rawValue
 
     static let sessionGroupingMode = "all"
 
@@ -324,6 +327,7 @@ class SettingsManager {
             SettingsKey.maxToolHistory: SettingsDefaults.maxToolHistory,
             SettingsKey.showTaskProgress: SettingsDefaults.showTaskProgress,
             SettingsKey.mascotSpeed: SettingsDefaults.mascotSpeed,
+            SettingsKey.mascotStyle: SettingsDefaults.mascotStyle,
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,

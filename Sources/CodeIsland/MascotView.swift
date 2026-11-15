@@ -19,15 +19,24 @@ struct MascotView: View {
     let source: String
     let status: MascotAgentStatus
     var size: CGFloat = 27
+    /// How the turn ended, for the Pixel critter's done / error poses. The
+    /// classic mascots ignore it.
+    var outcome: MascotOutcome? = nil
     @AppStorage(SettingsKey.mascotSpeed) private var speedPct = SettingsDefaults.mascotSpeed
+    @AppStorage(SettingsKey.mascotStyle) private var mascotStyle = SettingsDefaults.mascotStyle
     @ObservedObject private var animationGate = MascotAnimationGate.shared
 
     var body: some View {
         let resolved = SessionSnapshot.normalizedSupportedSource(source) ?? source
+        let style = MascotStyle(setting: mascotStyle)
         Group {
             switch resolved {
             case "codex":
-                DexView(status: status, size: size)
+                if let critter = style.critter(codex: true) {
+                    PixelCritterView(status: status, outcome: outcome, size: size, style: critter)
+                } else {
+                    DexView(status: status, size: size)
+                }
             case "grok":
                 GrokView(status: status, size: size)
             case "gemini", "google-antigravity":
@@ -78,7 +87,11 @@ struct MascotView: View {
             case "dsh":
                 DeepSeekView(status: status, size: size)
             default:
-                ClawdView(status: status, size: size)
+                if let critter = style.critter(codex: false) {
+                    PixelCritterView(status: status, outcome: outcome, size: size, style: critter)
+                } else {
+                    ClawdView(status: status, size: size)
+                }
             }
         }
         .environment(\.mascotSpeed, Double(speedPct) / 100.0)
