@@ -79,6 +79,7 @@ final class UIGalleryHarness: XCTestCase {
         for (state, screen, wallpaper) in jobs {
             GallerySettings.reset()
             if state == .quota { GallerySettings.set(true, SettingsKey.showClaudeQuota, suiteOnly: true) }
+            if state == .dots { GallerySettings.set(true, SettingsKey.showSessionDots) }
             let demo = try await GalleryDemo.collapsed(state, lang: lang)
             defer { demo.release() }
             let name = "\(screen.name)-\(state.rawValue)" + (wallpaper == .light ? "-light" : "")
@@ -361,6 +362,8 @@ enum CollapsedState: String, CaseIterable {
     case questionDismissed = "question-dismissed"
     case quota
     case glance
+    /// Session dots on: ten sessions in every status — eight dots and `+2`.
+    case dots
 }
 
 enum ApprovalKind: String, CaseIterable {
@@ -588,12 +591,25 @@ enum GalleryDemo {
         let state = AppState()
         state.claudeUsage = usage()
         if kind == .empty { return GalleryDemoState(state: state) }
+        if kind == .dots {
+            // The list's eight sessions, plus two finished ones past the cap.
+            let demo = try await list(count: 8, lang: lang, quota: false)
+            for n in 1...2 {
+                var extra = session(source: "claude", project: "api-\(n)", branch: "main",
+                                    terminalBundleId: "com.mitchellh.ghostty", status: .idle, startedMinutesAgo: 90 + Double(n))
+                extra.lastUserPrompt = "Bump dependencies"
+                demo.state.sessions["dots-extra-\(n)"] = extra
+            }
+            demo.state.refreshDerivedState()
+            demo.state.surface = .collapsed
+            return demo
+        }
 
         var claude = claudeWorking(lang)
         var after: (() -> Void)?
         var release: () -> Void = {}
         switch kind {
-        case .empty: break
+        case .empty, .dots: break
         case .idle, .quota, .glance:
             claude.status = .idle
             claude.currentTool = nil

@@ -1339,6 +1339,7 @@ private struct AppearancePage: View {
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
+    @AppStorage(SettingsKey.showSessionDots) private var showSessionDots = SettingsDefaults.showSessionDots
     @AppStorage(SettingsKey.showGitBranch) private var showGitBranch = SettingsDefaults.showGitBranch
     @AppStorage(SettingsKey.showTaskProgress) private var showTaskProgress = SettingsDefaults.showTaskProgress
     @AppStorage(SettingsKey.showSessionRecap) private var showSessionRecap = SettingsDefaults.showSessionRecap
@@ -1482,6 +1483,12 @@ private struct AppearancePage: View {
                 }
                 Toggle(l10n["show_agent_details"], isOn: $showAgentDetails)
                 Toggle(l10n["show_tool_status"], isOn: $showToolStatus)
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["show_session_dots"], isOn: $showSessionDots)
+                    Text(l10n["show_session_dots_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle(l10n["show_project_name"], isOn: $showProjectName)
                     Text(l10n["show_project_name_desc"])
