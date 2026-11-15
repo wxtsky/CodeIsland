@@ -30,4 +30,37 @@ final class PanelWindowControllerTests: XCTestCase {
         XCTAssertEqual(frames.incoming.origin.y, newFrame.origin.y + 30)
         XCTAssertEqual(frames.incoming.size, newFrame.size)
     }
+
+    /// A click on a button, a row or the card's background must leave key
+    /// status with the app in front: the island needs no keyboard for it.
+    func testClickOutsideATextFieldDoesNotMakeThePanelKey() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        let button = NSButton(title: "Allow", target: nil, action: nil)
+        container.addSubview(button)
+
+        XCTAssertFalse(PanelKeyPolicy.mayBecomeKey(forClickOn: nil))
+        XCTAssertFalse(PanelKeyPolicy.mayBecomeKey(forClickOn: container))
+        XCTAssertFalse(PanelKeyPolicy.mayBecomeKey(forClickOn: button))
+    }
+
+    /// Text on the card is drawn with non-editable fields; reading it is not typing.
+    func testClickOnALabelDoesNotMakeThePanelKey() {
+        XCTAssertFalse(PanelKeyPolicy.mayBecomeKey(forClickOn: NSTextField(labelWithString: "Run tests?")))
+    }
+
+    /// A question card's typed answer is the one place the island needs the keyboard.
+    func testClickInAnEditableTextFieldMakesThePanelKey() {
+        XCTAssertTrue(PanelKeyPolicy.mayBecomeKey(forClickOn: NSTextField(string: "")))
+        XCTAssertTrue(PanelKeyPolicy.mayBecomeKey(forClickOn: NSTextView()))
+    }
+
+    /// The hit view is often a subview of the field (its cell's editor or a
+    /// SwiftUI wrapper), so the check walks up to the field.
+    func testClickInsideAnEditableTextFieldsSubviewMakesThePanelKey() {
+        let field = NSTextField(string: "")
+        let inner = NSView()
+        field.addSubview(inner)
+
+        XCTAssertTrue(PanelKeyPolicy.mayBecomeKey(forClickOn: inner))
+    }
 }

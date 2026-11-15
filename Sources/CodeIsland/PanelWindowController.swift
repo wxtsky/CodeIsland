@@ -4,8 +4,40 @@ import os.log
 
 private let log = Logger(subsystem: "com.codeisland", category: "Panel")
 
+/// When the island may take keyboard focus from the app in front.
+enum PanelKeyPolicy {
+    /// The island is a non-activating overlay, and almost every click on it
+    /// (Allow, Deny, a session row, an option) is a pointer action that needs
+    /// no keyboard. Making the panel key on each of those took key status from
+    /// the frontmost app: the caret left the editor and the next keystrokes
+    /// went nowhere. The one thing on the island that needs the keyboard is a
+    /// text field — a question card's typed answer — so only a click that
+    /// lands in an editable text field may make the panel key.
+    static func mayBecomeKey(forClickOn view: NSView?) -> Bool {
+        var current = view
+        while let candidate = current {
+            if let field = candidate as? NSTextField, field.isEditable { return true }
+            if let text = candidate as? NSTextView, text.isEditable { return true }
+            current = candidate.superview
+        }
+        return false
+    }
+}
+
 private class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    /// Set by a click into a text field (`PanelKeyPolicy`) and cleared when
+    /// the panel resigns key, so the island never takes focus by itself —
+    /// not on a click elsewhere, and not on AppKit promoting it after a
+    /// window closes.
+    var allowsKeyForTextInput = false
+
+    override var canBecomeKey: Bool { allowsKeyForTextInput }
+    override var canBecomeMain: Bool { false }
+
+    override func resignKey() {
+        super.resignKey()
+        allowsKeyForTextInput = false
+    }
 
     /// The island deliberately overlaps the menu-bar / notch area. AppKit's
     /// default constrain clamps borderless windows below the menu bar whenever
@@ -26,7 +58,14 @@ private class NotchHostingView<Content: View>: NSHostingView<Content> {
     private var applyingDeferred = false
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeKey()
+        if let panel = window as? KeyablePanel, !panel.isKeyWindow {
+            // `hitTest` takes a point in the superview's coordinates.
+            let point = superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+            if PanelKeyPolicy.mayBecomeKey(forClickOn: hitTest(point)) {
+                panel.allowsKeyForTextInput = true
+                panel.makeKey()
+            }
+        }
         super.mouseDown(with: event)
     }
 
@@ -815,7 +854,8 @@ class PanelWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Whether the island currently holds keyboard focus. It only becomes key
-    /// when the user clicks into it (NotchHostingView.mouseDown).
+    /// when the user clicks into one of its text fields
+    /// (NotchHostingView.mouseDown, `PanelKeyPolicy`).
     var isPanelKeyWindow: Bool {
         panel?.isKeyWindow == true
     }
