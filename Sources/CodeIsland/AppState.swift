@@ -1382,6 +1382,18 @@ final class AppState {
         return defaults.bool(forKey: SettingsKey.autoExpandOnQuestion)
     }
 
+    /// Permission-only mode: the island opens by itself only for a decision —
+    /// an approval or a question. A finished turn pops no card or glance, the
+    /// launch doesn't expand it, and Smart Suppress doesn't hide the card.
+    /// The collapsed notch still shows its status, and hovering still opens
+    /// the session list.
+    nonisolated static func permissionOnlyMode(_ defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: SettingsKey.permissionOnlyMode) != nil else {
+            return SettingsDefaults.permissionOnlyMode
+        }
+        return defaults.bool(forKey: SettingsKey.permissionOnlyMode)
+    }
+
     /// Session of a queued question the island is not showing — what the
     /// collapsed bar's question badge advertises and a click opens.
     var hiddenPendingQuestionSessionId: String? {
@@ -1406,14 +1418,28 @@ final class AppState {
         }
     }
 
+    /// May a pending approval or question card open by itself, as far as
+    /// Smart Suppress goes? In permission-only mode the card is the island's
+    /// only signal and it never takes focus, so Smart Suppress doesn't hide it.
     func shouldAutoOpenPendingSurface(
         for sessionId: String,
         isTerminalFrontmost: (SessionSnapshot) -> Bool = TerminalVisibilityDetector.isTerminalFrontmostForSession
     ) -> Bool {
-        guard UserDefaults.standard.bool(forKey: SettingsKey.smartSuppress) else { return true }
+        if Self.permissionOnlyMode() { return true }
+        return !isSmartSuppressed(sessionId: sessionId, isTerminalFrontmost: isTerminalFrontmost)
+    }
+
+    /// Smart Suppress's own answer: it is on and the session's terminal is in
+    /// front. Pushes still read this in permission-only mode — the user is
+    /// looking at the agent whether or not the island shows the card.
+    func isSmartSuppressed(
+        sessionId: String,
+        isTerminalFrontmost: (SessionSnapshot) -> Bool = TerminalVisibilityDetector.isTerminalFrontmostForSession
+    ) -> Bool {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.smartSuppress) else { return false }
         guard let session = sessions[sessionId],
-              (session.termApp != nil || session.termBundleId != nil) else { return true }
-        return !isTerminalFrontmost(session)
+              (session.termApp != nil || session.termBundleId != nil) else { return false }
+        return isTerminalFrontmost(session)
     }
 
     /// Smart Suppress for a question: may its card open by itself, as far as

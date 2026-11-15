@@ -32,6 +32,7 @@ enum SettingsKey {
     static let hideInFullscreen = "hideInFullscreen"
     static let hideWhenNoSession = "hideWhenNoSession"
     static let smartSuppress = "smartSuppress"
+    static let permissionOnlyMode = "permissionOnlyMode"  // the island opens by itself only for a decision
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
     static let notchAnimationSpeed = "notchAnimationSpeed"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
@@ -174,6 +175,7 @@ struct SettingsDefaults {
     static let hideInFullscreen = true
     static let hideWhenNoSession = false
     static let smartSuppress = true
+    static let permissionOnlyMode = false
     static let collapseOnMouseLeave = true
     static let notchAnimationSpeed = NotchAnimationSpeed.normal
     static let autoCollapseAfterSessionJump = false
@@ -280,6 +282,7 @@ class SettingsManager {
             SettingsKey.hideInFullscreen: SettingsDefaults.hideInFullscreen,
             SettingsKey.hideWhenNoSession: SettingsDefaults.hideWhenNoSession,
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
+            SettingsKey.permissionOnlyMode: SettingsDefaults.permissionOnlyMode,
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
             SettingsKey.notchAnimationSpeed: SettingsDefaults.notchAnimationSpeed,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
@@ -397,6 +400,11 @@ class SettingsManager {
     var smartSuppress: Bool {
         get { defaults.bool(forKey: SettingsKey.smartSuppress) }
         set { defaults.set(newValue, forKey: SettingsKey.smartSuppress) }
+    }
+
+    var permissionOnlyMode: Bool {
+        get { defaults.bool(forKey: SettingsKey.permissionOnlyMode) }
+        set { defaults.set(newValue, forKey: SettingsKey.permissionOnlyMode) }
     }
 
     var collapseOnMouseLeave: Bool {

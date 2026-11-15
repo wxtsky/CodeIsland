@@ -437,6 +437,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.hideInFullscreen) private var hideInFullscreen = SettingsDefaults.hideInFullscreen
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
+    @AppStorage(SettingsKey.permissionOnlyMode) private var permissionOnlyMode = SettingsDefaults.permissionOnlyMode
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
     @AppStorage(SettingsKey.autoExpandOnPermission) private var autoExpandOnPermission = SettingsDefaults.autoExpandOnPermission
@@ -513,6 +514,12 @@ private struct BehaviorPage: View {
                     title: l10n["auto_expand_on_question"],
                     desc: l10n["auto_expand_on_question_desc"],
                     isOn: $autoExpandOnQuestion,
+                    animation: .smartSuppress
+                )
+                BehaviorToggleRow(
+                    title: l10n["permission_only_mode"],
+                    desc: l10n["permission_only_mode_desc"],
+                    isOn: $permissionOnlyMode,
                     animation: .smartSuppress
                 )
                 BehaviorToggleRow(
