@@ -3223,8 +3223,10 @@ final class AppState {
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
             if shownIdx != nil { return true }
-            // When the session list is open, keep it open; approvals can be handled inline.
-            if surface == .sessionList { return true }
+            // When the session list is open, keep it open; approvals can be
+            // handled inline — unless the list leaves this session out
+            // ("Only list Claude Desktop sessions"), when it needs its card.
+            if surface == .sessionList, isInSessionList(sid) { return true }
             if Self.autoExpandOnPermission(), shouldAutoOpenPendingSurface(for: sid) {
                 surface = .approvalCard(sessionId: sid)
                 return true
@@ -3245,7 +3247,7 @@ final class AppState {
             if !Self.autoExpandOnQuestion() {
                 // Nothing opens by itself — and a card the user opened with a
                 // click stays put. Stale cards were already folded above.
-                if surface.questionSessionId != nil || surface == .sessionList { return true }
+                if surface.questionSessionId != nil || (surface == .sessionList && isInSessionList(sid)) { return true }
             } else if shouldAutoOpenQuestionSurface(for: next.event) {
                 surface = .questionCard(sessionId: sid)
                 return true
@@ -3255,7 +3257,7 @@ final class AppState {
                 // question-card surface so the promoted card does not render
                 // expanded on top of the previous question's surface.
                 surface = .collapsed
-            } else if surface == .sessionList {
+            } else if surface == .sessionList, isInSessionList(sid) {
                 return true
             }
         } else {

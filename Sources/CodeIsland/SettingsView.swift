@@ -1334,6 +1334,7 @@ enum ContentFontSize {
 private struct AppearancePage: View {
     @ObservedObject private var l10n = L10n.shared
     @AppStorage(SettingsKey.maxVisibleSessions) private var maxVisibleSessions = SettingsDefaults.maxVisibleSessions
+    @AppStorage(SettingsKey.listOnlyClaudeDesktopSessions) private var listOnlyClaudeDesktopSessions = SettingsDefaults.listOnlyClaudeDesktopSessions
     @AppStorage(SettingsKey.sessionListDensity) private var sessionListDensityRaw = SettingsDefaults.sessionListDensity
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
@@ -1415,6 +1416,12 @@ private struct AppearancePage: View {
                     // Compact scrolls by height, not by count.
                     Text(l10n[sessionListDensityBinding.wrappedValue == .compact
                         ? "max_visible_sessions_desc_compact" : "max_visible_sessions_desc"])
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle(l10n["list_only_claude_desktop_sessions"], isOn: $listOnlyClaudeDesktopSessions)
+                    Text(l10n["list_only_claude_desktop_sessions_desc"])
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
                 Picker(selection: sessionListDensityBinding) {
                     ForEach(SessionListDensity.allCases, id: \.self) { density in

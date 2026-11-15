@@ -155,6 +155,18 @@ enum SessionListOrdering {
         }
         return rank
     }
+
+    /// "Only list Claude Desktop sessions" (Settings → Appearance): a Claude
+    /// Code session stays on the list only when it runs inside the Claude
+    /// desktop app — a Code-tab session (it carries the app's host session
+    /// id) or a Cowork one (its host bundle is the app). Terminal, IDE and
+    /// headless (`claude -p`) runs drop off. Other agents are not what the
+    /// switch is about and stay listed.
+    static func isListed(_ session: SessionSnapshot, desktopOnly: Bool) -> Bool {
+        guard desktopOnly, session.isClaude else { return true }
+        return session.claudeDesktopSessionId != nil
+            || session.termBundleId == AppState.claudeDesktopBundleId
+    }
 }
 
 /// "Group by status" sections.
@@ -278,13 +290,30 @@ struct SessionOrderFreeze: Equatable {
 }
 
 extension AppState {
-    /// Session ids in the expanded list's live (unfrozen) order.
-    func sessionListOrder() -> [String] {
+    /// Whether "Only list Claude Desktop sessions" is on.
+    nonisolated static func listsOnlyClaudeDesktopSessions(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: SettingsKey.listOnlyClaudeDesktopSessions)
+    }
+
+    /// Session ids in the expanded list's live (unfrozen) order. With
+    /// `desktopOnly`, Claude Code sessions run outside the desktop app are
+    /// left out (`SessionListOrdering.isListed`).
+    func sessionListOrder(desktopOnly: Bool = AppState.listsOnlyClaudeDesktopSessions()) -> [String] {
         let rank = SessionListOrdering.requestRank(
             permissionSessionIds: permissionQueue.map { $0.event.sessionId ?? "default" },
             questionSessionIds: questionQueue.map { $0.event.sessionId ?? "default" }
         )
-        return SessionListOrdering.order(sessions, requestRank: rank)
+        let listed = desktopOnly
+            ? sessions.filter { SessionListOrdering.isListed($0.value, desktopOnly: true) }
+            : sessions
+        return SessionListOrdering.order(listed, requestRank: rank)
+    }
+
+    /// Whether the expanded list shows this session, so a request from it
+    /// can be answered there. One it leaves out needs its own card.
+    func isInSessionList(_ sessionId: String) -> Bool {
+        guard let session = sessions[sessionId] else { return true }
+        return SessionListOrdering.isListed(session, desktopOnly: Self.listsOnlyClaudeDesktopSessions())
     }
 }
 
