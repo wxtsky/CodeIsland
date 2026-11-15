@@ -215,10 +215,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupGlobalShortcut()
 
-        // Boot animation: brief expand to confirm app is running
+        // Boot animation: brief expand to confirm app is running (not in
+        // permission-only mode, where the island opens only for a decision)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
-            guard appState.surface == .collapsed else { return }
+            guard appState.surface == .collapsed, !AppState.permissionOnlyMode() else { return }
             withAnimation(NotchAnimation.pop) {
                 appState.surface = .sessionList
             }

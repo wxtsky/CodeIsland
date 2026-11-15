@@ -27,6 +27,7 @@ final class AttentionRegressionTests: XCTestCase {
         SettingsKey.soundApprovalNeeded, SettingsKey.soundPromptSubmit, SettingsKey.soundSessionStart,
         SettingsKey.quietHoursEnabled, SettingsKey.autoMuteWhenAway, SettingsKey.completionNotificationStyle,
         SettingsKey.smartSuppress, SettingsKey.autoExpandOnPermission, SettingsKey.pluginSessionMode,
+        SettingsKey.permissionOnlyMode,
     ]
 
     override func setUp() async throws {
@@ -315,5 +316,37 @@ final class AttentionRegressionTests: XCTestCase {
         appState.handleEvent(try event(["hook_event_name": "Stop", "session_id": "card"]))
         XCTAssertEqual(appState.justCompletedSessionId, "card")
         XCTAssertEqual(appState.activeSessionId, "card", "a Stop keeps its session up for the card it popped")
+    }
+
+    /// Permission-only mode: a finished turn pops neither the card nor the
+    /// glance dot, chases no follow-up, and hands the island's spot on. The
+    /// session still goes idle and the done chime still plays. Off, the same
+    /// turn pops its card as before.
+    func testPermissionOnlyModePopsNothingForAFinishedTurn() throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.permissionOnlyMode)
+        let appState = appStateWithFollowUps()
+        for busy in ["busy-1", "busy-2"] {
+            appState.handleEvent(try event(["hook_event_name": "PreToolUse", "session_id": busy, "tool_name": "Bash"]))
+        }
+
+        for style in ["expand", "glance"] {
+            UserDefaults.standard.set(style, forKey: SettingsKey.completionNotificationStyle)
+            let sid = "po-\(style)"
+            appState.handleEvent(try event(["hook_event_name": "UserPromptSubmit", "session_id": sid, "prompt": "go"]))
+            played = []
+            appState.handleEvent(try event(["hook_event_name": "Stop", "session_id": sid]))
+            XCTAssertEqual(played, ["8bit_complete"], "\(style): the sound is not the island opening")
+            XCTAssertNil(appState.justCompletedSessionId, "\(style): no completion card")
+            XCTAssertEqual(appState.surface, .collapsed, "\(style)")
+            XCTAssertFalse(appState.glanceCompletionActive, "\(style): no glance dot")
+            XCTAssertEqual(appState.sessions[sid]?.status, .idle)
+            XCTAssertTrue(appState.activeSessionId?.hasPrefix("busy-") == true, "\(style): no card keeps the spot")
+        }
+
+        UserDefaults.standard.set(false, forKey: SettingsKey.permissionOnlyMode)
+        UserDefaults.standard.set("expand", forKey: SettingsKey.completionNotificationStyle)
+        appState.handleEvent(try event(["hook_event_name": "UserPromptSubmit", "session_id": "card", "prompt": "go"]))
+        appState.handleEvent(try event(["hook_event_name": "Stop", "session_id": "card"]))
+        XCTAssertEqual(appState.justCompletedSessionId, "card", "off, the card pops as before")
     }
 }

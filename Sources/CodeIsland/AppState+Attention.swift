@@ -21,11 +21,13 @@ extension AppState {
         return AttentionContext(
             sounds: sounds.preferences,
             soundHold: sounds.hold,
-            completionStyle: Self.completionStyle(),
+            // Permission-only mode pops nothing for a finished turn: no card,
+            // no glance dot, and no follow-up that would open the island later.
+            completionStyle: Self.permissionOnlyMode() ? .off : Self.completionStyle(),
             pushEnabled: PushNotifier.shared.isEnabled,
             sessionInFront: { [weak self] in
                 guard let self else { return false }
-                return !self.shouldAutoOpenPendingSurface(for: sessionId, isTerminalFrontmost: terminalFrontmost)
+                return self.isSmartSuppressed(sessionId: sessionId, isTerminalFrontmost: terminalFrontmost)
             }
         )
     }

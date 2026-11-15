@@ -8,11 +8,13 @@ import CodeIslandCore
 final class AppStateQuestionAutoExpandTests: XCTestCase {
     private var savedAutoExpandOnQuestion: Any?
     private var savedSmartSuppress: Any?
+    private var savedPermissionOnlyMode: Any?
 
     override func setUp() {
         super.setUp()
         savedAutoExpandOnQuestion = UserDefaults.standard.object(forKey: SettingsKey.autoExpandOnQuestion)
         savedSmartSuppress = UserDefaults.standard.object(forKey: SettingsKey.smartSuppress)
+        savedPermissionOnlyMode = UserDefaults.standard.object(forKey: SettingsKey.permissionOnlyMode)
         // Keep Smart Suppress out of the way: these tests are about the new switch.
         UserDefaults.standard.set(false, forKey: SettingsKey.smartSuppress)
     }
@@ -20,7 +22,49 @@ final class AppStateQuestionAutoExpandTests: XCTestCase {
     override func tearDown() {
         restore(savedAutoExpandOnQuestion, forKey: SettingsKey.autoExpandOnQuestion)
         restore(savedSmartSuppress, forKey: SettingsKey.smartSuppress)
+        restore(savedPermissionOnlyMode, forKey: SettingsKey.permissionOnlyMode)
         super.tearDown()
+    }
+
+    /// Permission-only mode: a question's card is the island's only signal,
+    /// so Smart Suppress doesn't keep it collapsed while the terminal is in
+    /// front. Off, Smart Suppress still folds it. (An OMP ask racing its own
+    /// terminal dialog is the question Smart Suppress weighs.)
+    func testPermissionOnlyModeOpensTheQuestionCardPastSmartSuppress() async throws {
+        UserDefaults.standard.set(true, forKey: SettingsKey.autoExpandOnQuestion)
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+
+        func ask(permissionOnly: Bool, sessionId: String) async throws -> IslandSurface {
+            UserDefaults.standard.set(permissionOnly, forKey: SettingsKey.permissionOnlyMode)
+            let appState = AppState()
+            appState.questionTerminalFrontmostDetector = { _ in true }
+            let event = try XCTUnwrap(HookEvent(from: try JSONSerialization.data(withJSONObject: [
+                "hook_event_name": "PermissionRequest",
+                "session_id": sessionId,
+                "tool_name": "AskUserQuestion",
+                "tool_input": [
+                    "questions": [[
+                        "question": "Which approach?",
+                        "header": "Approach",
+                        "options": [["label": "A", "description": ""], ["label": "B", "description": ""]],
+                    ]]
+                ],
+                "_source": "pi",
+                "_pi_tool_call_id": "racing-\(sessionId)",
+                "_term_app": "Ghostty",
+                "_codeisland_native_ask_racing": true,
+            ] as [String: Any])))
+            let task = await startHookRequest { appState.handleAskUserQuestion(event, continuation: $0) }
+            let surface = appState.surface
+            appState.skipQuestion(expectedSessionId: sessionId)
+            _ = try await awaitValue(of: task)
+            return surface
+        }
+
+        let on = try await ask(permissionOnly: true, sessionId: "s-po-on")
+        XCTAssertEqual(on, .questionCard(sessionId: "s-po-on"))
+        let off = try await ask(permissionOnly: false, sessionId: "s-po-off")
+        XCTAssertEqual(off, .collapsed)
     }
 
     func testDefaultIsOnSoNothingChangesUnlessAsked() {

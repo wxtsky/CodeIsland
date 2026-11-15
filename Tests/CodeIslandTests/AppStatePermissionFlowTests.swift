@@ -7,12 +7,14 @@ final class AppStatePermissionFlowTests: XCTestCase {
     private var savedCodexHome: String?
     private var savedSmartSuppress: Any?
     private var savedAutoExpandOnPermission: Any?
+    private var savedPermissionOnlyMode: Any?
 
     override func setUp() {
         super.setUp()
         savedCodexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]
         savedSmartSuppress = UserDefaults.standard.object(forKey: SettingsKey.smartSuppress)
         savedAutoExpandOnPermission = UserDefaults.standard.object(forKey: SettingsKey.autoExpandOnPermission)
+        savedPermissionOnlyMode = UserDefaults.standard.object(forKey: SettingsKey.permissionOnlyMode)
     }
 
     override func tearDown() {
@@ -30,6 +32,11 @@ final class AppStatePermissionFlowTests: XCTestCase {
             UserDefaults.standard.set(savedAutoExpandOnPermission, forKey: SettingsKey.autoExpandOnPermission)
         } else {
             UserDefaults.standard.removeObject(forKey: SettingsKey.autoExpandOnPermission)
+        }
+        if let savedPermissionOnlyMode {
+            UserDefaults.standard.set(savedPermissionOnlyMode, forKey: SettingsKey.permissionOnlyMode)
+        } else {
+            UserDefaults.standard.removeObject(forKey: SettingsKey.permissionOnlyMode)
         }
         super.tearDown()
     }
@@ -77,6 +84,36 @@ final class AppStatePermissionFlowTests: XCTestCase {
 
         XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: "s-smart") { _ in true })
         XCTAssertTrue(appState.shouldAutoOpenPendingSurface(for: "s-smart") { _ in false })
+    }
+
+    func testPermissionOnlyModeIsOffByDefault() {
+        let suite = "AppStatePermissionFlowTests.permissionOnlyDefault"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        XCTAssertFalse(AppState.permissionOnlyMode(defaults))
+        defaults.set(true, forKey: SettingsKey.permissionOnlyMode)
+        XCTAssertTrue(AppState.permissionOnlyMode(defaults))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    /// In permission-only mode the card is the island's only signal and it
+    /// never takes focus, so Smart Suppress doesn't hide it. Pushes still see
+    /// the user looking at the agent.
+    func testPermissionOnlyModeOpensThePendingSurfaceEvenWithTerminalFrontmost() {
+        UserDefaults.standard.set(true, forKey: SettingsKey.smartSuppress)
+        UserDefaults.standard.set(true, forKey: SettingsKey.permissionOnlyMode)
+        let appState = AppState()
+        var session = SessionSnapshot()
+        session.termApp = "Ghostty"
+        appState.sessions["s-po"] = session
+
+        XCTAssertTrue(appState.shouldAutoOpenPendingSurface(for: "s-po") { _ in true })
+        XCTAssertTrue(appState.isSmartSuppressed(sessionId: "s-po") { _ in true },
+                      "a push is still smart-suppressed while the terminal is in front")
+
+        UserDefaults.standard.set(false, forKey: SettingsKey.permissionOnlyMode)
+        XCTAssertFalse(appState.shouldAutoOpenPendingSurface(for: "s-po") { _ in true },
+                       "off, Smart Suppress hides the card as before")
     }
 
     func testPendingSurfaceAutoOpensWhenSmartSuppressIsOff() {
