@@ -27,7 +27,7 @@ struct IdleSessionRemovalBanner: View {
                     .foregroundStyle(.white)
                 Text(l10n["remove_idle_sessions_confirm_help"])
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(Palette.ink(0.62))
                     .lineLimit(2)
             }
             Spacer(minLength: 4)
@@ -36,8 +36,8 @@ struct IdleSessionRemovalBanner: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.white.opacity(0.045))
-        .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.1)).frame(height: 0.5) }
+        .background(Palette.ink(0.045))
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.ink(0.1)).frame(height: 0.5) }
         .onExitCommand(perform: onCancel)
         // It opens away from VoiceOver's cursor (on the header button).
         .onAppear { AccessibilityNotification.Announcement(Self.title(count: count, l10n: l10n)).post() }
@@ -48,12 +48,12 @@ struct IdleSessionRemovalBanner: View {
         Button(role: destructive ? .destructive : .cancel, action: perform) {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(destructive ? Color(red: 1, green: 0.6, blue: 0.55) : .white.opacity(0.8))
+                .foregroundStyle(destructive ? Color(red: 1, green: 0.6, blue: 0.55) : Palette.ink(0.8))
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 9)
                 .frame(minHeight: 26)
-                .background(RoundedRectangle(cornerRadius: 6).fill(destructive ? .red.opacity(0.14) : .white.opacity(0.07)))
+                .background(RoundedRectangle(cornerRadius: 6).fill(destructive ? .red.opacity(0.14) : Palette.ink(0.07)))
         }
         .buttonStyle(.plain)
     }

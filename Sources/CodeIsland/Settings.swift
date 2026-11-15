@@ -51,6 +51,7 @@ enum SettingsKey {
     static let maxPanelHeight = "maxPanelHeight"
     static let maxVisibleSessions = "maxVisibleSessions"
     static let sessionListDensity = "sessionListDensity"  // SessionListDensity raw value: "comfortable" | "compact"
+    static let islandTheme = "islandTheme"  // IslandTheme raw value: "default" | "warm" | "mono" | "highContrast"
     static let contentFontSize = "contentFontSize"
     static let aiMessageLines = "aiMessageLines"
     static let showAgentDetails = "showAgentDetails"
@@ -191,6 +192,7 @@ struct SettingsDefaults {
     static let maxPanelHeight = 560
     static let maxVisibleSessions = 5
     static let sessionListDensity = SessionListDensity.comfortable.rawValue
+    static let islandTheme = IslandTheme.standard.rawValue
     static let contentFontSize = 11
     static let aiMessageLines = 1
     static let showAgentDetails = false
@@ -296,6 +298,7 @@ class SettingsManager {
             SettingsKey.maxPanelHeight: SettingsDefaults.maxPanelHeight,
             SettingsKey.maxVisibleSessions: SettingsDefaults.maxVisibleSessions,
             SettingsKey.sessionListDensity: SettingsDefaults.sessionListDensity,
+            SettingsKey.islandTheme: SettingsDefaults.islandTheme,
             SettingsKey.contentFontSize: SettingsDefaults.contentFontSize,
             SettingsKey.aiMessageLines: SettingsDefaults.aiMessageLines,
             SettingsKey.showAgentDetails: SettingsDefaults.showAgentDetails,
@@ -432,6 +435,11 @@ class SettingsManager {
     var sessionListDensity: SessionListDensity {
         get { SessionListDensity(storedValue: defaults.string(forKey: SettingsKey.sessionListDensity)) }
         set { defaults.set(newValue.rawValue, forKey: SettingsKey.sessionListDensity) }
+    }
+
+    var islandTheme: IslandTheme {
+        get { IslandTheme(storedValue: defaults.string(forKey: SettingsKey.islandTheme)) }
+        set { defaults.set(newValue.rawValue, forKey: SettingsKey.islandTheme) }
     }
 
     var contentFontSize: Int {

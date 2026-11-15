@@ -121,6 +121,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
+    @AppStorage(SettingsKey.islandTheme) private var islandTheme = SettingsDefaults.islandTheme
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
@@ -311,7 +312,7 @@ struct NotchPanelView: View {
                 // Below-notch expanded content
                 if shouldShowExpanded {
                     Line()
-                        .stroke(.white.opacity(0.15), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                        .stroke(Palette.ink(0.15), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
                         .frame(height: 0.5)
                         .padding(.horizontal, 12)
 
@@ -420,13 +421,16 @@ struct NotchPanelView: View {
             .recordsCompletionCardChrome(in: cardSpace)
             .frame(width: panelWidth)
             .clipped()
+            // Colours are read from the theme as views draw; a theme change
+            // rebuilds the tree so every one of them reads the new palette.
+            .id(islandTheme)
             .background(
                 NotchPanelShape(
                     topExtension: shouldShowExpanded ? 14 : 3,
                     bottomRadius: shouldShowExpanded ? 24 : 12,
                     minHeight: notchHeight
                 )
-                .fill(.black)
+                .fill(IslandTheme(storedValue: islandTheme).palette.panel)
             )
             .offset(y: curtainOffset)
             .opacity(curtainOpacity)
@@ -823,7 +827,7 @@ private struct CompactRightWing: View {
                 if inQuietHours {
                     Image(systemName: "moon.fill")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(Palette.ink(0.5))
                         .help(l10n["quiet_hours"])
                 }
 
@@ -831,9 +835,9 @@ private struct CompactRightWing: View {
                 // cleared as soon as the panel expands.
                 if appState.glanceCompletionActive {
                     Circle()
-                        .fill(Color(red: 0.4, green: 1.0, blue: 0.5))
+                        .fill(Palette.current.workingBright)
                         .frame(width: 7, height: 7)
-                        .shadow(color: Color(red: 0.4, green: 1.0, blue: 0.5).opacity(0.7), radius: 3)
+                        .shadow(color: Palette.current.workingBright.opacity(0.7), radius: 3)
                 }
 
                 // A question the island is not showing (auto-expand off, or
@@ -842,7 +846,7 @@ private struct CompactRightWing: View {
                 if appState.hiddenPendingQuestionSessionId != nil {
                     Image(systemName: "questionmark.bubble.fill")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                        .foregroundStyle(Palette.current.caution)
                         .modifier(WaitingBadgePulse())
                         .symbolEffect(.bounce, value: appState.followUps.hintPulse)
                         .help(l10n["question_waiting_hint"])
@@ -852,14 +856,14 @@ private struct CompactRightWing: View {
                     // reminder, until the island is opened or the item resolves.
                     Image(systemName: "bell.badge.fill")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                        .foregroundStyle(Palette.current.caution)
                         .symbolEffect(.bounce, value: appState.followUps.hintPulse)
                         .help(l10n["follow_up_hint"])
                 } else if appState.status == .waitingApproval || appState.status == .waitingQuestion {
                     // Pending approval/question badge
                     Image(systemName: "bell.fill")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
+                        .foregroundStyle(Palette.current.caution)
                         .modifier(WaitingBadgePulse())
                 }
 
@@ -870,12 +874,12 @@ private struct CompactRightWing: View {
                         let total = appState.totalSessionCount
                         if active > 0 {
                             Text("\(active)")
-                                .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
+                                .foregroundStyle(Palette.current.workingBright)
                             Text("/")
-                                .foregroundStyle(.white.opacity(0.5))
+                                .foregroundStyle(Palette.ink(0.5))
                         }
                         Text("\(total)")
-                            .foregroundStyle(.white.opacity(0.9))
+                            .foregroundStyle(Palette.ink(0.9))
                     }
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 } else {
@@ -885,12 +889,12 @@ private struct CompactRightWing: View {
                         let total = appState.totalSessionCount
                         if active > 0 {
                             Text("\(active)")
-                                .foregroundStyle(Color(red: 0.4, green: 1.0, blue: 0.5))
+                                .foregroundStyle(Palette.current.workingBright)
                             Text("/")
-                                .foregroundStyle(.white.opacity(0.5))
+                                .foregroundStyle(Palette.ink(0.5))
                         }
                         Text("\(total)")
-                            .foregroundStyle(.white.opacity(0.9))
+                            .foregroundStyle(Palette.ink(0.9))
                     }
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                 }
@@ -932,13 +936,13 @@ private struct WaitingBadgePulse: ViewModifier {
 /// Accent color for each tool category — shared between notch and non-notch views
 private func toolStatusColor(_ tool: String) -> Color {
     switch tool.lowercased() {
-    case "bash", "running command": return Color(red: 0.4, green: 1.0, blue: 0.5)
+    case "bash", "running command": return Palette.current.workingBright
     case "edit", "write", "editing": return Color(red: 0.5, green: 0.7, blue: 1.0)
     case "read", "reading": return Color(red: 0.9, green: 0.8, blue: 0.4)
     case "grep", "glob", "searching", "calling mcp": return Color(red: 0.8, green: 0.6, blue: 1.0)
     case "agent", "delegating": return Color(red: 1.0, green: 0.6, blue: 0.4)
     case "compacting": return Color(red: 0.4, green: 0.85, blue: 0.9)
-    default: return .white.opacity(0.7)
+    default: return Palette.ink(0.7)
     }
 }
 
@@ -989,7 +993,7 @@ struct CompactContextLabel: View {
     var body: some View {
         Text(text)
             .font(.system(size: Self.fontSize, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(Palette.ink(0.8))
             .lineLimit(1)
             .truncationMode(.tail)
             // minWidth 0 keeps it shrinkable when the bar is narrower still.
@@ -1058,7 +1062,7 @@ private struct CompactToolStatus: View {
                     MorphText(
                         text: shortDesc(desc),
                         font: .system(size: 11, weight: .medium, design: .monospaced),
-                        color: .white.opacity(0.7),
+                        color: Palette.ink(0.7),
                         streamsRapidly: displaySession.map {
                             SessionSnapshot.rapidStreamingSources.contains($0.source)
                         } ?? false
@@ -1068,11 +1072,11 @@ private struct CompactToolStatus: View {
             } else if let liveOutput {
                 Text("$")
                     .fontWeight(.bold)
-                    .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34))
+                    .foregroundStyle(Palette.current.accent)
                 MorphText(
                     text: liveOutput,
                     font: .system(size: 11, weight: .medium, design: .monospaced),
-                    color: .white.opacity(0.78)
+                    color: Palette.ink(0.78)
                 )
                 .truncationMode(.tail)
                 .help(liveOutput)
@@ -1211,7 +1215,7 @@ struct QuitConfirmButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovering = false
 
-    static let tint = Color(red: 1.0, green: 0.4, blue: 0.4)
+    static var tint: Color { Palette.current.alert }
     /// The pill's text: lighter than `tint`, for contrast on its red fill.
     static let pillText = Color(red: 1.0, green: 0.55, blue: 0.55)
     static let pillFontSize: CGFloat = 10
@@ -1281,9 +1285,9 @@ private struct SessionGroupingTabs: View {
     @ObservedObject private var l10n = L10n.shared
     @State private var hoveredTag: String?
 
-    static let selectedColor = Color(red: 0.3, green: 0.85, blue: 0.4)
+    static var selectedColor: Color { Palette.current.working }
     /// ≈7:1 on black — the thin pixel strokes need more than the AA minimum.
-    static let inactiveColor = Color.white.opacity(0.62)
+    static var inactiveColor: Color { Palette.ink(0.62) }
 
     var body: some View {
         let layout = SessionGroupingTabsLayout.self
@@ -1297,12 +1301,12 @@ private struct SessionGroupingTabs: View {
                     PixelText(
                         text: short ? tab.shortPixelLabel : tab.pixelLabel,
                         color: selected ? Self.selectedColor
-                            : (hoveredTag == tab.tag ? .white.opacity(0.9) : Self.inactiveColor),
+                            : (hoveredTag == tab.tag ? Palette.ink(0.9) : Self.inactiveColor),
                         pixelSize: layout.pixelSize
                     )
                     .padding(.horizontal, layout.horizontalPadding)
                     .frame(height: layout.stripHeight)
-                    .background(Rectangle().fill(selected ? .white.opacity(0.1) : .clear))
+                    .background(Rectangle().fill(selected ? Palette.ink(0.1) : .clear))
                     // Taller than the strip it draws: a 24pt target.
                     .frame(height: layout.hitHeight)
                     .contentShape(Rectangle())
@@ -1316,8 +1320,8 @@ private struct SessionGroupingTabs: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .background(Rectangle().fill(.white.opacity(0.05)).frame(height: layout.stripHeight))
-        .overlay(Rectangle().stroke(.white.opacity(0.1), lineWidth: 1).frame(height: layout.stripHeight))
+        .background(Rectangle().fill(Palette.ink(0.05)).frame(height: layout.stripHeight))
+        .overlay(Rectangle().stroke(Palette.ink(0.1), lineWidth: 1).frame(height: layout.stripHeight))
     }
 }
 
@@ -1355,7 +1359,7 @@ private struct IdleIndicatorBar: View {
                     if !quit.isArmed {
                         Text("0")
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                     }
 
                     HStack(spacing: 4) {
@@ -1405,17 +1409,17 @@ private struct ApprovalToolDetailView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text("$")
                                 .font(.system(size: type.body, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                                .foregroundStyle(Palette.current.working)
                             Text(cmd)
                                 .font(.system(size: type.body, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.85))
+                                .foregroundStyle(Palette.ink(0.85))
                                 .lineLimit(maxLines)
                         }
                     }
                     if let desc = toolInput?["description"] as? String, !desc.isEmpty {
                         Text(desc)
                             .font(.system(size: type.secondary, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(Palette.ink(0.55))
                             .lineLimit(maxLines)
                     }
                 }
@@ -1425,7 +1429,7 @@ private struct ApprovalToolDetailView: View {
                     if let fp = filePath {
                         Text(fp)
                             .font(.system(size: type.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1433,10 +1437,10 @@ private struct ApprovalToolDetailView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text("−")
                                 .font(.system(size: type.body, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4))
+                                .foregroundStyle(Palette.current.alert)
                             Text(old.prefix(120))
                                 .font(.system(size: type.secondary, design: .monospaced))
-                                .foregroundStyle(Color(red: 1.0, green: 0.4, blue: 0.4).opacity(0.85))
+                                .foregroundStyle(Palette.current.alert.opacity(0.85))
                                 .lineLimit(maxLines ?? 2)
                         }
                     }
@@ -1444,10 +1448,10 @@ private struct ApprovalToolDetailView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text("+")
                                 .font(.system(size: type.body, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                                .foregroundStyle(Palette.current.working)
                             Text(new.prefix(120))
                                 .font(.system(size: type.secondary, design: .monospaced))
-                                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4).opacity(0.7))
+                                .foregroundStyle(Palette.current.working.opacity(0.7))
                                 .lineLimit(maxLines ?? 2)
                         }
                     }
@@ -1458,14 +1462,14 @@ private struct ApprovalToolDetailView: View {
                     if let fp = filePath {
                         Text(fp)
                             .font(.system(size: type.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
                     if let content = toolInput?["content"] as? String {
                         Text(content.prefix(200))
                             .font(.system(size: type.secondary, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.6))
+                            .foregroundStyle(Palette.ink(0.6))
                             .lineLimit(maxLines ?? 4)
                     }
                 }
@@ -1475,7 +1479,7 @@ private struct ApprovalToolDetailView: View {
                     if let fp = filePath {
                         Text(fp)
                             .font(.system(size: type.secondary, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.7))
+                            .foregroundStyle(Palette.ink(0.7))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1483,7 +1487,7 @@ private struct ApprovalToolDetailView: View {
                        let limit = toolInput?["limit"] as? Int {
                         Text("\(L10n.shared["lines"]) \(offset + 1)–\(offset + limit)")
                             .font(.system(size: type.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                     }
                 }
@@ -1504,7 +1508,7 @@ private struct ApprovalToolDetailView: View {
                     if let path = toolInput?["path"] as? String {
                         Text(path)
                             .font(.system(size: type.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1521,7 +1525,7 @@ private struct ApprovalToolDetailView: View {
                     if let path = toolInput?["path"] as? String {
                         Text(path)
                             .font(.system(size: type.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -1538,7 +1542,7 @@ private struct ApprovalToolDetailView: View {
                                     .foregroundStyle(Color(red: 0.6, green: 0.7, blue: 0.9))
                                 Text(String(val.prefix(160)))
                                     .font(.system(size: type.secondary, design: .monospaced))
-                                    .foregroundStyle(.white.opacity(0.6))
+                                    .foregroundStyle(Palette.ink(0.6))
                                     .lineLimit(maxLines ?? 2)
                             }
                         }
@@ -1827,12 +1831,12 @@ enum NotchCardButtonRole {
 /// session list's inline approval row mirrors these values.
 enum NotchCardPalette {
     /// White on it is 5:1 (WCAG AA); the prototype's brighter green was 3.4:1.
-    static let allowFill = Color(red: 0.16, green: 0.50, blue: 0.24)
+    static var allowFill: Color { Palette.current.allowFill }
     /// Still 4.5:1 under white text.
-    static let allowFillHover = Color(red: 0.17, green: 0.53, blue: 0.26)
-    static let deny = Color(red: 0.92, green: 0.38, blue: 0.38)
-    static let link = Color(red: 0.45, green: 0.72, blue: 1.0)
-    static let permission = Color(red: 1.0, green: 0.6, blue: 0.2)
+    static var allowFillHover: Color { Palette.current.allowFillHover }
+    static var deny: Color { Palette.current.deny }
+    static var link: Color { Palette.current.link }
+    static var permission: Color { Palette.current.needsYou }
 }
 
 private struct NotchCardButton: View {
@@ -1852,10 +1856,10 @@ private struct NotchCardButton: View {
 
     private var foreground: Color {
         switch role {
-        case .primary: return .white.opacity(isEnabled ? 1 : 0.6)
+        case .primary: return Palette.ink(isEnabled ? 1 : 0.6)
         case .destructive: return NotchCardPalette.deny
-        case .secondary: return .white.opacity(0.85)
-        case .quiet: return .white.opacity(hovering ? 0.85 : 0.6)
+        case .secondary: return Palette.ink(0.85)
+        case .quiet: return Palette.ink(hovering ? 0.85 : 0.6)
         }
     }
 
@@ -1865,8 +1869,8 @@ private struct NotchCardButton: View {
             guard isEnabled else { return NotchCardPalette.allowFill.opacity(0.35) }
             return hovering ? NotchCardPalette.allowFillHover : NotchCardPalette.allowFill
         case .destructive: return NotchCardPalette.deny.opacity(hovering ? 0.14 : 0)
-        case .secondary: return .white.opacity(hovering ? 0.10 : 0.03)
-        case .quiet: return .white.opacity(hovering ? 0.07 : 0)
+        case .secondary: return Palette.ink(hovering ? 0.10 : 0.03)
+        case .quiet: return Palette.ink(hovering ? 0.07 : 0)
         }
     }
 
@@ -1874,7 +1878,7 @@ private struct NotchCardButton: View {
         switch role {
         case .primary: return .clear
         case .destructive: return NotchCardPalette.deny.opacity(hovering ? 0.9 : 0.7)
-        case .secondary: return .white.opacity(hovering ? 0.4 : 0.28)
+        case .secondary: return Palette.ink(hovering ? 0.4 : 0.28)
         case .quiet: return .clear
         }
     }
@@ -2037,7 +2041,7 @@ private struct NotchCardContextRow: View {
             ) {
                 Text(label)
                     .font(.system(size: type.body, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(Palette.ink(0.9))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(2)
@@ -2053,21 +2057,21 @@ private struct NotchCardContextRow: View {
                         .truncationMode(.middle)
                         .frame(minWidth: BranchLabelMetrics.minimumWidth(for: branch, fontSize: type.secondary))
                 }
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(Palette.ink(0.6))
                 .help(branch)
                 .layoutPriority(1)
             }
             if canJump {
                 Image(systemName: "arrow.up.forward.app")
                     .font(.system(size: type.secondary))
-                    .foregroundStyle(.white.opacity(hovering ? 0.85 : 0.55))
+                    .foregroundStyle(Palette.ink(hovering ? 0.85 : 0.55))
                     .accessibilityHidden(true)
             }
             Spacer(minLength: 8)
             if let queue = NotchCardQueueLabel.text(position: queuePosition, total: queueTotal) {
                 Text(queue)
                     .font(.system(size: type.secondary, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Palette.ink(0.6))
                     .lineLimit(1)
                     .fixedSize()
             }
@@ -2076,7 +2080,7 @@ private struct NotchCardContextRow: View {
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 5)
-                .fill(hovering ? Color.white.opacity(0.09) : Color.clear)
+                .fill(hovering ? Palette.ink(0.09) : Color.clear)
         )
         // The hover wash reaches past the column; the text lines up with it.
         .padding(.horizontal, -6)
@@ -2148,7 +2152,7 @@ private struct ApprovalBar: View {
                 let title = ApprovalCopy.title(tool: tool, toolInput: toolInput)
                 Text(title)
                     .font(.system(size: type.title, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(Palette.ink(0.92))
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2173,7 +2177,7 @@ private struct ApprovalBar: View {
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
+                .background(RoundedRectangle(cornerRadius: 6).fill(Palette.ink(0.06)))
                 .contentShape(Rectangle())
                 .onTapGesture { handleCardClick() }
             }
@@ -2529,7 +2533,7 @@ private struct QuestionBar: View {
             }
             Text(text)
                 .font(.system(size: type.title, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(Palette.ink(0.92))
                 .lineLimit(QuestionTextMetrics.lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
                 .help(text)
@@ -2537,11 +2541,11 @@ private struct QuestionBar: View {
             if let progress {
                 Text(progress)
                     .font(.system(size: type.badge, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Palette.ink(0.6))
                     .fixedSize()
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(Color.white.opacity(0.1))
+                    .background(Palette.ink(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
         }
@@ -2551,7 +2555,7 @@ private struct QuestionBar: View {
         HStack(spacing: 6) {
             Text(">")
                 .font(.system(size: type.secondary, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                .foregroundStyle(Palette.current.working)
                 .accessibilityHidden(true)
             TextField(L10n.shared["type_answer"], text: text)
                 .textFieldStyle(.plain)
@@ -2562,11 +2566,11 @@ private struct QuestionBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.05))
+        .background(Palette.ink(0.05))
         .cornerRadius(4)
         .overlay(
             RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                .strokeBorder(Palette.ink(0.1), lineWidth: 1)
         )
     }
 
@@ -2821,16 +2825,16 @@ private struct MultiSelectRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: type.body))
-                    .foregroundStyle(isChecked ? accent : .white.opacity(0.55))
+                    .foregroundStyle(isChecked ? accent : Palette.ink(0.55))
                     .frame(width: type.body + 3)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: type.body, weight: hovering || isChecked ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1 : 0.8))
+                        .foregroundStyle(Palette.ink(hovering || isChecked ? 1 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: type.caption))
-                            .foregroundStyle(.white.opacity(0.58))
+                            .foregroundStyle(Palette.ink(0.58))
                             .lineLimit(2)
                     }
                 }
@@ -2840,7 +2844,7 @@ private struct MultiSelectRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(isChecked ? accent.opacity(0.08) : (hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03)))
+                    .fill(isChecked ? accent.opacity(0.08) : (hovering ? Palette.ink(0.08) : Palette.ink(0.03)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
@@ -2886,11 +2890,11 @@ private struct OptionRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: type.body, weight: hovering ? .semibold : .regular))
-                        .foregroundStyle(.white.opacity(hovering ? 1 : 0.8))
+                        .foregroundStyle(Palette.ink(hovering ? 1 : 0.8))
                     if let description, !description.isEmpty {
                         Text(description)
                             .font(.system(size: type.caption))
-                            .foregroundStyle(.white.opacity(0.58))
+                            .foregroundStyle(Palette.ink(0.58))
                             .lineLimit(2)
                     }
                 }
@@ -2900,7 +2904,7 @@ private struct OptionRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+                    .fill(hovering ? Palette.ink(0.08) : Palette.ink(0.03))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
@@ -3077,7 +3081,7 @@ private struct SessionListView: View {
                         }
                         Text(group.header)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -3170,9 +3174,9 @@ private struct SessionListView: View {
 // MARK: - Plan limits (Anthropic subscription windows)
 
 private enum QuotaStyle {
-    static let normal = Color.white.opacity(0.85)
-    static let warning = Color(red: 1.0, green: 0.7, blue: 0.28)
-    static let critical = Color(red: 1.0, green: 0.4, blue: 0.4)
+    static var normal: Color { Palette.ink(0.85) }
+    static var warning: Color { Palette.current.caution }
+    static var critical: Color { Palette.current.alert }
     /// A weekly window in surplus — budget worth burning before it resets.
     static let surplus = Color(red: 0.42, green: 0.85, blue: 0.58)
 
@@ -3197,7 +3201,7 @@ private enum QuotaStyle {
         switch tone {
         case .ahead: return warning
         case .behind: return surplus
-        case .neutral: return .white.opacity(0.4)
+        case .neutral: return Palette.ink(0.4)
         }
     }
 
@@ -3412,10 +3416,10 @@ struct QuotaChip: View {
             // Which window this is: 5h / week / model name.
             Text(Self.label(for: limit, l10n: l10n))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(Palette.ink(0.5))
                 .lineLimit(1)
             ZStack {
-                Circle().stroke(.white.opacity(0.18), lineWidth: 2)
+                Circle().stroke(Palette.ink(0.18), lineWidth: 2)
                 Circle()
                     .trim(from: 0, to: min(limit.percent / 100, 1))
                     .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -3643,15 +3647,15 @@ private struct QuotaFooterLine: View {
         let color = QuotaStyle.color(UsageFooterText.level(limit))
         return HStack(spacing: 5) {
             Text(UsageFooterText.windowLabel(limit, l10n: l10n))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(Palette.ink(0.6))
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.14))
+                Capsule().fill(Palette.ink(0.14))
                 Capsule().fill(color)
                     .frame(width: Self.barWidth * min(limit.percent / 100, 1))
                 // Even-pace tick: where usage would be if spread evenly.
                 if let elapsed = limit.elapsedFraction(now: now) {
                     Rectangle()
-                        .fill(.white.opacity(0.6))
+                        .fill(Palette.ink(0.6))
                         .frame(width: 1, height: 8)
                         .offset(x: Self.barWidth * elapsed - 0.5)
                 }
@@ -3664,7 +3668,7 @@ private struct QuotaFooterLine: View {
                let left = ClaudeQuotaFormat.countdown(until: resetsAt, now: now) {
                 Text(left)
                     .font(.system(size: 9.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(Palette.ink(0.5))
             }
         }
         .fixedSize()
@@ -3693,7 +3697,7 @@ private struct QuotaFooterMessage: View {
             Spacer(minLength: 0)
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.55))
+        .foregroundStyle(Palette.ink(0.55))
         .padding(.horizontal, 14)
         .padding(.top, 5)
         .padding(.bottom, 8)
@@ -3740,7 +3744,7 @@ private struct UsageFooterLine: View {
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
         }
         .font(.system(size: 10, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.6))
+        .foregroundStyle(Palette.ink(0.6))
         .padding(.horizontal, 14)
         .padding(.top, 5)
         .padding(.bottom, 8)
@@ -3756,7 +3760,7 @@ private struct UsageFooterLine: View {
         HStack(spacing: 5) {
             if brand {
                 Text("Claude").fontWeight(.semibold)
-                Text("·").foregroundStyle(.white.opacity(0.5))
+                Text("·").foregroundStyle(Palette.ink(0.5))
                 Text(last5h)
             } else {
                 Text(UsageFooterText.leading(last5h))
@@ -3774,7 +3778,7 @@ private struct UsageSparkline: View {
         HStack(alignment: .bottom, spacing: 1.5) {
             ForEach(Array(buckets.enumerated()), id: \.offset) { _, value in
                 RoundedRectangle(cornerRadius: 0.75)
-                    .fill(.white.opacity(value == 0 ? 0.12 : 0.45))
+                    .fill(Palette.ink(value == 0 ? 0.12 : 0.45))
                     .frame(width: 2.5, height: max(1.5, CGFloat(value) / CGFloat(peak) * 10))
             }
         }
@@ -3998,14 +4002,14 @@ private struct SessionsExpandLink: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Rectangle().fill(.white.opacity(0.15)).frame(height: 1)
+                Rectangle().fill(Palette.ink(0.15)).frame(height: 1)
                 Text("\(count) \(L10n.shared["n_sessions"])")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(hovering ? 0.75 : 0.55))
+                    .foregroundStyle(Palette.ink(hovering ? 0.75 : 0.55))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(hovering ? 0.5 : 0.3))
-                Rectangle().fill(.white.opacity(0.15)).frame(height: 1)
+                    .foregroundStyle(Palette.ink(hovering ? 0.5 : 0.3))
+                Rectangle().fill(Palette.ink(0.15)).frame(height: 1)
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
@@ -4367,10 +4371,10 @@ private struct SessionCard: View {
                 session: session,
                 sessionId: sessionId,
                 projectFontSize: fontSize + 2,
-                projectColor: .white.opacity(0.95),
+                projectColor: Palette.ink(0.95),
                 sessionFontSize: fontSize,
-                sessionColor: .white.opacity(0.76),
-                dividerColor: .white.opacity(0.28)
+                sessionColor: Palette.ink(0.76),
+                dividerColor: Palette.ink(0.28)
             )
             // The line itself fills the gap up to the tags: a Spacer here took
             // a share of the row and truncated a short name beside blank space.
@@ -4378,7 +4382,7 @@ private struct SessionCard: View {
 
             HStack(spacing: 4) {
                 if let remote = session.remoteDisplayName {
-                    SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0), maxWidth: 110)
+                    SessionTag("@\(remote)", color: Palette.current.link, maxWidth: 110)
                         .help("@\(remote)")
                 }
                 if !session.subagents.isEmpty {
@@ -4442,7 +4446,7 @@ private struct SessionCard: View {
                     MorphText(
                         text: detail,
                         font: .system(size: fontSize, design: .monospaced),
-                        color: .white.opacity(0.75),
+                        color: Palette.ink(0.75),
                         streamsRapidly: SessionSnapshot.rapidStreamingSources
                             .contains(session.source)
                     )
@@ -4478,10 +4482,10 @@ private struct SessionCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Palette.ink(0.05))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                                .strokeBorder(Palette.ink(0.10), lineWidth: 1)
                         )
                 )
         }
@@ -4496,7 +4500,7 @@ private struct SessionCard: View {
             if let summary {
                 Text(summary)
                     .font(.system(size: fontSize, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.82))
+                    .foregroundStyle(Palette.ink(0.82))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -4504,10 +4508,10 @@ private struct SessionCard: View {
             if total > 1 {
                 Text("\(position)/\(total)")
                     .font(.system(size: max(9, fontSize - 2), weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.62))
+                    .foregroundStyle(Palette.ink(0.62))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Palette.ink(0.1)))
                     .fixedSize()
             }
         }
@@ -4579,7 +4583,7 @@ private struct SessionCard: View {
                         .foregroundStyle(SessionCardStatus.needsYou.color)
                     Text(question)
                         .font(.system(size: fontSize, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Palette.ink(0.85))
                         .lineLimit(2)
                         .truncationMode(.tail)
                 }
@@ -4627,7 +4631,7 @@ private struct SessionCard: View {
                     .frame(width: 22)
                 Text(session.headline(showProjectName: showProjectName).text)
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.92))
+                    .foregroundStyle(Palette.ink(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: compactProjectWidth, alignment: .leading)
@@ -4674,7 +4678,7 @@ private struct SessionCard: View {
                 if let detail = session.toolDescription, !detail.isEmpty {
                     Text(detail)
                         .font(.system(size: max(10, fontSize - 1), design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(Palette.ink(0.72))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -4709,7 +4713,7 @@ private struct SessionCard: View {
                 if let detail = session.toolDescription, !detail.isEmpty {
                     Text(detail)
                         .font(.system(size: fontSize, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(Palette.ink(0.82))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -4733,7 +4737,7 @@ private struct SessionCard: View {
     private func cardBackground(cornerRadius: CGFloat, tint: Color? = nil) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius)
         return ZStack(alignment: .leading) {
-            shape.fill(hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.05))
+            shape.fill(hovering ? Palette.ink(0.10) : Palette.ink(0.05))
             if let tint {
                 shape.fill(tint)
             }
@@ -4871,10 +4875,10 @@ enum SessionGlyph {
     static let prompt = "›"
     static let reply = "●"
     static let recap = "↻"
-    static let promptColor = Color.white.opacity(0.5)
-    static let replyColor = Color(red: 0.85, green: 0.47, blue: 0.34)
+    static var promptColor: Color { Palette.ink(0.5) }
+    static var replyColor: Color { Palette.current.accent }
     /// Your own words, a step quieter than the agent's.
-    static let promptTextColor = Color.white.opacity(0.62)
+    static var promptTextColor: Color { Palette.ink(0.62) }
     /// The dot is drawn smaller than a letter, but laid out at full size so
     /// it centres on the first line.
     static let replyScale: CGFloat = 0.72
@@ -4915,7 +4919,7 @@ private struct SessionGlyphLine: View {
             case .recap:
                 Text(text)
                     .font(.system(size: fontSize, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(Palette.ink(0.55))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -4958,10 +4962,10 @@ private struct SessionInlineButton: View {
     }
 
     // The approval card's colours (white on either green ≥ 4.5:1).
-    static let primaryFill = Color(red: 0.16, green: 0.50, blue: 0.24)
-    static let primaryHover = Color(red: 0.17, green: 0.53, blue: 0.26)
-    static let destructive = Color(red: 0.92, green: 0.38, blue: 0.38)
-    static let link = Color(red: 0.45, green: 0.72, blue: 1.0)
+    static var primaryFill: Color { Palette.current.allowFill }
+    static var primaryHover: Color { Palette.current.allowFillHover }
+    static var destructive: Color { Palette.current.deny }
+    static var link: Color { Palette.current.link }
     /// A little under the card's 26pt — the row sits inside a list.
     static let minHeight: CGFloat = 24
 
@@ -4991,7 +4995,7 @@ private struct SessionInlineButton: View {
         switch style {
         case .primary:
             text
-                .foregroundStyle(.white.opacity(enabled ? 1 : 0.6))
+                .foregroundStyle(Palette.ink(enabled ? 1 : 0.6))
                 .fixedSize()
                 .padding(.horizontal, 12)
                 .frame(minHeight: Self.minHeight)
@@ -5006,11 +5010,11 @@ private struct SessionInlineButton: View {
                 .overlay(shape.strokeBorder(Self.destructive.opacity(enabled ? (lit ? 0.9 : 0.7) : 0.3), lineWidth: 1))
         case .quiet:
             text
-                .foregroundStyle(.white.opacity(enabled ? 0.85 : 0.5))
+                .foregroundStyle(Palette.ink(enabled ? 0.85 : 0.5))
                 .fixedSize()
                 .padding(.horizontal, 10)
                 .frame(minHeight: Self.minHeight)
-                .background(shape.fill(Color.white.opacity(lit ? 0.14 : 0.08)))
+                .background(shape.fill(Palette.ink(lit ? 0.14 : 0.08)))
         case .link:
             Text(title)
                 .font(.system(size: fontSize - 0.5, weight: .medium))
@@ -5317,12 +5321,12 @@ private struct TerminalBadge: View {
                     if let term = badgeLabel {
                         Text(term)
                             .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(Palette.ink(0.5))
                             .lineLimit(1)
                             .hugWidth(of: term, fontSize: 9.5, upTo: Self.labelMaxWidth)
                     }
-                    multiplexerChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
-                    hostHarnessChip(fg: .white.opacity(0.5), bg: .white.opacity(0.1))
+                    multiplexerChip(fg: Palette.ink(0.5), bg: Palette.ink(0.1))
+                    hostHarnessChip(fg: Palette.ink(0.5), bg: Palette.ink(0.1))
                 }
             }
         }
@@ -5530,14 +5534,14 @@ private func monogramIcon(for source: String, size: CGFloat) -> NSImage {
 
 private struct SessionTag: View {
     let text: String
-    var color: Color = .white.opacity(0.7)
+    var color: Color = Palette.ink(0.7)
     /// Widest the tag gets (host names, model labels); it still hugs a
     /// short text and gives way when the header runs out of room.
     var maxWidth: CGFloat?
 
     static let fontSize: CGFloat = 9.5
 
-    init(_ text: String, color: Color = .white.opacity(0.7), maxWidth: CGFloat? = nil) {
+    init(_ text: String, color: Color = Palette.ink(0.7), maxWidth: CGFloat? = nil) {
         self.text = text
         self.color = color
         self.maxWidth = maxWidth
@@ -5622,9 +5626,9 @@ private struct TypingIndicator: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0),
-                        .init(color: .white.opacity(midOpacity), location: bright ? 0.35 : 0.4),
-                        .init(color: .white.opacity(peakOpacity), location: 0.5),
-                        .init(color: .white.opacity(midOpacity), location: bright ? 0.65 : 0.6),
+                        .init(color: Palette.ink(midOpacity), location: bright ? 0.35 : 0.4),
+                        .init(color: Palette.ink(peakOpacity), location: 0.5),
+                        .init(color: Palette.ink(midOpacity), location: bright ? 0.65 : 0.6),
                         .init(color: .clear, location: 1),
                     ],
                     startPoint: .leading,
@@ -5752,7 +5756,7 @@ private struct SessionRecapRow: View, Equatable {
                 .frame(width: SessionGlyph.columnWidth(fontSize))
             Text(text)
                 .font(.system(size: fontSize, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Palette.ink(0.55))
                 .lineLimit(lineLimit)
                 .truncationMode(.tail)
         }

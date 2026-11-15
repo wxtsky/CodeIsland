@@ -86,12 +86,12 @@ enum SessionCardStatus: Equatable, CaseIterable {
     /// card's near-black fill.
     var color: Color {
         switch self {
-        case .needsYou: return Color(red: 1.0, green: 0.6, blue: 0.2)
-        case .working, .thinking: return Color(red: 0.3, green: 0.85, blue: 0.4)
-        case .done: return .white.opacity(0.62)
-        case .idle: return .white.opacity(0.55)
-        case .stopped: return Color(red: 1.0, green: 0.55, blue: 0.4)
-        case .error: return Color(red: 1.0, green: 0.38, blue: 0.42)
+        case .needsYou: return Palette.current.needsYou
+        case .working, .thinking: return Palette.current.working
+        case .done: return Palette.ink(0.62)
+        case .idle: return Palette.ink(0.55)
+        case .stopped: return Palette.current.stopped
+        case .error: return Palette.current.error
         }
     }
 
@@ -99,8 +99,8 @@ enum SessionCardStatus: Equatable, CaseIterable {
     /// finished sessions doesn't read as a column of alerts.
     var railColor: Color {
         switch self {
-        case .done: return .white.opacity(0.28)
-        case .idle: return .white.opacity(0.16)
+        case .done: return Palette.ink(0.28)
+        case .idle: return Palette.ink(0.16)
         default: return color
         }
     }

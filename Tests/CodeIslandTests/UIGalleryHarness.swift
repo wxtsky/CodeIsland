@@ -14,7 +14,8 @@ import CodeIslandCore
 ///     UI_GALLERY_DIR=/tmp/gallery swift test --filter UIGalleryHarness
 ///
 /// Filters: `UI_GALLERY_ONLY=collapsed,list,approval,question,completion,settings`
-/// and `UI_GALLERY_LANGS=en,zh,de`. Output goes to one folder per group,
+/// and `UI_GALLERY_LANGS=en,zh,de`; `UI_GALLERY_THEME=warm|mono|highContrast`
+/// renders every state in that theme. Output goes to one folder per group,
 /// named `<state>[-<variant>]-<lang>.png`; `index.txt` lists every file with
 /// any overflow found (content running off the bottom of the panel window).
 ///
@@ -40,6 +41,7 @@ final class UIGalleryHarness: XCTestCase {
 
         _ = NSApplication.shared
         let sandbox = DefaultsSandbox(keys: GallerySettings.keys)
+        GallerySettings.theme = env["UI_GALLERY_THEME"].map { IslandTheme(storedValue: $0) } ?? .standard
         XCTAssertGreaterThan(GallerySettings.keys.count, 100, "Settings.swift keys were not found")
         let savedLanguage = L10n.shared.language
         MascotAnimationGate.shared.setPanelVisible(false)
@@ -298,11 +300,15 @@ enum GallerySettings {
     /// Every key the harness sandboxes (and clears before each render).
     static let keys = DefaultsSandbox.allSettingsKeys
 
+    /// The theme every render uses; it survives `reset()`.
+    static var theme = IslandTheme.standard
+
     static func reset() {
         suite.removePersistentDomain(forName: suiteName)
         for key in keys where key != SettingsKey.appLanguage {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        if theme != .standard { UserDefaults.standard.set(theme.rawValue, forKey: SettingsKey.islandTheme) }
     }
 
     /// `suiteOnly` keeps a key out of the standard defaults — the quota
