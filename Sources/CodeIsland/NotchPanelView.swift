@@ -2661,7 +2661,15 @@ private struct QuestionBar: View {
                             }
                         }
                         .padding(.horizontal, 14)
-                        .onAppear { otherFocused = true }
+                        .onAppear {
+                            // Same rule as the card's own field (#297): picking
+                            // "Other" is a click, not typing, so the panel is
+                            // usually not key yet and the field waits for a click.
+                            let panelIsKey = (NSApp.delegate as? AppDelegate)?.panelController?.isPanelKeyWindow ?? false
+                            if NotchCardFocusPolicy.shouldFocusQuestionFieldOnAppear(panelIsKeyWindow: panelIsKey) {
+                                otherFocused = true
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 14)
