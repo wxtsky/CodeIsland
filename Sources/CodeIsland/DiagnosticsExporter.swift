@@ -131,6 +131,7 @@ struct DiagnosticsExporter {
                 "sessionTimeout": UserDefaults.standard.integer(forKey: SettingsKey.sessionTimeout),
                 "maxVisibleSessions": UserDefaults.standard.integer(forKey: SettingsKey.maxVisibleSessions),
                 "mascotSpeed": UserDefaults.standard.integer(forKey: SettingsKey.mascotSpeed),
+                "mascotStyle": UserDefaults.standard.string(forKey: SettingsKey.mascotStyle) ?? SettingsDefaults.mascotStyle,
                 "displayChoice": UserDefaults.standard.string(forKey: SettingsKey.displayChoice) ?? "auto",
             ],
         ]

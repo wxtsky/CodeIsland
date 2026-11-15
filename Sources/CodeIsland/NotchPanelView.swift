@@ -612,6 +612,7 @@ private struct CompactLeftWing: View {
     @AppStorage(SettingsKey.defaultSource) private var settingsDefaultSource = SettingsDefaults.defaultSource
     @AppStorage(SettingsKey.showClaudeQuota) private var showClaudeQuota = SettingsDefaults.showClaudeQuota
     @AppStorage(SettingsKey.claudeQuotaChip) private var claudeQuotaChip = SettingsDefaults.claudeQuotaChip
+    @AppStorage(SettingsKey.mascotStyle) private var mascotStyle = SettingsDefaults.mascotStyle
 
     private var displaySession: SessionSnapshot? {
         let sid = appState.rotatingSessionId ?? appState.activeSessionId ?? appState.sessions.keys.sorted().first
@@ -635,6 +636,15 @@ private struct CompactLeftWing: View {
     }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
     private var liveTool: String? { displaySession?.currentTool }
+    /// The Pixel critter's done / error poses: done while the completion
+    /// glance shows, error while a session whose last turn failed sits idle.
+    /// Classic reads neither, so it doesn't redraw on them.
+    private var displayOutcome: MascotOutcome? {
+        guard MascotStyle(setting: mascotStyle) == .critter else { return nil }
+        if appState.glanceCompletionActive { return .done }
+        if displayStatus == .idle, displaySession?.lastTurnFailed == true { return .error }
+        return nil
+    }
     @State private var shownTool: String?
     @State private var lingerTimer: Timer?
 
@@ -646,7 +656,7 @@ private struct CompactLeftWing: View {
                     SessionGroupingTabs(mode: $groupingMode)
                 }
             } else {
-                MascotView(source: displaySource, status: displayStatus, size: mascotSize)
+                MascotView(source: displaySource, status: displayStatus, size: mascotSize, outcome: displayOutcome)
                     .id(displaySource)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.3), value: displaySource)
