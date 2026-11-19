@@ -17,6 +17,7 @@ import SwiftUI
 /// and labels are moving. `interval` is rounded to a whole number of 20 fps
 /// steps for that. `content` gets the time as seconds since the reference date.
 struct FrameClock<Content: View>: View {
+    @Environment(\.panelContentVisibility) private var visibility
     let interval: TimeInterval
     let content: (TimeInterval) -> Content
 
@@ -26,19 +27,25 @@ struct FrameClock<Content: View>: View {
     }
 
     var body: some View {
-        FrameClockFace(beat: FrameTicker.shared.beat(every: interval), content: content)
+        FrameClockFace(beat: FrameTicker.shared.beat(every: interval), enabled: visibility?.isVisible ?? true, content: content)
     }
 }
 
 private struct FrameClockFace<Content: View>: View {
     let beat: FrameBeat
+    let enabled: Bool
     let content: (TimeInterval) -> Content
+    @State private var heldTime = Date.timeIntervalSinceReferenceDate
 
     var body: some View {
-        content(beat.now)
+        content(enabled ? beat.now : heldTime)
             // The ticker runs while some clock is on screen, and stops with the
             // last one: a still island schedules nothing.
-            .task {
+            .task(id: enabled) {
+                guard enabled else {
+                    heldTime = Date.timeIntervalSinceReferenceDate
+                    return
+                }
                 beat.attach()
                 defer { beat.detach() }
                 while !Task.isCancelled {
