@@ -193,6 +193,72 @@ final class FrameClockTests: XCTestCase {
         XCTAssertEqual(MascotMotion.glowPulse(1), 1, accuracy: 1e-9)
     }
 
+    func testHiddenClocksHoldStillWhileAnotherClockKeepsTicking() {
+        final class Seen { var hidden = 0; var visible = 0 }
+        struct Scene: View {
+            let visibility: PanelContentVisibility
+            let seen: Seen
+            var body: some View {
+                HStack {
+                    FrameClock(interval: 0.05) { _ in
+                        let _ = seen.hidden += 1
+                        Text("hidden")
+                    }
+                    .environment(\.panelContentVisibility, visibility)
+                    FrameClock(interval: 0.05) { _ in
+                        let _ = seen.visible += 1
+                        Text("visible")
+                    }
+                }
+            }
+        }
+        let visibility = PanelContentVisibility(isVisible: false), seen = Seen()
+        let host = install(Scene(visibility: visibility, seen: seen), size: CGSize(width: 180, height: 30))
+        settle(host)
+        seen.hidden = 0
+        seen.visible = 0
+        settle(host)
+        XCTAssertEqual(seen.hidden, 0, "a retained hidden clock still observes the shared ticker")
+        XCTAssertGreaterThan(seen.visible, 2)
+
+        visibility.isVisible = true
+        settle(host)
+        XCTAssertGreaterThan(seen.hidden, 2, "the clock did not resume when revealed")
+        visibility.isVisible = false
+        settle(host)
+        seen.hidden = 0
+        settle(host)
+        XCTAssertEqual(seen.hidden, 0)
+    }
+
+    func testSessionListKeepsItsScrollViewAcrossExpansionAndCollapse() throws {
+        let state = AppState()
+        for index in 0..<8 {
+            var session = Self.thinkingSession()
+            session.cwd = "/Users/dev/project-\(index)"
+            state.sessions["session-\(index)"] = session
+        }
+        state.activeSessionId = "session-0"
+        state.refreshDerivedState()
+        state.surface = .collapsed
+        let host = install(panel(state, hasNotch: true), size: CGSize(width: 620, height: 510))
+        func scrollView(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+        }
+        settle(host)
+        let original = try XCTUnwrap(scrollView(in: host), "the collapsed list was discarded")
+        for _ in 0..<2 {
+            withAnimation(NotchAnimation.open) { state.surface = .sessionList }
+            settle(host, seconds: 0.5)
+            XCTAssertTrue(scrollView(in: host) === original, "expanding rebuilt the session list")
+            XCTAssertGreaterThan(original.frame.height, 100, "the scroll viewport collapsed to its intrinsic fallback size")
+            withAnimation(NotchAnimation.close) { state.surface = .collapsed }
+            settle(host, seconds: 0.4)
+            XCTAssertTrue(scrollView(in: host) === original, "collapsing discarded the session list")
+        }
+    }
+
     // MARK: - Helpers
 
     private static func thinkingSession() -> SessionSnapshot {

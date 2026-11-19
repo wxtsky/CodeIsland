@@ -196,12 +196,16 @@ struct NotchPanelView: View {
         )
     }
 
+    private var expandedPanelWidth: CGFloat {
+        min(max(effectiveNotchW + 200, 580), maxPanelWidth)
+    }
+
     /// Total panel width — adapts based on state and screen geometry
     private var panelWidth: CGFloat {
         let nw = effectiveNotchW
         if showIdleIndicator { return idleHovered ? nw + compactWingWidth * 2 + 80 : nw + compactWingWidth * 2 }
         if !isActive { return hasNotch ? nw - 20 : nw }
-        if shouldShowExpanded { return min(max(nw + 200, 580), maxPanelWidth) }
+        if shouldShowExpanded { return expandedPanelWidth }
         return collapsedBarWidth + quotaReserve.extraWidth + rightWingReserve
     }
 
@@ -250,6 +254,37 @@ struct NotchPanelView: View {
             hasNotch: hasNotch,
             spareWidth: maxPanelWidth - collapsedBarWidth
         )
+    }
+
+    /// Keep the list's view graph and text measurements across hover cycles.
+    /// Only its revealed height animates; its internal clocks pause collapsed.
+    private var retainedSessionList: some View {
+        CollapsiblePanelContent(expanded: appState.surface == .sessionList, width: expandedPanelWidth) {
+            Line()
+                .stroke(.white.opacity(0.15), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
+                .frame(height: 0.5)
+                .padding(.horizontal, 12)
+
+            VStack(spacing: 0) {
+                // The pending removal follows the cards that are still removable.
+                let pending = appState.pendingIdleSessionRemoval
+                if let pending {
+                    IdleSessionRemovalBanner(
+                        count: pending.cardCount,
+                        onCancel: appState.cancelIdleSessionRemoval,
+                        onRemove: appState.confirmIdleSessionRemoval
+                    )
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { removalBannerHeight = $0 }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                SessionListView(
+                    appState: appState,
+                    onlySessionId: nil,
+                    reservedHeight: pending == nil ? 0 : removalBannerHeight
+                )
+            }
+            .animation(reduceMotion ? nil : NotchAnimation.micro, value: appState.pendingIdleSessionRemoval != nil)
+        }
     }
 
     var body: some View {
@@ -308,8 +343,14 @@ struct NotchPanelView: View {
                         .frame(height: notchHeight)
                 }
 
-                // Below-notch expanded content
-                if shouldShowExpanded {
+                // Retain rows across list/collapsed transitions; request cards
+                // and the completion surface keep their existing lifecycle.
+                if showBar && (appState.surface == .collapsed || appState.surface == .sessionList) {
+                    retainedSessionList
+                }
+
+                // Request and completion cards are mounted when addressed.
+                if shouldShowExpanded && appState.surface != .sessionList {
                     Line()
                         .stroke(.white.opacity(0.15), style: StrokeStyle(lineWidth: 0.5, dash: [4, 3]))
                         .frame(height: 0.5)
@@ -389,30 +430,7 @@ struct NotchPanelView: View {
                     case .completionCard:
                         SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .sessionList:
-                        VStack(spacing: 0) {
-                            // Only what is still removable as it was when the
-                            // button was clicked: the count follows, and the
-                            // banner goes once nothing is left to remove.
-                            let pending = appState.pendingIdleSessionRemoval
-                            if let pending {
-                                IdleSessionRemovalBanner(
-                                    count: pending.cardCount,
-                                    onCancel: appState.cancelIdleSessionRemoval,
-                                    onRemove: appState.confirmIdleSessionRemoval
-                                )
-                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { removalBannerHeight = $0 }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            SessionListView(
-                                appState: appState,
-                                onlySessionId: nil,
-                                reservedHeight: pending == nil ? 0 : removalBannerHeight
-                            )
-                        }
-                        .animation(reduceMotion ? nil : NotchAnimation.micro, value: appState.pendingIdleSessionRemoval != nil)
-                        .transition(.blurFade.combined(with: .move(edge: .top)))
-                    case .collapsed:
+                    case .sessionList, .collapsed:
                         EmptyView()
                     }
                 }
@@ -587,8 +605,7 @@ struct NotchPanelView: View {
         // clamped to the screen.
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardSpace.recordWindowHeight($0) }
         .environment(cardSpace)
-        // The expanded header's grouping tabs: the physical notch, not the
-        // widened island, is what they must stay clear of.
+        // The expanded header's grouping tabs stay clear of the physical notch.
         .environment(\.sessionGroupingTabsRoom, SessionGroupingTabsLayout.room(
             panelWidth: panelWidth, notchWidth: notchW, hasNotch: hasNotch
         ))
@@ -3066,7 +3083,7 @@ private struct SessionListView: View {
         let markedForRemoval = onlySessionId == nil
             ? appState.pendingIdleSessionRemoval?.sessionIDs ?? []
             : []
-        let content = VStack(spacing: density == .compact ? CompactSessionRowMetrics.spacing : 6) {
+        let content = LazyVStack(spacing: density == .compact ? CompactSessionRowMetrics.spacing : 6) {
             ForEach(groups, id: \.header) { group in
                 if !group.header.isEmpty {
                     HStack(spacing: 6) {
@@ -3784,62 +3801,69 @@ private struct UsageSparkline: View {
     }
 }
 
-/// Thin overlay scrollbar via NSScrollView — ignores system "show scrollbar" preference.
-private struct ThinScrollView<Content: View>: NSViewRepresentable {
+/// Keep the cards in the panel's SwiftUI graph. A second NSHostingView
+/// document rebuilt its layout during the outer panel's animated layout.
+private struct ThinScrollView<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
 
-    /// The height cap, kept so it can follow `maxHeight` (the session list
-    /// gives up room to the remove-idle banner while it is up).
-    final class Coordinator {
-        var maxHeightConstraint: NSLayoutConstraint?
+    var body: some View {
+        ScrollView(.vertical) {
+            content.background(OverlayScrollerStyle())
+        }
+        .frame(maxHeight: maxHeight)
     }
+}
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+/// Preserve the thin overlay scrollbar even when the system prefers legacy
+/// scrollers. This view configures the enclosing native scroll view only;
+/// the cards and their observation stay in the existing SwiftUI hierarchy.
+private struct OverlayScrollerStyle: NSViewRepresentable {
+    final class Probe: NSView {
+        private weak var configuredScrollView: NSScrollView?
+        private var styleObservation: NSKeyValueObservation?
+        private var applyingStyle = false
 
-    /// AppKit puts the system's preferred style back (legacy with a mouse
-    /// attached or "Show scroll bars: Always") on its own schedule; a legacy
-    /// scroller took 13pt off the session list's width until the next update.
-    private final class OverlayScrollView: NSScrollView {
-        override var scrollerStyle: NSScroller.Style {
-            get { super.scrollerStyle }
-            set { super.scrollerStyle = .overlay }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            configure()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            configure()
+        }
+
+        func configure() {
+            guard let scroll = enclosingScrollView else { return }
+            if configuredScrollView !== scroll {
+                configuredScrollView = scroll
+                styleObservation = scroll.observe(\.scrollerStyle, options: [.new]) { [weak self] scroll, _ in
+                    // NSScrollView mutations, including the system's preferred
+                    // style changes, run on the main thread.
+                    MainActor.assumeIsolated {
+                        self?.applyStyle(to: scroll)
+                    }
+                }
+            }
+            applyStyle(to: scroll)
+            scroll.verticalScroller?.controlSize = .mini
+            scroll.scrollerKnobStyle = .light
+        }
+
+        private func applyStyle(to scroll: NSScrollView) {
+            guard !applyingStyle, scroll.scrollerStyle != .overlay else { return }
+            applyingStyle = true
+            defer { applyingStyle = false }
+            scroll.scrollerStyle = .overlay
         }
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = OverlayScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.verticalScroller?.controlSize = .mini
-        scrollView.drawsBackground = false
-        scrollView.scrollerKnobStyle = .light
+    func makeNSView(context: Context) -> Probe { Probe() }
 
-        let hosting = NSHostingView(rootView: content)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = hosting
-
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        let maxHeightConstraint = scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight)
-        context.coordinator.maxHeightConstraint = maxHeightConstraint
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            maxHeightConstraint,
-        ])
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        if let hosting = scrollView.documentView as? NSHostingView<Content> {
-            hosting.rootView = content
-        }
-        if let constraint = context.coordinator.maxHeightConstraint, constraint.constant != maxHeight {
-            constraint.constant = maxHeight
-        }
-        scrollView.scrollerStyle = .overlay
-        scrollView.verticalScroller?.controlSize = .mini
+    func updateNSView(_ view: Probe, context: Context) {
+        view.configure()
+        DispatchQueue.main.async { [weak view] in view?.configure() }
     }
 }
 
@@ -4036,11 +4060,23 @@ enum JumpAnimationHelper {
 
     @MainActor
     static func runShake(offset: Binding<CGFloat>) async {
+        defer {
+            if Task.isCancelled {
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { offset.wrappedValue = 0 }
+            }
+        }
         for value in shakeSequence {
+            guard !Task.isCancelled else { return }
             withAnimation(.easeInOut(duration: 0.035)) {
                 offset.wrappedValue = CGFloat(value)
             }
-            try? await Task.sleep(nanoseconds: shakeStepDuration)
+            do {
+                try await Task.sleep(nanoseconds: shakeStepDuration)
+            } catch {
+                return
+            }
         }
     }
 }
@@ -4268,6 +4304,19 @@ private struct SessionCard: View {
         .contentShape(Rectangle())
         .onTapGesture { handleSessionClick() }
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .onPanelContentHidden {
+            if let task = jumpValidationTask {
+                task.cancel()
+                jumpValidationTask = nil
+            }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                if failureShakeOffset != 0 { failureShakeOffset = 0 }
+                if hovering { hovering = false }
+                if showApprovalDetails { showApprovalDetails = false }
+            }
+        }
         .onDisappear {
             jumpValidationTask?.cancel()
             jumpValidationTask = nil
@@ -4277,10 +4326,13 @@ private struct SessionCard: View {
     // MARK: Comfortable card
 
     private var comfortableBody: some View {
-        HStack(alignment: .top, spacing: 10) {
+        let column = isCompletion
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
+            : AnyLayout(NaturalHeightColumn(spacing: 5))
+        return HStack(alignment: .top, spacing: 10) {
             mascotColumn
 
-            VStack(alignment: .leading, spacing: 5) {
+            column {
                 comfortableHeader
 
                 // Inline approval controls (when user keeps panel in session list)

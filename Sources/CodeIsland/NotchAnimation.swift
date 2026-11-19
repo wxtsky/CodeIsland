@@ -58,6 +58,7 @@ struct MorphText: View {
     var lineLimit: Int? = 1
     /// True only for sources in `SessionSnapshot.rapidStreamingSources`.
     var streamsRapidly: Bool = false
+    @Environment(\.panelContentVisibility) private var visibility
 
     @State private var displayed: String
     @State private var blur: CGFloat = 0
@@ -94,6 +95,10 @@ struct MorphText: View {
             .blur(radius: blur * 4)
             .opacity(1 - blur * 0.15)
             .compositingGroup()
+            .onPanelContentHidden {
+                generation += 1
+                displayImmediately(text)
+            }
             .onChange(of: text) { _, newText in
                 guard newText != displayed else { return }
                 let now = ProcessInfo.processInfo.systemUptime
@@ -102,6 +107,11 @@ struct MorphText: View {
                 lastChangeAt = now
                 generation += 1
                 let gen = generation
+
+                if visibility?.isVisible == false {
+                    displayImmediately(newText)
+                    return
+                }
 
                 if streaming {
                     // Keep the label sharp while content is still arriving.
@@ -120,5 +130,14 @@ struct MorphText: View {
                     withAnimation(.easeOut(duration: 0.15)) { blur = 0 }
                 }
             }
+    }
+
+    private func displayImmediately(_ text: String) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            displayed = text
+            blur = 0
+        }
     }
 }
