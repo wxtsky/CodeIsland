@@ -123,6 +123,39 @@ final class CLIProcessResolverTests: XCTestCase {
         }
     }
 
+    private func chatGPTHelper(_ arguments: [String], executable: String = "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/158.0.8127.37/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)") -> ProcessAncestor {
+        ProcessAncestor(pid: 820, executablePath: executable, arguments: [executable] + arguments, bundleIdentifier: "com.openai.codex")
+    }
+    private let nodeServiceArguments = ["--type=utility", "--utility-sub-type=node.mojom.NodeService", "--lang=en-US"]
+
+    /// ChatGPT 26.1117 starts the app-server from an Electron Node-service
+    /// utility helper, not the main executable; it is still Desktop's.
+    func testAppServerStartedByChatGPTNodeServiceHelperIsDesktop() {
+        let chain = [bundledCodex(desktopArguments), chatGPTHelper(nodeServiceArguments), chatGPT]
+        XCTAssertEqual(CLIProcessResolver.codexDesktopTermBundle(ancestry: chain), "com.openai.codex")
+        XCTAssertEqual(
+            CLIProcessResolver.codexDesktopTermBundle(ancestry: [bundledCodex(desktopArguments), chatGPTHelper(nodeServiceArguments)]),
+            "com.openai.codex"
+        )
+    }
+
+    /// Only the Node-service helper hosts the app-server: other helpers, or a
+    /// helper-like path outside Contents/Frameworks, are not Desktop.
+    func testOtherChatGPTHelpersAreNotDesktopHost() {
+        let cases: [(String, ProcessAncestor)] = [
+            ("renderer helper", chatGPTHelper(["--type=renderer"])),
+            ("GPU helper", chatGPTHelper(["--type=gpu-process"])),
+            ("network utility", chatGPTHelper(["--type=utility", "--utility-sub-type=network.mojom.NetworkService"])),
+            ("helper outside Frameworks", chatGPTHelper(
+                nodeServiceArguments,
+                executable: "/Applications/ChatGPT.app/Contents/Resources/Helpers/Fake.app/Contents/MacOS/Fake"
+            )),
+        ]
+        for (name, parent) in cases {
+            XCTAssertNil(CLIProcessResolver.codexDesktopTermBundle(ancestry: [bundledCodex(desktopArguments), parent, chatGPT]), name)
+        }
+    }
+
     func testAppServerLaunchedByBundledToolIsNotDesktopHost() {
         let broker = ProcessAncestor(
             pid: 850,
