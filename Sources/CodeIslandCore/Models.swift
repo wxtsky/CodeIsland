@@ -264,7 +264,7 @@ public enum CLIProcessResolver {
     /// and its direct parent must be the app itself; `exec codex` in ChatGPT's
     /// own terminal also leaves ChatGPT as the parent.
     /// Bundled tool hosts share that outer bundle ID, so the parent must also
-    /// be an executable in the host app's own `Contents/MacOS` directory.
+    /// be the app itself (see ``isCodexDesktopHost(_:appPath:)``).
     public static func codexDesktopTermBundle(ancestry: [ProcessAncestor]) -> String? {
         guard let codexIndex = ancestry.firstIndex(where: {
             sourceMatchesExecutablePath($0.executablePath ?? "", source: "codex")
@@ -273,11 +273,31 @@ public enum CLIProcessResolver {
               ancestry[codexIndex + 1].bundleIdentifier == "com.openai.codex",
               let parentPath = ancestry[codexIndex + 1].executablePath,
               let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath),
-              URL(fileURLWithPath: parentPath).standardizedFileURL.deletingLastPathComponent().path
-                == URL(fileURLWithPath: appPath).standardizedFileURL.appendingPathComponent("Contents/MacOS").path else {
+              isCodexDesktopHost(ancestry[codexIndex + 1], appPath: appPath) else {
             return nil
         }
         return "com.openai.codex"
+    }
+
+    /// Whether the app-server's parent is ChatGPT itself rather than a tool it
+    /// bundles (`Contents/Resources/cua_node/bin/node_repl`). Older builds start
+    /// the app-server from the main executable in `Contents/MacOS`; newer ones
+    /// (ChatGPT 26.1117) start it from an Electron Node-service utility process,
+    /// `Contents/Frameworks/Codex Framework.framework/…/Helpers/Codex (…).app/
+    /// Contents/MacOS/Codex (…) --type=utility --utility-sub-type=node.mojom.NodeService`.
+    static func isCodexDesktopHost(_ parent: ProcessAncestor, appPath: String) -> Bool {
+        guard let parentPath = parent.executablePath else { return false }
+        let parentDirectory = URL(fileURLWithPath: parentPath).standardizedFileURL.deletingLastPathComponent().path
+        let app = URL(fileURLWithPath: appPath).standardizedFileURL
+        if parentDirectory == app.appendingPathComponent("Contents/MacOS").path {
+            return true
+        }
+        let frameworks = app.appendingPathComponent("Contents/Frameworks").path + "/"
+        return parentDirectory.hasPrefix(frameworks)
+            && parentDirectory.contains("/Helpers/")
+            && parentDirectory.hasSuffix(".app/Contents/MacOS")
+            && parent.arguments.contains("--type=utility")
+            && parent.arguments.contains("--utility-sub-type=node.mojom.NodeService")
     }
 
     /// Desktop runs `codex [-c key=value]… app-server …`. Anything else ahead
