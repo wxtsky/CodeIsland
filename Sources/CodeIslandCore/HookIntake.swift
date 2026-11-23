@@ -678,6 +678,11 @@ public struct HookIntake {
         guard waitsForAnswer, !response.isEmpty else { return nil }
         switch answerFormat {
         case .verbatim:
+            // Qoder IDE reads a flat PermissionRequest response. Its hooks
+            // share a source tag with New Qoder, which reads the CLI format.
+            if isPermission, source == "qoder", payload["_term_bundle"] as? String == "com.qoder.ide" {
+                return Self.qoderIDEPermissionResponse(response)
+            }
             return response
         case .geminiDecision:
             if let jsonObj = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
@@ -697,6 +702,23 @@ public struct HookIntake {
             }
             return response
         }
+    }
+
+    private static func qoderIDEPermissionResponse(_ response: Data) -> Data {
+        guard let json = try? JSONSerialization.jsonObject(with: response) as? [String: Any],
+              let output = json["hookSpecificOutput"] as? [String: Any],
+              let decision = output["decision"] as? [String: Any],
+              let behavior = decision["behavior"] as? String,
+              behavior == "allow" || behavior == "deny" else { return response }
+
+        var ideOutput: [String: Any] = ["hookEventName": "PermissionRequest", "permissionDecision": behavior]
+        if behavior == "allow", let input = decision["updatedInput"] as? [String: Any] {
+            ideOutput["updatedInput"] = input
+        }
+        if let reason = decision["message"] as? String {
+            ideOutput["permissionDecisionReason"] = reason
+        }
+        return (try? JSONSerialization.data(withJSONObject: ["hookSpecificOutput": ideOutput])) ?? response
     }
 
     // MARK: - Helpers
