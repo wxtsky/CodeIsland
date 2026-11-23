@@ -2,6 +2,9 @@ import Foundation
 import AppKit
 import SwiftUI
 import CodeIslandCore
+import OSLog
+
+private let codexAppServerLog = Logger(subsystem: "com.codeisland", category: "CodexDesktopQuestions")
 
 enum CodexAppServerExitStrategy: Equatable {
     case reconnectPreservingSessions
@@ -75,14 +78,35 @@ extension AppState {
 
     private func startCodexAppServerClientIfPossible() {
         guard codexAppServerClient == nil else { return }
-        guard let executable = Self.codexAppServerExecutableURL() else {
+        let daemonPath = Self.codexDesktopDaemonSocketPath(
+            environment: ProcessInfo.processInfo.environment, codexHome: ConfigInstaller.codexHome()
+        )
+        let executable = Self.codexAppServerExecutableURL()
+        guard daemonPath != nil || executable != nil else {
             scheduleCodexAppServerReconnect()
             return
         }
+        do {
+            try connectCodexAppServer(executable: executable, daemonPath: daemonPath)
+        } catch {
+            scheduleCodexAppServerReconnect()
+        }
+    }
 
-        let client = CodexAppServerClient(executableURL: executable)
-        client.onMessage = { [weak self] message in
-            Task { @MainActor in self?.handleCodexAppServerMessage(message) }
+    private func connectCodexAppServer(executable: URL?, daemonPath: String?) throws {
+        let client = CodexAppServerClient(
+            executableURL: executable ?? URL(fileURLWithPath: CodexAppServerClient.defaultExecutablePath),
+            daemonSocketPath: daemonPath
+        )
+        client.onMessage = { [weak self, weak client] message in
+            // The client's default callback queue is the main queue. Dispatch
+            // socket messages in order, including a pending request replay.
+            MainActor.assumeIsolated {
+                guard let self, let client, self.codexAppServerClient === client else { return }
+                if self.codexDesktopQuestionSubscriptions?.admits(message) != false {
+                    self.handleCodexAppServerMessage(message)
+                }
+            }
         }
         client.onExit = { [weak self, weak client] _ in
             Task { @MainActor in
@@ -95,13 +119,22 @@ extension AppState {
         do {
             try client.start()
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-            try client.initializeHandshake(clientName: "CodeIsland", clientVersion: version)
+            let initializeId = try client.initializeHandshake(
+                clientName: "CodeIsland", clientVersion: version, experimentalAPI: daemonPath != nil
+            )
+            if daemonPath != nil {
+                codexDesktopQuestionSubscriptions = CodexDesktopQuestionSubscriptions(client: client, initializeId: initializeId)
+            }
         } catch {
             client.stop()
-            scheduleCodexAppServerReconnect()
-            return
+            throw error
         }
         codexAppServerClient = client
+    }
+
+    nonisolated static func codexDesktopDaemonSocketPath(environment: [String: String], codexHome: String) -> String? {
+        guard environment["CODEX_APP_SERVER_USE_LOCAL_DAEMON"] == "1" else { return nil }
+        return URL(fileURLWithPath: codexHome).appendingPathComponent("app-server-control/app-server-control.sock").path
     }
 
     nonisolated static func codexAppServerExitStrategy(
@@ -115,6 +148,7 @@ extension AppState {
 
     private func handleCodexAppServerExit() {
         codexAppServerClient = nil
+        codexDesktopQuestionSubscriptions = nil
         let hostRunning = NSWorkspace.shared.runningApplications.contains {
             $0.bundleIdentifier == AppState.codexAppBundleId
         }
@@ -220,6 +254,7 @@ extension AppState {
         codexAppServerReconnectTask = nil
         let client = codexAppServerClient
         codexAppServerClient = nil
+        codexDesktopQuestionSubscriptions = nil
         client?.stop()
         removeCodexAppServerSessions()
     }
@@ -273,6 +308,9 @@ extension AppState {
     private func applyCodexRequestUserInput(params: [String: AnyCodableLike], requestId: CodexRequestID) {
         guard let threadId = params["threadId"]?.asString else { return }
         let sessionId = AppState.codexAppSessionPrefix + threadId
+        guard !questionQueue.contains(where: {
+            $0.event.sessionId == sessionId && $0.codexRequestId == requestId
+        }) else { return }
 
         guard case .array(let rawQuestions)? = params["questions"], !rawQuestions.isEmpty else { return }
 
@@ -339,7 +377,12 @@ extension AppState {
         let resolution = QuestionResolution.codexAppServer { [weak client] answersByKey in
             guard let client else { return }
             let result = AppState.codexRequestUserInputResult(answersByKey: answersByKey)
-            try? client.sendResponse(id: requestId, result: result)
+            do {
+                try client.sendResponse(id: requestId, result: result)
+                codexAppServerLog.info(" Submitted a response on the Codex Desktop connection")
+            } catch {
+                codexAppServerLog.error(" Could not send the selected answer to Codex Desktop")
+            }
         }
 
         let askState = AskUserQuestionState(items: askItems, answers: [:])
@@ -348,7 +391,8 @@ extension AppState {
             question: askItems[0].payload,
             resolution: resolution,
             isFromPermission: false,
-            askUserQuestionState: askState
+            askUserQuestionState: askState,
+            codexRequestId: requestId
         )
         questionQueue.append(request)
         // First of a burst, as in `handleQuestion`.
@@ -375,12 +419,19 @@ extension AppState {
     /// matching queued question WITHOUT replying (the server already moved on).
     private func applyCodexServerRequestResolvedNotification(params: [String: AnyCodableLike]) {
         guard let threadId = params["threadId"]?.asString else { return }
+        let requestId: CodexRequestID
+        switch params["requestId"] {
+        case .int(let value): requestId = .int(value)
+        case .string(let value): requestId = .string(value)
+        default: return
+        }
         let sessionId = AppState.codexAppSessionPrefix + threadId
         let before = questionQueue.count
-        questionQueue.removeAll { $0.isCodexAppServer && $0.event.sessionId == sessionId }
+        questionQueue.removeAll { $0.event.sessionId == sessionId && $0.codexRequestId == requestId }
         guard questionQueue.count != before else { return }
 
-        if sessions[sessionId]?.status == .waitingQuestion {
+        if sessions[sessionId]?.status == .waitingQuestion,
+           !questionQueue.contains(where: { $0.event.sessionId == sessionId }) {
             sessions[sessionId]?.status = .processing
         }
         showNextPending()

@@ -227,6 +227,8 @@ Codex won't run a hook it hasn't been shown. After installing, Codex prints `1 h
 
 Codex Auto Review stays with Codex. When a turn runs under Auto Review, CodeIsland hands its permission requests back to Codex without approving or denying them. It takes the turn's reviewer from the session's local rollout (`turn_context`), so a choice made in the Codex desktop permission menu counts, and falls back to `approvals_reviewer` in `config.toml`. Turns set to human review, and questions, still come to the island.
 
+To answer Plan mode questions from Codex Desktop, use a Desktop build that supports the local app-server daemon. Launch Codex Desktop and CodeIsland with `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` and the same `CODEX_HOME`. Start a new test turn after both apps have restarted so it runs on the shared daemon.
+
 While a Codex turn runs, the collapsed bar shows the agent's latest public output when no tool is active. Hidden reasoning, encrypted content, tool results and internal subagent messages are never displayed.
 
 </details>

@@ -108,6 +108,7 @@ struct QuestionRequest {
     /// The hook connection waiting on the answer (``HookServer``), nil when
     /// none does. When that hook is gone, this request goes, and no other.
     let hookConnectionId: UUID?
+    let codexRequestId: CodexRequestID?
 
     init(
         event: HookEvent,
@@ -115,7 +116,8 @@ struct QuestionRequest {
         resolution: QuestionResolution,
         isFromPermission: Bool = false,
         askUserQuestionState: AskUserQuestionState? = nil,
-        hookConnectionId: UUID? = nil
+        hookConnectionId: UUID? = nil,
+        codexRequestId: CodexRequestID? = nil
     ) {
         self.event = event
         self.question = askUserQuestionState?.items.first?.payload ?? question
@@ -123,6 +125,7 @@ struct QuestionRequest {
         self.isFromPermission = isFromPermission
         self.askUserQuestionState = askUserQuestionState
         self.hookConnectionId = hookConnectionId
+        self.codexRequestId = codexRequestId
     }
 
     /// Back-compat convenience for hook-originated questions.

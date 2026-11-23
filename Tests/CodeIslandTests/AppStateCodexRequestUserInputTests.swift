@@ -150,6 +150,35 @@ final class AppStateCodexRequestUserInputTests: XCTestCase {
         XCTAssertEqual(appState.questionQueue.count, 0)
     }
 
+    func testResolvedRequestOnlyRemovesMatchingNumericIdAndDuplicateDeliveryIsIgnored() throws {
+        let appState = AppState()
+        let questions: [[String: Any]] = [["id": "q1", "question": "Pick", "options": [["label": "A"]]]]
+        let first = makeRequest(threadId: "t-concurrent", questions: questions, id: 0)
+        appState.handleCodexAppServerMessage(first)
+        appState.handleCodexAppServerMessage(first)
+        appState.handleCodexAppServerMessage(makeRequest(threadId: "t-concurrent", questions: questions, id: 1))
+        appState.handleCodexAppServerMessage(makeRequest(threadId: "t-other", questions: questions, id: 0))
+        XCTAssertEqual(appState.questionQueue.count, 3)
+
+        let resolved = try XCTUnwrap(CodexAppServerClient.parseMessage(Data(
+            #"{"method":"serverRequest/resolved","params":{"threadId":"t-concurrent","requestId":0}}"#.utf8
+        )))
+        appState.handleCodexAppServerMessage(resolved)
+        XCTAssertEqual(appState.questionQueue.map(\.codexRequestId), [.int(1), .int(0)])
+        XCTAssertEqual(appState.sessions["codexapp:t-concurrent"]?.status, .waitingQuestion)
+        XCTAssertEqual(appState.sessions["codexapp:t-other"]?.status, .waitingQuestion)
+    }
+
+    func testSharedDaemonUsesOptedInCodexHome() {
+        XCTAssertNil(AppState.codexDesktopDaemonSocketPath(environment: [:], codexHome: "/test/codex"))
+        XCTAssertNil(AppState.codexDesktopDaemonSocketPath(
+            environment: ["CODEX_APP_SERVER_USE_LOCAL_DAEMON": "0"], codexHome: "/test/codex"
+        ))
+        XCTAssertEqual(AppState.codexDesktopDaemonSocketPath(
+            environment: ["CODEX_APP_SERVER_USE_LOCAL_DAEMON": "1"], codexHome: "/test/codex"
+        ), "/test/codex/app-server-control/app-server-control.sock")
+    }
+
     func testReplyResultEncodesAnswersByQuestionId() {
         let result = AppState.codexRequestUserInputResult(answersByKey: ["q1": ["Refactor"]])
         let answers = result["answers"] as? [String: Any]

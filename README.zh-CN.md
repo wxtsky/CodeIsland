@@ -227,6 +227,8 @@ Codex 不会执行没审核过的 hook。安装后启动 Codex，它会提示 `1
 
 Codex 自动审查（Auto Review）仍由 Codex 处理。某一轮使用自动审查时，CodeIsland 会把它的权限请求交还给 Codex，不代替它批准或拒绝。审查方取自本地 rollout 中该轮的 `turn_context`，因此在 Codex 桌面端权限菜单里的选择同样生效；读不到时再看 `config.toml` 里的 `approvals_reviewer`。设为人工审批的轮次和提问仍在刘海里处理。
 
+要从 CodeIsland 回答 Codex 桌面端计划模式的提问，需使用支持本机 app-server 守护进程的桌面版本。用 `CODEX_APP_SERVER_USE_LOCAL_DAEMON=1` 和同一个 `CODEX_HOME` 启动 Codex 桌面端和 CodeIsland。重开两个应用后再发起测试回合，让新回合在共享守护进程上执行。
+
 Codex 回合进行中、且没有工具在运行时，收起状态的刘海会显示 Agent 最新的公开输出。隐藏推理、加密内容、工具结果和内部子 Agent 消息永远不会显示。
 
 </details>

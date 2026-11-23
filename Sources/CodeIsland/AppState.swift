@@ -159,6 +159,8 @@ final class AppState {
     /// Codex Desktop isn't running. See AppState+CodexAppServer.
     @ObservationIgnored
     var codexAppServerClient: CodexAppServerClient?
+    @ObservationIgnored
+    var codexDesktopQuestionSubscriptions: CodexDesktopQuestionSubscriptions?
     /// NSWorkspace launch/terminate observers tracking Codex Desktop.
     @ObservationIgnored
     var codexAppServerObservers: [NSObjectProtocol]?
