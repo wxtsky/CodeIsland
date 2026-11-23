@@ -168,22 +168,23 @@ enum CodexDiscovery {
         )
     }
 
-    /// Upgrade pre-namespace persisted Desktop hook cards without touching raw
-    /// Codex CLI ids. `termBundleId` is the reliable discriminator retained by
-    /// #267-era snapshots.
+    /// Upgrade old Desktop hook cards. Misclassified Aperitif hooks may only
+    /// have Desktop provenance in the matching rollout's session metadata.
     static func canonicalRestoredCodexSessionId(
         sessionId: String,
         source: String,
         providerSessionId: String?,
-        termBundleId: String?
+        termBundleId: String?,
+        transcriptPath: String? = nil
     ) -> String {
-        guard source == "codex", termBundleId == AppState.codexAppBundleId else {
-            return sessionId
-        }
-        if sessionId.hasPrefix(AppState.codexAppSessionPrefix) {
-            return sessionId
-        }
+        guard source == "codex", !sessionId.hasPrefix(AppState.codexAppSessionPrefix) else { return sessionId }
         let rawId = providerSessionId?.isEmpty == false ? providerSessionId! : sessionId
+        if termBundleId == AppState.codexAppBundleId {
+            return AppState.codexAppSessionPrefix + rawId
+        }
+        guard termBundleId == nil || termBundleId == CLIProcessResolver.codexAperitifBundleIdentifier,
+              let transcriptPath,
+              codexTranscriptOrigin(path: transcriptPath, matchingSessionId: rawId) == .desktop else { return sessionId }
         return AppState.codexAppSessionPrefix + rawId
     }
 
@@ -191,11 +192,15 @@ enum CodexDiscovery {
     /// rollouts from CLI rollouts when both exist under `~/.codex/sessions`.
     /// Unknown future shapes remain eligible for the owning process as a
     /// best-effort fallback instead of being dropped.
-    static func codexTranscriptOrigin(path: String) -> CodexTranscriptOrigin {
+    static func codexTranscriptOrigin(path: String, matchingSessionId: String? = nil) -> CodexTranscriptOrigin {
         guard let firstLine = SessionDiscovery.readFirstLine(path: path),
               let data = firstLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let payload = json["payload"] as? [String: Any] else {
+            return .unknown
+        }
+        if let matchingSessionId,
+           json["type"] as? String != "session_meta" || payload["id"] as? String != matchingSessionId {
             return .unknown
         }
 

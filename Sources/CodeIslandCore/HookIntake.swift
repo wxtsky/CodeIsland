@@ -528,10 +528,10 @@ public struct HookIntake {
         if let termBundle = env["__CFBundleIdentifier"], !termBundle.isEmpty {
             json["_term_bundle"] = termBundle
         }
-        // ChatGPT starts Codex Desktop's app-server without __CFBundleIdentifier.
-        // Without a bundle its hooks were keyed as a CLI thread, a second card next
-        // to the `codexapp:` one discovery makes for the same Desktop thread.
-        if Self.nonEmptyString(json["_term_bundle"]) == nil, source == "codex" {
+        // A Desktop hook can inherit no bundle or the Aperitif helper's bundle.
+        // Resolve the app-server's owner so its events use the discovery card key.
+        let termBundle = Self.nonEmptyString(json["_term_bundle"])
+        if source == "codex", termBundle == nil || termBundle == CLIProcessResolver.codexAperitifBundleIdentifier {
             let ancestors = facts.ancestry.map {
                 ProcessAncestor(
                     pid: $0.pid,

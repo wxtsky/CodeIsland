@@ -6,7 +6,7 @@ public enum SessionTitleSource: String, Sendable, Codable {
     case claudeAiTitle
 }
 
-public struct SessionSnapshot: Sendable {
+public struct SessionSnapshot: Equatable, Sendable {
     public static let customCLIConfigsKey = "custom_cli_configs_v1"
 
     public static let supportedSources: Set<String> = [
