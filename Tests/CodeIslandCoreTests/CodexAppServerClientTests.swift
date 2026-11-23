@@ -118,6 +118,44 @@ final class CodexAppServerClientTests: XCTestCase {
         XCTAssertEqual(thread?["preview"]?.asString, "hi")
     }
 
+    func testParseMessageKeepsNumericRequestIdsDistinctFromBooleans() {
+        let data = Data(#"{"method":"test","params":{"first":0,"second":1,"flag":true}}"#.utf8)
+        let params = CodexAppServerClient.parseMessage(data)?.raw["params"]?.asObject
+        XCTAssertEqual(params?["first"], .int(0))
+        XCTAssertEqual(params?["second"], .int(1))
+        XCTAssertEqual(params?["flag"], .bool(true))
+    }
+
+    func testUnixWebSocketUpgradeValidatesStatusAndChallenge() {
+        let key = "dGhlIHNhbXBsZSBub25jZQ=="
+        let header = [
+            "HTTP/1.1 101 Switching Protocols",
+            "connection: keep-alive, Upgrade",
+            "Upgrade: WebSocket",
+            "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+        ].joined(separator: "\r\n")
+        XCTAssertTrue(CodexWebSocketUpgrade.accepts(header, key: key))
+        XCTAssertFalse(CodexWebSocketUpgrade.accepts(header, key: "wrong"))
+        XCTAssertFalse(CodexWebSocketUpgrade.accepts(header.replacingOccurrences(of: "101", with: "200"), key: key))
+        XCTAssertFalse(CodexWebSocketUpgrade.accepts(header.replacingOccurrences(of: "keep-alive, Upgrade", with: "keep-alive"), key: key))
+    }
+
+    func testDaemonConnectionRejectsMissingSocketAndSymlink() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("control.sock")
+        let client = CodexAppServerClient(daemonSocketPath: path.path)
+        XCTAssertThrowsError(try client.start()) {
+            XCTAssertEqual($0 as? CodexAppServerError, .daemonSocketUnavailable)
+        }
+        try FileManager.default.createSymbolicLink(at: path, withDestinationURL: directory)
+        XCTAssertThrowsError(try client.start()) {
+            XCTAssertEqual($0 as? CodexAppServerError, .daemonSocketUnavailable)
+        }
+        XCTAssertFalse(client.isRunning)
+    }
+
     // MARK: - AnyCodableLike
 
     func testAnyCodableLikeRoundTripsPrimitives() {

@@ -378,6 +378,9 @@ let response = recvAll(sock)
 
 // Blocking events: forward response to stdout, in the form the agent reads
 if let stdout = intake.stdout(forAnswer: response) {
+    if stdout != response {
+        bridgeLog.note("formatted hook response: source=\(BridgeLog.field(intake.source ?? "-")) event=\(BridgeLog.field(intake.normalizedEventName))")
+    }
     FileHandle.standardOutput.write(stdout)
 }
 

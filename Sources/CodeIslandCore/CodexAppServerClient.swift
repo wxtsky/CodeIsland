@@ -1,8 +1,11 @@
+import CoreFoundation
 import Foundation
+import Network
+import OSLog
 
 /// A parsed JSON-RPC envelope received from the Codex app-server.
 ///
-/// The Codex transport is newline-delimited JSON; the fields below match
+/// The Codex transport carries JSON; the fields below match
 /// JSON-RPC 2.0 with a tolerant reading of responses (the server omits the
 /// `jsonrpc` marker on successful replies, which is fine for clients).
 public struct CodexJSONRPCMessage: Equatable {
@@ -58,10 +61,8 @@ public enum AnyCodableLike: Equatable {
         switch value {
         case nil: return .null
         case let v as NSNull: _ = v; return .null
-        case let v as Bool: return .bool(v)
-        case let v as Int: return .int(Int64(v))
-        case let v as Int64: return .int(v)
         case let v as NSNumber:
+            if CFGetTypeID(v) == CFBooleanGetTypeID() { return .bool(v.boolValue) }
             if CFNumberIsFloatType(v) { return .double(v.doubleValue) }
             return .int(v.int64Value)
         case let v as Double: return .double(v)
@@ -93,14 +94,14 @@ public enum AnyCodableLike: Equatable {
 public enum CodexAppServerError: Error, Equatable {
     case executableMissing(String)
     case processLaunchFailed(String)
+    case daemonSocketUnavailable
     case notConnected
     case writeFailed(String)
 }
 
-/// Spawns `codex app-server` as a subprocess and speaks newline-delimited
-/// JSON-RPC 2.0 to it. The client is intentionally minimal — framing +
-/// dispatch only — so higher-level notifications can be mapped to vibe-notch
-/// session state wherever the caller chooses.
+/// Speaks JSON-RPC 2.0 to a child app-server over stdio or to the shared
+/// app-server daemon over a Unix WebSocket. Framing stays here and session
+/// routing belongs to the caller.
 ///
 /// Thread safety: `start`, `stop`, `sendRequest`, and `sendNotification` can
 /// be called from any thread; I/O is serialized on an internal dispatch queue.
@@ -111,12 +112,15 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     public let executableURL: URL
     public let arguments: [String]
+    public let daemonSocketPath: String?
     private let callbackQueue: DispatchQueue
     private let ioQueue: DispatchQueue
+    private let log = Logger(subsystem: "com.codeisland", category: "CodexAppServer")
 
     private let lock = NSLock()
     private var process: Process?
     private var stdinHandle: FileHandle?
+    private var connection: NWConnection?
     private var readBuffer: Data = Data()
     private var nextRequestId: Int64 = 1
     private var isStopped: Bool = true
@@ -133,10 +137,12 @@ public final class CodexAppServerClient: @unchecked Sendable {
     public init(
         executableURL: URL = URL(fileURLWithPath: CodexAppServerClient.defaultExecutablePath),
         arguments: [String] = ["app-server", "--listen", "stdio://"],
+        daemonSocketPath: String? = nil,
         callbackQueue: DispatchQueue = .main
     ) {
         self.executableURL = executableURL
         self.arguments = arguments
+        self.daemonSocketPath = daemonSocketPath
         self.callbackQueue = callbackQueue
         self.ioQueue = DispatchQueue(label: "com.codeisland.codex-app-server-io")
     }
@@ -146,12 +152,16 @@ public final class CodexAppServerClient: @unchecked Sendable {
 
     public var isRunning: Bool {
         lock.lock(); defer { lock.unlock() }
-        return process?.isRunning == true
+        return process?.isRunning == true || connection != nil
     }
 
     // MARK: - Lifecycle
 
     public func start() throws {
+        if let daemonSocketPath {
+            try startDaemonConnection(path: daemonSocketPath)
+            return
+        }
         lock.lock()
         if process?.isRunning == true {
             lock.unlock()
@@ -220,14 +230,100 @@ public final class CodexAppServerClient: @unchecked Sendable {
         isStopped = true
         let proc = process
         let stdin = stdinHandle
+        let socket = connection
         process = nil
         stdinHandle = nil
+        connection = nil
         lock.unlock()
 
+        socket?.cancel()
         try? stdin?.close()
         if let proc, proc.isRunning {
             proc.terminate()
         }
+    }
+
+    private func startDaemonConnection(path: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard connection == nil else { return }
+        guard let resolvedPath = Self.trustedDaemonSocket(path: path) else {
+            throw CodexAppServerError.daemonSocketUnavailable
+        }
+
+        let socket = CodexUnixWebSocket.makeConnection(path: resolvedPath)
+        connection = socket
+        isStopped = false
+        socket.stateUpdateHandler = { [weak self, weak socket] state in
+            guard let self, let socket else { return }
+            switch state {
+            case .ready:
+                self.log.info(" Connected to the Codex Desktop daemon")
+                self.receiveDaemonMessage(from: socket)
+            case .failed, .cancelled:
+                self.handleDaemonDisconnect(socket)
+            default:
+                break
+            }
+        }
+        log.info(" Connecting to the Codex Desktop daemon")
+        socket.start(queue: ioQueue)
+        ioQueue.asyncAfter(deadline: .now() + 5) { [weak self, weak socket] in
+            guard let self, let socket, socket.state != .ready else { return }
+            self.handleDaemonDisconnect(socket)
+        }
+    }
+
+    static func trustedDaemonSocket(path: String) -> String? {
+        let controlDirectory = (path as NSString).deletingLastPathComponent
+        guard isPrivateDirectory(controlDirectory) else { return nil }
+        if SocketPath.holder(of: path) == .thisUser { return path }
+
+        // Codex shortens the control socket path on macOS with an alias into
+        // its private per-user temp directory. Connect to the verified target.
+        let daemonDirectory = "/private/tmp/codex-daemon-\(getuid())"
+        guard let alias = SocketPath.lstat(path), alias.st_uid == getuid(), alias.st_mode & S_IFMT == S_IFLNK,
+              let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: path),
+              (destination as NSString).deletingLastPathComponent == daemonDirectory,
+              isPrivateDirectory(daemonDirectory), SocketPath.holder(of: destination) == .thisUser else { return nil }
+        return destination
+    }
+
+    private static func isPrivateDirectory(_ path: String) -> Bool {
+        guard let directory = SocketPath.lstat(path) else { return false }
+        return directory.st_uid == getuid() && directory.st_mode & S_IFMT == S_IFDIR && directory.st_mode & 0o077 == 0
+    }
+
+    private func receiveDaemonMessage(from socket: NWConnection) {
+        socket.receiveMessage { [weak self, weak socket] data, context, _, error in
+            guard let self, let socket else { return }
+            let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition) as? NWProtocolWebSocket.Metadata
+            if error != nil || context == nil || metadata?.opcode == .close {
+                self.handleDaemonDisconnect(socket)
+                return
+            }
+            if metadata?.opcode == .text, let data, let message = Self.parseMessage(data) {
+                let handler = self.onMessage
+                self.callbackQueue.async { handler?(message) }
+            }
+            self.receiveDaemonMessage(from: socket)
+        }
+    }
+
+    private func handleDaemonDisconnect(_ socket: NWConnection) {
+        lock.lock()
+        guard connection === socket else {
+            lock.unlock()
+            return
+        }
+        connection = nil
+        isStopped = true
+        let handler = onExit
+        lock.unlock()
+
+        log.info(" Disconnected from the Codex Desktop daemon")
+        socket.cancel()
+        callbackQueue.async { handler?(1) }
     }
 
     // MARK: - Send
@@ -275,25 +371,35 @@ public final class CodexAppServerClient: @unchecked Sendable {
     /// Send `initialize` with a minimal ClientInfo payload. Codex always expects
     /// this before any other thread / turn calls will work.
     @discardableResult
-    public func initializeHandshake(clientName: String, clientVersion: String) throws -> CodexRequestID {
+    public func initializeHandshake(clientName: String, clientVersion: String, experimentalAPI: Bool = false) throws -> CodexRequestID {
+        let capabilities: Any = experimentalAPI ? ["experimentalApi": true] : NSNull()
         return try sendRequest(method: "initialize", params: [
             "clientInfo": ["name": clientName, "version": clientVersion],
-            "capabilities": NSNull()
+            "capabilities": capabilities
         ])
     }
 
     private func writeEnvelope(_ body: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: body, options: [.fragmentsAllowed])
-        var payload = data
-        payload.append(0x0A)  // newline terminator
 
         lock.lock()
-        guard !isStopped, let handle = stdinHandle else {
-            lock.unlock()
-            throw CodexAppServerError.notConnected
-        }
+        let socket = connection
+        let handle = stdinHandle
         lock.unlock()
 
+        if let socket {
+            let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
+            let context = NWConnection.ContentContext(identifier: "codex-json-rpc", metadata: [metadata])
+            socket.send(content: data, contentContext: context, isComplete: true, completion: .contentProcessed { [weak self, weak socket] error in
+                guard error != nil, let socket else { return }
+                self?.handleDaemonDisconnect(socket)
+            })
+            return
+        }
+
+        guard let handle else { throw CodexAppServerError.notConnected }
+        var payload = data
+        payload.append(0x0A)  // newline terminator
         do {
             try handle.write(contentsOf: payload)
         } catch {

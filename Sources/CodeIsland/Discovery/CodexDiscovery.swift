@@ -199,8 +199,16 @@ enum CodexDiscovery {
             return .unknown
         }
 
-        let originator = (payload["originator"] as? String)?.lowercased() ?? ""
-        let source = (payload["source"] as? String)?.lowercased() ?? ""
+        return codexThreadOrigin(
+            originator: payload["originator"] as? String,
+            source: payload["source"] as? String,
+            isSubagentSource: payload["source"] is [String: Any]
+        )
+    }
+
+    static func codexThreadOrigin(originator: String?, source: String?, isSubagentSource: Bool) -> CodexTranscriptOrigin {
+        let originator = originator?.lowercased() ?? ""
+        let source = source?.lowercased() ?? ""
         if originator.contains("desktop") {
             return .desktop
         }
@@ -211,7 +219,6 @@ enum CodexDiscovery {
         // `codex app-server`, so the rollout belongs to that process like a
         // CLI one.
         let isAppServerSource = source == "vscode" || source == "appserver"
-        let isSubagentSource = payload["source"] is [String: Any]
         if !originator.isEmpty, isAppServerSource || isSubagentSource {
             return .cli
         }
