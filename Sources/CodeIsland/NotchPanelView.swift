@@ -411,7 +411,9 @@ struct NotchPanelView: View {
                             )
                         }
                         .animation(reduceMotion ? nil : NotchAnimation.micro, value: appState.pendingIdleSessionRemoval != nil)
-                        .transition(.blurFade.combined(with: .move(edge: .top)))
+                        // The shell still springs open. Fading the list keeps
+                        // its scroll container out of the blur/move transition.
+                        .transition(.opacity)
                     case .collapsed:
                         EmptyView()
                     }
@@ -3039,6 +3041,9 @@ private struct SessionListView: View {
     var body: some View {
         // Compute once per render — groupedSessions, totalCount, needsScroll
         let groups = groupedSessions
+        // Observe the dictionary once. Each card can then compare its own
+        // snapshot when another session sends a tool or transcript update.
+        let sessions = appState.sessions
         let totalSessionCount = groups.reduce(0) { $0 + $1.ids.count }
         let density = self.density
         let needsScroll = SessionListMetrics.needsScroll(
@@ -3086,7 +3091,7 @@ private struct SessionListView: View {
                 }
 
                 ForEach(group.ids, id: \.self) { sessionId in
-                    if let session = appState.sessions[sessionId] {
+                    if let session = sessions[sessionId] {
                         let marked = markedForRemoval.contains(sessionId)
                         SessionCard(
                             appState: appState,
@@ -3098,6 +3103,7 @@ private struct SessionListView: View {
                             compactStatusWidth: compactColumns.status,
                             markedForRemoval: marked
                         )
+                        .equatable()
                         .opacity(marked ? 0.6 : 1)
                         .accessibilityHint(marked ? Text(L10n.shared["remove_idle_sessions_marked"]) : Text(""))
                     }
@@ -3115,8 +3121,9 @@ private struct SessionListView: View {
             }
         }
         .padding(.vertical, 4)
-        // The same in both branches: inside the scroll view the content still
-        // lays out at its natural height, so switching never flips it back.
+        // Measure at the offered width even when the document view still has
+        // the previous height. The measurement drives the scrollable extent.
+        .fixedSize(horizontal: false, vertical: onlySessionId == nil)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         // Cards needing you sort to the top — but not while the pointer is on
         // the list, where a card moving would put another under the cursor
@@ -3144,8 +3151,12 @@ private struct SessionListView: View {
 
         VStack(spacing: 0) {
             if needsScroll {
-                ThinScrollView(maxHeight: SessionListMetrics.scrollHeight(maxVisibleSessions: maxVisibleSessions) - reservedHeight) {
+                ThinScrollView(
+                    maxHeight: SessionListMetrics.scrollHeight(maxVisibleSessions: maxVisibleSessions) - reservedHeight,
+                    documentHeight: contentHeight
+                ) {
                     content
+                        .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .clipShape(
                     UnevenRoundedRectangle(
@@ -3787,6 +3798,7 @@ private struct UsageSparkline: View {
 /// Thin overlay scrollbar via NSScrollView — ignores system "show scrollbar" preference.
 private struct ThinScrollView<Content: View>: NSViewRepresentable {
     let maxHeight: CGFloat
+    let documentHeight: CGFloat
     @ViewBuilder let content: Content
 
     /// The height cap, kept so it can follow `maxHeight` (the session list
@@ -3800,14 +3812,34 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
     /// AppKit puts the system's preferred style back (legacy with a mouse
     /// attached or "Show scroll bars: Always") on its own schedule; a legacy
     /// scroller took 13pt off the session list's width until the next update.
-    private final class OverlayScrollView: NSScrollView {
+    final class OverlayScrollView: NSScrollView {
+        var documentHeight: CGFloat = 0 {
+            didSet {
+                if oldValue != documentHeight { sizeDocumentView() }
+            }
+        }
+
         override var scrollerStyle: NSScroller.Style {
             get { super.scrollerStyle }
             set { super.scrollerStyle = .overlay }
         }
+
+        override func layout() {
+            super.layout()
+            sizeDocumentView()
+        }
+
+        private func sizeDocumentView() {
+            guard let documentView else { return }
+            let height = documentHeight > 0 ? documentHeight : contentView.bounds.height
+            let size = NSSize(width: contentView.bounds.width, height: height)
+            if documentView.frame.size != size {
+                documentView.setFrameSize(size)
+            }
+        }
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> OverlayScrollView {
         let scrollView = OverlayScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.scrollerStyle = .overlay
@@ -3816,30 +3848,29 @@ private struct ThinScrollView<Content: View>: NSViewRepresentable {
         scrollView.scrollerKnobStyle = .light
 
         let hosting = NSHostingView(rootView: content)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
+        // The clip view fixes the width and SwiftUI reports the height in one
+        // pass. Intrinsic sizing otherwise asks the whole list for its min,
+        // max and ideal size again during live updates and scrolling.
+        hosting.sizingOptions = []
         scrollView.documentView = hosting
+        scrollView.documentHeight = documentHeight
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         let maxHeightConstraint = scrollView.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight)
         context.coordinator.maxHeightConstraint = maxHeightConstraint
-        NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            maxHeightConstraint,
-        ])
+        maxHeightConstraint.isActive = true
 
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_ scrollView: OverlayScrollView, context: Context) {
+        scrollView.documentHeight = documentHeight
         if let hosting = scrollView.documentView as? NSHostingView<Content> {
             hosting.rootView = content
         }
         if let constraint = context.coordinator.maxHeightConstraint, constraint.constant != maxHeight {
             constraint.constant = maxHeight
         }
-        scrollView.scrollerStyle = .overlay
-        scrollView.verticalScroller?.controlSize = .mini
     }
 }
 
@@ -4183,7 +4214,7 @@ func approvalInlineSummary(tool: String, toolDescription: String?, toolInput: [S
     return nil
 }
 
-private struct SessionCard: View {
+private struct SessionCard: View, Equatable {
     var appState: AppState
     let sessionId: String
     let session: SessionSnapshot
@@ -4232,6 +4263,13 @@ private struct SessionCard: View {
     private var isCompactRow: Bool { density == .compact && !isCompletion }
     private var chipFontSize: CGFloat { SessionStatusChip.fontSize(content: fontSize) }
     private var buttonFontSize: CGFloat { max(10, fontSize) }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.appState === rhs.appState && lhs.sessionId == rhs.sessionId && lhs.session == rhs.session
+            && lhs.isCompletion == rhs.isCompletion && lhs.density == rhs.density
+            && lhs.compactProjectWidth == rhs.compactProjectWidth && lhs.compactStatusWidth == rhs.compactStatusWidth
+            && lhs.markedForRemoval == rhs.markedForRemoval
+    }
 
     /// What the card's live row shows: the running tool, or that the model is
     /// thinking. A card waiting on you shows its request instead, so only a

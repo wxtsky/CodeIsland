@@ -432,6 +432,50 @@ final class SessionListScrollWidthTests: XCTestCase {
         XCTAssertEqual(scroll.scrollerStyle, .overlay, "the system's style came back")
     }
 
+    func testScrollingDocumentGrowsWithoutResettingScrollPosition() async throws {
+        let sandbox = DefaultsSandbox(keys: DefaultsSandbox.allSettingsKeys)
+        MascotAnimationGate.shared.setPanelVisible(false)
+        defer {
+            MascotAnimationGate.shared.setPanelVisible(true)
+            sandbox.restore()
+        }
+        let demo = try await GalleryDemo.list(count: 8, lang: .en, quota: false)
+        defer { demo.release() }
+        let panel = try PanelHost(demo.state, notchHeight: 32)
+        defer { panel.close() }
+        panel.settle()
+
+        let scroll = try XCTUnwrap(Self.scrollView(in: panel.host))
+        let document = try XCTUnwrap(scroll.documentView)
+        let oldHeight = document.frame.height
+        XCTAssertGreaterThan(oldHeight, scroll.contentView.bounds.height)
+        let clip = scroll.contentView
+        clip.scroll(to: CGPoint(x: 0, y: (oldHeight - clip.bounds.height) / 2))
+        scroll.reflectScrolledClipView(clip)
+        let offset = clip.bounds.origin.y
+        XCTAssertGreaterThan(offset, 0)
+
+        var newSession = SessionSnapshot(startTime: .distantPast)
+        newSession.source = "codex"
+        newSession.cwd = "/tmp/new-session"
+        newSession.lastActivity = .distantPast
+        demo.state.sessions["new-session"] = newSession
+        panel.settle()
+
+        XCTAssertTrue(Self.scrollView(in: panel.host) === scroll)
+        XCTAssertGreaterThan(document.frame.height, oldHeight)
+        XCTAssertEqual(document.frame.width, clip.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(clip.bounds.origin.y, offset, accuracy: 0.5)
+        let bottom = clip.constrainBoundsRect(NSRect(x: 0, y: document.frame.height, width: clip.bounds.width, height: clip.bounds.height))
+        clip.scroll(to: bottom.origin)
+        XCTAssertEqual(clip.bounds.maxY, document.frame.maxY, accuracy: 0.5)
+
+        demo.state.sessions.removeValue(forKey: "new-session")
+        panel.settle()
+        XCTAssertEqual(document.frame.height, oldHeight, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(clip.bounds.maxY, document.frame.maxY + 0.5)
+    }
+
     private static func scrollView(in view: NSView) -> NSScrollView? {
         if let scroll = view as? NSScrollView { return scroll }
         for subview in view.subviews {

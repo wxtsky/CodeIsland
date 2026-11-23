@@ -251,7 +251,9 @@ public enum CLIProcessResolver {
         return immediateParentPID
     }
 
-    /// `_term_bundle` for a Codex hook that reached the bridge without one.
+    public static let codexAperitifBundleIdentifier = "com.openai.codex.helper"
+
+    /// `_term_bundle` for a Codex hook that reached the bridge without the Desktop app's bundle.
     /// ChatGPT starts Codex Desktop's app-server
     /// (`ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`)
     /// without `__CFBundleIdentifier`, so its hooks were keyed as a CLI
@@ -263,8 +265,8 @@ public enum CLIProcessResolver {
     /// time. So the nearest Codex process must run the `app-server` subcommand,
     /// and its direct parent must be the app itself; `exec codex` in ChatGPT's
     /// own terminal also leaves ChatGPT as the parent.
-    /// Bundled tool hosts share that outer bundle ID, so the parent must also
-    /// be an executable in the host app's own `Contents/MacOS` directory.
+    /// Bundled tool hosts share that outer bundle ID. Desktop uses either
+    /// the main app executable or its dedicated Aperitif helper as the parent.
     public static func codexDesktopTermBundle(ancestry: [ProcessAncestor]) -> String? {
         guard let codexIndex = ancestry.firstIndex(where: {
             sourceMatchesExecutablePath($0.executablePath ?? "", source: "codex")
@@ -272,11 +274,21 @@ public enum CLIProcessResolver {
               codexIndex + 1 < ancestry.count,
               ancestry[codexIndex + 1].bundleIdentifier == "com.openai.codex",
               let parentPath = ancestry[codexIndex + 1].executablePath,
-              let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath),
-              URL(fileURLWithPath: parentPath).standardizedFileURL.deletingLastPathComponent().path
-                == URL(fileURLWithPath: appPath).standardizedFileURL.appendingPathComponent("Contents/MacOS").path else {
+              let appPath = HostHarnessResolver.outermostAppBundlePath(forExecutable: parentPath) else {
             return nil
         }
+        let parentURL = URL(fileURLWithPath: parentPath).standardizedFileURL
+        let appURL = URL(fileURLWithPath: appPath).standardizedFileURL
+        if parentURL.deletingLastPathComponent().path == appURL.appendingPathComponent("Contents/MacOS").path {
+            return "com.openai.codex"
+        }
+
+        let versions = appURL.appendingPathComponent("Contents/Frameworks/Codex Framework.framework/Versions").pathComponents
+        let helper = ["Helpers", "Codex (Aperitif).app", "Contents", "MacOS", "Codex (Aperitif)"]
+        guard parentURL.pathComponents.starts(with: versions),
+              parentURL.pathComponents.dropFirst(versions.count + 1).elementsEqual(helper),
+              let codexPath = ancestry[codexIndex].executablePath,
+              HostHarnessResolver.outermostAppBundlePath(forExecutable: codexPath) == appPath else { return nil }
         return "com.openai.codex"
     }
 
@@ -809,7 +821,7 @@ public struct HookEvent {
     }
 }
 
-public struct SubagentState: Sendable {
+public struct SubagentState: Equatable, Sendable {
     public let agentId: String
     public let agentType: String
     public var status: AgentStatus = .running
@@ -841,7 +853,7 @@ public struct SubagentState: Sendable {
     }
 }
 
-public struct ToolHistoryEntry: Identifiable, Sendable {
+public struct ToolHistoryEntry: Equatable, Identifiable, Sendable {
     public let id = UUID()
     public let tool: String
     public let description: String?
@@ -858,7 +870,7 @@ public struct ToolHistoryEntry: Identifiable, Sendable {
     }
 }
 
-public struct ChatMessage: Identifiable, Sendable {
+public struct ChatMessage: Equatable, Identifiable, Sendable {
     public let id = UUID()
     public let isUser: Bool
     public let text: String

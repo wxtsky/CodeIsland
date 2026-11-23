@@ -3360,15 +3360,21 @@ final class AppState {
     func restoreSessions() {
         let persisted = SessionPersistence.load()
         let cutoff = Date().addingTimeInterval(-30 * 60) // 30 minutes
-        for p in persisted where p.lastActivity > cutoff {
+        // Two saved keys can now resolve to the same Desktop card. Prefer the
+        // latest snapshot regardless of their order in the persisted file.
+        for p in persisted.sorted(by: { $0.lastActivity > $1.lastActivity }) where p.lastActivity > cutoff {
             guard let source = SessionSnapshot.normalizedSupportedSource(p.source) else { continue }
             let restoredSessionId = CodexDiscovery.canonicalRestoredCodexSessionId(
                 sessionId: p.sessionId,
                 source: source,
                 providerSessionId: p.providerSessionId,
-                termBundleId: p.termBundleId
+                termBundleId: p.termBundleId,
+                transcriptPath: p.transcriptPath
             )
             guard sessions[restoredSessionId] == nil else { continue }
+            if restoredSessionId != p.sessionId {
+                log.debug("Restoring legacy Codex Desktop card under its canonical key")
+            }
             var snapshot = SessionSnapshot(startTime: p.startTime)
             snapshot.cwd = p.cwd
             snapshot.source = source
@@ -3391,7 +3397,8 @@ final class AppState {
             snapshot.tmuxPane = p.tmuxPane
             snapshot.tmuxClientTty = p.tmuxClientTty
             snapshot.tmuxEnv = p.tmuxEnv
-            snapshot.termBundleId = p.termBundleId
+            snapshot.termBundleId = source == "codex" && restoredSessionId.hasPrefix(Self.codexAppSessionPrefix)
+                ? Self.codexAppBundleId : p.termBundleId
             snapshot.cmuxSurfaceId = p.cmuxSurfaceId
             snapshot.cmuxWorkspaceId = p.cmuxWorkspaceId
             snapshot.zellijPaneId = p.zellijPaneId

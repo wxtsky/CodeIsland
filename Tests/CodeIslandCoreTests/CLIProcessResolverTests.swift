@@ -103,6 +103,11 @@ final class CLIProcessResolverTests: XCTestCase {
         executablePath: "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT",
         bundleIdentifier: "com.openai.codex"
     )
+    private let aperitif = ProcessAncestor(
+        pid: 850,
+        executablePath: "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/158.0.8127.37/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)",
+        bundleIdentifier: "com.openai.codex"
+    )
     private let zsh = ProcessAncestor(pid: 850, executablePath: "/bin/zsh", arguments: ["-zsh"])
     private let terminal = ProcessAncestor(
         pid: 700,
@@ -133,6 +138,35 @@ final class CLIProcessResolverTests: XCTestCase {
         let chain = [bundledCodex(["codex", "app-server", "--listen", "stdio://"]), broker, chatGPT]
         XCTAssertNil(CLIProcessResolver.codexDesktopTermBundle(ancestry: chain))
         XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: chain), .session)
+    }
+
+    func testAperitifAppServerIsDesktopHost() {
+        let chain = [bundledCodex(desktopArguments), aperitif]
+        XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: chain), .desktopHost)
+
+        let anotherApp = ProcessAncestor(
+            pid: 901, executablePath: "/Applications/Codex.app/Contents/Resources/codex",
+            arguments: desktopArguments, bundleIdentifier: "com.openai.codex"
+        )
+        XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: [anotherApp, aperitif]), .session)
+        XCTAssertEqual(CLIProcessResolver.codexBundledProcessRole(ancestry: [bundledCodex(["codex", "exec"]), aperitif]), .session)
+    }
+
+    func testAperitifHooksUseTheDesktopCardKey() throws {
+        let ancestry = [bundledCodex(desktopArguments), aperitif].map { process in
+            HookIntake.Ancestor(
+                pid: process.pid, executablePath: process.executablePath,
+                arguments: { process.arguments }, bundleIdentifier: { process.bundleIdentifier }
+            )
+        }
+        for environment in [[:], ["__CFBundleIdentifier": "com.openai.codex.helper"]] {
+            var intake = try XCTUnwrap(HookIntake(
+                stdin: ["session_id": "desktop-thread", "hook_event_name": "UserPromptSubmit"],
+                facts: .init(sourceTag: "codex", environment: environment, parentPID: 900, ancestry: ancestry)
+            ))
+            intake.addTerminalContext()
+            XCTAssertEqual(HookEvent(json: intake.payload)?.sessionId, "codexapp:desktop-thread")
+        }
     }
 
     /// The same binary also runs Codex CLI from a terminal (ChatGPT's

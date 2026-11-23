@@ -101,6 +101,41 @@ final class AppStateCodexSubsessionTests: XCTestCase {
         )
     }
 
+    func testRestoreCollapsesOldAperitifDuplicateAndKeepsLatestCard() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        defer { SessionPersistence.clear() }
+        let desktopPath = dir.appendingPathComponent("desktop.jsonl")
+        let cliPath = dir.appendingPathComponent("cli.jsonl")
+        try (#"{"type":"session_meta","payload":{"id":"desktop-thread","originator":"Codex Desktop","source":"vscode"}}"# + "\n")
+            .write(to: desktopPath, atomically: true, encoding: .utf8)
+        try (#"{"type":"session_meta","payload":{"id":"cli-thread","originator":"codex_cli_rs","source":"cli"}}"# + "\n")
+            .write(to: cliPath, atomically: true, encoding: .utf8)
+
+        var oldHook = SessionSnapshot()
+        oldHook.source = "codex"
+        oldHook.transcriptPath = desktopPath.path
+        oldHook.providerSessionId = "desktop-thread"
+        oldHook.lastUserPrompt = "Latest prompt"
+        var desktop = oldHook
+        desktop.termBundleId = AppState.codexAppBundleId
+        desktop.lastActivity = oldHook.lastActivity.addingTimeInterval(-5)
+        desktop.lastUserPrompt = "Older prompt"
+        var cli = oldHook
+        cli.transcriptPath = cliPath.path
+        cli.providerSessionId = "cli-thread"
+        SessionPersistence.save([
+            "desktop-thread": oldHook, "codexapp:desktop-thread": desktop, "cli-thread": cli,
+        ])
+
+        let appState = AppState()
+        appState.restoreSessions()
+        XCTAssertEqual(Set(appState.sessions.keys), ["codexapp:desktop-thread", "cli-thread"])
+        XCTAssertEqual(appState.sessions["codexapp:desktop-thread"]?.lastUserPrompt, "Latest prompt")
+        XCTAssertEqual(appState.sessions["codexapp:desktop-thread"]?.termBundleId, AppState.codexAppBundleId)
+    }
+
     func testSequentialDesktopRolloutAndDatabaseScansKeepOneCardAndRejectStaleStatus() {
         let appState = AppState()
         let rawId = "same-provider-thread"
