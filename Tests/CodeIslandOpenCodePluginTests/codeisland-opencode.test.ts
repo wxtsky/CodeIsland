@@ -219,6 +219,21 @@ describe("OpenCode 2 runtime round-trips", () => {
     expect(h.replies).toEqual([["permission", "ses_p", "per_9", "once", "ok"]]);
   });
 
+  test("question replies send option values and preserve custom text", async () => {
+    const form = questionForm([
+      { key: "mode", description: "Which mode?", type: "string", options: [{ label: "Safe", value: "mode_safe" }] },
+      { key: "targets", description: "Which targets?", type: "multiselect",
+        options: [{ label: "Mac, desktop", value: "mac" }, { label: "Phone", value: "ios" }], custom: true },
+    ]);
+    const answered = harness({ answer: { hookSpecificOutput: { decision: { behavior: "allow", updatedInput: {
+      answers: { "Which mode?": "Safe", "Which targets?": "Mac, desktop, Phone" },
+      _codeislandAnswerDetails: { "Which targets?": { selectedOptions: ["Mac, desktop"], customInput: "Phone" } },
+    } } } } });
+    await answered.handle(ev("form.created", { form }));
+    await settle();
+    expect(answered.replies).toEqual([["form", "ses_a", "frm_1", { mode: "mode_safe", targets: ["mac", "Phone"] }]]);
+  });
+
   test("answering a question replies to the form; skipping cancels it", async () => {
     const form = questionForm([
       { key: "q0", title: "Lang", description: "Which language?", type: "string", options: [{ value: "Go", label: "Go" }] },
