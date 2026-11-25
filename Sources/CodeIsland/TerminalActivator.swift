@@ -84,6 +84,7 @@ struct TerminalActivator {
     /// otherwise fall through to terminal tab-matching.
     private static let nativeAppBundles: [String: String] = [
         "com.openai.codex": "Codex",
+        GeminiDesktop.bundleID: "Gemini",
         "com.todesktop.230313mzl4w4u92": "Cursor",
         "com.trae.app": "Trae",
         "cn.trae.app": "Trae CN",
