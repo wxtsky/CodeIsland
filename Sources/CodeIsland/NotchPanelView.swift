@@ -1020,7 +1020,7 @@ private struct CompactToolStatus: View {
         let folder = displaySession?.cwd.flatMap { $0.isEmpty ? nil : ($0 as NSString).lastPathComponent }
         return SessionHeadline.contextLabel(
             projectName: folder,
-            sessionLabel: displaySession?.sessionLabel,
+            session: displaySession,
             showProjectName: showProjectName
         )
     }
@@ -2033,7 +2033,7 @@ private struct NotchCardContextRow: View {
             }
             if let label = SessionHeadline.contextLabel(
                 projectName: cwd.map { ($0 as NSString).lastPathComponent },
-                sessionLabel: session?.sessionLabel,
+                session: session,
                 showProjectName: showProjectName
             ) {
                 Text(label)

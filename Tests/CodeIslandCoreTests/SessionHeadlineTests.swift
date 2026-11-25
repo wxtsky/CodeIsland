@@ -40,6 +40,25 @@ final class SessionHeadlineTests: XCTestCase {
         XCTAssertEqual(headline.text, "Claude")
     }
 
+    func testGeminiDesktopLeadsWithTheConversationInCardsAndCollapsedContext() {
+        var session = snapshot(cwd: nil, title: "  对话 A  ", source: "gemini")
+        session.termBundleId = "com.google.GeminiMacOS"
+        for showProject in [true, false] {
+            XCTAssertEqual(session.headline(showProjectName: showProject),
+                           SessionHeadline(text: "对话 A", kind: .sessionTitle, trailingSessionLabel: nil))
+            XCTAssertEqual(SessionHeadline.contextLabel(projectName: nil, session: session, showProjectName: showProject), "对话 A")
+        }
+        session.sessionTitle = " "
+        XCTAssertEqual(session.headline(showProjectName: true).text, session.sourceLabel)
+        XCTAssertEqual(SessionHeadline.contextLabel(projectName: nil, session: session, showProjectName: true), session.sourceLabel)
+
+        session.termBundleId = nil // Gemini CLI still uses its working directory.
+        session.cwd = "/tmp/project"
+        session.sessionTitle = "CLI task"
+        XCTAssertEqual(session.headline(showProjectName: true).text, "project")
+        XCTAssertEqual(SessionHeadline.contextLabel(projectName: "project", session: session, showProjectName: true), "project")
+    }
+
     func testContextLabelFollowsTheSetting() {
         XCTAssertEqual(
             SessionHeadline.contextLabel(projectName: "island", sessionLabel: "Refactor", showProjectName: true),
