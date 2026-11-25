@@ -595,7 +595,8 @@ final class AppState {
             where !processMonitor.isWatching(key)
             && session.status != .idle
             && !session.isRemote
-            && !key.hasPrefix(Self.coworkSessionPrefix) {
+            && !key.hasPrefix(Self.coworkSessionPrefix)
+            && !key.hasPrefix("gemini-desktop:") {
             let elapsed = -session.lastActivity.timeIntervalSinceNow
             let threshold: TimeInterval
             switch session.status {

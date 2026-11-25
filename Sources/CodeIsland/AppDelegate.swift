@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var panelController: PanelWindowController?
     private var hookServer: HookServer?
+    private var geminiMonitor: Task<Void, Never>?
     private var hookRecoveryTimer: Timer?
     private var lastHookCheck: Date = .distantPast
     private let hotKeyManager = GlobalHotKeyManager()
@@ -115,6 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appState.startCodexAppServerWatcher()
             appState.startAiWorkWatcher()
             appState.startCoworkWatcher()
+            updateGeminiMonitor()
             RemoteManager.shared.startup()
         }
 
@@ -247,8 +249,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         RemoteManager.shared.shutdown()
         hookServer?.stop()
         appState.stopCodexAppServerWatcher()
+        geminiMonitor?.cancel()
         appState.stopAiWorkWatcher()
         appState.stopSessionDiscovery()
+    }
+
+    func updateGeminiMonitor() {
+        geminiMonitor?.cancel()
+        geminiMonitor = nil
+        guard UserDefaults.standard.bool(forKey: SettingsKey.trackGeminiDesktop),
+              !RuntimeEnvironment.isIsolated, !RuntimeEnvironment.isRunningTests else {
+            for id in appState.sessions.keys where id.hasPrefix("gemini-desktop:") {
+                appState.removeSession(id)
+            }
+            return
+        }
+        geminiMonitor = Task.detached(priority: .utility) { [weak appState] in
+            await GeminiDesktop.observe { @MainActor [weak appState] changes in
+                guard !Task.isCancelled, let appState else { return }
+                for change in changes {
+                    var payload = change.payload
+                    if change.event == "Stop", change.reply == nil {
+                        payload["last_assistant_message"] = L10n.shared["reply_complete_placeholder"]
+                    }
+                    if let event = HookEvent(json: payload) { appState.handleEvent(event) }
+                }
+            }
+        }
     }
 
     // MARK: - Global Shortcuts
