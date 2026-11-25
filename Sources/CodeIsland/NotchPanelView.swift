@@ -46,10 +46,8 @@ enum NotchHoverInteraction {
     static let prehoverWidthDelta: CGFloat = 7
     static let prehoverScale: CGFloat = 1.004
 
-    /// User-tunable range for `expandDelay` (Settings → Behavior). Below 0.1s
-    /// every pass of the pointer toward the menu bar would pop the panel open;
-    /// past 1s the island stops feeling like it responds to hover at all.
-    static let expandDelayRange: ClosedRange<TimeInterval> = 0.1...1.0
+    /// Zero opens synchronously. Positive values retain the prehover animation.
+    static let expandDelayRange: ClosedRange<TimeInterval> = 0...1.0
     static let expandDelayStep: TimeInterval = 0.05
 
     /// The stored preference, clamped into `expandDelayRange`. A value written
@@ -250,6 +248,36 @@ struct NotchPanelView: View {
             hasNotch: hasNotch,
             spareWidth: maxPanelWidth - collapsedBarWidth
         )
+    }
+
+    private func expandOnHover(immediately: Bool) {
+        guard isHovered, NotchHoverInteraction.hoverExpansionMayReplace(appState.surface) else { return }
+        if hapticOnHover {
+            let performer = NSHapticFeedbackManager.defaultPerformer
+            switch hapticIntensity {
+            case 3: // strong: two taps
+                performer.perform(.levelChange, performanceTime: .now)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    performer.perform(.levelChange, performanceTime: .now)
+                }
+            case 2: // medium
+                performer.perform(.levelChange, performanceTime: .default)
+            default: // light
+                performer.perform(.alignment, performanceTime: .default)
+            }
+        }
+        var transaction = Transaction(animation: immediately ? nil : NotchAnimation.open)
+        // The panel also has an implicit surface animation. Disable that one
+        // for immediate hover without changing keyboard or completion cards.
+        transaction.disablesAnimations = immediately
+        withTransaction(transaction) {
+            hoverPhase = .expanded
+            appState.surface = .sessionList
+            appState.cancelCompletionQueue()
+            if appState.activeSessionId == nil {
+                appState.activeSessionId = appState.sessions.keys.sorted().first
+            }
+        }
     }
 
     var body: some View {
@@ -505,43 +533,16 @@ struct NotchPanelView: View {
 
                 isHovered = hovering
                 if hovering {
-                    // Immediate lightweight acknowledgement; a quick pass-through
-                    // only ever plays this first stage and reverses.
-                    withAnimation(NotchAnimation.hoverPrehover) {
-                        hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
-                    }
-                    // Delay full expansion to avoid accidental triggers
                     hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(
-                        withTimeInterval: NotchHoverInteraction.expandDelay(forSetting: hoverExpandDelay),
-                        repeats: false
-                    ) { _ in
-                        Task { @MainActor in
-                            // Guard: mouse may have left during the delay
-                            guard isHovered else { return }
-                            guard NotchHoverInteraction.hoverExpansionMayReplace(appState.surface) else { return }
-                            if hapticOnHover {
-                                let performer = NSHapticFeedbackManager.defaultPerformer
-                                switch hapticIntensity {
-                                case 3: // strong: two taps
-                                    performer.perform(.levelChange, performanceTime: .now)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        performer.perform(.levelChange, performanceTime: .now)
-                                    }
-                                case 2: // medium
-                                    performer.perform(.levelChange, performanceTime: .default)
-                                default: // light
-                                    performer.perform(.alignment, performanceTime: .default)
-                                }
-                            }
-                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .expandDelayElapsed)
-                            withAnimation(NotchAnimation.open) {
-                                appState.surface = .sessionList
-                                appState.cancelCompletionQueue()
-                                if appState.activeSessionId == nil {
-                                    appState.activeSessionId = appState.sessions.keys.sorted().first
-                                }
-                            }
+                    let delay = NotchHoverInteraction.expandDelay(forSetting: hoverExpandDelay)
+                    if delay == 0 {
+                        expandOnHover(immediately: true)
+                    } else {
+                        withAnimation(NotchAnimation.hoverPrehover) {
+                            hoverPhase = NotchHoverInteraction.nextPhase(from: hoverPhase, event: .mouseEntered)
+                        }
+                        hoverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+                            Task { @MainActor in expandOnHover(immediately: false) }
                         }
                     }
                 } else {

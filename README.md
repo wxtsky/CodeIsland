@@ -151,6 +151,8 @@ It works with **30+ AI coding tools**, installs its hooks for you, and keeps eve
 
 **Gemini Desktop for macOS.** Enable Gemini Desktop in Settings → Hooks and grant CodeIsland Accessibility access. An open chat shows its running state and a completion card with up to 600 characters of the assistant’s reply. Task badges exposed in the sidebar can also report background completions. A background chat whose reply is unavailable shows a completion indicator. CodeIsland reads these controls locally without changing the selected chat.
 
+For immediate hover expansion, set **Settings → Behavior → Hover Delay Before Expanding** to **0.00 s**. Compact list density also reduces the amount of text the panel lays out on entry. Completion cards still show the reply.
+
 <details>
 <summary><b>Where each integration is installed</b></summary>
 
