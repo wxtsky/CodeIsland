@@ -722,6 +722,7 @@ private struct BehaviorPage: View {
 // MARK: - Hooks Page
 
 private struct HooksPage: View {
+    @AppStorage(SettingsKey.trackGeminiDesktop) private var trackGeminiDesktop = false
     var appState: AppState?
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var socketHealth = HookSocketHealth.shared
@@ -906,6 +907,19 @@ private struct HooksPage: View {
             }
 
             ClaudeDesktopCoworkSection(appState: appState)
+            Section("Gemini Desktop") {
+                Toggle(l10n["gemini_desktop_tracking"], isOn: $trackGeminiDesktop)
+                    .onChange(of: trackGeminiDesktop) { _, enabled in
+                        if enabled {
+                            let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+                            _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+                        }
+                        (NSApp.delegate as? AppDelegate)?.updateGeminiMonitor()
+                    }
+                Text(l10n["gemini_desktop_tracking_detail"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Section(l10n["extra_config_dirs_title"]) {
                 Text(l10n["extra_config_dirs_desc"])

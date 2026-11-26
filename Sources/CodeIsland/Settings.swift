@@ -40,9 +40,10 @@ enum SettingsKey {
     static let pluginSessionMode = "pluginSessionMode"  // "separate" | "merge" | "hide"
     // Read-only watch of Claude Desktop's Cowork / local Chat session store
     static let trackClaudeDesktopCowork = "trackClaudeDesktopCowork"
+    static let trackGeminiDesktop = "trackGeminiDesktop"
     static let hapticOnHover = "hapticOnHover"
     static let hapticIntensity = "hapticIntensity"      // 1=light, 2=medium, 3=strong
-    static let hoverExpandDelay = "hoverExpandDelay"    // seconds the pointer rests before the island opens (0.1–1.0)
+    static let hoverExpandDelay = "hoverExpandDelay"    // seconds the pointer rests before the island opens (0–1.0, zero opens immediately)
     static let showProjectName = "showProjectName"      // false = cards lead with the session title instead of the folder
     static let autoExpandOnQuestion = "autoExpandOnQuestion"
     static let sessionTimeout = "sessionTimeout"

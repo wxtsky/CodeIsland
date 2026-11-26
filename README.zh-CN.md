@@ -149,6 +149,10 @@
 
 **审批与提问：** hook 会等待决定的工具，都能直接在刘海上批准或回答——Claude Code、Codex、Gemini CLI、Qoder、Qwen Code、Trae CLI Next、ZCode、OpenCode、MiMo Code / Xiaomi MiMo、Pi / Oh My Pi、DeepSeek Harness 等；MiniMax Code CLI 限 mcode 允许 hook 等待的 10 秒内。hook 无法回传决定的工具（Google Antigravity、AiWork）以只读方式显示，审批仍在它们自己的界面里完成。
 
+**Gemini 桌面端（macOS）**。在设置 → Hooks 中启用 Gemini Desktop，并为 CodeIsland 开启辅助功能权限。收起的灵动岛和展开的任务卡片都会优先显示 Gemini 对话名称。当前对话生成回复时会显示运行状态，完成卡片可预览最多 600 个字符的助手回复。侧栏中带任务状态的后台对话也可显示完成提醒。后台对话的正文不可读时，卡片显示完成状态。CodeIsland 在本机读取这些控件，不会切换当前对话。
+
+要让面板在鼠标移入时立即展开，可在设置 → 行为中将悬停展开延迟设为 **0.00 秒**。选用紧凑会话列表还可以减少展开时需要排版的文字，完成卡片仍显示回复。
+
 <details>
 <summary><b>各集成安装在哪里</b></summary>
 

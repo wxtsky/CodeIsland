@@ -850,6 +850,7 @@ public struct SessionSnapshot: Sendable {
         // Claude Code Desktop (#211): local Code-tab sessions run the same engine
         // and fire the same ~/.claude/settings.json hooks as the CLI.
         "com.anthropic.claudefordesktop": "Claude",
+        "com.google.GeminiMacOS": "Gemini",
         "com.alipay.dtcoder.ide": "AiWork",
         // Xiaomi MiMo desktop — mainland and overseas ("AI") editions are
         // separate installs with their own bundle ids.
@@ -860,6 +861,7 @@ public struct SessionSnapshot: Sendable {
     /// Maps native app bundle IDs to their expected source identifier.
     /// Used by isNativeAppMode to distinguish "Cursor agent" from "Claude CLI in Cursor terminal".
     private static let appBundleSources: [String: String] = [
+        "com.google.GeminiMacOS": "gemini",
         "com.todesktop.230313mzl4w4u92": "cursor",
         "com.trae.app": "trae",
         // Trae CN ships as its own app (`Trae CN.app`), not inside Trae.app.

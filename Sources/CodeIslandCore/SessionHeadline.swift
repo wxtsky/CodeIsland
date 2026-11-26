@@ -39,11 +39,28 @@ public struct SessionHeadline: Equatable, Sendable {
     ) -> String? {
         showProjectName ? projectName : sessionLabel
     }
+
+    public static func contextLabel(
+        projectName: String?,
+        session: SessionSnapshot?,
+        showProjectName: Bool
+    ) -> String? {
+        if let session, session.isGeminiDesktopConversation {
+            return session.sessionLabel ?? session.sourceLabel
+        }
+        return contextLabel(projectName: projectName, sessionLabel: session?.sessionLabel, showProjectName: showProjectName)
+    }
 }
 
 extension SessionSnapshot {
+    // Gemini Desktop conversations have a title but no project folder. Gemini CLI
+    // still uses the user's project-name preference like the other CLI agents.
+    fileprivate var isGeminiDesktopConversation: Bool {
+        source == "gemini" && termBundleId == "com.google.GeminiMacOS"
+    }
+
     public func headline(showProjectName: Bool) -> SessionHeadline {
-        if showProjectName {
+        if showProjectName && !isGeminiDesktopConversation {
             return SessionHeadline(
                 text: projectDisplayName,
                 kind: .project,
