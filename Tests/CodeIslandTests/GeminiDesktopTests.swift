@@ -74,6 +74,57 @@ struct GeminiDesktopTests {
         #expect(tracker.update(["A": next]).map(\.event) == ["UserPromptSubmit"])
     }
 
+    @Test func successiveTurnsAndAFastCompletionReuseTheConversationCard() {
+        var tracker = GeminiDesktop.Tracker()
+        let now = Date()
+        var events: [GeminiDesktop.Change] = []
+        for number in 1...2 {
+            // More time than the duplicate-completion suppression interval.
+            let at = now.addingTimeInterval(Double(number) * 1000)
+            let prompt = "question \(number)"
+            events += tracker.update(["A": Chat(generating: true, window: 1, turn: prompt, turnNumber: number)], now: at)
+            events += tracker.update(["A": Chat(window: 1, turn: prompt, turnNumber: number, reply: "answer")], now: at)
+        }
+        events += tracker.update(["A": Chat(window: 1, turn: "quick", turnNumber: 3, reply: "quick reply")], now: now.addingTimeInterval(3000))
+        #expect(events.map(\.event) == ["UserPromptSubmit", "Stop", "UserPromptSubmit", "Stop", "Stop"])
+        #expect(Set(events.map(\.sessionID)).count == 1)
+        #expect(events.last?.reply == "quick reply")
+    }
+
+    @Test func renamedChatKeepsItsCardButANewChatCanReuseTheTemporaryTitle() {
+        var tracker = GeminiDesktop.Tracker()
+        let start = tracker.update(["Temporary": Chat(generating: true, window: 3, turn: "one")])
+        _ = tracker.update(["Generated": Chat(window: 3, turn: "one", reply: "done")])
+        let next = tracker.update(["Generated": Chat(generating: true, window: 3, turn: "two")])
+        let other = tracker.update(["Generated": Chat(badge: .working),
+                                    "Temporary": Chat(generating: true, window: 3, turn: "two")])
+        #expect(start.first?.sessionID == next.first?.sessionID)
+        #expect(other.count == 1)
+        #expect(other.first?.sessionID != start.first?.sessionID)
+    }
+
+    @Test func duplicateTitlesDoNotInheritAnAmbiguousCard() {
+        var tracker = GeminiDesktop.Tracker()
+        let first = tracker.update(["Shared": Chat(generating: true, window: 1, turn: "first")])
+        let ambiguous = Chat(badge: .working, ambiguous: true)
+        #expect(tracker.update(["Shared": ambiguous]).map(\.event) == ["SessionEnd"])
+        #expect(tracker.update(["Shared": ambiguous]).isEmpty)
+        let second = tracker.update(["Shared": Chat(generating: true, window: 2, turn: "another")])
+        #expect(second.count == 1)
+        #expect(second.first?.sessionID != first.first?.sessionID)
+    }
+
+    @Test func restoredBackgroundConversationKeepsItsCardAcrossMonitorResets() {
+        let restored = GeminiDesktop.conversationSessionPrefix + UUID().uuidString
+        var tracker = GeminiDesktop.Tracker(sessionIDsByTitle: ["A": restored])
+        let first = tracker.update(["A": Chat(badge: .working), "B": Chat(badge: .working)])
+        #expect(first.first { $0.title == "A" }?.sessionID == restored)
+        #expect(Set(first.map(\.sessionID)).count == 2)
+        _ = tracker.update(["A": Chat(badge: .ready), "B": Chat(badge: .ready)])
+        _ = tracker.reset()
+        #expect(tracker.update(["A": Chat(badge: .working)]).first?.sessionID == restored)
+    }
+
     @Test func localizedBadgesPreservePunctuationInTheTitle() {
         let chinese = GeminiDesktop.BadgeLabels(format: "“%1$@”，%2$@", labels: [("进行中", .working)])
         #expect(chinese.parse("“A，B”，进行中")?.0 == "A，B")

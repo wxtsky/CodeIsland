@@ -3,6 +3,30 @@ import XCTest
 import CodeIslandCore
 
 final class SessionPersistenceTests: XCTestCase {
+    @MainActor
+    func testRestoresGeminiConversationCardsAndDropsLegacyPerTurnCards() {
+        defer { SessionPersistence.clear() }
+        var card = SessionSnapshot()
+        card.source = "gemini"
+        card.termBundleId = GeminiDesktop.bundleID
+        card.sessionTitle = "Research"
+        card.lastAssistantMessage = "Latest answer"
+
+        let id = GeminiDesktop.conversationSessionPrefix + "restored"
+        let legacy = "gemini-desktop:" + UUID().uuidString
+        var oldTurn = card
+        oldTurn.lastUserPrompt = "Old question"
+        SessionPersistence.save([id: card, legacy: oldTurn])
+
+        let state = AppState()
+        state.restoreSessions()
+        XCTAssertNil(state.sessions[legacy])
+        XCTAssertEqual(state.sessions[id]?.lastAssistantMessage, "Latest answer")
+        XCTAssertEqual(state.geminiConversationIDsByTitle, ["Research": id])
+        state.sessions[GeminiDesktop.conversationSessionPrefix + "another"] = card
+        XCTAssertNil(state.geminiConversationIDsByTitle["Research"])
+    }
+
     func testPersistedSessionDecodesWithoutCliStartTimeForBackwardCompatibility() throws {
         let json = """
         {

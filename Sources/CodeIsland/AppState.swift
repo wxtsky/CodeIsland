@@ -3358,11 +3358,29 @@ final class AppState {
         SessionPersistence.save(sessions)
     }
 
+    /// Gemini exposes conversation titles to Accessibility. Only an unambiguous
+    /// title can reconnect a restored card to the next observation.
+    var geminiConversationIDsByTitle: [String: String] {
+        let conversations = sessions.compactMap { id, session -> (title: String, id: String)? in
+            guard id.hasPrefix(GeminiDesktop.conversationSessionPrefix),
+                  session.source == "gemini", session.termBundleId == GeminiDesktop.bundleID,
+                  let title = session.sessionTitle, !title.isEmpty else { return nil }
+            return (title, id)
+        }
+        return Dictionary(grouping: conversations, by: \.title)
+            .compactMapValues { $0.count == 1 ? $0.first?.id : nil }
+    }
+
     func restoreSessions() {
         let persisted = SessionPersistence.load()
         let cutoff = Date().addingTimeInterval(-30 * 60) // 30 minutes
         for p in persisted where p.lastActivity > cutoff {
             guard let source = SessionSnapshot.normalizedSupportedSource(p.source) else { continue }
+            let isGeminiConversation = source == "gemini" && p.termBundleId == GeminiDesktop.bundleID
+                && p.sessionId.hasPrefix(GeminiDesktop.conversationSessionPrefix)
+            // Older builds persisted a new UUID per turn. It cannot identify a
+            // conversation. The monitor rediscovers any currently running turn.
+            if source == "gemini", p.sessionId.hasPrefix("gemini-desktop:"), !isGeminiConversation { continue }
             let restoredSessionId = CodexDiscovery.canonicalRestoredCodexSessionId(
                 sessionId: p.sessionId,
                 source: source,
@@ -3434,6 +3452,7 @@ final class AppState {
             // Keep Cursor Task tombstones / foldable orphans so applyCursor… can still
             // honor closedSubagentIds after relaunch (otherwise merge can revive them).
             if snapshot.cliPid == nil && snapshot.status == .idle && snapshot.lastUserPrompt == nil,
+               !(isGeminiConversation && snapshot.sessionLabel != nil),
                !Self.shouldKeepRestoredIdleCursorSession(
                 source: source,
                 sessionId: restoredSessionId,

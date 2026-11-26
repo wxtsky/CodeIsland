@@ -264,8 +264,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        let sessionIDs = appState.geminiConversationIDsByTitle
         geminiMonitor = Task.detached(priority: .utility) { [weak appState] in
-            await GeminiDesktop.observe { @MainActor [weak appState] changes in
+            await GeminiDesktop.observe(sessionIDsByTitle: sessionIDs) { @MainActor [weak appState] changes in
                 guard !Task.isCancelled, let appState else { return }
                 for change in changes {
                     var payload = change.payload

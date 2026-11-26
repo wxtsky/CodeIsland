@@ -6,6 +6,8 @@ import ApplicationServices
 enum GeminiDesktop {
     static let bundleID = "com.google.GeminiMacOS"
 
+    static let conversationSessionPrefix = "gemini-desktop:chat:"
+
     enum Phase { case working, ready, attention }
     struct Chat {
         var badge: Phase?
@@ -14,12 +16,13 @@ enum GeminiDesktop {
         var turn: String?
         var turnNumber: Int?
         var reply: String?
+        var ambiguous = false
     }
     struct Change {
         let title: String
         let event: String
         var reply: String? = nil
-        var sessionID = "gemini-desktop:" + UUID().uuidString
+        let sessionID: String
 
         var payload: [String: String] {
             var fields = ["session_id": sessionID, "session_title": title,
@@ -44,6 +47,21 @@ enum GeminiDesktop {
         }
         private var finished: [String: Finished] = [:]
         private var previous: [String: Chat] = [:]
+        // Gemini exposes unique sidebar titles but no durable AX conversation
+        // identifier. Keep card identity across turns, independently of the
+        // short-lived state used to suppress duplicate completion events.
+        private var sessionIDsByTitle: [String: String]
+
+        init(sessionIDsByTitle: [String: String] = [:]) {
+            self.sessionIDsByTitle = sessionIDsByTitle
+        }
+
+        private mutating func sessionID(for title: String) -> String {
+            if let existing = sessionIDsByTitle[title] { return existing }
+            let id = GeminiDesktop.conversationSessionPrefix + UUID().uuidString
+            sessionIDsByTitle[title] = id
+            return id
+        }
 
         mutating func reset() -> [Change] {
             defer { active.removeAll(); previous.removeAll(); finished.removeAll() }
@@ -52,21 +70,35 @@ enum GeminiDesktop {
 
         mutating func update(_ chats: [String: Chat], now: Date = Date()) -> [Change] {
             var changes: [Change] = []
+            // Multiple visible conversations share this label. A later unique
+            // observation could be either one, so it cannot inherit this card.
+            for (title, chat) in chats where chat.ambiguous {
+                if let run = active.removeValue(forKey: title) {
+                    changes.append(Change(title: title, event: "SessionEnd", sessionID: run.sessionID))
+                }
+                sessionIDsByTitle.removeValue(forKey: title)
+                finished.removeValue(forKey: title)
+            }
             finished = finished.filter { now.timeIntervalSince($0.value.at) < 600 }
 
             // A new chat initially uses the prompt as its window title. Gemini
             // can replace it with a generated title before the final reply.
-            for (title, chat) in chats where active[title] == nil {
+            for (title, chat) in chats where sessionIDsByTitle[title] == nil {
                 guard let window = chat.window, let turn = chat.turn, !turn.isEmpty else { continue }
-                let matches = active.filter { old, run in
-                    old != title && chats[old]?.window == nil && run.window == window
-                        && (run.turn == turn || (run.turn == nil && turn.hasPrefix(old)))
+                let matches = sessionIDsByTitle.keys.filter { old in
+                    guard chats[old] == nil else { return false }
+                    if let run = active[old], run.window == window {
+                        return run.turn == turn || (run.turn == nil && turn.hasPrefix(old))
+                    }
+                    return previous[old]?.window == window && previous[old]?.turn == turn
                 }
                 if matches.count == 1, let old = matches.first {
-                    active[title] = active.removeValue(forKey: old.key)
+                    sessionIDsByTitle[title] = sessionIDsByTitle.removeValue(forKey: old)
+                    active[title] = active.removeValue(forKey: old)
+                    finished[title] = finished.removeValue(forKey: old)
                 }
             }
-            for (title, chat) in chats {
+            for (title, chat) in chats where !chat.ambiguous {
                 if chat.generating || chat.badge == .working {
                     if var run = active[title] {
                         run.turn = chat.turn ?? run.turn
@@ -81,7 +113,7 @@ enum GeminiDesktop {
                             if chat.turn == nil, previous[title]?.badge != .working { continue }
                         }
                         finished.removeValue(forKey: title)
-                        let start = Change(title: title, event: "UserPromptSubmit")
+                        let start = Change(title: title, event: "UserPromptSubmit", sessionID: sessionID(for: title))
                         active[title] = Active(sessionID: start.sessionID, turn: chat.turn,
                                                window: chat.window, lastSeen: now)
                         changes.append(start)
@@ -101,7 +133,7 @@ enum GeminiDesktop {
                           let before = old.turnNumber, let after = chat.turnNumber, after > before {
                     // A short turn can finish between observations of the same open chat.
                     finished[title] = Finished(turn: turn, number: after, at: now)
-                    changes.append(Change(title: title, event: "Stop", reply: reply))
+                    changes.append(Change(title: title, event: "Stop", reply: reply, sessionID: sessionID(for: title)))
                 }
             }
             // A closed window, a filtered sidebar or an abandoned turn is no
@@ -185,12 +217,13 @@ enum GeminiDesktop {
             AXUIElementSetMessagingTimeout(app, 0.25)
             guard let windows: [AXUIElement] = app.ax("AXWindows") else { return nil }
             var chats: [String: Chat] = [:]
+            var ambiguous = Set<String>()
+            var openTitles = Set<String>()
             for window in windows {
                 let windowTitle = window.string("AXTitle")
                 let title = windowTitle.hasPrefix("Gemini - ") ? String(windowTitle.dropFirst(9)) : (windowTitle == "Gemini" ? "Gemini" : "")
                 var selected = Chat()
                 var transcript: [AXUIElement] = []
-                var duplicates = Set<String>()
                 var seen = Set<String>()
                 func visit(_ element: AXUIElement, depth: Int) {
                     guard depth <= 8 else { return }
@@ -203,8 +236,14 @@ enum GeminiDesktop {
                             let label = button.string("AXDescription")
                             let parsed = labels.parse(label)
                             let key = parsed?.0 ?? label
-                            if !seen.insert(key).inserted { duplicates.insert(key) }
-                            if let (name, badge) = parsed { chats[name, default: Chat()].badge = badge }
+                            if !seen.insert(key).inserted { ambiguous.insert(key) }
+                            if let (name, badge) = parsed {
+                                chats[name, default: Chat()].badge = badge
+                            } else if chats[key] == nil {
+                                // Seeing the old title still in the sidebar distinguishes a
+                                // switch to another chat from an automatic title change.
+                                chats[key] = Chat()
+                            }
                         }
                         return
                     }
@@ -226,6 +265,7 @@ enum GeminiDesktop {
                 visit(window, depth: 0)
                 // Recheck identity after reading remote UI across process boundaries.
                 if window.string("AXTitle") == windowTitle && !title.isEmpty {
+                    if !openTitles.insert(title).inserted { ambiguous.insert(title) }
                     let tail = readTail(transcript)
                     selected.window = CFHash(window)
                     selected.turn = tail.turn
@@ -233,8 +273,8 @@ enum GeminiDesktop {
                     selected.badge = chats[title]?.badge
                     chats[title] = selected
                 }
-                for name in duplicates { chats.removeValue(forKey: name) }
             }
+            for name in ambiguous { chats[name] = Chat(ambiguous: true) }
             return chats
         }
 
@@ -285,8 +325,8 @@ private extension AXUIElement {
 
 extension GeminiDesktop {
     /// Owns no timer on the UI thread. An isolated launch never starts this task.
-    static func observe(deliver: @escaping @Sendable ([Change]) async -> Void) async {
-        var tracker = Tracker()
+    static func observe(sessionIDsByTitle: [String: String] = [:], deliver: @escaping @Sendable ([Change]) async -> Void) async {
+        var tracker = Tracker(sessionIDsByTitle: sessionIDsByTitle)
         var process: pid_t?
         var reader: Reader?
         while !Task.isCancelled {
